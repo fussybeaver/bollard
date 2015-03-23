@@ -1,0 +1,15 @@
+[package]
+name = "docker"
+description = "Docker"
+version = "0.0.1"
+authors = ["Graham Lee <ghmlee@ghmlee.com>"]
+license = "Apache License, Version 2.0"
+homepage = "https://github.com/ghmlee/rust-docker"
+repository = "https://github.com/ghmlee/rust-docker.git"
+documentation = "https://github.com/ghmlee/rust-docker"
+readme = "README.md"
+keywords = ["docker", "client"]
+
+[dependencies]
+unix_socket = "0.2.1"
+rustc-serialize = "0.3.6"
