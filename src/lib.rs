@@ -10,11 +10,11 @@ pub struct Docker;
 #[derive(RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Container {
-    id: String,
-    image: String,
-    status: String,
-    command: String,
-    created: f64,
+    pub Id: String,
+    pub Image: String,
+    pub Status: String,
+    pub Command: String,
+    pub Created: f64,
     //names: Vec<String>,
     //ports: Vec<String>
 }
@@ -72,5 +72,5 @@ impl Docker {
 
 #[test]
 fn it_works() {
-    let docker = Docker::new();
+    Docker::new();
 }
