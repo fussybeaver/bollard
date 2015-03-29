@@ -1,5 +1,5 @@
 extern crate unix_socket;
-extern crate "rustc-serialize" as rustc_serialize;
+extern crate rustc_serialize;
 
 use std::io::{self, Read, Write};
 use unix_socket::UnixStream;
