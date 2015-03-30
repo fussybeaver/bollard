@@ -1,23 +1,17 @@
 extern crate unix_socket;
 extern crate rustc_serialize;
 
+pub mod container;
+pub mod stats;
+
 use std::io::{self, Read, Write};
 use unix_socket::UnixStream;
 use rustc_serialize::json;
 
-pub struct Docker;
+use container::Container;
+use stats::Stats;
 
-#[derive(RustcEncodable, RustcDecodable)]
-#[allow(non_snake_case)]
-pub struct Container {
-    pub Id: String,
-    pub Image: String,
-    pub Status: String,
-    pub Command: String,
-    pub Created: f64,
-    //names: Vec<String>,
-    //ports: Vec<String>
-}
+pub struct Docker;
 
 impl Docker {
     pub fn new() -> Docker {
@@ -28,6 +22,13 @@ impl Docker {
         let request = "GET /containers/json HTTP/1.1\r\n\r\n";
         let response = try!(self.read(request));
         let decoded_body: Vec<Container> = json::decode(&response).unwrap();
+        return Ok(decoded_body);
+    }
+
+    pub fn get_stats(&self, container: &Container) -> io::Result<Stats> {
+        let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
+        let response = try!(self.read(&request));
+        let decoded_body: Stats = json::decode(&response).unwrap();
         return Ok(decoded_body);
     }
 
