@@ -2,6 +2,7 @@ extern crate docker;
 extern crate rustc_serialize;
 
 use docker::Docker;
+use docker::container::Port;
 use docker::stats::Stats;
 use rustc_serialize::json;
 
@@ -14,7 +15,7 @@ struct Data {
     Command: String,
     Created: f64,
     Names: Vec<String>,
-    Ports: Vec<String>,
+    Ports: Vec<Port>,
     Stats: Stats
 }
 
@@ -26,7 +27,7 @@ fn main() {
     };
     
     for container in containers.iter() {
-        let stats = match docker.get_stats(&container) {
+        match docker.get_stats(&container) {
             Ok(stats) => {
                 let data = Data {
                     Id: container.Id.clone(),
