@@ -51,6 +51,7 @@ pub struct stats {
     total_inactive_anon: f64,
     rss_huge: f64,
     hierarchical_memory_limit: f64,
+    hierarchical_memsw_limit: f64,
     total_pgfault: f64,
     total_active_file: f64,
     active_anon: f64,
@@ -61,7 +62,9 @@ pub struct stats {
     active_file: f64,
     pgfault: f64,
     inactive_file: f64,
-    total_pgpgin: f64
+    total_pgpgin: f64,
+    swap: f64,
+    total_swap: f64
 }
 
 #[allow(non_camel_case_types)]
@@ -92,12 +95,21 @@ pub struct throttling_data {
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct blkio_stats {
-    io_service_bytes_recursive: Vec<f64>,
-    io_serviced_recursive: Vec<f64>,
-    io_queue_recursive: Vec<f64>,
-    io_service_time_recursive: Vec<f64>,
-    io_wait_time_recursive: Vec<f64>,
-    io_merged_recursive: Vec<f64>,
-    io_time_recursive: Vec<f64>,
-    sectors_recursive: Vec<f64>
+    io_service_bytes_recursive: Vec<blkio_stat>,
+    io_serviced_recursive: Vec<blkio_stat>,
+    io_queue_recursive: Vec<blkio_stat>,
+    io_service_time_recursive: Vec<blkio_stat>,
+    io_wait_time_recursive: Vec<blkio_stat>,
+    io_merged_recursive: Vec<blkio_stat>,
+    io_time_recursive: Vec<blkio_stat>,
+    sectors_recursive: Vec<blkio_stat>
+}
+
+#[allow(non_camel_case_types)]
+#[derive(RustcEncodable, RustcDecodable)]
+pub struct blkio_stat {
+    major: f64,
+    minor: f64,
+    op: String,
+    value: f64
 }
