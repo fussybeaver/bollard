@@ -46,4 +46,11 @@ fn main() {
             Err(e) => { panic!("{}", e); }
         };
     }
+
+    let info = match docker.get_info() {
+        Ok(info) => info,
+        Err(e) => { panic!("{}", e); }
+    };
+    
+    println!("{}", info.Name);
 }

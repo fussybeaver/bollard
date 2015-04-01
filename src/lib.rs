@@ -3,6 +3,7 @@ extern crate rustc_serialize;
 
 pub mod container;
 pub mod stats;
+pub mod info;
 
 use std::io::{self, Read, Write};
 use unix_socket::UnixStream;
@@ -10,6 +11,7 @@ use rustc_serialize::json;
 
 use container::Container;
 use stats::Stats;
+use info::Info;
 
 pub struct Docker;
 
@@ -29,6 +31,14 @@ impl Docker {
         let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
         let response = try!(self.read(&request));
         let decoded_body: Stats = json::decode(&response).unwrap();
+        return Ok(decoded_body);
+    }
+
+    pub fn get_info(&self) -> io::Result<Info> {
+        let request = "GET /info HTTP/1.1\r\n\r\n";
+        let response = try!(self.read(request));
+        println!("{}", response);
+        let decoded_body: Info = json::decode(&response).unwrap();
         return Ok(decoded_body);
     }
 
