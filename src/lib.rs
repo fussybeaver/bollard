@@ -37,7 +37,6 @@ impl Docker {
     pub fn get_info(&self) -> io::Result<Info> {
         let request = "GET /info HTTP/1.1\r\n\r\n";
         let response = try!(self.read(request));
-        println!("{}", response);
         let decoded_body: Info = json::decode(&response).unwrap();
         return Ok(decoded_body);
     }
