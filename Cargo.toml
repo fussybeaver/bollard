@@ -6,10 +6,20 @@ authors = ["Graham Lee <ghmlee@ghmlee.com>"]
 license = "Apache-2.0"
 homepage = "https://github.com/ghmlee/rust-docker"
 repository = "https://github.com/ghmlee/rust-docker.git"
-documentation = "https://github.com/ghmlee/rust-docker"
+documentation = "https://ghmlee.github.io/rust-docker/doc/docker"
 readme = "README.md"
-keywords = ["docker", "client"]
+keywords = ["docker"]
+
+[lib]
+name = "docker"
+path = "src/lib.rs"
 
 [dependencies]
 unix_socket = "0.2.3"
 rustc-serialize = "0.3.10"
+
+[[bin]]
+name = "docker"
+test = false
+doc = false
+path = "src/main.rs"

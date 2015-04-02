@@ -1,3 +1,5 @@
+//! Docker
+#![doc(html_root_url="https://ghmlee.github.io/rust-docker/doc")]
 extern crate unix_socket;
 extern crate rustc_serialize;
 
