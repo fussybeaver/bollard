@@ -33,83 +33,83 @@ pub struct memory_stats {
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct stats {
-    total_pgmajfault: f64,
-    cache: f64,
-    mapped_file: f64,
-    total_inactive_file: f64,
-    pgpgout: f64,
-    rss: f64,
-    total_mapped_file: f64,
-    writeback: f64,
-    unevictable: f64,
-    pgpgin: f64,
-    total_unevictable: f64,
-    pgmajfault: f64,
-    total_rss: f64,
-    total_rss_huge: f64,
-    total_writeback: f64,
-    total_inactive_anon: f64,
-    rss_huge: f64,
-    hierarchical_memory_limit: f64,
-    hierarchical_memsw_limit: f64,
-    total_pgfault: f64,
-    total_active_file: f64,
-    active_anon: f64,
-    total_active_anon: f64,
-    total_pgpgout: f64,
-    total_cache: f64,
-    inactive_anon: f64,
-    active_file: f64,
-    pgfault: f64,
-    inactive_file: f64,
-    total_pgpgin: f64,
-    swap: f64,
-    total_swap: f64
+    pub total_pgmajfault: f64,
+    pub cache: f64,
+    pub mapped_file: f64,
+    pub total_inactive_file: f64,
+    pub pgpgout: f64,
+    pub rss: f64,
+    pub total_mapped_file: f64,
+    pub writeback: f64,
+    pub unevictable: f64,
+    pub pgpgin: f64,
+    pub total_unevictable: f64,
+    pub pgmajfault: f64,
+    pub total_rss: f64,
+    pub total_rss_huge: f64,
+    pub total_writeback: f64,
+    pub total_inactive_anon: f64,
+    pub rss_huge: f64,
+    pub hierarchical_memory_limit: f64,
+    pub hierarchical_memsw_limit: f64,
+    pub total_pgfault: f64,
+    pub total_active_file: f64,
+    pub active_anon: f64,
+    pub total_active_anon: f64,
+    pub total_pgpgout: f64,
+    pub total_cache: f64,
+    pub inactive_anon: f64,
+    pub active_file: f64,
+    pub pgfault: f64,
+    pub inactive_file: f64,
+    pub total_pgpgin: f64,
+    pub swap: f64,
+    pub total_swap: f64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct cpu_stats {
-    cpu_usage: cpu_usage,
-    system_cpu_usage: f64,
-    throttling_data: throttling_data
+    pub cpu_usage: cpu_usage,
+    pub system_cpu_usage: f64,
+    pub throttling_data: throttling_data
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct cpu_usage {
-    percpu_usage: Vec<f64>,
-    usage_in_usermode: f64,
-    total_usage: f64,
-    usage_in_kernelmode: f64
+    pub percpu_usage: Vec<f64>,
+    pub usage_in_usermode: f64,
+    pub total_usage: f64,
+    pub usage_in_kernelmode: f64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct throttling_data {
-    periods: f64,
-    throttled_periods: f64,
-    throttled_time: f64
+    pub periods: f64,
+    pub throttled_periods: f64,
+    pub throttled_time: f64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct blkio_stats {
-    io_service_bytes_recursive: Vec<blkio_stat>,
-    io_serviced_recursive: Vec<blkio_stat>,
-    io_queue_recursive: Vec<blkio_stat>,
-    io_service_time_recursive: Vec<blkio_stat>,
-    io_wait_time_recursive: Vec<blkio_stat>,
-    io_merged_recursive: Vec<blkio_stat>,
-    io_time_recursive: Vec<blkio_stat>,
-    sectors_recursive: Vec<blkio_stat>
+    pub io_service_bytes_recursive: Vec<blkio_stat>,
+    pub io_serviced_recursive: Vec<blkio_stat>,
+    pub io_queue_recursive: Vec<blkio_stat>,
+    pub io_service_time_recursive: Vec<blkio_stat>,
+    pub io_wait_time_recursive: Vec<blkio_stat>,
+    pub io_merged_recursive: Vec<blkio_stat>,
+    pub io_time_recursive: Vec<blkio_stat>,
+    pub sectors_recursive: Vec<blkio_stat>
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct blkio_stat {
-    major: f64,
-    minor: f64,
-    op: String,
-    value: f64
+    pub major: f64,
+    pub minor: f64,
+    pub op: String,
+    pub value: f64
 }

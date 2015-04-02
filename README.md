@@ -1,4 +1,6 @@
-# Docker for Rust [![Build Status](https://travis-ci.org/ghmlee/rust-docker.svg)](https://travis-ci.org/ghmlee/rust-docker)
+# Docker
+
+[![Build Status](https://travis-ci.org/ghmlee/rust-docker.svg)](https://travis-ci.org/ghmlee/rust-docker)
 
 ## Docker
 ```rust
