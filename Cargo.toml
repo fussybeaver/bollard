@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 unix_socket = "0.3.0"
-rustc-serialize = "0.3.11"
+rustc-serialize = "0.3.12"
 
 [[bin]]
 name = "docker"
