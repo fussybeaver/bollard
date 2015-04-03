@@ -13,7 +13,7 @@ struct Data {
     Image: String,
     Status: String,
     Command: String,
-    Created: f64,
+    Created: i64,
     Names: Vec<String>,
     Ports: Vec<Port>,
     Stats: Stats

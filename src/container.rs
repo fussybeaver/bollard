@@ -5,7 +5,7 @@ pub struct Container {
     pub Image: String,
     pub Status: String,
     pub Command: String,
-    pub Created: f64,
+    pub Created: i64,
     pub Names: Vec<String>,
     pub Ports: Vec<Port>
 }
@@ -14,8 +14,8 @@ pub struct Container {
 #[allow(non_snake_case)]
 pub struct Port {
     pub IP: Option<String>,
-    pub PrivatePort: f64,
-    pub PublicPort: f64,
+    pub PrivatePort: i64,
+    pub PublicPort: i64,
     pub Type: String
 }
 
