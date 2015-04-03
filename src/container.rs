@@ -15,7 +15,7 @@ pub struct Container {
 pub struct Port {
     pub IP: Option<String>,
     pub PrivatePort: i64,
-    pub PublicPort: i64,
+    pub PublicPort: Option<i64>,
     pub Type: String
 }
 
