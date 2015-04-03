@@ -22,7 +22,7 @@ pub struct network {
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
-pub struct memory_stats {    
+pub struct memory_stats {
     pub max_usage: i64,
     pub usage: i64,
     pub failcnt: i64,
@@ -50,8 +50,8 @@ pub struct stats {
     pub total_writeback: i64,
     pub total_inactive_anon: i64,
     pub rss_huge: i64,
-    pub hierarchical_memory_limit: i64,
-    pub hierarchical_memsw_limit: i64,
+    pub hierarchical_memory_limit: f64,
+    pub hierarchical_memsw_limit: f64,
     pub total_pgfault: i64,
     pub total_active_file: i64,
     pub active_anon: i64,
