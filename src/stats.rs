@@ -10,86 +10,86 @@ pub struct Stats {
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct network {
-    pub rx_dropped: i64,
-    pub rx_bytes: i64,
-    pub rx_errors: i64,
-    pub tx_packets: i64,
-    pub tx_dropped: i64,
-    pub rx_packets: i64,
-    pub tx_errors: i64,
-    pub tx_bytes: i64
+    pub rx_dropped: u64,
+    pub rx_bytes: u64,
+    pub rx_errors: u64,
+    pub tx_packets: u64,
+    pub tx_dropped: u64,
+    pub rx_packets: u64,
+    pub tx_errors: u64,
+    pub tx_bytes: u64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct memory_stats {
-    pub max_usage: i64,
-    pub usage: i64,
-    pub failcnt: i64,
-    pub limit: i64,
+    pub max_usage: u64,
+    pub usage: u64,
+    pub failcnt: u64,
+    pub limit: u64,
     pub stats: stats
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct stats {
-    pub total_pgmajfault: i64,
-    pub cache: i64,
-    pub mapped_file: i64,
-    pub total_inactive_file: i64,
-    pub pgpgout: i64,
-    pub rss: i64,
-    pub total_mapped_file: i64,
-    pub writeback: i64,
-    pub unevictable: i64,
-    pub pgpgin: i64,
-    pub total_unevictable: i64,
-    pub pgmajfault: i64,
-    pub total_rss: i64,
-    pub total_rss_huge: i64,
-    pub total_writeback: i64,
-    pub total_inactive_anon: i64,
-    pub rss_huge: i64,
+    pub total_pgmajfault: u64,
+    pub cache: u64,
+    pub mapped_file: u64,
+    pub total_inactive_file: u64,
+    pub pgpgout: u64,
+    pub rss: u64,
+    pub total_mapped_file: u64,
+    pub writeback: u64,
+    pub unevictable: u64,
+    pub pgpgin: u64,
+    pub total_unevictable: u64,
+    pub pgmajfault: u64,
+    pub total_rss: u64,
+    pub total_rss_huge: u64,
+    pub total_writeback: u64,
+    pub total_inactive_anon: u64,
+    pub rss_huge: u64,
     pub hierarchical_memory_limit: u64,
     pub hierarchical_memsw_limit: u64,
-    pub total_pgfault: i64,
-    pub total_active_file: i64,
-    pub active_anon: i64,
-    pub total_active_anon: i64,
-    pub total_pgpgout: i64,
-    pub total_cache: i64,
-    pub inactive_anon: i64,
-    pub active_file: i64,
-    pub pgfault: i64,
-    pub inactive_file: i64,
-    pub total_pgpgin: i64,
-    pub swap: i64,
-    pub total_swap: i64
+    pub total_pgfault: u64,
+    pub total_active_file: u64,
+    pub active_anon: u64,
+    pub total_active_anon: u64,
+    pub total_pgpgout: u64,
+    pub total_cache: u64,
+    pub inactive_anon: u64,
+    pub active_file: u64,
+    pub pgfault: u64,
+    pub inactive_file: u64,
+    pub total_pgpgin: u64,
+    pub swap: u64,
+    pub total_swap: u64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct cpu_stats {
     pub cpu_usage: cpu_usage,
-    pub system_cpu_usage: i64,
+    pub system_cpu_usage: u64,
     pub throttling_data: throttling_data
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct cpu_usage {
-    pub percpu_usage: Vec<i64>,
-    pub usage_in_usermode: i64,
-    pub total_usage: i64,
-    pub usage_in_kernelmode: i64
+    pub percpu_usage: Vec<u64>,
+    pub usage_in_usermode: u64,
+    pub total_usage: u64,
+    pub usage_in_kernelmode: u64
 }
 
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct throttling_data {
-    pub periods: i64,
-    pub throttled_periods: i64,
-    pub throttled_time: i64
+    pub periods: u64,
+    pub throttled_periods: u64,
+    pub throttled_time: u64
 }
 
 #[allow(non_camel_case_types)]
@@ -108,8 +108,8 @@ pub struct blkio_stats {
 #[allow(non_camel_case_types)]
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct blkio_stat {
-    pub major: i64,
-    pub minor: i64,
+    pub major: u64,
+    pub minor: u64,
     pub op: String,
-    pub value: i64
+    pub value: u64
 }

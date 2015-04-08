@@ -5,17 +5,19 @@ pub struct Container {
     pub Image: String,
     pub Status: String,
     pub Command: String,
-    pub Created: i64,
+    pub Created: u64,
     pub Names: Vec<String>,
-    pub Ports: Vec<Port>
+    pub Ports: Vec<Port>,
+    pub SizeRw: u64,
+    pub SizeRootFs: u64
 }
 
 #[derive(RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Port {
     pub IP: Option<String>,
-    pub PrivatePort: i64,
-    pub PublicPort: Option<i64>,
+    pub PrivatePort: u64,
+    pub PublicPort: Option<u64>,
     pub Type: String
 }
 

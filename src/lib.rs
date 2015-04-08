@@ -22,9 +22,13 @@ impl Docker {
         return Docker;
     }
 
-    pub fn get_containers(&self) -> io::Result<Vec<Container>> {
-        let request = "GET /containers/json HTTP/1.1\r\n\r\n";
-        let response = try!(self.read(request));
+    pub fn get_containers(&self, all: bool) -> io::Result<Vec<Container>> {
+        let a = match all {
+            true => "1",
+            false => "0"
+        };
+        let request = format!("GET /containers/json?all={}&size=1 HTTP/1.1\r\n\r\n", a);
+        let response = try!(self.read(&request));
         let decoded_body: Vec<Container> = json::decode(&response).unwrap();
         return Ok(decoded_body);
     }

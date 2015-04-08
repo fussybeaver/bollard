@@ -13,7 +13,7 @@ struct Data {
     Image: String,
     Status: String,
     Command: String,
-    Created: i64,
+    Created: u64,
     Names: Vec<String>,
     Ports: Vec<Port>,
     Stats: Stats
@@ -21,7 +21,7 @@ struct Data {
 
 fn main() {
     let docker = Docker::new();
-    let containers = match docker.get_containers() {
+    let containers = match docker.get_containers(true) {
         Ok(containers) => containers,
         Err(e) => { panic!("{}", e); }
     };
