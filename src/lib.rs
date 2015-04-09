@@ -32,9 +32,9 @@ impl Docker {
         let response = try!(self.get_response(&raw));
         let body: Vec<Container> = match json::decode(&response) {
             Ok(body) => body,
-            Err(e) => {
+            Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         format!("Container is invalid with a response.\n{}", e));
+                                         "Container is invalid with a response.\n{}");
                 return Err(err);
             }
         };
@@ -47,9 +47,9 @@ impl Docker {
         let response = try!(self.get_response(&raw));
         let body: Stats = match json::decode(&response) {
             Ok(body) => body,
-            Err(e) => {
+            Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         format!("Stats is invalid with a response.\n{}", e));
+                                         "Stats is invalid with a response.");
                 return Err(err);
             }
         };
@@ -62,9 +62,9 @@ impl Docker {
         let response = try!(self.get_response(&raw));
         let body: Info = match json::decode(&response) {
             Ok(body) => body,
-            Err(e) => {
+            Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         format!("Info is invalid with a response.\n{}", e));
+                                         "Info is invalid with a response.");
                 return Err(err);
             }
         };
@@ -116,7 +116,7 @@ impl Docker {
 
         if http_response.len() < 2 {
             let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                     format!("Docker returns an invalid response.\n{}", raw));
+                                     "Docker returns an invalid response.");
             return Err(err);
         }
         //let http_header = http_response[0];
