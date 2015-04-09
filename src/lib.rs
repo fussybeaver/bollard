@@ -6,6 +6,7 @@ extern crate rustc_serialize;
 pub mod container;
 pub mod stats;
 pub mod info;
+pub mod image;
 mod test;
 
 use std::io::{self, Read, Write};
@@ -14,6 +15,7 @@ use rustc_serialize::json;
 use container::Container;
 use stats::Stats;
 use info::Info;
+use image::Image;
 
 pub struct Docker;
 
@@ -34,7 +36,7 @@ impl Docker {
             Ok(body) => body,
             Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         "Container is invalid with a response.\n{}");
+                                         "Container struct is invalid with a response.\n{}");
                 return Err(err);
             }
         };
@@ -49,7 +51,26 @@ impl Docker {
             Ok(body) => body,
             Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         "Stats is invalid with a response.");
+                                         "Stats struct is invalid with a response.");
+                return Err(err);
+            }
+        };
+        return Ok(body);
+    }
+
+    pub fn get_images(&self, all: bool) -> io::Result<Vec<Image>> {
+        let a = match all {
+            true => "1",
+            false => "0"
+        };
+        let request = format!("GET /images/json?all={} HTTP/1.1\r\n\r\n", a);
+        let raw = try!(self.read(&request));
+        let response = try!(self.get_response(&raw));
+        let body: Vec<Image> = match json::decode(&response) {
+            Ok(body) => body,
+            Err(_) => {
+                let err = io::Error::new(io::ErrorKind::InvalidInput,
+                                         "Image struct is invalid with a response.\n{}");
                 return Err(err);
             }
         };
@@ -64,7 +85,7 @@ impl Docker {
             Ok(body) => body,
             Err(_) => {
                 let err = io::Error::new(io::ErrorKind::InvalidInput,
-                                         "Info is invalid with a response.");
+                                         "Info struct is invalid with a response.");
                 return Err(err);
             }
         };
@@ -181,6 +202,20 @@ fn get_info() {
         Err(_) => { assert!(false); return; }
     };
     let _: Info = match json::decode(&response) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+fn get_images() {
+    let docker = Docker::new();
+    let raw = test::get_images_response();
+    let response = match docker.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    let _: Vec<Image> = match json::decode(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
