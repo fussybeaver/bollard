@@ -10,16 +10,6 @@ documentation = "https://ghmlee.github.io/rust-docker/doc/docker"
 readme = "README.md"
 keywords = ["docker"]
 
-[lib]
-name = "docker"
-path = "src/lib.rs"
-
 [dependencies]
 unix_socket = "0.3.0"
 rustc-serialize = "0.3.12"
-
-[[bin]]
-name = "docker"
-test = false
-doc = false
-path = "src/main.rs"

@@ -6,11 +6,11 @@ extern crate rustc_serialize;
 pub mod container;
 pub mod stats;
 pub mod info;
+mod test;
 
 use std::io::{self, Read, Write};
 use unix_socket::UnixStream;
 use rustc_serialize::json;
-
 use container::Container;
 use stats::Stats;
 use info::Info;
@@ -28,44 +28,97 @@ impl Docker {
             false => "0"
         };
         let request = format!("GET /containers/json?all={}&size=1 HTTP/1.1\r\n\r\n", a);
-        let response = try!(self.read(&request));
-        let decoded_body: Vec<Container> = json::decode(&response).unwrap();
-        return Ok(decoded_body);
+        let raw = try!(self.read(&request));
+        let response = try!(self.get_response(&raw));
+        let body: Vec<Container> = match json::decode(&response) {
+            Ok(body) => body,
+            Err(e) => {
+                let err = io::Error::new(io::ErrorKind::InvalidInput,
+                                         format!("Container is invalid with a response.\n{}", e));
+                return Err(err);
+            }
+        };
+        return Ok(body);
     }
 
     pub fn get_stats(&self, container: &Container) -> io::Result<Stats> {
         let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
-        let response = try!(self.read(&request));
-        let decoded_body: Stats = json::decode(&response).unwrap();
-        return Ok(decoded_body);
+        let raw = try!(self.read(&request));
+        let response = try!(self.get_response(&raw));
+        let body: Stats = match json::decode(&response) {
+            Ok(body) => body,
+            Err(e) => {
+                let err = io::Error::new(io::ErrorKind::InvalidInput,
+                                         format!("Stats is invalid with a response.\n{}", e));
+                return Err(err);
+            }
+        };
+        return Ok(body);
     }
 
     pub fn get_info(&self) -> io::Result<Info> {
         let request = "GET /info HTTP/1.1\r\n\r\n";
-        let response = try!(self.read(request));
-        let decoded_body: Info = json::decode(&response).unwrap();
-        return Ok(decoded_body);
+        let raw = try!(self.read(&request));
+        let response = try!(self.get_response(&raw));
+        let body: Info = match json::decode(&response) {
+            Ok(body) => body,
+            Err(e) => {
+                let err = io::Error::new(io::ErrorKind::InvalidInput,
+                                         format!("Info is invalid with a response.\n{}", e));
+                return Err(err);
+            }
+        };
+        return Ok(body);
     }
 
     fn read(&self, request: &str) -> io::Result<String> {
-        let mut unix_stream = try!(UnixStream::connect("/var/run/docker.sock"));
-        try!(unix_stream.write_all(request.as_bytes()));
+        let mut stream = match UnixStream::connect("/var/run/docker.sock") {
+            Ok(stream) => stream,
+            Err(_) => {
+                let err = io::Error::new(io::ErrorKind::NotConnected,
+                                         "The stream is not connected.");
+                return Err(err);
+            }
+        };
+
+        match stream.write_all(request.as_bytes()) {
+            Ok(_) => {}
+            Err(_) => {
+                let err = io::Error::new(io::ErrorKind::ConnectionAborted,
+                                         "A write operation is failed to the stream.");
+                return Err(err);
+            }
+        };
 
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         let mut raw = String::new();
         loop {
-            let len = try!(unix_stream.read(&mut buffer));
+            let len = match stream.read(&mut buffer) {
+                Ok(len) => len,
+                Err(_) => {
+                    let err = io::Error::new(io::ErrorKind::ConnectionAborted,
+                                             "A read operation is failed from the stream.");
+                    return Err(err);
+                }
+            };
             match std::str::from_utf8(&buffer[0 .. len]) {
                 Ok(buf) => raw.push_str(buf),
                 Err(_) => {} // It is required to handle this error.
             }
-            
             if len < BUFFER_SIZE { break; }
         }
-        
-        let http_response: Vec<&str> = raw[..].split("\r\n\r\n").collect();
-        
+        return Ok(raw);
+    }
+
+    fn get_response(&self, raw: &str) -> io::Result<String> {
+        let http_response: Vec<&str> = raw.split("\r\n\r\n").collect();
+
+        if http_response.len() < 2 {
+            let err = io::Error::new(io::ErrorKind::InvalidInput,
+                                     format!("Docker returns an invalid response.\n{}", raw));
+            return Err(err);
+        }
         //let http_header = http_response[0];
         let http_body = http_response[1];
         let chunked_content_body: Vec<&str> = http_body[..].split("\r\n").collect();
@@ -87,6 +140,48 @@ impl Docker {
 }
 
 #[test]
-fn it_works() {
-    Docker::new();
+fn new() {
+    let _ = Docker::new();
+}
+
+#[test]
+fn get_containers() {
+    let docker = Docker::new();
+    let raw = test::get_containers_response();
+    let response = match docker.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    let _: Vec<Container> = match json::decode(&response) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+fn get_stats() {
+    let docker = Docker::new();
+    let raw = test::get_stats_response();
+    let response = match docker.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    let _: Stats = match json::decode(&response) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+fn get_info() {
+    let docker = Docker::new();
+    let raw = test::get_info_response();
+    let response = match docker.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    let _: Info = match json::decode(&response) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
 }
