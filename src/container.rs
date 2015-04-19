@@ -21,6 +21,23 @@ pub struct Port {
     pub Type: String
 }
 
+impl Clone for Container {
+    fn clone(&self) -> Container {
+        let container = Container {
+            Id: self.Id.clone(),
+            Image: self.Image.clone(),
+            Status: self.Status.clone(),
+            Command: self.Command.clone(),
+            Created: self.Created.clone(),
+            Names: self.Names.clone(),
+            Ports: self.Ports.clone(),
+            SizeRw: self.SizeRw,
+            SizeRootFs: self.SizeRootFs
+        };
+        return container;
+    }
+}
+
 impl Clone for Port {
     fn clone(&self) -> Port {
         let port = Port {
