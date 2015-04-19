@@ -22,7 +22,7 @@ pub struct Port {
 }
 
 impl Clone for Container {
-    fn clone(&self) -> Container {
+    fn clone(&self) -> Self {
         let container = Container {
             Id: self.Id.clone(),
             Image: self.Image.clone(),
@@ -39,7 +39,7 @@ impl Clone for Container {
 }
 
 impl Clone for Port {
-    fn clone(&self) -> Port {
+    fn clone(&self) -> Self {
         let port = Port {
             IP: self.IP.clone(),
             PrivatePort: self.PrivatePort.clone(),
