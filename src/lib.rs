@@ -54,6 +54,12 @@ impl Docker {
     }
 
     pub fn get_stats(&self, container: &Container) -> Result<Stats> {
+        if container.Status.contains("Up") == false {
+            let err = Error::new(ErrorKind::InvalidInput,
+                                 "This container is already stopped.");
+            return Err(err);
+        }
+
         let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.unix_stream.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
