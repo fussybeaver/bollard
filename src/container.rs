@@ -1,3 +1,6 @@
+use std::fmt::Error;
+use std::fmt::{Display, Formatter};
+
 #[derive(RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Container {
@@ -35,6 +38,12 @@ impl Clone for Container {
             SizeRootFs: self.SizeRootFs
         };
         return container;
+    }
+}
+
+impl Display for Container {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        write!(f, "{}", self.Id)
     }
 }
 
