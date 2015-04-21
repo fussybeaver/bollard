@@ -11,5 +11,5 @@ readme = "README.md"
 keywords = ["docker"]
 
 [dependencies]
-unix_socket = "0.3.0"
+unix_socket = "0.3.1"
 rustc-serialize = "0.3.12"
