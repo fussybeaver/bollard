@@ -12,7 +12,7 @@ impl Http {
 
         if http_response.len() < 2 {
             let err = Error::new(ErrorKind::InvalidInput,
-                                     "Docker returns an invalid response.");
+                                 "Docker returns an invalid response.");
             return Err(err);
         }
         //let http_header = http_response[0];
