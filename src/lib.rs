@@ -27,8 +27,14 @@ pub struct Docker {
 
 impl Docker {
     pub fn new() -> Docker {
+        let addr = "unix:///var/run/docker.sock";
+        let components: Vec<&str> = addr.split("://").collect();
+        if components.len() != 2 { /* error*/ }
+        let _ = components[0];
+        let path = components[1];
+
         let docker = Docker {
-            unix_stream: UnixStream::connect("/var/run/docker.sock"),
+            unix_stream: UnixStream::connect(&path),
             http: Http::new()
         };
         return docker;
