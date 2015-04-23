@@ -17,7 +17,10 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = Docker::connect("unix:///var/run/docker.sock");
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
 }
 ```
 
@@ -35,7 +38,10 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = Docker::connect("unix:///var/run/docker.sock");
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
 
     let containers = match docker.get_containers(false) {
         Ok(containers) => containers,
@@ -52,7 +58,10 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = Docker::connect("unix:///var/run/docker.sock");
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
 
     let containers = match docker.get_containers(false) {
         Ok(containers) => containers,
@@ -74,7 +83,10 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = Docker::connect("unix:///var/run/docker.sock");
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
 
     let images = match docker.get_images(false) {
         Ok(images) => images,
@@ -92,7 +104,10 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = Docker::connect("unix:///var/run/docker.sock");
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
 
     let info = match docker.get_info() {
         Ok(info) => info,
@@ -118,7 +133,10 @@ fn main() {
     let cert = Path::new("~/.boot2docker/certs/boot2docker-vm/cert.pem");
     let ca = Path::new("~/.boot2docker/certs/boot2docker-vm/ca.pem");
 
-    let mut docker = Docker::connect("tcp://192.168.59.103:2376");
+    let mut docker = match Docker::connect("tcp://192.168.59.103:2376") {
+    	Ok(docker) => docker,
+	Err(e) => { panic!("{}", e); }
+    };
     docker.set_tls(true);
     docker.set_private_key_file(&key).unwrap();
     docker.set_certificate_file(&cert).unwrap();
