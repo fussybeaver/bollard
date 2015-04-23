@@ -16,7 +16,9 @@ extern crate docker;
 
 use docker::Docker;
 
-let docker = Docker::new();
+fn main() {
+    let docker = Docker::connect("unix:///var/run/docker.sock");
+}
 ```
 
 ## Debug
@@ -32,12 +34,14 @@ extern crate docker;
 
 use docker::Docker;
 
-let docker = Docker::new();
+fn main() {
+    let docker = Docker::connect("unix:///var/run/docker.sock");
 
-let containers = match docker.get_containers(false) {
-    Ok(containers) => containers,
-    Err(e) => { panic!("{}", e); }
-};
+    let containers = match docker.get_containers(false) {
+        Ok(containers) => containers,
+        Err(e) => { panic!("{}", e); }
+    };
+}
 ```
 
 ### Stats
@@ -47,17 +51,19 @@ extern crate docker;
 
 use docker::Docker;
 
-let docker = Docker::new();
+fn main() {
+    let docker = Docker::connect("unix:///var/run/docker.sock");
 
-let containers = match docker.get_containers(false) {
-    Ok(containers) => containers,
-    Err(e) => { panic!("{}", e); }
-};
+    let containers = match docker.get_containers(false) {
+        Ok(containers) => containers,
+        Err(e) => { panic!("{}", e); }
+    };
 
-let stats = match docker.get_stats(&containers[0]) {
-    Ok(stats) => stats,
-    Err(e) => { panic!("{}", e); }
-};
+    let stats = match docker.get_stats(&containers[0]) {
+        Ok(stats) => stats,
+        Err(e) => { panic!("{}", e); }
+    };
+}
 ```
 
 ### Images
@@ -67,12 +73,14 @@ extern crate docker;
 
 use docker::Docker;
 
-let docker = Docker::new();
+fn main() {
+    let docker = Docker::connect("unix:///var/run/docker.sock");
 
-let images = match docker.get_images(false) {
-    Ok(images) => images,
-    Err(e) => { panic!({}, e); }
-};
+    let images = match docker.get_images(false) {
+        Ok(images) => images,
+        Err(e) => { panic!({}, e); }
+    };
+}
 
 ```
 
@@ -83,10 +91,37 @@ extern crate docker;
 
 use docker::Docker;
 
-let docker = Docker::new();
+fn main() {
+    let docker = Docker::connect("unix:///var/run/docker.sock");
 
-let info = match docker.get_info() {
-    Ok(info) => info,
-    Err(e) => { panic!("{}", e); }
-};
+    let info = match docker.get_info() {
+        Ok(info) => info,
+        Err(e) => { panic!("{}", e); }
+    };
+}
+```
+
+## Boot2Docker
+
+By default, `boot2docker` runs `docker` with TLS enabled. It auto-generates certificates and stores them in `/home/docker/.docker` inside the VM. The `boot2docker` up command will copy them to `~/.boot2docker/certs` on the host machine once the VM has started, and output the correct values for the `DOCKER_CERT_PATH` and `DOCKER_TLS_VERIFY` environment variables.
+
+### Example
+
+```rust
+extern crate docker;
+
+use docker::Docker;
+use std::path::Path;
+
+fn main() {
+    let key = Path::new("~/.boot2docker/certs/boot2docker-vm/key.pem");
+    let cert = Path::new("~/.boot2docker/certs/boot2docker-vm/cert.pem");
+    let pem = Path::new("~/.boot2docker/certs/boot2docker-vm/pem.pem");
+
+    let mut docker = Docker::connect("tcp://192.168.59.103:2376");
+    docker.set_tls(true);
+    docker.set_private_key_file(&key).unwrap();
+    docker.set_certificate_file(&cert).unwrap();
+    docker.set_ca_file(&ca).unwrap();
+}
 ```

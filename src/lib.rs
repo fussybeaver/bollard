@@ -14,6 +14,7 @@ pub mod info;
 pub mod image;
 
 use std::io::{Result, Error, ErrorKind};
+use std::path::Path;
 use rustc_serialize::json;
 use tcp::TcpStream;
 use unix::UnixStream;
@@ -27,7 +28,10 @@ pub struct Docker {
     protocol: Protocol,
     tls: bool,
     addr: String,
-    http: Http
+    http: Http,
+    key_path: Option<String>,
+    cert_path: Option<String>,
+    ca_path: Option<String>
 }
 
 enum Protocol {
@@ -61,21 +65,53 @@ impl Docker {
             protocol: protocol,
             tls: false,
             addr: path.to_string(),
-            http: Http::new()
+            http: Http::new(),
+            key_path: None,
+            cert_path: None,
+            ca_path: None
         };
         return Ok(docker);
     }
 
-    /*pub fn connect_with_tls(addr: &str) -> Result<Docker> {
-        let docker = try!(Docker::connect(addr));
-        let tls_docker = Docker {
-            protocol: docker.protocol,
-            tls: true,
-            addr: docker.addr.clone(),
-            http: Http::new()
+    pub fn set_tls(&mut self, tls: bool) {
+        self.tls = tls;
+    }
+
+    pub fn set_private_key_file(&mut self, path: &Path) -> Result<()> {
+        self.key_path = match path.to_str() {
+            Some(v) => Some(v.to_string()),
+            None => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "The path is invalid.");
+                return Err(err);
+            }
         };
-        return Ok(tls_docker);
-    }*/
+        return Ok(());
+    }
+
+    pub fn set_certificate_file(&mut self, path: &Path) -> Result<()> {
+        self.cert_path = match path.to_str() {
+            Some(v) => Some(v.to_string()),
+            None => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "The path is invalid.");
+                return Err(err);
+            }
+        };
+        return Ok(());
+    }
+
+    pub fn set_ca_file(&mut self, path: &Path) -> Result<()> {
+        self.ca_path = match path.to_str() {
+            Some(v) => Some(v.to_string()),
+            None => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "The path is invalid.");
+                return Err(err);
+            }
+        };
+        return Ok(());
+    }
 
     pub fn get_containers(&self, all: bool) -> Result<Vec<Container>> {
         let a = match all {
@@ -158,9 +194,37 @@ impl Docker {
                 stream.read(buf)
             }
             Protocol::TCP => {
-                let stream = TcpStream::connect(&self.addr, self.tls);
-                stream.read(buf)
+                
+                match self.tls {
+                    false => {
+                        let stream = TcpStream::connect(&self.addr);
+                        stream.read(buf)
+                    }
+                    true => {
+                        if self.key_path == None ||
+                           self.cert_path == None ||
+                           self.ca_path == None {
+                            let err = Error::new(ErrorKind::InvalidInput,
+                                                 "key, cert, CA are required on TLS.");
+                            return Err(err);
+                        }
+
+                        let key_path = self.key_path.clone().unwrap();
+                        let cert_path = self.cert_path.clone().unwrap();
+                        let ca_path = self.ca_path.clone().unwrap();
+
+                        let mut stream = TcpStream::connect(&self.addr);
+
+                        stream.set_tls(self.tls);
+                        stream.set_private_key_file(&key_path);
+                        stream.set_certificate_file(&cert_path);
+                        stream.set_ca_file(&ca_path);
+
+                        stream.read(buf)
+                    }
+                }
             }
+            
         };
     }
 }
