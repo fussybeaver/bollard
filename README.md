@@ -8,7 +8,7 @@ This is a Docker Remote API binding in Rust. Documentation is available [here](h
 
 ```
 [dependencies]
-docker = "0.0.20"
+docker = "0.0.21"
 ```
 
 ```rust
@@ -116,7 +116,7 @@ use std::path::Path;
 fn main() {
     let key = Path::new("~/.boot2docker/certs/boot2docker-vm/key.pem");
     let cert = Path::new("~/.boot2docker/certs/boot2docker-vm/cert.pem");
-    let pem = Path::new("~/.boot2docker/certs/boot2docker-vm/pem.pem");
+    let ca = Path::new("~/.boot2docker/certs/boot2docker-vm/ca.pem");
 
     let mut docker = Docker::connect("tcp://192.168.59.103:2376");
     docker.set_tls(true);
