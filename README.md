@@ -19,7 +19,7 @@ use docker::Docker;
 fn main() {
     let docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
 }
 ```
@@ -40,7 +40,7 @@ use docker::Docker;
 fn main() {
     let docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
 
     let containers = match docker.get_containers(false) {
@@ -60,7 +60,7 @@ use docker::Docker;
 fn main() {
     let docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
 
     let containers = match docker.get_containers(false) {
@@ -85,7 +85,7 @@ use docker::Docker;
 fn main() {
     let docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
 
     let images = match docker.get_images(false) {
@@ -106,7 +106,7 @@ use docker::Docker;
 fn main() {
     let docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
 
     let info = match docker.get_info() {
@@ -135,7 +135,7 @@ fn main() {
 
     let mut docker = match Docker::connect("tcp://192.168.59.103:2376") {
     	Ok(docker) => docker,
-	Err(e) => { panic!("{}", e); }
+        Err(e) => { panic!("{}", e); }
     };
     docker.set_tls(true);
     docker.set_private_key_file(&key).unwrap();
