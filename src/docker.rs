@@ -251,14 +251,13 @@ impl Docker {
     fn read(&self, buf: &[u8]) -> Result<String> {
         return match self.protocol {
             Protocol::UNIX => {
-                let stream = UnixStream::connect(&self.addr);
+                let mut stream = try!(UnixStream::connect(&self.addr));
                 stream.read(buf)
             }
             Protocol::TCP => {
-                
                 match self.tls {
                     false => {
-                        let stream = TcpStream::connect(&self.addr);
+                        let mut stream = try!(TcpStream::connect(&self.addr));
                         stream.read(buf)
                     }
                     true => {
@@ -274,7 +273,7 @@ impl Docker {
                         let cert_path = self.cert_path.clone().unwrap();
                         let ca_path = self.ca_path.clone().unwrap();
 
-                        let mut stream = TcpStream::connect(&self.addr);
+                        let mut stream = try!(TcpStream::connect(&self.addr));
 
                         stream.set_tls(self.tls);
                         stream.set_private_key_file(&key_path);

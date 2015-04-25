@@ -5,23 +5,24 @@ use std::error::Error;
 use openssl;
 
 pub struct TcpStream {
-    addr: String,
     tls: bool,
     key_path: Option<String>,
     cert_path: Option<String>,
-    ca_path: Option<String>
+    ca_path: Option<String>,
+    stream: std::net::TcpStream
 }
 
 impl TcpStream {
-    pub fn connect(addr: &str) -> TcpStream {
+    pub fn connect(addr: &str) -> Result<TcpStream> {
+        let stream = try!(std::net::TcpStream::connect(addr));
         let tcp_stream = TcpStream {
-            addr: addr.to_string(),
             tls: false,
             key_path: None,
             cert_path: None,
-            ca_path: None
+            ca_path: None,
+            stream: stream
         };
-        return tcp_stream;
+        return Ok(tcp_stream);
     }
 
     pub fn set_tls(&mut self, tls: bool) {
@@ -40,20 +41,11 @@ impl TcpStream {
         self.ca_path = Some(path.to_string());
     }
 
-    pub fn read(&self, buf: &[u8]) -> Result<String> {
-        let mut stream = match std::net::TcpStream::connect(&*self.addr) {
-            Ok(stream) => stream,
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        };
-
+    pub fn read(&mut self, buf: &[u8]) -> Result<String> {
         let raw = match self.tls {
             false => {
-                let _ = stream.write(buf);
-                let raw = try!(self.read_from_stream(&mut stream));
+                let _ = self.stream.write(buf);
+                let raw = try!(self.read_from_stream(&mut self.stream.try_clone().unwrap()));
                 raw
             }
             true => {
@@ -101,7 +93,7 @@ impl TcpStream {
                     }
                 }
 
-                let mut ssl_stream = match openssl::ssl::SslStream::new(&context, stream) {
+                let mut ssl_stream = match openssl::ssl::SslStream::new(&context, self.stream.try_clone().unwrap()) {
                     Ok(stream) => stream,
                     Err(e) => {
                         let err = io::Error::new(ErrorKind::NotConnected,
@@ -111,7 +103,7 @@ impl TcpStream {
                 };
 
                 let _ = ssl_stream.write(&*buf);
-                let raw = try!(self.read_from_stream(&mut ssl_stream));
+                let raw = try!(self.read_from_stream(&mut ssl_stream.try_clone().unwrap()));
                 raw
             }
         };
@@ -123,7 +115,6 @@ impl TcpStream {
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         let mut raw = String::new();
         let mut is_shaked = false;
-
         loop {
             let len = match stream.read(&mut buffer) {
                 Ok(size) => size,
@@ -133,7 +124,6 @@ impl TcpStream {
                     return Err(err);
                 }
             };
-
             match std::str::from_utf8(&buffer[0 .. len]) {
                 Ok(buf) => raw.push_str(buf),
                 Err(e) => {

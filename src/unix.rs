@@ -4,28 +4,20 @@ use std::error::Error;
 use unix_socket;
 
 pub struct UnixStream {
-    addr: String
+    stream: unix_socket::UnixStream
 }
 
 impl UnixStream {
-    pub fn connect(addr: &str) -> UnixStream {
+    pub fn connect(addr: &str) -> Result<UnixStream> {
+        let stream = try!(unix_socket::UnixStream::connect(addr));
         let unix_stream = UnixStream {
-            addr: addr.to_string()
+            stream: stream
         };
-        return unix_stream;
+        return Ok(unix_stream);
     }
     
-    pub fn read(&self, buf: &[u8]) -> Result<String> {
-        let mut stream = match unix_socket::UnixStream::connect(&self.addr.clone()) {
-            Ok(stream) => stream,
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        };
-        
-        match stream.write_all(buf) {
+    pub fn read(&mut self, buf: &[u8]) -> Result<String> {
+        match self.stream.write_all(buf) {
             Ok(_) => {}
             Err(e) => {
                 let err = io::Error::new(ErrorKind::ConnectionAborted,
@@ -38,7 +30,7 @@ impl UnixStream {
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         let mut raw = String::new();
         loop {
-            let len = match stream.read(&mut buffer) {
+            let len = match self.stream.read(&mut buffer) {
                 Ok(len) => len,
                 Err(e) => {
                     let err = io::Error::new(ErrorKind::ConnectionAborted,
