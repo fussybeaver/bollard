@@ -16,29 +16,20 @@ impl TcpStream {
     pub fn connect(addr: &str) -> Result<TcpStream> {
         let stream = try!(std::net::TcpStream::connect(addr));
         let tcp_stream = TcpStream {
+            stream: stream ,
             tls: false,
             key_path: None,
             cert_path: None,
-            ca_path: None,
-            stream: stream
+            ca_path: None
         };
         return Ok(tcp_stream);
     }
 
-    pub fn set_tls(&mut self, tls: bool) {
-        self.tls = tls;
-    }
-
-    pub fn set_private_key_file(&mut self, path: &str) {
-        self.key_path = Some(path.to_string());
-    }
-
-    pub fn set_certificate_file(&mut self, path: &str) {
-        self.cert_path = Some(path.to_string());
-    }
-
-    pub fn set_ca_file(&mut self, path: &str) {
-        self.ca_path = Some(path.to_string());
+    pub fn set_tls(&mut self, key: &str, cert: &str, ca: &str) {
+        self.tls = true;
+        self.key_path = Some(key.to_string());
+        self.cert_path = Some(cert.to_string());
+        self.ca_path = Some(ca.to_string());
     }
 
     pub fn read(&mut self, buf: &[u8]) -> Result<String> {

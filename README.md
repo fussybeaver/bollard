@@ -137,9 +137,6 @@ fn main() {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
-    docker.set_tls(true);
-    docker.set_private_key_file(&key).unwrap();
-    docker.set_certificate_file(&cert).unwrap();
-    docker.set_ca_file(&ca).unwrap();
+    docker.set_tls(true, &key, &cert, &ca).unwrap();
 }
 ```

@@ -62,37 +62,26 @@ impl Docker {
         return Ok(docker);
     }
 
-    pub fn set_tls(&mut self, tls: bool) {
-        self.tls = tls;
-    }
-
-    pub fn set_private_key_file(&mut self, path: &Path) -> Result<()> {
-        self.key_path = match path.to_str() {
-            Some(v) => Some(v.to_string()),
+    pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
+        self.tls = true;
+        self.key_path = match key.to_str() {
+            Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          "The private key file path is invalid.");
                 return Err(err);
             }
         };
-        return Ok(());
-    }
-
-    pub fn set_certificate_file(&mut self, path: &Path) -> Result<()> {
-        self.cert_path = match path.to_str() {
-            Some(v) => Some(v.to_string()),
+        self.cert_path = match cert.to_str() {
+            Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          "The certificate file path is invalid.");
                 return Err(err);
             }
         };
-        return Ok(());
-    }
-
-    pub fn set_ca_file(&mut self, path: &Path) -> Result<()> {
-        self.ca_path = match path.to_str() {
-            Some(v) => Some(v.to_string()),
+        self.ca_path = match ca.to_str() {
+            Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          "The CA file path is invalid.");
@@ -274,12 +263,7 @@ impl Docker {
                         let ca_path = self.ca_path.clone().unwrap();
 
                         let mut stream = try!(TcpStream::connect(&self.addr));
-
-                        stream.set_tls(self.tls);
-                        stream.set_private_key_file(&key_path);
-                        stream.set_certificate_file(&cert_path);
-                        stream.set_ca_file(&ca_path);
-
+                        stream.set_tls(&key_path, &cert_path, &ca_path);
                         stream.read(buf)
                     }
                 }
