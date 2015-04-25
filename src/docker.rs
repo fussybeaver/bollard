@@ -10,6 +10,9 @@ use stats::Stats;
 use info::Info;
 use image::Image;
 
+#[cfg(test)]
+use test;
+
 pub struct Docker {
     protocol: Protocol,
     tls: bool,
@@ -287,6 +290,7 @@ impl Docker {
 }
 
 #[test]
+#[cfg(test)]
 fn get_containers() {
     let http = Http::new();
     let raw = test::get_containers_response();
@@ -305,6 +309,7 @@ fn get_containers() {
 }
 
 #[test]
+#[cfg(test)]
 fn get_stats() {
     let http = Http::new();
     let raw = test::get_stats_response();
@@ -323,6 +328,7 @@ fn get_stats() {
 }
 
 #[test]
+#[cfg(test)]
 fn get_info() {
     let http = Http::new();
     let raw = test::get_info_response();
@@ -341,6 +347,7 @@ fn get_info() {
 }
 
 #[test]
+#[cfg(test)]
 fn get_images() {
     let http = Http::new();
     let raw = test::get_images_response();
