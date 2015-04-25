@@ -121,7 +121,25 @@ impl Docker {
         let request = format!("GET /containers/json?all={}&size=1 HTTP/1.1\r\n\r\n", a);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
-        let body: Vec<Container> = match json::decode(&response) {
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let body: Vec<Container> = match json::decode(&response.body) {
             Ok(body) => body,
             Err(_) => {
                 let err = Error::new(ErrorKind::InvalidInput,
@@ -142,7 +160,25 @@ impl Docker {
         let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
-        let body: Stats = match json::decode(&response) {
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let body: Stats = match json::decode(&response.body) {
             Ok(body) => body,
             Err(_) => {
                 let err = Error::new(ErrorKind::InvalidInput,
@@ -161,7 +197,25 @@ impl Docker {
         let request = format!("GET /images/json?all={} HTTP/1.1\r\n\r\n", a);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
-        let body: Vec<Image> = match json::decode(&response) {
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let body: Vec<Image> = match json::decode(&response.body) {
             Ok(body) => body,
             Err(_) => {
                 let err = Error::new(ErrorKind::InvalidInput,
@@ -176,7 +230,25 @@ impl Docker {
         let request = "GET /info HTTP/1.1\r\n\r\n";
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
-        let body: Info = match json::decode(&response) {
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = Error::new(ErrorKind::InvalidInput,
+                                     "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let body: Info = match json::decode(&response.body) {
             Ok(body) => body,
             Err(_) => {
                 let err = Error::new(ErrorKind::InvalidInput,
@@ -237,7 +309,11 @@ fn get_containers() {
         Ok(response) => response,
         Err(_) => { assert!(false); return; }
     };
-    let _: Vec<Container> = match json::decode(&response) {
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: Vec<Container> = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -251,7 +327,11 @@ fn get_stats() {
         Ok(response) => response,
         Err(_) => { assert!(false); return; }
     };
-    let _: Stats = match json::decode(&response) {
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }    
+    let _: Stats = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -265,7 +345,11 @@ fn get_info() {
         Ok(response) => response,
         Err(_) => { assert!(false); return; }
     };
-    let _: Info = match json::decode(&response) {
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: Info = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -279,7 +363,11 @@ fn get_images() {
         Ok(response) => response,
         Err(_) => { assert!(false); return; }
     };
-    let _: Vec<Image> = match json::decode(&response) {
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: Vec<Image> = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
