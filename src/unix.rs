@@ -1,5 +1,6 @@
 use std;
-use std::io::{Read, Write, Result, Error, ErrorKind};
+use std::io::{self, Read, Write, Result, ErrorKind};
+use std::error::Error;
 use unix_socket;
 
 pub struct UnixStream {
@@ -17,18 +18,18 @@ impl UnixStream {
     pub fn read(&self, buf: &[u8]) -> Result<String> {
         let mut stream = match unix_socket::UnixStream::connect(&self.addr.clone()) {
             Ok(stream) => stream,
-            Err(_) => {
-                let err = Error::new(ErrorKind::NotConnected,
-                                     "The stream is not connected.");
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::NotConnected,
+                                         e.description());
                 return Err(err);
             }
         };
         
         match stream.write_all(buf) {
             Ok(_) => {}
-            Err(_) => {
-                let err = Error::new(ErrorKind::ConnectionAborted,
-                                     "A write operation is failed to the stream.");
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::ConnectionAborted,
+                                         e.description());
                 return Err(err);
             }
         };
@@ -39,17 +40,17 @@ impl UnixStream {
         loop {
             let len = match stream.read(&mut buffer) {
                 Ok(len) => len,
-                Err(_) => {
-                    let err = Error::new(ErrorKind::ConnectionAborted,
-                                         "A read operation is failed from the stream.");
+                Err(e) => {
+                    let err = io::Error::new(ErrorKind::ConnectionAborted,
+                                             e.description());
                     return Err(err);
                 }
             };
             match std::str::from_utf8(&buffer[0 .. len]) {
                 Ok(buf) => raw.push_str(buf),
-                Err(_) => {
-                    let err = Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns invalid utf-8 buffers.");
+                Err(e) => {
+                    let err = io::Error::new(ErrorKind::InvalidInput,
+                                             e.description());
                     return Err(err);
                 }
             }

@@ -1,6 +1,7 @@
 use std;
-use std::io::{Read, Write, Result, Error, ErrorKind};
+use std::io::{self, Read, Write, Result, ErrorKind};
 use std::path::Path;
+use std::error::Error;
 use openssl;
 
 pub struct TcpStream {
@@ -42,9 +43,9 @@ impl TcpStream {
     pub fn read(&self, buf: &[u8]) -> Result<String> {
         let mut stream = match std::net::TcpStream::connect(&*self.addr) {
             Ok(stream) => stream,
-            Err(_) => {
-                let err = Error::new(ErrorKind::NotConnected,
-                                     "TCP connection is not connected.");
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::NotConnected,
+                                         e.description());
                 return Err(err);
             }
         };
@@ -58,9 +59,9 @@ impl TcpStream {
             true => {
                 let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
                     Ok(context) => context,
-                    Err(_) => {
-                        let err = Error::new(ErrorKind::NotConnected,
-                                             "TCP connection is not connected.");
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::NotConnected,
+                                                 e.description());
                         return Err(err);
                     }
                 };
@@ -75,36 +76,36 @@ impl TcpStream {
 
                 match context.set_private_key_file(&key_path, openssl::x509::X509FileType::PEM) {
                     Ok(_) => {}
-                    Err(_) => {
-                        let err = Error::new(ErrorKind::InvalidInput,
-                                             "key file is invalid.");
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::InvalidInput,
+                                                 e.description());
                         return Err(err);
                     }
                 }
 
                 match context.set_certificate_file(&cert_path, openssl::x509::X509FileType::PEM) {
                     Ok(_) => {}
-                    Err(_) => {
-                        let err = Error::new(ErrorKind::NotConnected,
-                                             "cert file is invalid.");
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::NotConnected,
+                                                 e.description());
                         return Err(err);
                     }
                 }
 
                 match context.set_CA_file(&ca_path) {
                     Ok(_) => {}
-                    Err(_) => {
-                        let err = Error::new(ErrorKind::NotConnected,
-                                             "CA file is invalid.");
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::NotConnected,
+                                                 e.description());
                         return Err(err);
                     }
                 }
 
                 let mut ssl_stream = match openssl::ssl::SslStream::new(&context, stream) {
                     Ok(stream) => stream,
-                    Err(_) => {
-                        let err = Error::new(ErrorKind::NotConnected,
-                                             "TCP connection is not connected.");
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::NotConnected,
+                                                 e.description());
                         return Err(err);
                     }
                 };
@@ -126,18 +127,18 @@ impl TcpStream {
         loop {
             let len = match stream.read(&mut buffer) {
                 Ok(size) => size,
-                Err(_) => {
-                    let err = Error::new(ErrorKind::NotConnected,
-                                         "TCP connection is not connected.");
+                Err(e) => {
+                    let err = io::Error::new(ErrorKind::NotConnected,
+                                             e.description());
                     return Err(err);
                 }
             };
 
             match std::str::from_utf8(&buffer[0 .. len]) {
                 Ok(buf) => raw.push_str(buf),
-                Err(_) => {
-                    let err = Error::new(ErrorKind::NotConnected,
-                                         "TCP connection is not connected.");
+                Err(e) => {
+                    let err = io::Error::new(ErrorKind::NotConnected,
+                                             e.description());
                     return Err(err);
                 }
             }
