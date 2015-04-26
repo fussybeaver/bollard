@@ -1,22 +1,22 @@
 use std;
 use std::io::{self, Read, Write, Result, ErrorKind};
 use std::path::Path;
+use std::sync::Arc;
 use std::error::Error;
 use openssl;
 
 pub struct TcpStream {
-    stream: std::net::TcpStream,
+    addr: String,
     tls: bool,
-    ssl_stream: Option<openssl::ssl::SslStream<std::net::TcpStream>>
+    ssl_context: Option<Arc<openssl::ssl::SslContext>>
 }
 
 impl TcpStream {
     pub fn connect(addr: &str) -> Result<TcpStream> {
-        let stream = try!(std::net::TcpStream::connect(addr));
         let tcp_stream = TcpStream {
-            stream: stream,
+            addr: addr.to_string(),
             tls: false,
-            ssl_stream: None
+            ssl_context: None
         };
         return Ok(tcp_stream);
     }
@@ -60,17 +60,7 @@ impl TcpStream {
             }
         }
 
-        let stream = self.stream.try_clone().unwrap();
-        let ssl_stream = match openssl::ssl::SslStream::new(&context, stream) {
-            Ok(stream) => stream,
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        };
-
-        self.ssl_stream = Some(ssl_stream);
+        self.ssl_context = Some(Arc::new(context));
 
         return Ok(());
     }
@@ -78,15 +68,24 @@ impl TcpStream {
     pub fn read(&mut self, buf: &[u8]) -> Result<String> {
         let raw = match self.tls {
             false => {
-                let mut stream = self.stream.try_clone().unwrap();
+                let mut stream = try!(std::net::TcpStream::connect(&*self.addr));
                 let _ = stream.write(buf);
                 let raw = try!(self.read_from_stream(&mut stream));
                 raw
             }
             true => {
-                let mut stream = self.ssl_stream.as_mut().unwrap().try_clone().unwrap();
-                let _ = stream.write(&*buf);
-                let raw = try!(self.read_from_stream(&mut stream));
+                let stream = try!(std::net::TcpStream::connect(&*self.addr));
+                let ssl_context = self.ssl_context.as_mut().unwrap().clone();
+                let mut ssl_stream = match openssl::ssl::SslStream::new(&ssl_context, stream) {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        let err = io::Error::new(ErrorKind::NotConnected,
+                                                 e.description());
+                        return Err(err);
+                    }
+                };
+                let _ = ssl_stream.write(&*buf);
+                let raw = try!(self.read_from_stream(&mut ssl_stream));
                 raw
             }
         };
