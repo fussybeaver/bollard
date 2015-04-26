@@ -129,14 +129,14 @@ use docker::Docker;
 use std::path::Path;
 
 fn main() {
-    let key = Path::new("~/.boot2docker/certs/boot2docker-vm/key.pem");
-    let cert = Path::new("~/.boot2docker/certs/boot2docker-vm/cert.pem");
-    let ca = Path::new("~/.boot2docker/certs/boot2docker-vm/ca.pem");
+    let key = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/key.pem");
+    let cert = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/cert.pem");
+    let ca = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/ca.pem");
 
     let mut docker = match Docker::connect("tcp://192.168.59.103:2376") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
-    docker.set_tls(true, &key, &cert, &ca).unwrap();
+    docker.set_tls(&key, &cert, &ca).unwrap();
 }
 ```

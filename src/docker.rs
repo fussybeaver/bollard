@@ -18,9 +18,9 @@ pub struct Docker {
     tls: bool,
     addr: String,
     http: Http,
-    key_path: Option<String>,
-    cert_path: Option<String>,
-    ca_path: Option<String>
+    key: Option<String>,
+    cert: Option<String>,
+    ca: Option<String>
 }
 
 enum Protocol {
@@ -55,16 +55,16 @@ impl Docker {
             tls: false,
             addr: path.to_string(),
             http: Http::new(),
-            key_path: None,
-            cert_path: None,
-            ca_path: None
+            key: None,
+            cert: None,
+            ca: None
         };
         return Ok(docker);
     }
 
     pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
         self.tls = true;
-        self.key_path = match key.to_str() {
+        self.key = match key.to_str() {
             Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
@@ -72,7 +72,7 @@ impl Docker {
                 return Err(err);
             }
         };
-        self.cert_path = match cert.to_str() {
+        self.cert = match cert.to_str() {
             Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
@@ -80,7 +80,7 @@ impl Docker {
                 return Err(err);
             }
         };
-        self.ca_path = match ca.to_str() {
+        self.ca = match ca.to_str() {
             Some(s) => Some(s.to_string()),
             None => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
@@ -250,20 +250,24 @@ impl Docker {
                         stream.read(buf)
                     }
                     true => {
-                        if self.key_path == None ||
-                            self.cert_path == None ||
-                            self.ca_path == None {
+                        if self.key == None ||
+                            self.cert == None ||
+                            self.ca == None {
                                 let err = io::Error::new(ErrorKind::InvalidInput,
                                                          "key, cert, CA paths are required.");
                                 return Err(err);
                             }
 
-                        let key_path = self.key_path.clone().unwrap();
-                        let cert_path = self.cert_path.clone().unwrap();
-                        let ca_path = self.ca_path.clone().unwrap();
+                        let key_path = self.key.clone().unwrap();
+                        let cert_path = self.cert.clone().unwrap();
+                        let ca_path = self.ca.clone().unwrap();
 
+                        let key = Path::new(&key_path);
+                        let cert = Path::new(&cert_path);
+                        let ca = Path::new(&ca_path);
+                        
                         let mut stream = try!(TcpStream::connect(&self.addr));
-                        stream.set_tls(&key_path, &cert_path, &ca_path);
+                        try!(stream.set_tls(&key, &cert, &ca));
                         stream.read(buf)
                     }
                 }
