@@ -1,6 +1,7 @@
 use std::io::{self, Result, ErrorKind};
 use std::error::Error;
 use std::path::Path;
+use std::cell::RefCell;
 use rustc_serialize::json;
 use tcp::TcpStream;
 use unix::UnixStream;
@@ -9,18 +10,14 @@ use container::Container;
 use stats::Stats;
 use info::Info;
 use image::Image;
-
 #[cfg(test)]
 use test;
 
 pub struct Docker {
     protocol: Protocol,
-    tls: bool,
-    addr: String,
     http: Http,
-    key: Option<String>,
-    cert: Option<String>,
-    ca: Option<String>
+    unix_stream: RefCell<Option<UnixStream>>,
+    tcp_stream: RefCell<Option<TcpStream>>
 }
 
 enum Protocol {
@@ -50,44 +47,35 @@ impl Docker {
             }
         };
 
+        let unix_stream: Option<UnixStream> = match protocol {
+            Protocol::UNIX => {
+                let stream = try!(UnixStream::connect(&path));
+                Some(stream)
+            }
+            _ => None
+        };
+
+        let tcp_stream: Option<TcpStream> = match protocol {
+            Protocol::TCP => {
+                let stream = try!(TcpStream::connect(&path));
+                Some(stream)
+            }
+            _ => None
+        };
+
         let docker = Docker {
             protocol: protocol,
-            tls: false,
-            addr: path.to_string(),
             http: Http::new(),
-            key: None,
-            cert: None,
-            ca: None
+            unix_stream: RefCell::new(unix_stream),
+            tcp_stream: RefCell::new(tcp_stream)
         };
         return Ok(docker);
     }
 
     pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
-        self.tls = true;
-        self.key = match key.to_str() {
-            Some(s) => Some(s.to_string()),
-            None => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "The private key file path is invalid.");
-                return Err(err);
-            }
-        };
-        self.cert = match cert.to_str() {
-            Some(s) => Some(s.to_string()),
-            None => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "The certificate file path is invalid.");
-                return Err(err);
-            }
-        };
-        self.ca = match ca.to_str() {
-            Some(s) => Some(s.to_string()),
-            None => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "The CA file path is invalid.");
-                return Err(err);
-            }
-        };
+        let mut borrowed = self.tcp_stream.borrow_mut();
+        let stream = borrowed.as_mut().unwrap();
+        try!(stream.set_tls(key, cert, ca));
         return Ok(());
     }
 
@@ -131,7 +119,7 @@ impl Docker {
     pub fn get_stats(&self, container: &Container) -> Result<Stats> {
         if container.Status.contains("Up") == false {
             let err = io::Error::new(ErrorKind::InvalidInput,
-                                     "This container is already stopped.");
+                                     "The container is already stopped.");
             return Err(err);
         }
 
@@ -240,37 +228,14 @@ impl Docker {
     fn read(&self, buf: &[u8]) -> Result<String> {
         return match self.protocol {
             Protocol::UNIX => {
-                let mut stream = try!(UnixStream::connect(&self.addr));
+                let mut borrowed = self.unix_stream.borrow_mut();
+                let mut stream = borrowed.as_mut().unwrap();
                 stream.read(buf)
             }
             Protocol::TCP => {
-                match self.tls {
-                    false => {
-                        let mut stream = try!(TcpStream::connect(&self.addr));
-                        stream.read(buf)
-                    }
-                    true => {
-                        if self.key == None ||
-                            self.cert == None ||
-                            self.ca == None {
-                                let err = io::Error::new(ErrorKind::InvalidInput,
-                                                         "key, cert, CA paths are required.");
-                                return Err(err);
-                            }
-
-                        let key_path = self.key.clone().unwrap();
-                        let cert_path = self.cert.clone().unwrap();
-                        let ca_path = self.ca.clone().unwrap();
-
-                        let key = Path::new(&key_path);
-                        let cert = Path::new(&cert_path);
-                        let ca = Path::new(&ca_path);
-                        
-                        let mut stream = try!(TcpStream::connect(&self.addr));
-                        try!(stream.set_tls(&key, &cert, &ca));
-                        stream.read(buf)
-                    }
-                }
+                let mut borrowed = self.tcp_stream.borrow_mut();
+                let stream = borrowed.as_mut().unwrap();
+                stream.read(buf)
             }
         };
     }
