@@ -1,7 +1,7 @@
 use std::io::{self, Result, ErrorKind};
 use std::error::Error;
 use std::path::Path;
-use std::cell::RefCell;
+use std::sync::Arc;
 use rustc_serialize::json;
 use tcp::TcpStream;
 use unix::UnixStream;
@@ -10,14 +10,16 @@ use container::Container;
 use stats::Stats;
 use info::Info;
 use image::Image;
+use openssl;
 #[cfg(test)]
 use test;
 
 pub struct Docker {
     protocol: Protocol,
+    addr: String,
     http: Http,
-    unix_stream: RefCell<Option<UnixStream>>,
-    tcp_stream: RefCell<Option<TcpStream>>
+    tls: bool,
+    ssl_context: Option<Arc<openssl::ssl::SslContext>>
 }
 
 enum Protocol {
@@ -47,35 +49,55 @@ impl Docker {
             }
         };
 
-        let unix_stream: Option<UnixStream> = match protocol {
-            Protocol::UNIX => {
-                let stream = try!(UnixStream::connect(&path));
-                Some(stream)
-            }
-            _ => None
-        };
-
-        let tcp_stream: Option<TcpStream> = match protocol {
-            Protocol::TCP => {
-                let stream = try!(TcpStream::connect(&path));
-                Some(stream)
-            }
-            _ => None
-        };
-
         let docker = Docker {
             protocol: protocol,
+            addr: path.to_string(),
             http: Http::new(),
-            unix_stream: RefCell::new(unix_stream),
-            tcp_stream: RefCell::new(tcp_stream)
+            tls: false,
+            ssl_context: None
         };
         return Ok(docker);
     }
 
     pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
-        let mut borrowed = self.tcp_stream.borrow_mut();
-        let stream = borrowed.as_mut().unwrap();
-        try!(stream.set_tls(key, cert, ca));
+        self.tls = true;
+        let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
+            Ok(context) => context,
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::NotConnected,
+                                         e.description());
+                return Err(err);
+            }
+        };
+
+        match context.set_private_key_file(key, openssl::x509::X509FileType::PEM) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         e.description());
+                return Err(err);
+            }
+        }
+
+        match context.set_certificate_file(cert, openssl::x509::X509FileType::PEM) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::NotConnected,
+                                         e.description());
+                return Err(err);
+            }
+        }
+
+        match context.set_CA_file(ca) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::NotConnected,
+                                         e.description());
+                return Err(err);
+            }
+        }
+
+        self.ssl_context = Some(Arc::new(context));
         return Ok(());
     }
 
@@ -228,13 +250,15 @@ impl Docker {
     fn read(&self, buf: &[u8]) -> Result<String> {
         return match self.protocol {
             Protocol::UNIX => {
-                let mut borrowed = self.unix_stream.borrow_mut();
-                let mut stream = borrowed.as_mut().unwrap();
+                let mut stream = try!(UnixStream::connect(&*self.addr));
                 stream.read(buf)
             }
             Protocol::TCP => {
-                let mut borrowed = self.tcp_stream.borrow_mut();
-                let stream = borrowed.as_mut().unwrap();
+                let mut stream = try!(TcpStream::connect(&*self.addr));
+                if self.tls == true {
+                    let ssl_context = self.ssl_context.clone().unwrap().clone();
+                    try!(stream.set_ssl_context(ssl_context));
+                }
                 stream.read(buf)
             }
         };

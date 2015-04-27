@@ -1,9 +1,7 @@
 use std;
 use std::io::{self, Read, Write, Result, ErrorKind};
-use std::path::Path;
 use std::sync::Arc;
 use std::error::Error;
-use std::marker::Sync;
 use openssl;
 
 pub struct TcpStream {
@@ -22,47 +20,9 @@ impl TcpStream {
         return Ok(tcp_stream);
     }
 
-    pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
+    pub fn set_ssl_context(&mut self, ssl_context: Arc<openssl::ssl::SslContext>) -> Result<()> {
         self.tls = true;
-
-        let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
-            Ok(context) => context,
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        };
-
-        match context.set_private_key_file(key, openssl::x509::X509FileType::PEM) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
-                return Err(err);
-            }
-        }
-
-        match context.set_certificate_file(cert, openssl::x509::X509FileType::PEM) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        }
-
-        match context.set_CA_file(ca) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
-                return Err(err);
-            }
-        }
-
-        self.ssl_context = Some(Arc::new(context));
-
+        self.ssl_context = Some(ssl_context);
         return Ok(());
     }
 
@@ -76,8 +36,8 @@ impl TcpStream {
             }
             true => {
                 let stream = try!(std::net::TcpStream::connect(&*self.addr));
-                let ssl_context = self.ssl_context.as_mut().unwrap().clone();
-                let mut ssl_stream = match openssl::ssl::SslStream::new(&ssl_context, stream) {
+                let ssl_context = self.ssl_context.clone().unwrap().clone();
+                let mut ssl_stream = match openssl::ssl::SslStream::new(&*ssl_context, stream) {
                     Ok(stream) => stream,
                     Err(e) => {
                         let err = io::Error::new(ErrorKind::NotConnected,
@@ -121,5 +81,3 @@ impl TcpStream {
         return Ok(raw);
     }
 }
-
-unsafe impl Sync for TcpStream {}
