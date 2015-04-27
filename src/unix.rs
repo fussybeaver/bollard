@@ -1,6 +1,7 @@
 use std;
 use std::io::{self, Read, Write, Result, ErrorKind};
 use std::error::Error;
+use std::marker::Sync;
 use unix_socket;
 
 pub struct UnixStream {
@@ -52,3 +53,5 @@ impl UnixStream {
         return Ok(raw);
     }
 }
+
+unsafe impl Sync for UnixStream {}

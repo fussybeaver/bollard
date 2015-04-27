@@ -3,6 +3,7 @@ use std::io::{self, Read, Write, Result, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 use std::error::Error;
+use std::marker::Sync;
 use openssl;
 
 pub struct TcpStream {
@@ -120,3 +121,5 @@ impl TcpStream {
         return Ok(raw);
     }
 }
+
+unsafe impl Sync for TcpStream {}
