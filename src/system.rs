@@ -1,6 +1,6 @@
 #[derive(RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
-pub struct Info {
+pub struct SystemInfo {
     pub Containers: u64,
     pub Images: u64,
     pub Driver: String,
@@ -26,9 +26,9 @@ pub struct Info {
     pub OperatingSystem: String,
 }
 
-impl Clone for Info {
+impl Clone for SystemInfo {
     fn clone(&self) -> Self {
-        let info = Info {
+        let system_info = SystemInfo {
             Containers: self.Containers,
             Images: self.Images,
             Driver: self.Driver.clone(),
@@ -53,6 +53,6 @@ impl Clone for Info {
             DockerRootDir: self.DockerRootDir.clone(),
             OperatingSystem: self.OperatingSystem.clone()
         };
-        return info;
+        return system_info;
     }
 }

@@ -11,7 +11,7 @@ mod test;
 mod docker;
 pub mod container;
 pub mod stats;
-pub mod info;
+pub mod system;
 pub mod image;
 
 pub use docker::Docker;

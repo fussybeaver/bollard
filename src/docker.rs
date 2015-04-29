@@ -6,9 +6,9 @@ use rustc_serialize::json;
 use tcp::TcpStream;
 use unix::UnixStream;
 use http::Http;
-use container::Container;
+use container::{Container, ContainerInfo};
 use stats::Stats;
-use info::Info;
+use system::SystemInfo;
 use image::Image;
 use openssl;
 #[cfg(test)]
@@ -127,15 +127,15 @@ impl Docker {
                 return Err(err);
             }
         }
-        let body: Vec<Container> = match json::decode(&response.body) {
-            Ok(body) => body,
+        let containers: Vec<Container> = match json::decode(&response.body) {
+            Ok(containers) => containers,
             Err(e) => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          e.description());
                 return Err(err);
             }
         };
-        return Ok(body);
+        return Ok(containers);
     }
 
     pub fn get_stats(&self, container: &Container) -> Result<Stats> {
@@ -166,15 +166,15 @@ impl Docker {
                 return Err(err);
             }
         }
-        let body: Stats = match json::decode(&response.body) {
-            Ok(body) => body,
+        let stats: Stats = match json::decode(&response.body) {
+            Ok(stats) => stats,
             Err(e) => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          e.description());
                 return Err(err);
             }
         };
-        return Ok(body);
+        return Ok(stats);
     }
 
     pub fn get_images(&self, all: bool) -> Result<Vec<Image>> {
@@ -203,18 +203,18 @@ impl Docker {
                 return Err(err);
             }
         }
-        let body: Vec<Image> = match json::decode(&response.body) {
-            Ok(body) => body,
+        let images: Vec<Image> = match json::decode(&response.body) {
+            Ok(images) => images,
             Err(e) => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          e.description());
                 return Err(err);
             }
         };
-        return Ok(body);
+        return Ok(images);
     }
 
-    pub fn get_info(&self) -> Result<Info> {
+    pub fn get_system_info(&self) -> Result<SystemInfo> {
         let request = "GET /info HTTP/1.1\r\n\r\n";
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
@@ -236,7 +236,40 @@ impl Docker {
                 return Err(err);
             }
         }
-        let body: Info = match json::decode(&response.body) {
+        let info: SystemInfo = match json::decode(&response.body) {
+            Ok(info) => info,
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         e.description());
+                return Err(err);
+            }
+        };
+        return Ok(info);
+    }
+
+    pub fn get_container_info(&self, container: &Container) -> Result<ContainerInfo> {
+        let request = format!("GET /containers/{}/json HTTP/1.1\r\n\r\n", container.Id);
+        let raw = try!(self.read(request.as_bytes()));
+        let response = try!(self.http.get_response(&raw));
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let container_info: ContainerInfo = match json::decode(&response.body) {
             Ok(body) => body,
             Err(e) => {
                 let err = io::Error::new(ErrorKind::InvalidInput,
@@ -244,7 +277,7 @@ impl Docker {
                 return Err(err);
             }
         };
-        return Ok(body);
+        return Ok(container_info);
     }
 
     fn read(&self, buf: &[u8]) -> Result<String> {
@@ -305,9 +338,9 @@ fn get_stats() {
 
 #[test]
 #[cfg(test)]
-fn get_info() {
+fn get_system_info() {
     let http = Http::new();
-    let raw = test::get_info_response();
+    let raw = test::get_system_info_response();
     let response = match http.get_response(&raw) {
         Ok(response) => response,
         Err(_) => { assert!(false); return; }
@@ -316,7 +349,7 @@ fn get_info() {
         200 => {}
         _ => { assert!(false); return; }
     }
-    let _: Info = match json::decode(&response.body) {
+    let _: SystemInfo = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -336,6 +369,25 @@ fn get_images() {
         _ => { assert!(false); return; }
     }
     let _: Vec<Image> = match json::decode(&response.body) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+#[cfg(test)]
+fn get_container_info() {
+    let http = Http::new();
+    let raw = test::get_container_info_response();
+    let response = match http.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: ContainerInfo = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
