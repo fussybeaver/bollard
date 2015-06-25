@@ -109,7 +109,7 @@ fn main() {
         Err(e) => { panic!("{}", e); }
     };
 
-    let info = match docker.get_info() {
+    let info = match docker.get_system_info() {
         Ok(info) => info,
         Err(e) => { panic!("{}", e); }
     };
