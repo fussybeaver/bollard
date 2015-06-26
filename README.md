@@ -8,7 +8,7 @@ This is a Docker Remote API binding in Rust. Documentation is available [here](h
 
 ```
 [dependencies]
-docker = "0.0.33"
+docker = "0.0.34"
 ```
 
 ```rust
@@ -25,7 +25,7 @@ fn main() {
 ```
 
 ## Debug
-* Rust (>= v1.0.0-beta)
+* Rust (>= v1.0.0)
 * Docker (>= v1.5.0)
 
 ## Examples
