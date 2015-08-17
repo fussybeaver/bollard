@@ -25,7 +25,7 @@ fn main() {
 ```
 
 ## Debug
-* Rust (>= v1.0.0)
+* Rust (>= v1.1.0)
 * Docker (>= v1.5.0)
 
 ## Examples
