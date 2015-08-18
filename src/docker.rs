@@ -130,6 +130,7 @@ impl Docker {
         let containers: Vec<Container> = match json::decode(&response.body) {
             Ok(containers) => containers,
             Err(e) => {
+                println!("{}", e);
                 let err = io::Error::new(ErrorKind::InvalidInput,
                                          e.description());
                 return Err(err);

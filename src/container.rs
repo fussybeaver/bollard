@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 #[derive(RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
+//Labels, HostConfig
 pub struct Container {
     pub Id: String,
     pub Image: String,
@@ -12,8 +13,10 @@ pub struct Container {
     pub Created: u64,
     pub Names: Vec<String>,
     pub Ports: Vec<Port>,
-    pub SizeRw: u64,
-    pub SizeRootFs: u64
+    pub SizeRw: Option<u64>, // I guess it is optional on Mac.
+    pub SizeRootFs: u64,
+    pub Labels: Option<HashMap<String, String>>,
+    pub HostConfig: HostConfig
 }
 
 #[derive(RustcEncodable, RustcDecodable)]
@@ -23,6 +26,12 @@ pub struct Port {
     pub PrivatePort: u64,
     pub PublicPort: Option<u64>,
     pub Type: String
+}
+
+#[derive(RustcEncodable, RustcDecodable)]
+#[allow(non_snake_case)]
+pub struct HostConfig {
+    pub NetworkMode: String
 }
 
 #[derive(RustcEncodable, RustcDecodable)]
@@ -64,7 +73,9 @@ impl Clone for Container {
             Names: self.Names.clone(),
             Ports: self.Ports.clone(),
             SizeRw: self.SizeRw,
-            SizeRootFs: self.SizeRootFs
+            SizeRootFs: self.SizeRootFs,
+            Labels: self.Labels.clone(),
+            HostConfig: self.HostConfig.clone()
         };
         return container;
     }
@@ -93,6 +104,15 @@ impl Clone for Port {
         self.PublicPort = source.PublicPort.clone();
         self.Type = source.Type.clone();
     }*/
+}
+
+impl Clone for HostConfig {
+    fn clone(&self) -> Self {
+        let host_config = HostConfig {
+            NetworkMode: self.NetworkMode.clone()
+        };
+        return host_config;
+    }
 }
 
 impl Clone for ContainerInfo {

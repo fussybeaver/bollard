@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub fn get_containers_response() -> String {
-    return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n[{\"Command\":\"bash\",\"Created\":1428559770,\"Id\":\"71f4c0a989c590e2b19e9399c9ff5672767881d99e4cd409996de5995189ec33\",\"Image\":\"ghmlee/rust:nightly\",\"Names\":[\"/dreamy_lovelace\"],\"Ports\":[{\"IP\":\"0.0.0.0\",\"PrivatePort\":8083,\"PublicPort\":8083,\"Type\":\"tcp\"},{\"IP\":\"0.0.0.0\",\"PrivatePort\":8086,\"PublicPort\":8086,\"Type\":\"tcp\"},{\"PrivatePort\":8090,\"Type\":\"tcp\"},{\"PrivatePort\":8099,\"Type\":\"tcp\"},{\"PrivatePort\":8084,\"Type\":\"tcp\"}],\"SizeRootFs\":0,\"SizeRw\":10832473,\"Status\":\"Up 9 minutes\"}]".to_string();
+    return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n[{\"Id\":\"ed3221f4adc05b9ecfbf56b1aa76d4e6e70d5b73b3876c322fc10d017c64ca86\",\"Names\":[\"/rust\"],\"Image\":\"ghmlee/rust:latest\",\"Command\":\"bash\",\"Created\":1439434052,\"Ports\":[{\"IP\":\"0.0.0.0\",\"PrivatePort\":8888,\"PublicPort\":8888,\"Type\":\"tcp\"}],\"SizeRootFs\":253602755,\"Labels\":{},\"Status\":\"Exited (137) 12 hours ago\",\"HostConfig\":{\"NetworkMode\":\"default\"},\"SizeRw\":10832473}]".to_string();
 }
 
 #[cfg(test)]
