@@ -116,6 +116,31 @@ fn main() {
 }
 ```
 
+## Docker Toolbox
+
+By default, `Docker Toolbox` runs `docker` with TLS enabled. It auto-generates certificates. The `docker-machine` will copy them to `~/.docker/machine/certs` on the host machine once the VM has started.
+
+### Example
+
+```rust
+extern crate docker;
+
+use docker::Docker;
+use std::path::Path;
+
+fn main() {
+    let key = Path::new("/Users/<username>/.docker/machine/certs/key.pem");
+    let cert = Path::new("/Users/<username>/.docker/machine/certs/cert.pem");
+    let ca = Path::new("/Users/<username>/.docker/machine/certs/ca.pem");
+
+    let mut docker = match Docker::connect("tcp://192.168.99.100:2376") {
+    	Ok(docker) => docker,
+        Err(e) => { panic!("{}", e); }
+    };
+    docker.set_tls(&key, &cert, &ca).unwrap();
+}
+```
+
 ## Boot2Docker
 
 By default, `boot2docker` runs `docker` with TLS enabled. It auto-generates certificates and stores them in `/home/docker/.docker` inside the VM. The `boot2docker` up command will copy them to `~/.boot2docker/certs` on the host machine once the VM has started, and output the correct values for the `DOCKER_CERT_PATH` and `DOCKER_TLS_VERIFY` environment variables.
