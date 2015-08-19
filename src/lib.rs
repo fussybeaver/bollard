@@ -13,5 +13,6 @@ pub mod container;
 pub mod stats;
 pub mod system;
 pub mod image;
+pub mod process;
 
 pub use docker::Docker;

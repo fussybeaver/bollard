@@ -2,11 +2,13 @@ use std::io::{self, Result, ErrorKind};
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
+use std::convert::AsRef;
 use rustc_serialize::json;
 use tcp::TcpStream;
 use unix::UnixStream;
 use http::Http;
 use container::{Container, ContainerInfo};
+use process::{Process, Top};
 use stats::Stats;
 use system::SystemInfo;
 use image::Image;
@@ -127,6 +129,7 @@ impl Docker {
                 return Err(err);
             }
         }
+        
         let containers: Vec<Container> = match json::decode(&response.body) {
             Ok(containers) => containers,
             Err(e) => {
@@ -136,7 +139,95 @@ impl Docker {
                 return Err(err);
             }
         };
+        
         return Ok(containers);
+    }
+    
+    pub fn get_processes(&self, container: &Container) -> Result<Vec<Process>> {
+        let request = format!("GET /containers/{}/top HTTP/1.1\r\n\r\n", container.Id);
+        let raw = try!(self.read(request.as_bytes()));
+        let response = try!(self.http.get_response(&raw));
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+
+        let top: Top = match json::decode(&response.body) {
+            Ok(top) => top,
+            Err(e) => {
+                println!("{}", e);
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         e.description());
+                return Err(err);
+            }
+        };
+
+        let mut processes: Vec<Process> = Vec::new();
+        let mut process_iter = top.Processes.iter();
+        loop {
+            let process = match process_iter.next() {
+                Some(process) => process,
+                None => { break; }
+            };
+
+            let mut p = Process{
+                user: String::new(),
+                pid: String::new(),
+                cpu: None,
+                memory: None,
+                vsz: None,
+                rss: None,
+                tty: None,
+                stat: None,
+                start: None,
+                time: None,
+                command: String::new()
+            };
+            
+            let mut value_iter = process.iter();
+            let mut i: usize = 0;
+            loop {
+                let value = match value_iter.next() {
+                    Some(value) => value,
+                    None => { break; }
+                };
+                let key = &top.Titles[i];
+                match key.as_ref() {
+                    "USER" => { p.user = value.clone() },
+                    "PID" => { p.pid = value.clone() },
+                    "%CPU" => { p.cpu = Some(value.clone()) },
+                    "%MEM" => { p.memory = Some(value.clone()) },
+                    "VSZ" => { p.vsz = Some(value.clone()) },
+                    "RSS" => { p.rss = Some(value.clone()) },
+                    "TTY" => { p.tty = Some(value.clone()) },
+                    "STAT" => { p.stat = Some(value.clone()) },
+                    "START" => { p.start = Some(value.clone()) },
+                    "TIME" => { p.time = Some(value.clone()) },
+                    "COMMAND" => { p.command = value.clone() },
+                    _ => {}
+                }
+
+                i = i + 1;
+            };
+
+            processes.push(p);
+        }
+
+        return Ok(processes);
     }
 
     pub fn get_stats(&self, container: &Container) -> Result<Stats> {
@@ -389,6 +480,25 @@ fn get_container_info() {
         _ => { assert!(false); return; }
     }
     let _: ContainerInfo = match json::decode(&response.body) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+#[cfg(test)]
+fn get_processes() {
+    let http = Http::new();
+    let raw = test::get_processes_response();
+    let response = match http.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: Top = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
