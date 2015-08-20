@@ -12,6 +12,7 @@ use process::{Process, Top};
 use stats::Stats;
 use system::SystemInfo;
 use image::Image;
+use filesystem::FilesystemChange;
 use openssl;
 #[cfg(test)]
 use test;
@@ -371,6 +372,39 @@ impl Docker {
         };
         return Ok(container_info);
     }
+    
+    pub fn get_filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
+        let request = format!("GET /containers/{}/changes HTTP/1.1\r\n\r\n", container.Id);
+        let raw = try!(self.read(request.as_bytes()));
+        let response = try!(self.http.get_response(&raw));
+        match response.status_code {
+            200 => {}
+            400 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 400 status code.");
+                return Err(err);
+            }
+            500 => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with 500 status code.");
+                return Err(err);
+            }
+            _ => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         "Docker returns an error with an invalid status code.");
+                return Err(err);
+            }
+        }
+        let filesystem_changes: Vec<FilesystemChange> = match json::decode(&response.body) {
+            Ok(body) => body,
+            Err(e) => {
+                let err = io::Error::new(ErrorKind::InvalidInput,
+                                         e.description());
+                return Err(err);
+            }
+        };
+        return Ok(filesystem_changes);
+    }
 
     fn read(&self, buf: &[u8]) -> Result<String> {
         return match self.protocol {
@@ -499,6 +533,25 @@ fn get_processes() {
         _ => { assert!(false); return; }
     }
     let _: Top = match json::decode(&response.body) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}
+
+#[test]
+#[cfg(test)]
+fn get_filesystem_changes() {
+    let http = Http::new();
+    let raw = test::get_filesystem_changes_response();
+    let response = match http.get_response(&raw) {
+        Ok(response) => response,
+        Err(_) => { assert!(false); return; }
+    };
+    match response.status_code {
+        200 => {}
+        _ => { assert!(false); return; }
+    }
+    let _: Vec<FilesystemChange> = match json::decode(&response.body) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };

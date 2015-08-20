@@ -27,3 +27,8 @@ pub fn get_container_info_response() -> String {
 pub fn get_processes_response() -> String {
     return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"Processes\":[[\"4586\",\"999\",\"rust\"]],\"Titles\":[\"PID\",\"USER\",\"COMMAND\"]}".to_string();
 }
+
+#[cfg(test)]
+pub fn get_filesystem_changes_response() -> String {
+    return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n[{\"Path\":\"/tmp\",\"Kind\":0}]".to_string();
+}
