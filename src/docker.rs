@@ -406,6 +406,10 @@ impl Docker {
         return Ok(filesystem_changes);
     }
 
+    pub fn export_container(&self, container: &Container) -> Result<()> {
+        return Ok(());
+    }
+
     fn read(&self, buf: &[u8]) -> Result<String> {
         return match self.protocol {
             Protocol::UNIX => {
