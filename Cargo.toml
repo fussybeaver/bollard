@@ -1,6 +1,6 @@
 [package]
 name = "docker"
-description = "Docker Remote API binding in Rust"
+description = "Docker Remote API in Rust"
 version = "0.0.37"
 authors = ["Graham Lee <ghmlee@ghmlee.com>"]
 license = "Apache-2.0"

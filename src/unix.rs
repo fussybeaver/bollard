@@ -1,4 +1,3 @@
-use std;
 use std::io::{self, Read, Write, Result, ErrorKind};
 use std::error::Error;
 use unix_socket;
@@ -15,7 +14,7 @@ impl UnixStream {
         return Ok(unix_stream);
     }
     
-    pub fn read(&mut self, buf: &[u8]) -> Result<String> {
+    pub fn read(&mut self, buf: &[u8]) -> Result<Vec<u8>> {
         let mut stream = try!(unix_socket::UnixStream::connect(&*self.addr));
         
         match stream.write_all(buf) {
@@ -29,7 +28,8 @@ impl UnixStream {
 
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-        let mut raw = String::new();
+        //let mut raw = String::new();
+        let mut raw: Vec<u8> = Vec::new();
         loop {
             let len = match stream.read(&mut buffer) {
                 Ok(len) => len,
@@ -39,14 +39,17 @@ impl UnixStream {
                     return Err(err);
                 }
             };
-            match std::str::from_utf8(&buffer[0 .. len]) {
+            for i in 0..len {
+                raw.push(buffer[i]);
+            }
+            /*match std::str::from_utf8(&buffer[0 .. len]) {
                 Ok(buf) => raw.push_str(buf),
                 Err(e) => {
                     let err = io::Error::new(ErrorKind::InvalidInput,
                                              e.description());
                     return Err(err);
                 }
-            }
+            }*/
             if len < BUFFER_SIZE { break; }
         }
         return Ok(raw);

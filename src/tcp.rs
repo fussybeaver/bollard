@@ -26,7 +26,7 @@ impl TcpStream {
         return Ok(());
     }
 
-    pub fn read(&mut self, buf: &[u8]) -> Result<String> {
+    pub fn read(&mut self, buf: &[u8]) -> Result<Vec<u8>> {
         let raw = match self.tls {
             false => {
                 let mut stream = try!(std::net::TcpStream::connect(&*self.addr));
@@ -45,7 +45,7 @@ impl TcpStream {
                         return Err(err);
                     }
                 };
-                let _ = ssl_stream.write(&*buf);
+                let _ = ssl_stream.write(buf);
                 let raw = try!(self.read_from_stream(&mut ssl_stream));
                 raw
             }
@@ -53,10 +53,11 @@ impl TcpStream {
         return Ok(raw);
     }
 
-    fn read_from_stream<S: Read>(&self, stream: &mut S) -> Result<String> {
+    fn read_from_stream<S: Read>(&self, stream: &mut S) -> Result<Vec<u8>> {
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-        let mut raw = String::new();
+        //let mut raw = String::new();
+        let mut raw: Vec<u8> = Vec::new();
         let mut is_shaked = false;
         loop {
             let len = match stream.read(&mut buffer) {
@@ -67,17 +68,25 @@ impl TcpStream {
                     return Err(err);
                 }
             };
-            match std::str::from_utf8(&buffer[0 .. len]) {
-                Ok(buf) => raw.push_str(buf),
+
+            for i in 0..len {
+                raw.push(buffer[i]);
+            }
+            
+            /*match std::str::from_utf8(&buffer[0 .. len]) {
+                //Ok(buf) => raw.push_str(buf),
+                Ok(buf) => raw.push(buf),
                 Err(e) => {
                     let err = io::Error::new(ErrorKind::NotConnected,
                                              e.description());
                     return Err(err);
                 }
-            }
+        }*/
+                
             if is_shaked == false && len <= BUFFER_SIZE { is_shaked = true; continue; }
             if len < BUFFER_SIZE { break; }
         }
+
         return Ok(raw);
     }
 }
