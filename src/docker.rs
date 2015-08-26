@@ -472,7 +472,7 @@ impl Docker {
         return Ok(filesystem_changes);
     }
 
-    pub fn export_container(&self, container: &Container) -> Result<()> {
+    pub fn export_container(&self, container: &Container) -> Result<Vec<u8>> {
         let request = format!("GET /containers/{}/export HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.http.get_response(&raw));
@@ -495,7 +495,7 @@ impl Docker {
             }
         }
         
-        return Ok(());
+        return Ok(response.body);
     }
 
     fn read(&self, buf: &[u8]) -> Result<Vec<u8>> {

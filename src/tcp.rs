@@ -82,7 +82,7 @@ impl TcpStream {
                     return Err(err);
                 }
         }*/
-                
+
             if is_shaked == false && len <= BUFFER_SIZE { is_shaked = true; continue; }
             if len < BUFFER_SIZE { break; }
         }
