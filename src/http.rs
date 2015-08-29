@@ -103,6 +103,7 @@ impl Response {
             let mut chunks = String::new();
             let mut index: i64 = 0;
             for chunk in chunked_body.iter() {
+                if chunk.len() == 0 { continue; }
                 index = index + 1;
                 if index % 2 != 0 { continue; }
                 chunks.push_str(chunk);

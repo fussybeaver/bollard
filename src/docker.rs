@@ -15,7 +15,7 @@ use container::{Container, ContainerInfo};
 use process::{Process, Top};
 use stats::Stats;
 use system::SystemInfo;
-use image::Image;
+use image::{Image, ImageStatus};
 use filesystem::FilesystemChange;
 
 pub struct Docker {
@@ -125,6 +125,10 @@ impl Docker {
         return Ok(());
     }
 
+    //
+    // Containers
+    //
+    
     pub fn get_containers(&self, all: bool) -> std::io::Result<Vec<Container>> {
         let a = match all {
             true => "1",
@@ -240,6 +244,28 @@ impl Docker {
             }
         };
         return Ok(stats);
+    }
+
+    //
+    // Image
+    //
+    
+    pub fn create_image(&self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
+        let request = format!("POST /images/create?fromImage={}&tag={} HTTP/1.1\r\n\r\n", image, tag);
+        let raw = try!(self.read(request.as_bytes()));
+        let response = try!(self.get_response(&raw));
+        let body = format!("[{}]", try!(response.get_encoded_body()));
+        let fixed = body.replace("}{", "},{");
+        
+        let statuses: Vec<ImageStatus> = match json::decode(&fixed) {
+            Ok(statuses) => statuses,
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
+                return Err(err);
+            }
+        };
+        return Ok(statuses);
     }
 
     pub fn get_images(&self, all: bool) -> std::io::Result<Vec<Image>> {

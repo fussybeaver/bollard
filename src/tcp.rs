@@ -68,10 +68,15 @@ impl TcpStream {
                 }
             };
 
-            for i in 0..len {
-                raw.push(buffer[i]);
-            }
+            if len == 4 &&
+                buffer[0] == 13 &&
+                buffer[1] == 10 &&
+                buffer[2] == 13 &&
+                buffer[3] == 10  { break; }
 
+            for i in 0..len { raw.push(buffer[i]); }
+
+            if len > 1 && buffer[len - 2] == 13 && buffer[len - 1] == 10 { is_shaked = false; continue; }
             if is_shaked == false && len <= BUFFER_SIZE { is_shaked = true; continue; }
             if len < BUFFER_SIZE { break; }
         }

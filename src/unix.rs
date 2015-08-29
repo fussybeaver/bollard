@@ -39,10 +39,10 @@ impl UnixStream {
                 }
             };
             
-            for i in 0..len {
-                raw.push(buffer[i]);
-            }
+            for i in 0..len { raw.push(buffer[i]); }
 
+            if len > 4 && buffer[len - 5] == 48 && buffer[len - 4] == 13 && buffer[len - 3] == 10 && buffer[len - 2] == 13 && buffer[len - 1] == 10 { break; }
+            if len > 1 && buffer[len - 2] == 13 && buffer[len - 1] == 10 { continue; }
             if len < BUFFER_SIZE { break; }
         }
         return Ok(raw);

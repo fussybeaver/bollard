@@ -22,3 +22,19 @@ impl Clone for Image {
         return image;
     }
 }
+
+#[derive(RustcEncodable, RustcDecodable)]
+pub struct ImageStatus {
+    pub status: Option<String>,
+    pub error: Option<String>
+}
+
+impl Clone for ImageStatus {
+    fn clone(&self) -> Self {
+        let image_status = ImageStatus {
+            status: self.status.clone(),
+            error: self.status.clone()
+        };
+        return image_status;
+    }
+}
