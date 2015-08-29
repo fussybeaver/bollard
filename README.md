@@ -8,7 +8,7 @@ This is a Docker Remote API binding in Rust. Documentation is available [here](h
 
 ```
 [dependencies]
-docker = "0.0.38"
+docker = "0.0.39"
 ```
 
 ```rust
@@ -161,6 +161,31 @@ fn main() {
 
     let changes = match docker.get_filesystem_changes(&containers[0]) {
         Ok(changes) => changes,
+        Err(e) => { panic!("{}", e); }
+    };
+}
+```
+
+### Export a container
+
+```rust
+extern crate docker;
+
+use docker::Docker;
+
+fn main() {
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+        Err(e) => { panic!("{}", e); }
+    };
+
+    let containers = match docker.get_containers(false) {
+        Ok(containers) => containers,
+        Err(e) => { panic!("{}", e); }
+    };
+
+    let bytes = match docker.export_container(&containers[0]) {
+        Ok(bytes) => bytes,
         Err(e) => { panic!("{}", e); }
     };
 }

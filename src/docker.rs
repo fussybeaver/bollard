@@ -1,27 +1,30 @@
-use std::io::{self, Result, ErrorKind};
+use std;
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 use std::convert::AsRef;
+
+use openssl;
 use rustc_serialize::json;
+
 use tcp::TcpStream;
 use unix::UnixStream;
-use http::Http;
+use http::{Client, Response};
+
 use container::{Container, ContainerInfo};
 use process::{Process, Top};
 use stats::Stats;
 use system::SystemInfo;
 use image::Image;
 use filesystem::FilesystemChange;
-use openssl;
-#[cfg(test)]
-use test;
 
 pub struct Docker {
     protocol: Protocol,
     addr: String,
-    http: Http,
     tls: bool,
+    client: Client,
+    //unix_stream: Option<Arc<UnixStream>>,
+    //tcp_stream: Option<Arc<TcpStream>>,
     ssl_context: Option<Arc<openssl::ssl::SslContext>>
 }
 
@@ -31,44 +34,62 @@ enum Protocol {
 }
 
 impl Docker {
-    pub fn connect(addr: &str) -> Result<Docker> {
+    pub fn connect(addr: &str) -> std::io::Result<Docker> {
         let components: Vec<&str> = addr.split("://").collect();
         if components.len() != 2 {
-            let err = io::Error::new(ErrorKind::InvalidInput,
-                                     "The address is invalid.");
+            let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                          "The address is invalid.");
             return Err(err);
         }
         
         let protocol = components[0];
-        let path = components[1];
+        let path = components[1].to_string();
 
         let protocol = match protocol {
             "unix" => Protocol::UNIX,
             "tcp" => Protocol::TCP,
             _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "The protocol is not supported.");
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              "The protocol is not supported.");
                 return Err(err);
             }
         };
 
+        /*let mut unix_stream = match protocol {
+            Protocol::UNIX => {
+                let stream = try!(UnixStream::connect(&*path));
+                Some(Arc::new(stream))
+            }
+            _ => None
+        };
+
+        let mut tcp_stream = match protocol {
+            Protocol::TCP => {
+                let stream = try!(TcpStream::connect(&*path));
+                Some(Arc::new(stream))
+            }
+            _ => None
+        };*/
+
         let docker = Docker {
             protocol: protocol,
-            addr: path.to_string(),
-            http: Http::new(),
+            addr: path,
             tls: false,
+            client: Client::new(),
+            //unix_stream: None,
+            //tcp_stream: None,
             ssl_context: None
         };
         return Ok(docker);
     }
 
-    pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> Result<()> {
+    pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> std::io::Result<()> {
         self.tls = true;
         let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
             Ok(context) => context,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
                 return Err(err);
             }
         };
@@ -76,8 +97,8 @@ impl Docker {
         match context.set_private_key_file(key, openssl::x509::X509FileType::PEM) {
             Ok(_) => {}
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         }
@@ -85,8 +106,8 @@ impl Docker {
         match context.set_certificate_file(cert, openssl::x509::X509FileType::PEM) {
             Ok(_) => {}
             Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
                 return Err(err);
             }
         }
@@ -94,8 +115,8 @@ impl Docker {
         match context.set_CA_file(ca) {
             Ok(_) => {}
             Err(e) => {
-                let err = io::Error::new(ErrorKind::NotConnected,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
                 return Err(err);
             }
         }
@@ -104,47 +125,22 @@ impl Docker {
         return Ok(());
     }
 
-    pub fn get_containers(&self, all: bool) -> Result<Vec<Container>> {
+    pub fn get_containers(&self, all: bool) -> std::io::Result<Vec<Container>> {
         let a = match all {
             true => "1",
             false => "0"
         };
+        
         let request = format!("GET /containers/json?all={}&size=1 HTTP/1.1\r\n\r\n", a);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
-        
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         let containers: Vec<Container> = match json::decode(&body) {
             Ok(containers) => containers,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
@@ -152,43 +148,18 @@ impl Docker {
         return Ok(containers);
     }
     
-    pub fn get_processes(&self, container: &Container) -> Result<Vec<Process>> {
+    pub fn get_processes(&self, container: &Container) -> std::io::Result<Vec<Process>> {
         let request = format!("GET /containers/{}/top HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body()); 
         
         let top: Top = match json::decode(&body) {
             Ok(top) => top,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
@@ -247,258 +218,116 @@ impl Docker {
         return Ok(processes);
     }
 
-    pub fn get_stats(&self, container: &Container) -> Result<Stats> {
+    pub fn get_stats(&self, container: &Container) -> std::io::Result<Stats> {
         if container.Status.contains("Up") == false {
-            let err = io::Error::new(ErrorKind::InvalidInput,
-                                     "The container is already stopped.");
+            let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                          "The container is already stopped.");
             return Err(err);
         }
 
         let request = format!("GET /containers/{}/stats HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-        
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         
         let stats: Stats = match json::decode(&body) {
             Ok(stats) => stats,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
         return Ok(stats);
     }
 
-    pub fn get_images(&self, all: bool) -> Result<Vec<Image>> {
+    pub fn get_images(&self, all: bool) -> std::io::Result<Vec<Image>> {
         let a = match all {
             true => "1",
             false => "0"
         };
         let request = format!("GET /images/json?all={} HTTP/1.1\r\n\r\n", a);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-        
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         
         let images: Vec<Image> = match json::decode(&body) {
             Ok(images) => images,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
         return Ok(images);
     }
 
-    pub fn get_system_info(&self) -> Result<SystemInfo> {
+    pub fn get_system_info(&self) -> std::io::Result<SystemInfo> {
         let request = "GET /info HTTP/1.1\r\n\r\n";
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-        
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         
         let info: SystemInfo = match json::decode(&body) {
             Ok(info) => info,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
         return Ok(info);
     }
 
-    pub fn get_container_info(&self, container: &Container) -> Result<ContainerInfo> {
+    pub fn get_container_info(&self, container: &Container) -> std::io::Result<ContainerInfo> {
         let request = format!("GET /containers/{}/json HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         
         let container_info: ContainerInfo = match json::decode(&body) {
             Ok(body) => body,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
         return Ok(container_info);
     }
     
-    pub fn get_filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
+    pub fn get_filesystem_changes(&self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
         let request = format!("GET /containers/{}/changes HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
-
-        let body = match response.get_encoded_body() {
-            Ok(body) => body,
-            Err(_) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an invalid http response.");
-                return Err(err);
-            }
-        };
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let body = try!(response.get_encoded_body());
         
         let filesystem_changes: Vec<FilesystemChange> = match json::decode(&body) {
             Ok(body) => body,
             Err(e) => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
                 return Err(err);
             }
         };
         return Ok(filesystem_changes);
     }
 
-    pub fn export_container(&self, container: &Container) -> Result<Vec<u8>> {
+    pub fn export_container(&self, container: &Container) -> std::io::Result<Vec<u8>> {
         let request = format!("GET /containers/{}/export HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
-        let response = try!(self.http.get_response(&raw));
-        match response.status_code {
-            200 => {}
-            400 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 400 status code.");
-                return Err(err);
-            }
-            500 => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with 500 status code.");
-                return Err(err);
-            }
-            _ => {
-                let err = io::Error::new(ErrorKind::InvalidInput,
-                                         "Docker returns an error with an invalid status code.");
-                return Err(err);
-            }
-        }
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
         
         return Ok(response.body);
     }
 
-    fn read(&self, buf: &[u8]) -> Result<Vec<u8>> {
+    fn read(&self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
         return match self.protocol {
             Protocol::UNIX => {
                 let mut stream = try!(UnixStream::connect(&*self.addr));
@@ -514,74 +343,20 @@ impl Docker {
             }
         };
     }
-}
 
-#[test]
-#[cfg(test)]
-fn get_containers() {
-    let response = test::get_containers_response();
-    let _: Vec<Container> = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
+    fn get_response(&self, raw: &Vec<u8>) -> std::io::Result<Response> {
+        self.client.get_response(raw)
+    }
 
-#[test]
-#[cfg(test)]
-fn get_stats() {
-    let response = test::get_stats_response();
-    let _: Stats = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
-
-#[test]
-#[cfg(test)]
-fn get_system_info() {
-    let response = test::get_system_info_response();
-    let _: SystemInfo = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
-
-#[test]
-#[cfg(test)]
-fn get_images() {
-    let response = test::get_images_response();
-    let _: Vec<Image> = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
-
-#[test]
-#[cfg(test)]
-fn get_container_info() {
-    let response = test::get_container_info_response();
-    let _: ContainerInfo = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
-
-#[test]
-#[cfg(test)]
-fn get_processes() {
-    let response = test::get_processes_response();
-    let _: Top = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
-}
-
-#[test]
-#[cfg(test)]
-fn get_filesystem_changes() {
-    let response = test::get_filesystem_changes_response();
-    let _: Vec<FilesystemChange> = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
+    fn get_status_code(&self, response: &Response) -> std::io::Result<()> {
+        let status_code = response.status_code;
+        match status_code / 100 {
+            2 => { Ok(()) }
+            _ => {
+                let desc = format!("Docker returns an error with {} status code.", status_code);
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput, desc);
+                return Err(err);
+            }
+        }
+    }
 }

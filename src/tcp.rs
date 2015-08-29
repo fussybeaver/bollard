@@ -56,7 +56,6 @@ impl TcpStream {
     fn read_from_stream<S: Read>(&self, stream: &mut S) -> Result<Vec<u8>> {
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-        //let mut raw = String::new();
         let mut raw: Vec<u8> = Vec::new();
         let mut is_shaked = false;
         loop {
@@ -72,16 +71,6 @@ impl TcpStream {
             for i in 0..len {
                 raw.push(buffer[i]);
             }
-            
-            /*match std::str::from_utf8(&buffer[0 .. len]) {
-                //Ok(buf) => raw.push_str(buf),
-                Ok(buf) => raw.push(buf),
-                Err(e) => {
-                    let err = io::Error::new(ErrorKind::NotConnected,
-                                             e.description());
-                    return Err(err);
-                }
-        }*/
 
             if is_shaked == false && len <= BUFFER_SIZE { is_shaked = true; continue; }
             if len < BUFFER_SIZE { break; }

@@ -1,5 +1,5 @@
-use std::fmt::Error;
-use std::fmt::{Display, Formatter};
+use std;
+use std::error::Error;
 use std::collections::HashMap;
 
 #[derive(RustcEncodable, RustcDecodable)]
@@ -81,13 +81,13 @@ impl Clone for Container {
     }
 }
 
-impl Display for Container {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+impl std::fmt::Display for Container {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "{}", self.Id)
     }
 }
 
-impl Clone for Port {
+impl std::clone::Clone for Port {
     fn clone(&self) -> Self {
         let port = Port {
             IP: self.IP.clone(),
@@ -97,13 +97,6 @@ impl Clone for Port {
         };
         return port;
     }
-    
-    /*fn clone_from(&mut self, source: &Self) {
-        self.IP = source.IP.clone();
-        self.PrivatePort = source.PrivatePort.clone();
-        self.PublicPort = source.PublicPort.clone();
-        self.Type = source.Type.clone();
-    }*/
 }
 
 impl Clone for HostConfig {
@@ -146,8 +139,8 @@ impl Clone for ContainerInfo {
     }
 }
 
-impl Display for ContainerInfo {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+impl std::fmt::Display for ContainerInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "{}", self.Id)
     }
 }

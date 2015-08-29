@@ -28,7 +28,6 @@ impl UnixStream {
 
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-        //let mut raw = String::new();
         let mut raw: Vec<u8> = Vec::new();
         loop {
             let len = match stream.read(&mut buffer) {
@@ -39,17 +38,11 @@ impl UnixStream {
                     return Err(err);
                 }
             };
+            
             for i in 0..len {
                 raw.push(buffer[i]);
             }
-            /*match std::str::from_utf8(&buffer[0 .. len]) {
-                Ok(buf) => raw.push_str(buf),
-                Err(e) => {
-                    let err = io::Error::new(ErrorKind::InvalidInput,
-                                             e.description());
-                    return Err(err);
-                }
-            }*/
+
             if len < BUFFER_SIZE { break; }
         }
         return Ok(raw);
