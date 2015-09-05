@@ -12,6 +12,8 @@ use system::SystemInfo;
 use image::Image;
 #[cfg(test)]
 use filesystem::FilesystemChange;
+#[cfg(test)]
+use version::Version;
 
 #[test]
 #[cfg(test)]
@@ -83,6 +85,16 @@ fn get_filesystem_changes() {
     };
 }
 
+#[test]
+#[cfg(test)]
+fn get_version(){
+    let response = get_version_response();
+    let _: Version = match json::decode(&response) {
+        Ok(body) => body,
+        Err(_) => { assert!(false); return; }
+    };
+}    
+
 #[cfg(test)]
 fn get_containers_response() -> String {
     return "[{\"Id\":\"ed3221f4adc05b9ecfbf56b1aa76d4e6e70d5b73b3876c322fc10d017c64ca86\",\"Names\":[\"/rust\"],\"Image\":\"ghmlee/rust:latest\",\"Command\":\"bash\",\"Created\":1439434052,\"Ports\":[{\"IP\":\"0.0.0.0\",\"PrivatePort\":8888,\"PublicPort\":8888,\"Type\":\"tcp\"}],\"SizeRootFs\":253602755,\"Labels\":{},\"Status\":\"Exited (137) 12 hours ago\",\"HostConfig\":{\"NetworkMode\":\"default\"},\"SizeRw\":10832473}]".to_string();
@@ -116,4 +128,9 @@ fn get_processes_response() -> String {
 #[cfg(test)]
 fn get_filesystem_changes_response() -> String {
     return "[{\"Path\":\"/tmp\",\"Kind\":0}]".to_string();
+}
+
+#[cfg(test)]
+fn get_version_response() -> String {
+    return "{\"Version\":\"1.8.1\",\"ApiVersion\":\"1.20\",\"GitCommit\":\"d12ea79\",\"GoVersion\":\"go1.4.2\",\"Os\":\"linux\",\"Arch\":\"amd64\",\"KernelVersion\":\"4.0.9-boot2docker\",\"BuildTime\":\"Thu Aug 13 02:49:29 UTC 2015\"}".to_string();
 }
