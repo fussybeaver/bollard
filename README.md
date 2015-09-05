@@ -221,6 +221,26 @@ fn main() {
 }
 ```
 
+### Ping the docker server
+
+```rust
+extern crate docker;
+
+use docker::Docker;
+
+fn main() {
+    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    	Ok(docker) => docker,
+        Err(e) => { panic!("{}", e); }
+    };
+    
+    let ping = match docker.ping() {
+        Ok(ping) => ping,
+        Err(e) => { panic!("{}", e); }
+    };
+}
+```
+
 ## Docker Toolbox
 
 By default, `Docker Toolbox` runs `docker` with TLS enabled. It auto-generates certificates. The `docker-machine` will copy them to `~/.docker/machine/certs` on the host machine once the VM has started.
