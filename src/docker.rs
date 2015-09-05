@@ -17,6 +17,7 @@ use stats::Stats;
 use system::SystemInfo;
 use image::{Image, ImageStatus};
 use filesystem::FilesystemChange;
+use version::Version;
 
 pub struct Docker {
     protocol: Protocol,
@@ -362,6 +363,23 @@ impl Docker {
 
         return Ok(encoded_body);
      }
+
+    pub fn get_version(&self) -> std::io::Result<Version> {
+        let request = format!("GET /version HTTP/1.1\r\n\r\n");
+        let raw = try!(self.read(request.as_bytes()));
+        let response = try!(self.get_response(&raw));
+        try!(self.get_status_code(&response));
+        let encoded_body = try!(response.get_encoded_body());
+
+        let version: Version = match json::decode(&encoded_body){
+            Ok(body) => body,
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput, e.description());
+                return Err(err);
+            }
+        };
+        return Ok(version);
+    }
 
     fn read(&self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
         return match self.protocol {

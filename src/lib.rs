@@ -18,6 +18,7 @@ pub mod system;
 pub mod image;
 pub mod process;
 pub mod filesystem;
+pub mod version;
 
 // publicly re-export
 pub use docker::Docker;
