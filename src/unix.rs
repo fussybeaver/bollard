@@ -1,27 +1,32 @@
-use std::io::{self, Read, Write, Result, ErrorKind};
+use std;
+use std::io::{Read, Write};
 use std::error::Error;
+
 use unix_socket;
 
 pub struct UnixStream {
-    addr: String
+    stream: unix_socket::UnixStream
 }
 
 impl UnixStream {
-    pub fn connect(addr: &str) -> Result<UnixStream> {
+    pub fn connect(addr: &str) -> std::io::Result<UnixStream> {
+        let stream = try!(unix_socket::UnixStream::connect(addr));
+        
         let unix_stream = UnixStream {
-            addr: addr.to_string()
+            stream: stream
         };
+        
         return Ok(unix_stream);
     }
     
-    pub fn read(&mut self, buf: &[u8]) -> Result<Vec<u8>> {
-        let mut stream = try!(unix_socket::UnixStream::connect(&*self.addr));
+    pub fn read(&mut self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut stream = self.stream.try_clone().unwrap();
         
         match stream.write_all(buf) {
             Ok(_) => {}
             Err(e) => {
-                let err = io::Error::new(ErrorKind::ConnectionAborted,
-                                         e.description());
+                let err = std::io::Error::new(std::io::ErrorKind::ConnectionAborted,
+                                              e.description());
                 return Err(err);
             }
         };
@@ -33,8 +38,8 @@ impl UnixStream {
             let len = match stream.read(&mut buffer) {
                 Ok(len) => len,
                 Err(e) => {
-                    let err = io::Error::new(ErrorKind::ConnectionAborted,
-                                             e.description());
+                    let err = std::io::Error::new(std::io::ErrorKind::ConnectionAborted,
+                                                  e.description());
                     return Err(err);
                 }
             };
@@ -46,5 +51,15 @@ impl UnixStream {
             if len < BUFFER_SIZE { break; }
         }
         return Ok(raw);
+    }
+}
+
+impl Clone for UnixStream {
+    fn clone(&self) -> Self {
+        let stream = UnixStream {
+            stream: self.stream.try_clone().unwrap()
+        };
+        
+        return stream;
     }
 }

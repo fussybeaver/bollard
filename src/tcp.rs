@@ -1,59 +1,102 @@
 use std;
-use std::io::{self, Read, Write, Result, ErrorKind};
-use std::sync::Arc;
+use std::io::{Read, Write};
+use std::path::Path;
 use std::error::Error;
+
 use openssl;
 
 pub struct TcpStream {
-    addr: String,
     tls: bool,
-    ssl_context: Option<Arc<openssl::ssl::SslContext>>
+    stream: std::net::TcpStream,
+    ssl_stream: Option<openssl::ssl::SslStream<std::net::TcpStream>>
 }
 
 impl TcpStream {
-    pub fn connect(addr: &str) -> Result<TcpStream> {
+    pub fn connect(addr: &str) -> std::io::Result<TcpStream> {
+        let stream = try!(std::net::TcpStream::connect(addr));
+        
         let tcp_stream = TcpStream {
-            addr: addr.to_string(),
             tls: false,
-            ssl_context: None
+            stream: stream,
+            ssl_stream: None,
         };
+        
         return Ok(tcp_stream);
     }
 
-    pub fn set_ssl_context(&mut self, ssl_context: Arc<openssl::ssl::SslContext>) -> Result<()> {
+    pub fn set_ssl_context(&mut self, key: &Path, cert: &Path, ca: &Path) -> std::io::Result<()> {
         self.tls = true;
-        self.ssl_context = Some(ssl_context);
+
+        let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
+            Ok(context) => context,
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
+                return Err(err);
+            }
+        };
+
+        match context.set_private_key_file(key, openssl::x509::X509FileType::PEM) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                              e.description());
+                return Err(err);
+            }
+        }
+
+        match context.set_certificate_file(cert, openssl::x509::X509FileType::PEM) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
+                return Err(err);
+            }
+        }
+
+        match context.set_CA_file(ca) {
+            Ok(_) => {}
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
+                return Err(err);
+            }
+        }
+        
+        let stream = self.stream.try_clone().unwrap();
+        let ssl_stream = match openssl::ssl::SslStream::new(&context, stream) {
+            Ok(ssl_stream) => ssl_stream,
+            Err(e) => {
+                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                              e.description());
+                return Err(err);
+            }
+        };
+
+        self.ssl_stream = Some(ssl_stream);
+        
         return Ok(());
     }
 
-    pub fn read(&mut self, buf: &[u8]) -> Result<Vec<u8>> {
+    pub fn read(&mut self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
         let raw = match self.tls {
             false => {
-                let mut stream = try!(std::net::TcpStream::connect(&*self.addr));
+                let mut stream = self.stream.try_clone().unwrap();
                 let _ = stream.write(buf);
-                let raw = try!(self.read_from_stream(&mut stream));
+                let raw = try!(TcpStream::read_from_stream(&mut stream));
                 raw
             }
             true => {
-                let stream = try!(std::net::TcpStream::connect(&*self.addr));
-                let ssl_context = self.ssl_context.clone().unwrap().clone();
-                let mut ssl_stream = match openssl::ssl::SslStream::new(&*ssl_context, stream) {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        let err = io::Error::new(ErrorKind::NotConnected,
-                                                 e.description());
-                        return Err(err);
-                    }
-                };
+                let mut ssl_stream = self.ssl_stream.as_mut().unwrap().try_clone().unwrap();
                 let _ = ssl_stream.write(buf);
-                let raw = try!(self.read_from_stream(&mut ssl_stream));
+                let raw = try!(TcpStream::read_from_stream(&mut ssl_stream));
                 raw
             }
         };
         return Ok(raw);
     }
 
-    fn read_from_stream<S: Read>(&self, stream: &mut S) -> Result<Vec<u8>> {
+    fn read_from_stream<S: Read>(stream: &mut S) -> std::io::Result<Vec<u8>> {
         const BUFFER_SIZE: usize = 1024;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         let mut raw: Vec<u8> = Vec::new();
@@ -62,8 +105,8 @@ impl TcpStream {
             let len = match stream.read(&mut buffer) {
                 Ok(size) => size,
                 Err(e) => {
-                    let err = io::Error::new(ErrorKind::NotConnected,
-                                             e.description());
+                    let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
+                                                  e.description());
                     return Err(err);
                 }
             };
@@ -82,5 +125,24 @@ impl TcpStream {
         }
 
         return Ok(raw);
+    }
+}
+
+impl Clone for TcpStream {
+    fn clone(&self) -> Self {
+        let ssl_stream = match self.ssl_stream {
+            Some(ref ssl_stream) => {
+                Some(ssl_stream.try_clone().unwrap())
+            }
+            None => None
+        };
+        
+        let stream = TcpStream {
+            tls: self.tls.clone(),
+            stream: self.stream.try_clone().unwrap(),
+            ssl_stream: ssl_stream
+        };
+
+        return stream;
     }
 }

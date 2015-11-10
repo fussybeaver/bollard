@@ -1,15 +1,10 @@
 use std;
 use std::error::Error;
 use std::path::Path;
-use std::sync::Arc;
-use std::convert::AsRef;
-
-use openssl;
-use rustc_serialize::json;
 
 use tcp::TcpStream;
 use unix::UnixStream;
-use http::{Client, Response};
+use http::{self, Response};
 
 use container::{Container, ContainerInfo};
 use process::{Process, Top};
@@ -19,14 +14,12 @@ use image::{Image, ImageStatus};
 use filesystem::FilesystemChange;
 use version::Version;
 
+use rustc_serialize::json;
+
 pub struct Docker {
     protocol: Protocol,
-    addr: String,
-    tls: bool,
-    client: Client,
-    //unix_stream: Option<Arc<UnixStream>>,
-    //tcp_stream: Option<Arc<TcpStream>>,
-    ssl_context: Option<Arc<openssl::ssl::SslContext>>
+    unix_stream: Option<UnixStream>,
+    tcp_stream: Option<TcpStream>,
 }
 
 enum Protocol {
@@ -56,73 +49,39 @@ impl Docker {
             }
         };
 
-        /*let mut unix_stream = match protocol {
+        let unix_stream = match protocol {
             Protocol::UNIX => {
                 let stream = try!(UnixStream::connect(&*path));
-                Some(Arc::new(stream))
+                Some(stream)
             }
             _ => None
         };
 
-        let mut tcp_stream = match protocol {
+        let tcp_stream = match protocol {
             Protocol::TCP => {
                 let stream = try!(TcpStream::connect(&*path));
-                Some(Arc::new(stream))
+                Some(stream)
             }
             _ => None
-        };*/
+        };
 
         let docker = Docker {
             protocol: protocol,
-            addr: path,
-            tls: false,
-            client: Client::new(),
-            //unix_stream: None,
-            //tcp_stream: None,
-            ssl_context: None
+            unix_stream: unix_stream,
+            tcp_stream: tcp_stream
         };
         return Ok(docker);
     }
 
     pub fn set_tls(&mut self, key: &Path, cert: &Path, ca: &Path) -> std::io::Result<()> {
-        self.tls = true;
-        let mut context = match openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Tlsv1) {
-            Ok(context) => context,
-            Err(e) => {
-                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
-                                              e.description());
-                return Err(err);
+        match self.tcp_stream {
+            Some(_) => {
+                let mut tcp_stream = self.tcp_stream.as_mut().unwrap();
+                try!(tcp_stream.set_ssl_context(key, cert, ca));
             }
-        };
-
-        match context.set_private_key_file(key, openssl::x509::X509FileType::PEM) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
-                                              e.description());
-                return Err(err);
-            }
+            None => {}
         }
 
-        match context.set_certificate_file(cert, openssl::x509::X509FileType::PEM) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
-                                              e.description());
-                return Err(err);
-            }
-        }
-
-        match context.set_CA_file(ca) {
-            Ok(_) => {}
-            Err(e) => {
-                let err = std::io::Error::new(std::io::ErrorKind::NotConnected,
-                                              e.description());
-                return Err(err);
-            }
-        }
-
-        self.ssl_context = Some(Arc::new(context));
         return Ok(());
     }
 
@@ -130,7 +89,7 @@ impl Docker {
     // Containers
     //
     
-    pub fn get_containers(&self, all: bool) -> std::io::Result<Vec<Container>> {
+    pub fn get_containers(&mut self, all: bool) -> std::io::Result<Vec<Container>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -141,6 +100,7 @@ impl Docker {
         let response = try!(self.get_response(&raw));
         try!(self.get_status_code(&response));
         let body = try!(response.get_encoded_body());
+
         let containers: Vec<Container> = match json::decode(&body) {
             Ok(containers) => containers,
             Err(e) => {
@@ -153,7 +113,7 @@ impl Docker {
         return Ok(containers);
     }
     
-    pub fn get_processes(&self, container: &Container) -> std::io::Result<Vec<Process>> {
+    pub fn get_processes(&mut self, container: &Container) -> std::io::Result<Vec<Process>> {
         let request = format!("GET /containers/{}/top HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -223,7 +183,7 @@ impl Docker {
         return Ok(processes);
     }
 
-    pub fn get_stats(&self, container: &Container) -> std::io::Result<Stats> {
+    pub fn get_stats(&mut self, container: &Container) -> std::io::Result<Stats> {
         if container.Status.contains("Up") == false {
             let err = std::io::Error::new(std::io::ErrorKind::InvalidInput,
                                           "The container is already stopped.");
@@ -251,7 +211,7 @@ impl Docker {
     // Image
     //
     
-    pub fn create_image(&self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
+    pub fn create_image(&mut self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
         let request = format!("POST /images/create?fromImage={}&tag={} HTTP/1.1\r\n\r\n", image, tag);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -269,7 +229,7 @@ impl Docker {
         return Ok(statuses);
     }
 
-    pub fn get_images(&self, all: bool) -> std::io::Result<Vec<Image>> {
+    pub fn get_images(&mut self, all: bool) -> std::io::Result<Vec<Image>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -291,7 +251,7 @@ impl Docker {
         return Ok(images);
     }
 
-    pub fn get_system_info(&self) -> std::io::Result<SystemInfo> {
+    pub fn get_system_info(&mut self) -> std::io::Result<SystemInfo> {
         let request = "GET /info HTTP/1.1\r\n\r\n";
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -309,7 +269,7 @@ impl Docker {
         return Ok(info);
     }
 
-    pub fn get_container_info(&self, container: &Container) -> std::io::Result<ContainerInfo> {
+    pub fn get_container_info(&mut self, container: &Container) -> std::io::Result<ContainerInfo> {
         let request = format!("GET /containers/{}/json HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -327,7 +287,7 @@ impl Docker {
         return Ok(container_info);
     }
     
-    pub fn get_filesystem_changes(&self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
+    pub fn get_filesystem_changes(&mut self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
         let request = format!("GET /containers/{}/changes HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -345,7 +305,7 @@ impl Docker {
         return Ok(filesystem_changes);
     }
 
-    pub fn export_container(&self, container: &Container) -> std::io::Result<Vec<u8>> {
+    pub fn export_container(&mut self, container: &Container) -> std::io::Result<Vec<u8>> {
         let request = format!("GET /containers/{}/export HTTP/1.1\r\n\r\n", container.Id);
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -354,7 +314,7 @@ impl Docker {
         return Ok(response.body);
     }
 
-     pub fn ping(&self) -> std::io::Result<String> {
+     pub fn ping(&mut self) -> std::io::Result<String> {
         let request = format!("GET /_ping HTTP/1.1\r\n\r\n");
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -364,7 +324,7 @@ impl Docker {
         return Ok(encoded_body);
      }
 
-    pub fn get_version(&self) -> std::io::Result<Version> {
+    pub fn get_version(&mut self) -> std::io::Result<Version> {
         let request = format!("GET /version HTTP/1.1\r\n\r\n");
         let raw = try!(self.read(request.as_bytes()));
         let response = try!(self.get_response(&raw));
@@ -381,25 +341,21 @@ impl Docker {
         return Ok(version);
     }
 
-    fn read(&self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
+    fn read(&mut self, buf: &[u8]) -> std::io::Result<Vec<u8>> {
         return match self.protocol {
             Protocol::UNIX => {
-                let mut stream = try!(UnixStream::connect(&*self.addr));
+                let mut stream = self.unix_stream.as_mut().unwrap();
                 stream.read(buf)
             }
             Protocol::TCP => {
-                let mut stream = try!(TcpStream::connect(&*self.addr));
-                if self.tls == true {
-                    let ssl_context = self.ssl_context.clone().unwrap().clone();
-                    try!(stream.set_ssl_context(ssl_context));
-                }
+                let mut stream = self.tcp_stream.as_mut().unwrap();
                 stream.read(buf)
             }
         };
     }
 
     fn get_response(&self, raw: &Vec<u8>) -> std::io::Result<Response> {
-        self.client.get_response(raw)
+        http::get_response(raw)
     }
 
     fn get_status_code(&self, response: &Response) -> std::io::Result<()> {
@@ -412,5 +368,37 @@ impl Docker {
                 return Err(err);
             }
         }
+    }
+}
+
+
+
+impl Clone for Docker {
+    fn clone(&self)-> Self {
+        let protocol = match self.protocol {
+            Protocol::UNIX => Protocol::UNIX,
+            Protocol::TCP => Protocol::TCP
+        };
+        
+        let unix_stream = match self.unix_stream {
+            Some(ref unix_stream) => {
+                Some(unix_stream.clone())
+            }
+            None => None
+        };
+
+        let tcp_stream = match self.tcp_stream {
+            Some(ref tcp_stream) => {
+                Some(tcp_stream.clone())
+            }
+            None => None
+        };
+        
+        let docker = Docker {
+            protocol: protocol,
+            unix_stream: unix_stream,
+            tcp_stream: tcp_stream
+        };
+        return docker;
     }
 }

@@ -77,6 +77,7 @@ impl Clone for Container {
             Labels: self.Labels.clone(),
             HostConfig: self.HostConfig.clone()
         };
+        
         return container;
     }
 }

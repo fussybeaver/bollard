@@ -25,8 +25,20 @@ fn main() {
 ```
 
 ## Debug
-* Rust (>= v1.1.0)
+* OpenSSL (>= v1.0.0)
+* Rust (>= v1.4.0)
 * Docker (>= v1.5.0)
+
+### OpenSSL
+
+#### Mac OS X
+```bash
+brew install openssl
+brew link --force openssl
+
+export OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include
+export OPENSSL_ROOT_DIR=/usr/local/opt/openssl
+```
 
 ## Examples
 
@@ -38,7 +50,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -58,7 +70,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -83,7 +95,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -104,7 +116,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -124,7 +136,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -149,7 +161,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -174,7 +186,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -199,7 +211,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -229,7 +241,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -249,7 +261,7 @@ extern crate docker;
 use docker::Docker;
 
 fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
+    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
@@ -279,31 +291,6 @@ fn main() {
     let ca = Path::new("/Users/<username>/.docker/machine/certs/ca.pem");
 
     let mut docker = match Docker::connect("tcp://192.168.99.100:2376") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-    docker.set_tls(&key, &cert, &ca).unwrap();
-}
-```
-
-## Boot2Docker
-
-By default, `boot2docker` runs `docker` with TLS enabled. It auto-generates certificates and stores them in `/home/docker/.docker` inside the VM. The `boot2docker` up command will copy them to `~/.boot2docker/certs` on the host machine once the VM has started, and output the correct values for the `DOCKER_CERT_PATH` and `DOCKER_TLS_VERIFY` environment variables.
-
-### Example
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-use std::path::Path;
-
-fn main() {
-    let key = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/key.pem");
-    let cert = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/cert.pem");
-    let ca = Path::new("/Users/<username>/.boot2docker/certs/boot2docker-vm/ca.pem");
-
-    let mut docker = match Docker::connect("tcp://192.168.59.103:2376") {
     	Ok(docker) => docker,
         Err(e) => { panic!("{}", e); }
     };
