@@ -16,3 +16,6 @@ run:
 
 clean:
 	cargo clean
+
+publish:
+	cargo publish
