@@ -33,7 +33,7 @@ impl Clone for ImageStatus {
     fn clone(&self) -> Self {
         let image_status = ImageStatus {
             status: self.status.clone(),
-            error: self.status.clone()
+            error: self.error.clone()
         };
         return image_status;
     }

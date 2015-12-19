@@ -11,6 +11,6 @@ readme = "README.md"
 keywords = ["docker"]
 
 [dependencies]
-openssl = "0.6.7"
-unix_socket = "0.4.6"
+hyper = "^0.7"
+openssl = "^0.7"
 rustc-serialize = "0.3.16"
