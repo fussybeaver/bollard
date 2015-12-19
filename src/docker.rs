@@ -12,6 +12,8 @@ use hyper::client::response::Response;
 use hyper::net::HttpsConnector;
 use hyper::net::Openssl;
 
+use unix::HttpUnixConnector;
+
 use openssl::ssl::{SslContext, SslMethod};
 use openssl::ssl::error::SslError;
 use openssl::x509::X509FileType;
@@ -38,9 +40,23 @@ pub struct Docker {
 }
 
 impl Docker {
+    pub fn connect_with_unix(addr: String) -> Result<Docker, std::io::Error> {
+        // This ensures that using a fully-qualified path -- e.g. unix://.... -- works.  The unix
+        // socket provider expects a Path, so we don't need scheme.
+        let client_addr = addr.clone().replace("unix://", "");
+
+        let http_unix_connector = HttpUnixConnector::new(&client_addr);
+        let connection_pool_config = Config { max_idle: 8 };
+        let connection_pool = Pool::with_connector(connection_pool_config, http_unix_connector);
+
+        let client = Client::with_connector(connection_pool);
+        let docker = Docker { client: client, client_type: ClientType::Unix, client_addr: client_addr };
+
+        return Ok(docker);
+    }
+
     pub fn connect_with_ssl(addr: String, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
-        // TODO: more robust scheme handling.   we're assuming this is an addr from docker-machine
-        // i.e. tcp://xx.xx.xx.xx, so it's a little hard-coded atm.
+        // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
 
         let mut ssl_context = try!(SslContext::new(SslMethod::Sslv23));
@@ -60,16 +76,18 @@ impl Docker {
     }
 
     fn get_url(&mut self, path: String) -> String {
-        match self.client_type {
-            ClientType::Tcp => {
-                let mut addr = self.client_addr.clone();
-                let new_path = path.clone();
-                addr.push_str(&*new_path);
+        let mut base = match self.client_type {
+            ClientType::Tcp => self.client_addr.clone(),
+            ClientType::Unix => {
+                // We need a host so the HTTP headers can be generated, so we just spoof it and say
+                // that we're talking to localhost.  The hostname doesn't matter one bit.
+                "http://localhost/".to_string()
+            }
+        };
+        let new_path = path.clone();
+        base.push_str(&*new_path);
 
-                addr
-            },
-            ClientType::Unix => path.clone(),
-        }
+        base
     }
 
     fn build_get_request(&self, request_url: String) -> RequestBuilder {

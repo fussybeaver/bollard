@@ -13,4 +13,5 @@ keywords = ["docker"]
 [dependencies]
 hyper = "^0.7"
 openssl = "^0.7"
+unix_socket = "^0.5"
 rustc-serialize = "0.3.16"

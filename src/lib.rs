@@ -4,11 +4,13 @@
 // import external libraries
 extern crate hyper;
 extern crate openssl;
+extern crate unix_socket;
 extern crate rustc_serialize;
 
 // declare modules
 mod test;
 mod util;
+mod unix;
 mod docker;
 pub mod container;
 pub mod stats;
