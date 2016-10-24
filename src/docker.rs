@@ -181,7 +181,7 @@ impl Docker {
 
     }
 
-    fn get_url(&mut self, path: String) -> String {
+    fn get_url(&self, path: String) -> String {
         let mut base = match self.client_type {
             ClientType::Tcp => self.client_addr.clone(),
             ClientType::Unix => {
@@ -234,7 +234,7 @@ impl Docker {
         wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
     }
 
-    pub fn get_containers(&mut self, all: bool) -> std::io::Result<Vec<Container>> {
+    pub fn get_containers(&self, all: bool) -> std::io::Result<Vec<Container>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -253,7 +253,7 @@ impl Docker {
         }
     }
 
-    pub fn get_processes(&mut self, container: &Container) -> std::io::Result<Vec<Process>> {
+    pub fn get_processes(&self, container: &Container) -> std::io::Result<Vec<Process>> {
         let request_url = self.get_url(format!("/containers/{}/top", container.Id));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
@@ -323,7 +323,7 @@ impl Docker {
         }
     }
 
-    pub fn get_stats(&mut self, container: &Container) -> std::io::Result<StatsReader> {
+    pub fn get_stats(&self, container: &Container) -> std::io::Result<StatsReader> {
         if container.Status.contains("Up") == false {
             let err = std::io::Error::new(std::io::ErrorKind::InvalidInput, "The container is already stopped.");
             return Err(err);
@@ -337,7 +337,7 @@ impl Docker {
         }
     }
 
-    pub fn create_image(&mut self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
+    pub fn create_image(&self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
         let request_url = self.get_url(format!("/images/create?fromImage={}&tag={}", image, tag));
         let request = self.build_post_request(request_url);
         match self.execute_request(request) {
@@ -352,7 +352,7 @@ impl Docker {
         }
     }
 
-    pub fn get_images(&mut self, all: bool) -> std::io::Result<Vec<Image>> {
+    pub fn get_images(&self, all: bool) -> std::io::Result<Vec<Image>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -371,7 +371,7 @@ impl Docker {
         }
     }
 
-    pub fn get_system_info(&mut self) -> std::io::Result<SystemInfo> {
+    pub fn get_system_info(&self) -> std::io::Result<SystemInfo> {
         let request_url = self.get_url(format!("/info"));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
@@ -385,7 +385,7 @@ impl Docker {
         }
     }
 
-    pub fn get_container_info(&mut self, container: &Container) -> std::io::Result<ContainerInfo> {
+    pub fn get_container_info(&self, container: &Container) -> std::io::Result<ContainerInfo> {
         let request_url = self.get_url(format!("/containers/{}/json", container.Id));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
@@ -399,7 +399,7 @@ impl Docker {
         }
     }
 
-    pub fn get_filesystem_changes(&mut self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
+    pub fn get_filesystem_changes(&self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
         let request_url = self.get_url(format!("/containers/{}/changes", container.Id));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
@@ -413,7 +413,7 @@ impl Docker {
         }
     }
 
-    pub fn export_container(&mut self, container: &Container) -> std::io::Result<Response> {
+    pub fn export_container(&self, container: &Container) -> std::io::Result<Response> {
         let request_url = self.get_url(format!("/containers/{}/export", container.Id));
         let request = self.build_get_request(request_url);
         match self.start_request(request) {
@@ -422,7 +422,7 @@ impl Docker {
         }
     }
 
-     pub fn ping(&mut self) -> std::io::Result<String> {
+     pub fn ping(&self) -> std::io::Result<String> {
         let request_url = self.get_url(format!("/_ping"));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
@@ -431,7 +431,7 @@ impl Docker {
         }
      }
 
-    pub fn get_version(&mut self) -> std::io::Result<Version> {
+    pub fn get_version(&self) -> std::io::Result<Version> {
         let request_url = self.get_url(format!("/version"));
         let request = self.build_get_request(request_url);
         match self.execute_request(request) {
