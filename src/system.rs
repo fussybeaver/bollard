@@ -1,4 +1,4 @@
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct SystemInfo {
     pub Containers: u64,

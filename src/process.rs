@@ -1,6 +1,7 @@
 use std::fmt::Error;
 use std::fmt::{Display, Formatter};
 
+#[derive(Debug)]
 pub struct Process {
     pub user: String,
     pub pid: String,
@@ -15,7 +16,7 @@ pub struct Process {
     pub command: String,
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Top {
     pub Titles: Vec<String>,
@@ -46,7 +47,7 @@ impl Display for Process {
             },
             None => {}
         }
-        
+
         match self.vsz.clone() {
             Some(v) => {
                 s.push_str(",");
@@ -97,7 +98,7 @@ impl Display for Process {
 
         s.push_str(",");
         s.push_str(&*self.command.clone());
-        
+
         write!(f, "{}", s)
     }
 }

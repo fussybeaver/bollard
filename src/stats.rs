@@ -32,7 +32,7 @@ impl StatsReader {
     }
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct Stats {
     pub read: String,
     pub network: Network,
@@ -41,7 +41,7 @@ pub struct Stats {
     pub blkio_stats: BlkioStats
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct Network {
     pub rx_dropped: u64,
     pub rx_bytes: u64,
@@ -53,7 +53,7 @@ pub struct Network {
     pub tx_bytes: u64
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct MemoryStats {
     pub max_usage: u64,
     pub usage: u64,
@@ -62,7 +62,7 @@ pub struct MemoryStats {
     pub stats: MemoryStat
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct MemoryStat {
     pub total_pgmajfault: u64,
     pub cache: u64,
@@ -98,14 +98,14 @@ pub struct MemoryStat {
     pub total_swap: u64
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct CpuStats {
     pub cpu_usage: CpuUsage,
     pub system_cpu_usage: u64,
     pub throttling_data: ThrottlingData
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct CpuUsage {
     pub percpu_usage: Vec<u64>,
     pub usage_in_usermode: u64,
@@ -113,14 +113,14 @@ pub struct CpuUsage {
     pub usage_in_kernelmode: u64
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct ThrottlingData {
     pub periods: u64,
     pub throttled_periods: u64,
     pub throttled_time: u64
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Vec<BlkioStat>,
     pub io_serviced_recursive: Vec<BlkioStat>,
@@ -132,7 +132,7 @@ pub struct BlkioStats {
     pub sectors_recursive: Vec<BlkioStat>
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct BlkioStat {
     pub major: u64,
     pub minor: u64,

@@ -2,7 +2,7 @@ use std;
 use std::error::Error;
 use std::collections::HashMap;
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 //Labels, HostConfig
 pub struct Container {
@@ -19,7 +19,7 @@ pub struct Container {
     pub HostConfig: HostConfig
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Port {
     pub IP: Option<String>,
@@ -28,13 +28,13 @@ pub struct Port {
     pub Type: String
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct HostConfig {
     pub NetworkMode: String
 }
 
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct ContainerInfo {
     pub AppArmorProfile: String,
@@ -77,7 +77,7 @@ impl Clone for Container {
             Labels: self.Labels.clone(),
             HostConfig: self.HostConfig.clone()
         };
-        
+
         return container;
     }
 }
