@@ -20,6 +20,16 @@ error_chain! {
             display("could not find DOCKER_CERT_PATH")
         }
 
+        SslDisabled {
+            description("Docker SSL support was disabled at compile time")
+            display("Docker SSL support was disabled at compile time")
+        }
+
+        SslError(host: String) {
+            description("could not connect to Docker using SSL")
+            display("could not connect to Docker at '{}' using SSL", &host)
+        }
+
         UnsupportedScheme(host: String) {
             description("unsupported Docker URL scheme")
             display("do not know how to connect to Docker at '{}'", &host)

@@ -3,7 +3,7 @@ use std::env;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::io::Read;
+use std::io::{self, Read};
 
 use hyper;
 use hyper::Client;
@@ -105,9 +105,13 @@ impl Docker {
     }
 
     #[cfg(unix)]
-    pub fn connect_with_unix(addr: &str) -> Result<Docker, std::io::Error> {
-        // This ensures that using a fully-qualified path -- e.g. unix://.... -- works.  The unix
-        // socket provider expects a Path, so we don't need scheme.
+    pub fn connect_with_unix(addr: &str) -> errors::Result<Docker> {
+        // This ensures that using a fully-qualified path --
+        // e.g. unix://.... -- works.  The unix socket provider expects a
+        // Path, so we don't need scheme.
+        //
+        // TODO: Fix `replace` here and in other connect_* functions to only
+        // replace at the beginning of the string.
         let client_addr = addr.clone().replace("unix://", "");
 
         let http_unix_connector = HttpUnixConnector::new(&client_addr);
@@ -121,19 +125,23 @@ impl Docker {
     }
 
     #[cfg(not(unix))]
-    pub fn connect_with_unix(addr: &str) -> Result<Docker, std::io::Error> {
-        Err(io::Error::new(io::ErrorKind::Other, "unix:// only works on Unix"))
+    pub fn connect_with_unix(addr: &str) -> errors::Result<Docker> {
+        Err(errors::ErrorKind::UnsupportedScheme(addr.to_owned()).into())
     }
 
     #[cfg(feature="openssl")]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> errors::Result<Docker> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
 
-        let mut ssl_context = try!(SslContext::new(SslMethod::Sslv23));
-        try!(ssl_context.set_CA_file(ssl_ca));
-        try!(ssl_context.set_certificate_file(ssl_cert, X509FileType::PEM));
-        try!(ssl_context.set_private_key_file(ssl_key, X509FileType::PEM));
+        let mkerr = || ErrorKind::SslError(addr.to_owned());
+        let mut ssl_context = try!(SslContext::new(SslMethod::Sslv23)
+            .chain_err(&mkerr));
+        try!(ssl_context.set_CA_file(ssl_ca).chain_err(&mkerr));
+        try!(ssl_context.set_certificate_file(ssl_cert, X509FileType::PEM)
+            .chain_err(&mkerr));
+        try!(ssl_context.set_private_key_file(ssl_key, X509FileType::PEM)
+            .chain_err(&mkerr));
 
         let hyper_ssl_context = Openssl { context: Arc::new(ssl_context) };
         let https_connector = HttpsConnector::new(hyper_ssl_context);
@@ -141,15 +149,19 @@ impl Docker {
         let connection_pool = Pool::with_connector(connection_pool_config, https_connector);
 
         let client = Client::with_connector(connection_pool);
-        let docker = Docker { client: client, client_type: ClientType::Tcp, client_addr: client_addr };
+        let docker = Docker {
+            client: client,
+            client_type:
+            ClientType::Tcp,
+            client_addr: client_addr.to_owned(),
+        };
 
         return Ok(docker);
     }
 
     #[cfg(not(feature="openssl"))]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
-        Err(io::Error::new(io::ErrorKind::Other,
-                           "OpenSSL was disabled at compile time"))
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> errors::Result<Docker> {
+        Err(errors::ErrorKind::SslDisabled.into())
     }
 
     /// Connect using unsecured HTTP.  This is strongly discouraged
