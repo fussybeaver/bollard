@@ -42,7 +42,7 @@ pub struct ContainerInfo {
     // Config
     pub Created: String,
     pub Driver: String,
-    pub ExecDriver: String,
+    //pub ExecDriver: String,
     // ExecIDs
     // HostConfig
     pub HostnamePath: String,
@@ -58,8 +58,8 @@ pub struct ContainerInfo {
     pub ResolvConfPath: String,
     pub RestartCount: u64,
     // State
-    pub Volumes: HashMap<String, String>,
-    pub VolumesRW: HashMap<String, bool>
+    //pub Volumes: HashMap<String, String>,
+    //pub VolumesRW: HashMap<String, bool>
 }
 
 impl Clone for Container {
@@ -117,7 +117,7 @@ impl Clone for ContainerInfo {
             // Config
             Created: self.Created.clone(),
             Driver: self.Driver.clone(),
-            ExecDriver: self.ExecDriver.clone(),
+            //ExecDriver: self.ExecDriver.clone(),
             // ExecIDs
             // HostConfig
             HostnamePath: self.HostnamePath.clone(),
@@ -133,8 +133,8 @@ impl Clone for ContainerInfo {
             ResolvConfPath: self.ResolvConfPath.clone(),
             RestartCount: self.RestartCount,
             // State
-            Volumes: self.Volumes.clone(),
-            VolumesRW: self.VolumesRW.clone()
+            //Volumes: self.Volumes.clone(),
+            //VolumesRW: self.VolumesRW.clone()
         };
         return container_info;
     }
