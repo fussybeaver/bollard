@@ -1,6 +1,5 @@
 use std;
 use std::env;
-use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::io::{self, Read};
@@ -24,7 +23,7 @@ use openssl::ssl::error::SslError;
 #[cfg(feature="openssl")]
 use openssl::x509::X509FileType;
 
-use errors::{self, ChainErr, ErrorKind};
+use errors::*;
 use container::{Container, ContainerInfo};
 use process::{Process, Top};
 use stats::StatsReader;
@@ -49,7 +48,7 @@ pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
 
 /// The default directory in which to look for our Docker certificate
 /// files.
-pub fn default_cert_path() -> errors::Result<PathBuf> {
+pub fn default_cert_path() -> Result<PathBuf> {
     let from_env = env::var("DOCKER_CERT_PATH")
         .or_else(|_| env::var("DOCKER_CONFIG"));
     if let Ok(ref path) = from_env {
@@ -78,7 +77,7 @@ impl Docker {
     /// `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` and `DOCKER_CONFIG`, and we
     /// try to interpret these as much like the standard `docker` client as
     /// possible.
-    pub fn connect_with_defaults() -> errors::Result<Docker> {
+    pub fn connect_with_defaults() -> Result<Docker> {
         // Read in our configuration from the Docker environment.
         let host = env::var("DOCKER_HOST")
             .unwrap_or(DEFAULT_DOCKER_HOST.to_string());
@@ -105,7 +104,7 @@ impl Docker {
     }
 
     #[cfg(unix)]
-    pub fn connect_with_unix(addr: &str) -> errors::Result<Docker> {
+    pub fn connect_with_unix(addr: &str) -> Result<Docker> {
         // This ensures that using a fully-qualified path --
         // e.g. unix://.... -- works.  The unix socket provider expects a
         // Path, so we don't need scheme.
@@ -125,12 +124,12 @@ impl Docker {
     }
 
     #[cfg(not(unix))]
-    pub fn connect_with_unix(addr: &str) -> errors::Result<Docker> {
-        Err(errors::ErrorKind::UnsupportedScheme(addr.to_owned()).into())
+    pub fn connect_with_unix(addr: &str) -> Result<Docker> {
+        Err(ErrorKind::UnsupportedScheme(addr.to_owned()).into())
     }
 
     #[cfg(feature="openssl")]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> errors::Result<Docker> {
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
 
@@ -160,13 +159,13 @@ impl Docker {
     }
 
     #[cfg(not(feature="openssl"))]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> errors::Result<Docker> {
-        Err(errors::ErrorKind::SslDisabled.into())
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker> {
+        Err(ErrorKind::SslDisabled.into())
     }
 
     /// Connect using unsecured HTTP.  This is strongly discouraged
     /// everywhere but on Windows when npipe support is not available.
-    pub fn connect_with_http(addr: &str) -> Result<Docker, std::io::Error> {
+    pub fn connect_with_http(addr: &str) -> Result<Docker> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "http://");
 
@@ -204,29 +203,19 @@ impl Docker {
         self.client.post(&*request_url)
     }
 
-    fn execute_request(&self, request: RequestBuilder) -> Result<String, hyper::error::Error> {
-        match request.send() {
-            Ok(mut response) => {
-                assert!(response.status.is_success());
+    fn execute_request(&self, request: RequestBuilder) -> Result<String> {
+        let mut response = try!(request.send());
+        assert!(response.status.is_success());
 
-                let mut body = String::new();
-                match response.read_to_string(&mut body) {
-                    Ok(_) => Ok(body),
-                    Err(e) => Err(hyper::error::Error::Io(e))
-                }
-            },
-            Err(e) => Err(e)
-        }
+        let mut body = String::new();
+        try!(response.read_to_string(&mut body));
+        Ok(body)
     }
 
-    fn start_request(&self, request: RequestBuilder) -> Result<Response, hyper::error::Error> {
-        match request.send() {
-            Ok(response) => {
-                assert!(response.status.is_success());
-                Ok(response)
-            },
-            Err(e) => Err(e)
-        }
+    fn start_request(&self, request: RequestBuilder) -> Result<Response> {
+        let response = try!(request.send());
+        assert!(response.status.is_success());
+        Ok(response)
     }
 
     fn arrayify(&self, s: String) -> String {
@@ -234,7 +223,7 @@ impl Docker {
         wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
     }
 
-    pub fn get_containers(&self, all: bool) -> std::io::Result<Vec<Container>> {
+    pub fn get_containers(&self, all: bool) -> Result<Vec<Container>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -242,117 +231,94 @@ impl Docker {
 
         let request_url = self.get_url(format!("/containers/json?a={}&size=1", a));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<Vec<Container>>(&body) {
-                    Ok(containers) => Ok(containers),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let containers = try!(json::decode::<Vec<Container>>(&body));
+        Ok(containers)
     }
 
-    pub fn get_processes(&self, container: &Container) -> std::io::Result<Vec<Process>> {
+    pub fn get_processes(&self, container: &Container) -> Result<Vec<Process>> {
         let request_url = self.get_url(format!("/containers/{}/top", container.Id));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<Top>(&body) {
-                    Ok(top) => {
-                        let mut processes: Vec<Process> = Vec::new();
-                        let mut process_iter = top.Processes.iter();
-                        loop {
-                            let process = match process_iter.next() {
-                                Some(process) => process,
-                                None => { break; }
-                            };
+        let body = try!(self.execute_request(request));
+        let top = try!(json::decode::<Top>(&body));
 
-                            let mut p = Process{
-                                user: String::new(),
-                                pid: String::new(),
-                                cpu: None,
-                                memory: None,
-                                vsz: None,
-                                rss: None,
-                                tty: None,
-                                stat: None,
-                                start: None,
-                                time: None,
-                                command: String::new()
-                            };
+        let mut processes: Vec<Process> = Vec::new();
+        let mut process_iter = top.Processes.iter();
+        loop {
+            let process = match process_iter.next() {
+                Some(process) => process,
+                None => { break; }
+            };
 
-                            let mut value_iter = process.iter();
-                            let mut i: usize = 0;
-                            loop {
-                                let value = match value_iter.next() {
-                                    Some(value) => value,
-                                    None => { break; }
-                                };
-                                let key = &top.Titles[i];
-                                match key.as_ref() {
-                                "UID" => { p.user = value.clone() },
-                                    "USER" => {p.user = value.clone() },
-                                    "PID" => { p.pid = value.clone() },
-                                    "%CPU" => { p.cpu = Some(value.clone()) },
-                                    "%MEM" => { p.memory = Some(value.clone()) },
-                                    "VSZ" => { p.vsz = Some(value.clone()) },
-                                    "RSS" => { p.rss = Some(value.clone()) },
-                                    "TTY" => { p.tty = Some(value.clone()) },
-                                    "STAT" => { p.stat = Some(value.clone()) },
-                                    "START" => { p.start = Some(value.clone()) },
-                                    "STIME" => { p.start = Some(value.clone()) },
-                                    "TIME" => { p.time = Some(value.clone()) },
-                                    "CMD" => { p.command = value.clone() },
-                                    "COMMAND" => { p.command = value.clone() },
-                                    _ => {}
-                                }
+            let mut p = Process{
+                user: String::new(),
+                pid: String::new(),
+                cpu: None,
+                memory: None,
+                vsz: None,
+                rss: None,
+                tty: None,
+                stat: None,
+                start: None,
+                time: None,
+                command: String::new()
+            };
 
-                                i = i + 1;
-                            };
-
-                            processes.push(p);
-                        };
-
-                        Ok(processes)
-                    },
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
+            let mut value_iter = process.iter();
+            let mut i: usize = 0;
+            loop {
+                let value = match value_iter.next() {
+                    Some(value) => value,
+                    None => { break; }
+                };
+                let key = &top.Titles[i];
+                match key.as_ref() {
+                    "UID" => { p.user = value.clone() },
+                    "USER" => {p.user = value.clone() },
+                    "PID" => { p.pid = value.clone() },
+                    "%CPU" => { p.cpu = Some(value.clone()) },
+                    "%MEM" => { p.memory = Some(value.clone()) },
+                    "VSZ" => { p.vsz = Some(value.clone()) },
+                    "RSS" => { p.rss = Some(value.clone()) },
+                    "TTY" => { p.tty = Some(value.clone()) },
+                    "STAT" => { p.stat = Some(value.clone()) },
+                    "START" => { p.start = Some(value.clone()) },
+                    "STIME" => { p.start = Some(value.clone()) },
+                    "TIME" => { p.time = Some(value.clone()) },
+                    "CMD" => { p.command = value.clone() },
+                    "COMMAND" => { p.command = value.clone() },
+                    _ => {}
                 }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
+
+                i = i + 1;
+            }
+            processes.push(p);
         }
+
+        Ok(processes)
     }
 
-    pub fn get_stats(&self, container: &Container) -> std::io::Result<StatsReader> {
+    pub fn get_stats(&self, container: &Container) -> Result<StatsReader> {
         if container.Status.contains("Up") == false {
-            let err = std::io::Error::new(std::io::ErrorKind::InvalidInput, "The container is already stopped.");
-            return Err(err);
+            return Err("The container is already stopped.".into());
         }
 
         let request_url = self.get_url(format!("/containers/{}/stats", container.Id));
         let request = self.build_get_request(request_url);
-        match self.start_request(request) {
-            Ok(response) => Ok(StatsReader::new(response)),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let response = try!(self.start_request(request));
+        Ok(StatsReader::new(response))
     }
 
-    pub fn create_image(&self, image: String, tag: String) -> std::io::Result<Vec<ImageStatus>> {
+    pub fn create_image(&self, image: String, tag: String) -> Result<Vec<ImageStatus>> {
         let request_url = self.get_url(format!("/images/create?fromImage={}&tag={}", image, tag));
         let request = self.build_post_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                let fixed = self.arrayify(body);
-                match json::decode::<Vec<ImageStatus>>(&fixed) {
-                    Ok(statuses) => Ok(statuses),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let fixed = self.arrayify(body);
+        let statuses = try!(json::decode::<Vec<ImageStatus>>(&fixed));
+        Ok(statuses)
     }
 
-    pub fn get_images(&self, all: bool) -> std::io::Result<Vec<Image>> {
+    pub fn get_images(&self, all: bool) -> Result<Vec<Image>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -360,88 +326,54 @@ impl Docker {
 
         let request_url = self.get_url(format!("/images/json?a={}", a));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<Vec<Image>>(&body) {
-                    Ok(images) => Ok(images),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let images = try!(json::decode::<Vec<Image>>(&body));
+        Ok(images)
     }
 
-    pub fn get_system_info(&self) -> std::io::Result<SystemInfo> {
+    pub fn get_system_info(&self) -> Result<SystemInfo> {
         let request_url = self.get_url(format!("/info"));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<SystemInfo>(&body) {
-                    Ok(info) => Ok(info),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let info = try!(json::decode::<SystemInfo>(&body));
+        Ok(info)
     }
 
-    pub fn get_container_info(&self, container: &Container) -> std::io::Result<ContainerInfo> {
+    pub fn get_container_info(&self, container: &Container) -> Result<ContainerInfo> {
         let request_url = self.get_url(format!("/containers/{}/json", container.Id));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<ContainerInfo>(&body) {
-                    Ok(info) => Ok(info),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let info = try!(json::decode::<ContainerInfo>(&body));
+        Ok(info)
     }
 
-    pub fn get_filesystem_changes(&self, container: &Container) -> std::io::Result<Vec<FilesystemChange>> {
+    pub fn get_filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
         let request_url = self.get_url(format!("/containers/{}/changes", container.Id));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<Vec<FilesystemChange>>(&body) {
-                    Ok(changes) => Ok(changes),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let changes = try!(json::decode::<Vec<FilesystemChange>>(&body));
+        Ok(changes)
     }
 
-    pub fn export_container(&self, container: &Container) -> std::io::Result<Response> {
+    pub fn export_container(&self, container: &Container) -> Result<Response> {
         let request_url = self.get_url(format!("/containers/{}/export", container.Id));
         let request = self.build_get_request(request_url);
-        match self.start_request(request) {
-            Ok(response) => Ok(response),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let response = try!(self.start_request(request));
+        Ok(response)
     }
 
-     pub fn ping(&self) -> std::io::Result<String> {
+    pub fn ping(&self) -> Result<String> {
         let request_url = self.get_url(format!("/_ping"));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => Ok(body),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
-     }
+        let body = try!(self.execute_request(request));
+        Ok(body)
+    }
 
-    pub fn get_version(&self) -> std::io::Result<Version> {
+    pub fn get_version(&self) -> Result<Version> {
         let request_url = self.get_url(format!("/version"));
         let request = self.build_get_request(request_url);
-        match self.execute_request(request) {
-            Ok(body) => {
-                match json::decode::<Version>(&body) {
-                    Ok(version) => Ok(version),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.description()))
-        }
+        let body = try!(self.execute_request(request));
+        let version = try!(json::decode::<Version>(&body));
+        Ok(version)
     }
 }

@@ -22,7 +22,7 @@ mod util;
 #[cfg(unix)]
 mod unix;
 mod docker;
-mod errors;
+pub mod errors;
 pub mod container;
 pub mod stats;
 pub mod system;

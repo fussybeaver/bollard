@@ -1,12 +1,16 @@
 //! Error-handling with the `error_chain` crate.
 
+use hyper;
+use rustc_serialize::json;
 use std::env;
 use std::io;
 
 error_chain! {
     foreign_links {
-        io::Error, Io;
         env::VarError, EnvVar;
+        hyper::Error, Hyper;
+        io::Error, Io;
+        json::DecoderError, Json;
     }
 
     errors {
