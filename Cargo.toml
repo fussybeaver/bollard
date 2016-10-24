@@ -20,6 +20,7 @@ default = ["ssl"]
 ssl = ["openssl", "hyper/ssl"]
 
 [dependencies]
+error-chain = "0.5.0"
 hyper = { version = "0.9", default-features = false }
 openssl = { version = "0.7", optional = true }
 rustc-serialize = "0.3.16"

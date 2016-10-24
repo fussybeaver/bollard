@@ -1,6 +1,7 @@
 use std;
+use std::env;
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::io::Read;
 
@@ -9,10 +10,9 @@ use hyper::Client;
 use hyper::client::RequestBuilder;
 use hyper::client::pool::{Config, Pool};
 use hyper::client::response::Response;
+use hyper::net::HttpConnector;
 #[cfg(feature="openssl")]
-use hyper::net::HttpsConnector;
-#[cfg(feature="openssl")]
-use hyper::net::Openssl;
+use hyper::net::{HttpsConnector, Openssl};
 
 #[cfg(unix)]
 use unix::HttpUnixConnector;
@@ -24,6 +24,7 @@ use openssl::ssl::error::SslError;
 #[cfg(feature="openssl")]
 use openssl::x509::X509FileType;
 
+use errors::{self, ChainErr, ErrorKind};
 use container::{Container, ContainerInfo};
 use process::{Process, Top};
 use stats::StatsReader;
@@ -33,6 +34,32 @@ use filesystem::FilesystemChange;
 use version::Version;
 
 use rustc_serialize::json;
+
+/// The default `DOCKER_HOST` address that we will try to connect to.
+#[cfg(unix)]
+pub const DEFAULT_DOCKER_HOST: &'static str = "unix:///var/run/docker.sock";
+
+/// The default `DOCKER_HOST` address that we will try to connect to.
+///
+/// This should technically be `"npipe:////./pipe/docker_engine"` on
+/// Windows, but we don't support Windows pipes yet.  However, the TCP port
+/// is still available.
+#[cfg(windows)]
+pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
+
+/// The default directory in which to look for our Docker certificate
+/// files.
+pub fn default_cert_path() -> errors::Result<PathBuf> {
+    let from_env = env::var("DOCKER_CERT_PATH")
+        .or_else(|_| env::var("DOCKER_CONFIG"));
+    if let Ok(ref path) = from_env {
+        Ok(Path::new(path).to_owned())
+    } else {
+        let home = try!(env::home_dir()
+            .ok_or_else(|| ErrorKind::NoCertPath));
+        Ok(home.join(".docker"))
+    }
+}
 
 enum ClientType {
     Unix,
@@ -46,8 +73,39 @@ pub struct Docker {
 }
 
 impl Docker {
+    /// Connect to the Docker daemon using the standard Docker
+    /// configuration options.  This includes `DOCKER_HOST`,
+    /// `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` and `DOCKER_CONFIG`, and we
+    /// try to interpret these as much like the standard `docker` client as
+    /// possible.
+    pub fn connect_with_defaults() -> errors::Result<Docker> {
+        // Read in our configuration from the Docker environment.
+        let host = env::var("DOCKER_HOST")
+            .unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        let tls_verify = env::var("DOCKER_TLS_VERIFY").is_ok();
+        let cert_path = try!(default_cert_path());
+
+        // Dispatch to the correct connection function.
+        let mkerr = || ErrorKind::CouldNotConnect(host.clone());
+        if host.starts_with("unix://") {
+            Docker::connect_with_unix(&host).chain_err(&mkerr)
+        } else if host.starts_with("tcp://") {
+            if tls_verify {
+                Docker::connect_with_ssl(&host,
+                                         &cert_path.join("key.pem"),
+                                         &cert_path.join("cert.pem"),
+                                         &cert_path.join("ca.pem"))
+                    .chain_err(&mkerr)
+            } else {
+                Docker::connect_with_http(&host).chain_err(&mkerr)
+            }
+        } else {
+            Err(ErrorKind::UnsupportedScheme(host.clone()).into())
+        }
+    }
+
     #[cfg(unix)]
-    pub fn connect_with_unix(addr: String) -> Result<Docker, std::io::Error> {
+    pub fn connect_with_unix(addr: &str) -> Result<Docker, std::io::Error> {
         // This ensures that using a fully-qualified path -- e.g. unix://.... -- works.  The unix
         // socket provider expects a Path, so we don't need scheme.
         let client_addr = addr.clone().replace("unix://", "");
@@ -62,8 +120,13 @@ impl Docker {
         return Ok(docker);
     }
 
+    #[cfg(not(unix))]
+    pub fn connect_with_unix(addr: &str) -> Result<Docker, std::io::Error> {
+        Err(io::Error::new(io::ErrorKind::Other, "unix:// only works on Unix"))
+    }
+
     #[cfg(feature="openssl")]
-    pub fn connect_with_ssl(addr: String, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
 
@@ -81,6 +144,29 @@ impl Docker {
         let docker = Docker { client: client, client_type: ClientType::Tcp, client_addr: client_addr };
 
         return Ok(docker);
+    }
+
+    #[cfg(not(feature="openssl"))]
+    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
+        Err(io::Error::new(io::ErrorKind::Other,
+                           "OpenSSL was disabled at compile time"))
+    }
+
+    /// Connect using unsecured HTTP.  This is strongly discouraged
+    /// everywhere but on Windows when npipe support is not available.
+    pub fn connect_with_http(addr: &str) -> Result<Docker, std::io::Error> {
+        // This ensures that using docker-machine-esque addresses work with Hyper.
+        let client_addr = addr.clone().replace("tcp://", "http://");
+
+        let http_connector = HttpConnector::default();
+        let connection_pool_config = Config { max_idle: 8 };
+        let connection_pool = Pool::with_connector(connection_pool_config, http_connector);
+
+        let client = Client::with_connector(connection_pool);
+        let docker = Docker { client: client, client_type: ClientType::Tcp, client_addr: client_addr };
+
+        return Ok(docker);
+
     }
 
     fn get_url(&mut self, path: String) -> String {

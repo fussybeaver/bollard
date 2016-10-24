@@ -1,7 +1,12 @@
 //! Docker
 #![doc(html_root_url="https://ghmlee.github.io/rust-docker/doc")]
 
+// Increase the compiler's recursion limit for the `error_chain` crate.
+#![recursion_limit = "1024"]
+
 // import external libraries
+#[macro_use]
+extern crate error_chain;
 extern crate hyper;
 #[cfg(feature="openssl")]
 extern crate openssl;
@@ -17,6 +22,7 @@ mod util;
 #[cfg(unix)]
 mod unix;
 mod docker;
+mod errors;
 pub mod container;
 pub mod stats;
 pub mod system;
