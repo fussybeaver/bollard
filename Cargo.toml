@@ -10,8 +10,22 @@ documentation = "https://ghmlee.github.io/rust-docker/doc/docker"
 readme = "README.md"
 keywords = ["docker"]
 
+[features]
+# OpenSSL is fairly hard to build on certain platforms, especially if you
+# want to produce release binaries.  So we enable it by default, but allow
+# it to be excluded using `default-features = false`.
+default = ["ssl"]
+
+# Enable OpenSSL both directly and for Hyper.
+ssl = ["openssl", "hyper/ssl"]
+
 [dependencies]
-hyper = "0.9.0"
-openssl = "0.7.0"
-unix_socket = "0.5.0"
+hyper = { version = "0.9", default-features = false }
+openssl = { version = "0.7", optional = true }
 rustc-serialize = "0.3.16"
+
+[target.'cfg(unix)'.dependencies]
+unix_socket = "0.5.0"
+
+[target.'cfg(windows)'.dependencies]
+named_pipe = "0.2.2"

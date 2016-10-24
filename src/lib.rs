@@ -3,13 +3,18 @@
 
 // import external libraries
 extern crate hyper;
+#[cfg(feature="openssl")]
 extern crate openssl;
+#[cfg(windows)]
+extern crate named_pipe;
+#[cfg(unix)]
 extern crate unix_socket;
 extern crate rustc_serialize;
 
 // declare modules
 mod test;
 mod util;
+#[cfg(unix)]
 mod unix;
 mod docker;
 pub mod container;

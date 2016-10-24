@@ -9,13 +9,19 @@ use hyper::Client;
 use hyper::client::RequestBuilder;
 use hyper::client::pool::{Config, Pool};
 use hyper::client::response::Response;
+#[cfg(feature="openssl")]
 use hyper::net::HttpsConnector;
+#[cfg(feature="openssl")]
 use hyper::net::Openssl;
 
+#[cfg(unix)]
 use unix::HttpUnixConnector;
 
+#[cfg(feature="openssl")]
 use openssl::ssl::{SslContext, SslMethod};
+#[cfg(feature="openssl")]
 use openssl::ssl::error::SslError;
+#[cfg(feature="openssl")]
 use openssl::x509::X509FileType;
 
 use container::{Container, ContainerInfo};
@@ -40,6 +46,7 @@ pub struct Docker {
 }
 
 impl Docker {
+    #[cfg(unix)]
     pub fn connect_with_unix(addr: String) -> Result<Docker, std::io::Error> {
         // This ensures that using a fully-qualified path -- e.g. unix://.... -- works.  The unix
         // socket provider expects a Path, so we don't need scheme.
@@ -55,6 +62,7 @@ impl Docker {
         return Ok(docker);
     }
 
+    #[cfg(feature="openssl")]
     pub fn connect_with_ssl(addr: String, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker, SslError> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
