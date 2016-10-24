@@ -10,8 +10,13 @@ fn find_all_exported_ports() -> Result<()> {
     for container in &containers {
         let info = try!(docker.get_container_info(&container));
 
-        // TODO: Actually find the listening port numbers here.
-        println!("{:#?}", &info);
+        // Uncomment this to dump everything we know about a container.
+        //println!("{:#?}", &info);
+
+        let ports: Vec<String> = info.NetworkSettings.Ports.keys()
+            .cloned()
+            .collect();
+        println!("{}: {}", &info.Name, ports.join(", "));
     }
     Ok(())
 }
