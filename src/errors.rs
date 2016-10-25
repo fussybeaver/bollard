@@ -10,7 +10,6 @@ error_chain! {
         env::VarError, EnvVar;
         hyper::Error, Hyper;
         io::Error, Io;
-        json::DecoderError, Json;
     }
 
     errors {
@@ -22,6 +21,11 @@ error_chain! {
         NoCertPath {
             description("could not find DOCKER_CERT_PATH")
             display("could not find DOCKER_CERT_PATH")
+        }
+
+        ParseError(wanted: &'static str, input: String) {
+            description("error parsing JSON from Docker")
+            display("error parsing JSON for {} from Docker", wanted)
         }
 
         SslDisabled {

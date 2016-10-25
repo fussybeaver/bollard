@@ -32,7 +32,7 @@ use image::{Image, ImageStatus};
 use filesystem::FilesystemChange;
 use version::Version;
 
-use rustc_serialize::json;
+use rustc_serialize::{Decodable, json};
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
 #[cfg(unix)]
@@ -180,7 +180,7 @@ impl Docker {
 
     }
 
-    fn get_url(&self, path: String) -> String {
+    fn get_url(&self, path: &str) -> String {
         let mut base = match self.client_type {
             ClientType::Tcp => self.client_addr.clone(),
             ClientType::Unix => {
@@ -195,12 +195,12 @@ impl Docker {
         base
     }
 
-    fn build_get_request(&self, request_url: String) -> RequestBuilder {
-        self.client.get(&*request_url)
+    fn build_get_request(&self, request_url: &str) -> RequestBuilder {
+        self.client.get(request_url)
     }
 
-    fn build_post_request(&self, request_url: String) -> RequestBuilder {
-        self.client.post(&*request_url)
+    fn build_post_request(&self, request_url: &str) -> RequestBuilder {
+        self.client.post(request_url)
     }
 
     fn execute_request(&self, request: RequestBuilder) -> Result<String> {
@@ -218,9 +218,21 @@ impl Docker {
         Ok(response)
     }
 
-    fn arrayify(&self, s: String) -> String {
+    fn arrayify(&self, s: &str) -> String {
         let wrapped = format!("[{}]", s);
         wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
+    }
+
+    /// `GET` a URL and decode it.
+    fn decode_url<T>(&self, type_name: &'static str, url: &str) -> Result<T>
+        where T: Decodable
+    {
+        let request_url = self.get_url(url);
+        let request = self.build_get_request(&request_url);
+        let body = try!(self.execute_request(request));
+        let info = try!(json::decode::<T>(&body)
+            .chain_err(|| ErrorKind::ParseError(type_name, body)));
+        Ok(info)
     }
 
     pub fn get_containers(&self, all: bool) -> Result<Vec<Container>> {
@@ -228,19 +240,13 @@ impl Docker {
             true => "1",
             false => "0"
         };
-
-        let request_url = self.get_url(format!("/containers/json?a={}&size=1", a));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let containers = try!(json::decode::<Vec<Container>>(&body));
-        Ok(containers)
+        let url = format!("/containers/json?a={}&size=1", a);
+        self.decode_url("Container", &url)
     }
 
     pub fn get_processes(&self, container: &Container) -> Result<Vec<Process>> {
-        let request_url = self.get_url(format!("/containers/{}/top", container.Id));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let top = try!(json::decode::<Top>(&body));
+        let url = format!("/containers/{}/top", container.Id);
+        let top: Top = try!(self.decode_url("Top", &url));
 
         let mut processes: Vec<Process> = Vec::new();
         let mut process_iter = top.Processes.iter();
@@ -303,18 +309,19 @@ impl Docker {
             return Err("The container is already stopped.".into());
         }
 
-        let request_url = self.get_url(format!("/containers/{}/stats", container.Id));
-        let request = self.build_get_request(request_url);
+        let request_url = self.get_url(&format!("/containers/{}/stats", container.Id));
+        let request = self.build_get_request(&request_url);
         let response = try!(self.start_request(request));
         Ok(StatsReader::new(response))
     }
 
     pub fn create_image(&self, image: String, tag: String) -> Result<Vec<ImageStatus>> {
-        let request_url = self.get_url(format!("/images/create?fromImage={}&tag={}", image, tag));
-        let request = self.build_post_request(request_url);
+        let request_url = self.get_url(&format!("/images/create?fromImage={}&tag={}", image, tag));
+        let request = self.build_post_request(&request_url);
         let body = try!(self.execute_request(request));
-        let fixed = self.arrayify(body);
-        let statuses = try!(json::decode::<Vec<ImageStatus>>(&fixed));
+        let fixed = self.arrayify(&body);
+        let statuses = try!(json::decode::<Vec<ImageStatus>>(&fixed)
+            .chain_err(|| ErrorKind::ParseError("ImageStatus", fixed)));
         Ok(statuses)
     }
 
@@ -323,57 +330,40 @@ impl Docker {
             true => "1",
             false => "0"
         };
-
-        let request_url = self.get_url(format!("/images/json?a={}", a));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let images = try!(json::decode::<Vec<Image>>(&body));
-        Ok(images)
+        let url = format!("/images/json?a={}", a);
+        self.decode_url("Image", &url)
     }
 
     pub fn get_system_info(&self) -> Result<SystemInfo> {
-        let request_url = self.get_url(format!("/info"));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let info = try!(json::decode::<SystemInfo>(&body));
-        Ok(info)
+        self.decode_url("SystemInfo", &format!("/info"))
     }
 
     pub fn get_container_info(&self, container: &Container) -> Result<ContainerInfo> {
-        let request_url = self.get_url(format!("/containers/{}/json", container.Id));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let info = try!(json::decode::<ContainerInfo>(&body));
-        Ok(info)
+        let url = format!("/containers/{}/json", container.Id);
+        self.decode_url("ContainerInfo", &url)
     }
 
     pub fn get_filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
-        let request_url = self.get_url(format!("/containers/{}/changes", container.Id));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let changes = try!(json::decode::<Vec<FilesystemChange>>(&body));
-        Ok(changes)
+        let url = format!("/containers/{}/changes", container.Id);
+        self.decode_url("FilesystemChange", &url)
     }
 
     pub fn export_container(&self, container: &Container) -> Result<Response> {
-        let request_url = self.get_url(format!("/containers/{}/export", container.Id));
-        let request = self.build_get_request(request_url);
+        let url = format!("/containers/{}/export", container.Id);
+        let request_url = self.get_url(&url);
+        let request = self.build_get_request(&request_url);
         let response = try!(self.start_request(request));
         Ok(response)
     }
 
     pub fn ping(&self) -> Result<String> {
-        let request_url = self.get_url(format!("/_ping"));
-        let request = self.build_get_request(request_url);
+        let request_url = self.get_url(&format!("/_ping"));
+        let request = self.build_get_request(&request_url);
         let body = try!(self.execute_request(request));
         Ok(body)
     }
 
     pub fn get_version(&self) -> Result<Version> {
-        let request_url = self.get_url(format!("/version"));
-        let request = self.build_get_request(request_url);
-        let body = try!(self.execute_request(request));
-        let version = try!(json::decode::<Version>(&body));
-        Ok(version)
+        self.decode_url("Version", "/version")
     }
 }
