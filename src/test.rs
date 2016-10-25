@@ -53,31 +53,19 @@ fn get_stats_streaming() {
     let url = Url::parse("http://localhost/who/cares").unwrap();
     let stream = MemoryStream::with_input(get_stats_response().as_bytes());
     let message = Http11Message::with_stream(Box::new(stream));
-    let response = match Response::with_message(url, Box::new(message)) {
-        Ok(resp) => resp,
-        Err(e) => { panic!("err: {}", e); }
-    };
+    let response = Response::with_message(url, Box::new(message)).unwrap();
     let mut reader = StatsReader::new(response);
 
-    match reader.next() {
-        Ok(stats) => { assert_eq!(stats.read, "2015-04-09T07:02:08.480022081Z".to_string()) },
-        Err(e) => { panic!("{}", e); }
-    }
+    let stats = reader.next().unwrap().unwrap();
+    assert_eq!(stats.read, "2015-04-09T07:02:08.480022081Z".to_string());
 
-    match reader.next() {
-        Ok(stats) => { assert_eq!(stats.read, "2015-04-09T07:02:08.480022082Z".to_string()) },
-        Err(_) => { assert!(false); return }
-    }
+    let stats = reader.next().unwrap().unwrap();
+    assert_eq!(stats.read, "2015-04-09T07:02:08.480022082Z".to_string());
 
-    match reader.next() {
-        Ok(stats) => { assert_eq!(stats.read, "2015-04-09T07:02:08.480022083Z".to_string()) },
-        Err(_) => { assert!(false); return }
-    }
+    let stats = reader.next().unwrap().unwrap();
+    assert_eq!(stats.read, "2015-04-09T07:02:08.480022083Z".to_string());
 
-    match reader.next() {
-        Ok(stats) => { assert!(false); return },
-        Err(_) => { assert!(true) }
-    }
+    assert!(reader.next().unwrap().is_err());
 }
 
 #[test]

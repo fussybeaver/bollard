@@ -1,11 +1,13 @@
 extern crate hyper;
 
 use std;
-use std::error::Error;
+use std::iter;
 use std::io::{BufRead, BufReader};
 use hyper::client::response::Response;
 
 use rustc_serialize::json;
+
+use errors::*;
 
 pub struct StatsReader {
     buf: BufReader<Response>,
@@ -17,18 +19,18 @@ impl StatsReader {
             buf: BufReader::new(r),
         }
     }
+}
 
-    pub fn next(&mut self) -> std::io::Result<Stats> {
+impl iter::Iterator for StatsReader {
+    type Item = Result<Stats>;
+
+    fn next(&mut self) -> Option<Result<Stats>> {
         let mut line = String::new();
-        match self.buf.read_line(&mut line) {
-            Ok(_) => {
-                match json::decode::<Stats>(&line) {
-                    Ok(stats) => Ok(stats),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.description()))
-                }
-            },
-            Err(e) => Err(e)
+        if let Err(err) = self.buf.read_line(&mut line) {
+            return Some(Err(err.into()));
         }
+        Some(json::decode::<Stats>(&line)
+            .chain_err(|| ErrorKind::ParseError("Stats", line)))
     }
 }
 
