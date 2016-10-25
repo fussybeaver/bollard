@@ -1,14 +1,14 @@
 [package]
 name = "boondock"
-description = "Docker Remote API in Rust (fork of Graham Lee's rust-docker)"
-version = "0.0.42"
+description = "Docker daemon API (a fork of Graham Lee's rust-docker)"
+version = "0.0.43"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
            "Eric Kidd <git@randomhacks.net>"]
 license = "Apache-2.0"
-homepage = "https://github.com/ghmlee/rust-docker"
-repository = "https://github.com/ghmlee/rust-docker.git"
-documentation = "https://ghmlee.github.io/rust-docker/doc/docker"
+homepage = "https://github.com/faradayio/bookdock"
+repository = "https://github.com/faradayio/bookdock"
+documentation = "https://docs.rs/boondock"
 readme = "README.md"
 keywords = ["docker"]
 
