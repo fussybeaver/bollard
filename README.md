@@ -1,6 +1,6 @@
 # Boondock: Rust library for talking to the Docker daemon
 
-[![Latest version](https://img.shields.io/crates/v/bookdock.svg)](https://crates.io/crates/bookdock) [![License](https://img.shields.io/crates/l/bookdock.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://travis-ci.org/faradayio/bookdock.svg?branch=master)](https://travis-ci.org/faradayio/bookdock) [![Build status](https://ci.appveyor.com/api/projects/status/51vjdqk9p31c5vq9?svg=true)](https://ci.appveyor.com/project/emk/rust-docker) [![Documentation](https://img.shields.io/badge/documentation-docs.rs-yellow.svg)](https://docs.rs/bookdock/)
+[![Latest version](https://img.shields.io/crates/v/boondock.svg)](https://crates.io/crates/boondock) [![License](https://img.shields.io/crates/l/boondock.svg)](https://opensource.org/licenses/Apache-2.0) [![Build Status](https://travis-ci.org/faradayio/boondock.svg?branch=master)](https://travis-ci.org/faradayio/boondock) [![Build status](https://ci.appveyor.com/api/projects/status/51vjdqk9p31c5vq9?svg=true)](https://ci.appveyor.com/project/emk/rust-docker) [![Documentation](https://img.shields.io/badge/documentation-docs.rs-yellow.svg)](https://docs.rs/boondock/)
 
 **This is a work in progress!**
 
