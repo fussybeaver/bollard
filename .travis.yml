@@ -12,6 +12,14 @@ rust: stable
 os:
   - "linux"
   - "osx"
+before_install:
+- |
+  if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+    brew update &&
+    brew outdated openssl || brew upgrade openssl &&
+    export OPENSSL_INCLUDE_DIR=`brew --prefix openssl`/include &&
+    export OPENSSL_LIB_DIR=`brew --prefix openssl`/lib
+  fi
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
