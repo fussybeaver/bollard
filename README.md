@@ -1,37 +1,45 @@
-# Docker
+# Boondock: Rust library for talking to the Docker daemon
 
-[![Build Status](https://travis-ci.org/ghmlee/rust-docker.svg)](https://travis-ci.org/ghmlee/rust-docker)
+**This is a work in progress!**
 
-This is a Docker Remote API binding in Rust. Documentation is available [here](https://ghmlee.github.io/rust-docker/doc/docker).
+This is a fork of Graham Lee's highly useful [rust-docker][] library,
+with [hyper][] support from [Toby Lawrence][nuclearfurnace-docker] and
+various other recent patches integrated.
 
-## Quick start
+It also adds:
 
-```
-[dependencies]
-docker = "0.0.41"
-```
+- Partial support for Docker 1.12 (ongoing)
+- Support for Windows (experimental)
+- Support for building without OpenSSL
+- Support for finding and connection to the daemon using the same
+  `DOCKER_HOST`, `DOCKER_CERT_PATH`, etc. variables as the `docker` command
+  line tool
+- Consistent error-handling via [error-chain][]
 
-```rust
-extern crate docker;
+This library is used by the development tool [cage][] to talk to the Docker
+daemon.  You're welcome to use it for other things, and we're happy to
+accept pull requests!
 
-use docker::Docker;
+(Also, the maintainers of [rust-docker][] are totally welcome to use any
+code that they like from this fork.  We're mostly maintaining this as a
+fork so that we can have very quick turnaround times when we need to fix an
+issue with `cage`, and we have no objections to this code being merged back
+upstream.)
 
-fn main() {
-    let docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
+[rust-docker]: https://brson.github.io/error-chain/error_chain/index.html
+[hyper]: http://hyper.rs/
+[nuclearfurnace-docker]: https://github.com/nuclearfurnace/rust-docker
+[error-chain]: https://brson.github.io/error-chain/error_chain/index.html
+[cage]: http://cage.faraday.io/
 
-## Debug
-* OpenSSL (>= v1.0.0)
-* Rust (>= v1.4.0)
-* Docker (>= v1.5.0)
+## Examples
 
-### OpenSSL
+For example code, see the [examples directory](./examples).
 
-#### Mac OS X
+## OpenSSL
+
+On the Mac, you can set up OpenSSL as follows:
+
 ```bash
 brew install openssl
 brew link --force openssl
@@ -40,263 +48,9 @@ export OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include
 export OPENSSL_ROOT_DIR=/usr/local/opt/openssl
 ```
 
-## Examples
-
-### Containers
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let containers = match docker.get_containers(false) {
-        Ok(containers) => containers,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Stats
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let containers = match docker.get_containers(false) {
-        Ok(containers) => containers,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let stats = match docker.get_stats(&containers[0]) {
-        Ok(stats) => stats,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Images
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let images = match docker.get_images(false) {
-        Ok(images) => images,
-        Err(e) => { panic!({}, e); }
-    };
-}
-
-```
-
-### Info
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let info = match docker.get_system_info() {
-        Ok(info) => info,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Processes
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let containers = match docker.get_containers(false) {
-        Ok(containers) => containers,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let processes = match docker.get_processes(&containers[0]) {
-        Ok(processes) => processes,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Filesystem changes
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let containers = match docker.get_containers(false) {
-        Ok(containers) => containers,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let changes = match docker.get_filesystem_changes(&containers[0]) {
-        Ok(changes) => changes,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Export a container
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let containers = match docker.get_containers(false) {
-        Ok(containers) => containers,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let bytes = match docker.export_container(&containers[0]) {
-        Ok(bytes) => bytes,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Create an image
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-
-    let image = "debian".to_string();
-    let tag = "latest".to_string();
-    
-    let statuses = match docker.create_image(image, tag) {
-        Ok(statuses) => statuses,
-        Err(e) => { panic!("{}", e); }
-    };
-    
-    match statuses.last() {
-        Some(last) => {
-            println!("{}", last.clone().status.unwrap());
-        }
-        None => { println!("none"); }
-    }
-}
-```
-
-### Ping the docker server
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-    
-    let ping = match docker.ping() {
-        Ok(ping) => ping,
-        Err(e) => { panic!("{}", e); }
-    };
-}
-```
-
-### Show the docker version information
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-
-fn main() {
-    let mut docker = match Docker::connect("unix:///var/run/docker.sock") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-    
-    let version = match docker.get_version() {
-        Ok(version) => version,
-        Err(e) => {panic!("{}",e)}
-    };
-}
-```
-
-## Docker Toolbox
-
-By default, `Docker Toolbox` runs `docker` with TLS enabled. It auto-generates certificates. The `docker-machine` will copy them to `~/.docker/machine/certs` on the host machine once the VM has started.
-
-### Example
-
-```rust
-extern crate docker;
-
-use docker::Docker;
-use std::path::Path;
-
-fn main() {
-    let key = Path::new("/Users/<username>/.docker/machine/certs/key.pem");
-    let cert = Path::new("/Users/<username>/.docker/machine/certs/cert.pem");
-    let ca = Path::new("/Users/<username>/.docker/machine/certs/ca.pem");
-
-    let mut docker = match Docker::connect("tcp://192.168.99.100:2376") {
-    	Ok(docker) => docker,
-        Err(e) => { panic!("{}", e); }
-    };
-    docker.set_tls(&key, &cert, &ca).unwrap();
-}
-```
+Alternatively, you can build without OpenSSL by passing
+`--no-default-features` to `cargo`, or specifying `default-features =
+false` in a `Cargo.toml` file.
 
 ## Contributing
 
