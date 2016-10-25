@@ -16,7 +16,7 @@ before_install:
 - |
   if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
     brew update &&
-    brew outdated openssl || brew upgrade openssl &&
+    brew install openssl &&
     export OPENSSL_INCLUDE_DIR=`brew --prefix openssl`/include &&
     export OPENSSL_LIB_DIR=`brew --prefix openssl`/lib
   fi
@@ -26,8 +26,8 @@ before_script:
   export PATH=$HOME/.local/bin:$HOME/Library/Python/2.7/bin:$HOME/.cargo/bin:$PATH
 script:
 - |
-  travis-cargo build -- $FEATURE_OPTS &&
-  travis-cargo test -- $FEATURE_OPTS
+  travis-cargo build &&
+  travis-cargo test
 notifications:
   webhooks:
     urls:
