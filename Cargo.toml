@@ -1,8 +1,10 @@
 [package]
-name = "docker"
-description = "Docker Remote API in Rust"
-version = "0.0.41"
-authors = ["Graham Lee <ghmlee@ghmlee.com>"]
+name = "boondock"
+description = "Docker Remote API in Rust (fork of Graham Lee's rust-docker)"
+version = "0.0.42"
+authors = ["Graham Lee <ghmlee@ghmlee.com>",
+           "Toby Lawrence <toby@nuclearfurnace.com>",
+           "Eric Kidd <git@randomhacks.net>"]
 license = "Apache-2.0"
 homepage = "https://github.com/ghmlee/rust-docker"
 repository = "https://github.com/ghmlee/rust-docker.git"
