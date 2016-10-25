@@ -87,13 +87,15 @@ pub struct Config {
     pub StdinOnce: bool,
     pub Tty: bool,
     pub User: String,
-    pub Volumes: HashMap<String, UnspecifiedObject>,
+    pub Volumes: Option<HashMap<String, UnspecifiedObject>>,
     pub WorkingDir: String,
 }
 
 #[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Mount {
+    // Name (optional)
+    // Driver (optional)
     pub Source: String,
     pub Destination: String,
     pub Mode: String,
