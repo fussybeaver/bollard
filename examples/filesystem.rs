@@ -1,11 +1,12 @@
 extern crate boondock;
 
-use boondock::Docker;
+use boondock::{ContainerListOptions, Docker};
 
 fn main() {
     let docker = Docker::connect_with_defaults().unwrap();
-    if let Some(container) = docker.get_containers(false).unwrap().get(0) {
-        for change in docker.get_filesystem_changes(container).unwrap() {
+    let opts = ContainerListOptions::default();
+    if let Some(container) = docker.containers(opts).unwrap().get(0) {
+        for change in docker.filesystem_changes(container).unwrap() {
             println!("{:#?}", change);
         }
     }

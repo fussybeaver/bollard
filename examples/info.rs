@@ -4,5 +4,5 @@ use boondock::Docker;
 
 fn main() {
     let docker = Docker::connect_with_defaults().unwrap();
-    println!("{:#?}", docker.get_system_info().unwrap());
+    println!("{:#?}", docker.system_info().unwrap());
 }

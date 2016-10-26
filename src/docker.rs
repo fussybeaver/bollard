@@ -1,9 +1,9 @@
 use std;
+use std::collections::BTreeMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::io::{self, Read};
-
 use hyper;
 use hyper::Client;
 use hyper::client::RequestBuilder;
@@ -12,19 +12,18 @@ use hyper::client::response::Response;
 use hyper::net::HttpConnector;
 #[cfg(feature="openssl")]
 use hyper::net::{HttpsConnector, Openssl};
-
-#[cfg(unix)]
-use unix::HttpUnixConnector;
-
 #[cfg(feature="openssl")]
 use openssl::ssl::{SslContext, SslMethod};
 #[cfg(feature="openssl")]
 use openssl::ssl::error::SslError;
 #[cfg(feature="openssl")]
 use openssl::x509::X509FileType;
+#[cfg(unix)]
+use unix::HttpUnixConnector;
 
 use errors::*;
 use container::{Container, ContainerInfo};
+use options::*;
 use process::{Process, Top};
 use stats::StatsReader;
 use system::SystemInfo;
@@ -235,16 +234,13 @@ impl Docker {
         Ok(info)
     }
 
-    pub fn get_containers(&self, all: bool) -> Result<Vec<Container>> {
-        let a = match all {
-            true => "1",
-            false => "0"
-        };
-        let url = format!("/containers/json?a={}&size=1", a);
+    pub fn containers(&self, opts: ContainerListOptions)
+                      -> Result<Vec<Container>> {
+        let url = format!("/containers/json?{}", opts.to_url_params());
         self.decode_url("Container", &url)
     }
 
-    pub fn get_processes(&self, container: &Container) -> Result<Vec<Process>> {
+    pub fn processes(&self, container: &Container) -> Result<Vec<Process>> {
         let url = format!("/containers/{}/top", container.Id);
         let top: Top = try!(self.decode_url("Top", &url));
 
@@ -304,7 +300,7 @@ impl Docker {
         Ok(processes)
     }
 
-    pub fn get_stats(&self, container: &Container) -> Result<StatsReader> {
+    pub fn stats(&self, container: &Container) -> Result<StatsReader> {
         if container.Status.contains("Up") == false {
             return Err("The container is already stopped.".into());
         }
@@ -325,7 +321,7 @@ impl Docker {
         Ok(statuses)
     }
 
-    pub fn get_images(&self, all: bool) -> Result<Vec<Image>> {
+    pub fn images(&self, all: bool) -> Result<Vec<Image>> {
         let a = match all {
             true => "1",
             false => "0"
@@ -334,16 +330,16 @@ impl Docker {
         self.decode_url("Image", &url)
     }
 
-    pub fn get_system_info(&self) -> Result<SystemInfo> {
+    pub fn system_info(&self) -> Result<SystemInfo> {
         self.decode_url("SystemInfo", &format!("/info"))
     }
 
-    pub fn get_container_info(&self, container: &Container) -> Result<ContainerInfo> {
+    pub fn container_info(&self, container: &Container) -> Result<ContainerInfo> {
         let url = format!("/containers/{}/json", container.Id);
         self.decode_url("ContainerInfo", &url)
     }
 
-    pub fn get_filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
+    pub fn filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
         let url = format!("/containers/{}/changes", container.Id);
         self.decode_url("FilesystemChange", &url)
     }
@@ -363,7 +359,7 @@ impl Docker {
         Ok(body)
     }
 
-    pub fn get_version(&self) -> Result<Version> {
+    pub fn version(&self) -> Result<Version> {
         self.decode_url("Version", "/version")
     }
 }

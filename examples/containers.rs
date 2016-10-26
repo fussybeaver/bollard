@@ -1,10 +1,11 @@
 extern crate boondock;
 
-use boondock::Docker;
+use boondock::{ContainerListOptions, Docker};
 
 fn main() {
     let docker = Docker::connect_with_defaults().unwrap();
-    let containers = docker.get_containers(false).unwrap();
+    let opts = ContainerListOptions::default().all();
+    let containers = docker.containers(opts).unwrap();
     for container in &containers {
         println!("{}", container.Id);
     }

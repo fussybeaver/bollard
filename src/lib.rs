@@ -15,12 +15,14 @@ extern crate named_pipe;
 #[cfg(unix)]
 extern crate unix_socket;
 extern crate rustc_serialize;
+extern crate url;
 
 // declare modules
 mod test;
 mod util;
 #[cfg(unix)]
 mod unix;
+mod options;
 mod docker;
 pub mod errors;
 pub mod container;
@@ -33,3 +35,4 @@ pub mod version;
 
 // publicly re-export
 pub use docker::Docker;
+pub use options::*;
