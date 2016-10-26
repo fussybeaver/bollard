@@ -13,6 +13,11 @@ error_chain! {
     }
 
     errors {
+        ContainerInfo(id: String) {
+            description("could not fetch information about container")
+            display("could not fetch information about container '{}'", &id)
+        }
+
         CouldNotConnect(host: String) {
             description("could not connect to Docker")
             display("could not connected to Docker at '{}'", &host)
@@ -25,7 +30,7 @@ error_chain! {
 
         ParseError(wanted: &'static str, input: String) {
             description("error parsing JSON from Docker")
-            display("error parsing JSON for {} from Docker", wanted)
+            display("could not parse JSON for {} from Docker", wanted)
         }
 
         SslDisabled {

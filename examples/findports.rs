@@ -13,10 +13,10 @@ fn find_all_exported_ports() -> Result<()> {
         // Uncomment this to dump everything we know about a container.
         //println!("{:#?}", &info);
 
-        let ports: Vec<String> = info.NetworkSettings.Ports.keys()
-            .cloned()
-            .collect();
-        println!("{}: {}", &info.Name, ports.join(", "));
+        if let Some(ports) = info.NetworkSettings.Ports {
+            let ports: Vec<String> = ports.keys().cloned().collect();
+            println!("{}: {}", &info.Name, ports.join(", "));
+        }
     }
     Ok(())
 }

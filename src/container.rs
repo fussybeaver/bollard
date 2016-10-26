@@ -15,7 +15,7 @@ pub struct Container {
     pub Names: Vec<String>,
     pub Ports: Vec<Port>,
     pub SizeRw: Option<u64>, // I guess it is optional on Mac.
-    pub SizeRootFs: u64,
+    pub SizeRootFs: Option<u64>,
     pub Labels: Option<HashMap<String, String>>,
     pub HostConfig: HostConfig
 }
@@ -82,7 +82,8 @@ pub struct Config {
     pub Hostname: String,
     pub Image: String,
     pub Labels: HashMap<String, String>,
-    pub OnBuild: Option<HashMap<String, String>>,
+    // TODO: We don't know exacly what this vec contains.
+    //pub OnBuild: Option<Vec<???>>,
     pub OpenStdin: bool,
     pub StdinOnce: bool,
     pub Tty: bool,
@@ -119,7 +120,7 @@ pub struct NetworkSettings {
     pub LinkLocalIPv6PrefixLen: u32,
     pub MacAddress: String,
     pub Networks: HashMap<String, Network>,
-    pub Ports: HashMap<String, Option<Vec<PortMapping>>>,
+    pub Ports: Option<HashMap<String, Option<Vec<PortMapping>>>>,
     pub SandboxID: String,
     pub SandboxKey: String,
     // These two are null in the current output.
@@ -130,7 +131,7 @@ pub struct NetworkSettings {
 #[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
 pub struct Network {
-    pub Aliases: Vec<String>,
+    pub Aliases: Option<Vec<String>>,
     pub EndpointID: String,
     pub Gateway: String,
     pub GlobalIPv6Address: String,

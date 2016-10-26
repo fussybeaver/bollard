@@ -337,6 +337,7 @@ impl Docker {
     pub fn container_info(&self, container: &Container) -> Result<ContainerInfo> {
         let url = format!("/containers/{}/json", container.Id);
         self.decode_url("ContainerInfo", &url)
+            .chain_err(|| ErrorKind::ContainerInfo(container.Id.clone()))
     }
 
     pub fn filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
