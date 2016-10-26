@@ -63,7 +63,7 @@ pub struct ContainerInfo {
 }
 
 /// This type represents a `struct{}` in the Go code.
-type UnspecifiedObject = HashMap<String, String>;
+pub type UnspecifiedObject = HashMap<String, String>;
 
 #[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
 #[allow(non_snake_case)]
