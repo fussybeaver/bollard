@@ -78,7 +78,7 @@ pub struct Config {
     // `Option<Vec<String>>` on the wire.  Ignore until we figure it out.
     //pub Entrypoint: Option<Vec<String>>,
     pub Env: Vec<String>,
-    pub ExposedPorts: HashMap<String, UnspecifiedObject>,
+    pub ExposedPorts: Option<HashMap<String, UnspecifiedObject>>,
     pub Hostname: String,
     pub Image: String,
     pub Labels: HashMap<String, String>,
