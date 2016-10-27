@@ -6,8 +6,8 @@ authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
            "Eric Kidd <git@randomhacks.net>"]
 license = "Apache-2.0"
-homepage = "https://github.com/faradayio/bookdock"
-repository = "https://github.com/faradayio/bookdock"
+homepage = "https://github.com/faradayio/boondock"
+repository = "https://github.com/faradayio/boondock"
 documentation = "https://docs.rs/boondock"
 readme = "README.md"
 keywords = ["docker"]
