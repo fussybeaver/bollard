@@ -28,7 +28,7 @@ fork so that we can have very quick turnaround times when we need to fix an
 issue with `cage`, and we have no objections to this code being merged back
 upstream.)
 
-[rust-docker]: https://brson.github.io/error-chain/error_chain/index.html
+[rust-docker]: https://github.com/ghmlee/rust-docker
 [hyper]: http://hyper.rs/
 [nuclearfurnace-docker]: https://github.com/nuclearfurnace/rust-docker
 [error-chain]: https://brson.github.io/error-chain/error_chain/index.html
@@ -57,7 +57,7 @@ false` in a `Cargo.toml` file.
 ## Contributing
 
 1. Fork it
-2. Create your a new remote upstream repository (`git remote add upstream git@github.com:ghmlee/rust-docker.git`)
+2. Create your a new remote upstream repository (`git remote add upstream git@github.com:faradayio/boondock.git`)
 3. Commit your changes (`git commit -m 'Add some feature'`)
 4. Push to the branch (`git push origin your-branch`)
 5. Create new Pull Request
