@@ -1,5 +1,5 @@
 #[cfg(test)]
-use rustc_serialize::json;
+use serde_json;
 #[cfg(test)]
 use container::{Container, ContainerInfo};
 #[cfg(test)]
@@ -29,7 +29,7 @@ use std::io::Write;
 #[cfg(test)]
 fn get_containers() {
     let response = get_containers_response();
-    let _: Vec<Container> = match json::decode(&response) {
+    let _: Vec<Container> = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -41,7 +41,7 @@ fn get_stats_single() {
     let response = get_stats_single_event(1);
 
     print!("{}", response);
-    let _: Stats = match json::decode(&response) {
+    let _: Stats = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -72,7 +72,7 @@ fn get_stats_streaming() {
 #[cfg(test)]
 fn get_system_info() {
     let response = get_system_info_response();
-    let _: SystemInfo = match json::decode(&response) {
+    let _: SystemInfo = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -82,24 +82,22 @@ fn get_system_info() {
 #[cfg(test)]
 fn get_images() {
     let response = get_images_response();
-    let _: Vec<Image> = match json::decode(&response) {
-        Ok(body) => body,
-        Err(_) => { assert!(false); return; }
-    };
+    let images : Vec<Image> = serde_json::from_str(&response).unwrap();
+    assert_eq!(3, images.len());
 }
 
 #[test]
 #[cfg(test)]
 fn get_container_info() {
     let response = get_container_info_response();
-    json::decode::<ContainerInfo>(&response).unwrap();
+    serde_json::from_str::<ContainerInfo>(&response).unwrap();
 }
 
 #[test]
 #[cfg(test)]
 fn get_processes() {
     let response = get_processes_response();
-    let _: Top = match json::decode(&response) {
+    let _: Top = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -109,7 +107,7 @@ fn get_processes() {
 #[cfg(test)]
 fn get_filesystem_changes() {
     let response = get_filesystem_changes_response();
-    let _: Vec<FilesystemChange> = match json::decode(&response) {
+    let _: Vec<FilesystemChange> = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -119,7 +117,7 @@ fn get_filesystem_changes() {
 #[cfg(test)]
 fn get_version(){
     let response = get_version_response();
-    let _: Version = match json::decode(&response) {
+    let _: Version = match serde_json::from_str(&response) {
         Ok(body) => body,
         Err(_) => { assert!(false); return; }
     };
@@ -142,7 +140,8 @@ fn get_system_info_response() -> String {
 
 #[cfg(test)]
 fn get_images_response() -> String {
-    return "[{\"Created\":1428533761,\"Id\":\"533da4fa223bfbca0f56f65724bb7a4aae7a1acd6afa2309f370463eaf9c34a4\",\"ParentId\":\"84ac0b87e42afe881d36f03dea817f46893f9443f9fc10b64ec279737384df12\",\"RepoTags\":[\"ghmlee/rust:nightly\"],\"Size\":0,\"VirtualSize\":806688288},{\"Created\":1371157430,\"Id\":\"511136ea3c5a64f264b78b5433614aec563103b4d4702f3ba7d4d2698e22c158\",\"ParentId\":\"\",\"RepoTags\":[],\"Size\":0,\"VirtualSize\":0}]".to_string();
+    return "[{\"Created\":1428533761,\"Id\":\"533da4fa223bfbca0f56f65724bb7a4aae7a1acd6afa2309f370463eaf9c34a4\",\"ParentId\":\"84ac0b87e42afe881d36f03dea817f46893f9443f9fc10b64ec279737384df12\",\"RepoTags\":[\"ghmlee/rust:nightly\"],\"Size\":0,\"VirtualSize\":806688288},{\"Created\":1371157430,\"Id\":\"511136ea3c5a64f264b78b5433614aec563103b4d4702f3ba7d4d2698e22c158\",\"ParentId\":\"\",\"RepoTags\":[],\"Size\":0,\"VirtualSize\":0},
+    {\"Created\":1371157430,\"Id\":\"511136ea3c5a64f264b78b5433614aec563103b4d4702f3ba7d4d2698e22c158\",\"ParentId\":\"\",\"RepoTags\":null,\"Size\":0,\"VirtualSize\":0}]".to_string();
 }
 
 #[cfg(test)]
