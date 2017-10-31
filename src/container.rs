@@ -1,9 +1,8 @@
-use rustc_serialize::json;
 use std;
 use std::error::Error;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 //Labels, HostConfig
 pub struct Container {
@@ -20,7 +19,7 @@ pub struct Container {
     pub HostConfig: HostConfig
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Port {
     pub IP: Option<String>,
@@ -29,13 +28,13 @@ pub struct Port {
     pub Type: String
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct HostConfig {
     pub NetworkMode: String
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ContainerInfo {
     pub AppArmorProfile: String,
@@ -65,7 +64,7 @@ pub struct ContainerInfo {
 /// This type represents a `struct{}` in the Go code.
 pub type UnspecifiedObject = HashMap<String, String>;
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
     pub AttachStderr: bool,
@@ -92,7 +91,7 @@ pub struct Config {
     pub WorkingDir: String,
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Mount {
     // Name (optional)
@@ -104,7 +103,7 @@ pub struct Mount {
     pub Propagation: String,
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct NetworkSettings {
     pub Bridge: String,
@@ -128,7 +127,7 @@ pub struct NetworkSettings {
     //pub SecondaryIPv6Addresses: ,
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Network {
     pub Aliases: Option<Vec<String>>,
@@ -145,14 +144,14 @@ pub struct Network {
     pub NetworkID: String,
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct PortMapping {
     pub HostIp: String,
     pub HostPort: String,
 }
 
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct State {
     pub Status: String,

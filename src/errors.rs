@@ -1,7 +1,6 @@
 //! Error-handling with the `error_chain` crate.
 
 use hyper;
-use rustc_serialize::json;
 use std::env;
 use std::io;
 

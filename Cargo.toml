@@ -25,7 +25,9 @@ ssl = ["openssl", "hyper/ssl"]
 error-chain = "0.5.0"
 hyper = { version = "0.9", default-features = false }
 openssl = { version = "0.7", optional = true }
-rustc-serialize = "0.3.16"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
 url = "1.2.2"
 
 [target.'cfg(unix)'.dependencies]

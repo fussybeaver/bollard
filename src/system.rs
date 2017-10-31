@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct SystemInfo {
     pub Containers: u64,

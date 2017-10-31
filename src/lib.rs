@@ -14,7 +14,10 @@ extern crate openssl;
 extern crate named_pipe;
 #[cfg(unix)]
 extern crate unix_socket;
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
+extern crate serde;
 extern crate url;
 
 // declare modules

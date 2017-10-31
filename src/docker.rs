@@ -31,7 +31,8 @@ use image::{Image, ImageStatus};
 use filesystem::FilesystemChange;
 use version::Version;
 
-use rustc_serialize::{Decodable, json};
+use serde::de::DeserializeOwned;
+use serde_json;
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
 #[cfg(unix)]
@@ -224,12 +225,12 @@ impl Docker {
 
     /// `GET` a URL and decode it.
     fn decode_url<T>(&self, type_name: &'static str, url: &str) -> Result<T>
-        where T: Decodable
+        where T: DeserializeOwned<>
     {
         let request_url = self.get_url(url);
         let request = self.build_get_request(&request_url);
         let body = try!(self.execute_request(request));
-        let info = try!(json::decode::<T>(&body)
+        let info = try!(serde_json::from_str::<T>(&body)
             .chain_err(|| ErrorKind::ParseError(type_name, body)));
         Ok(info)
     }
@@ -316,7 +317,7 @@ impl Docker {
         let request = self.build_post_request(&request_url);
         let body = try!(self.execute_request(request));
         let fixed = self.arrayify(&body);
-        let statuses = try!(json::decode::<Vec<ImageStatus>>(&fixed)
+        let statuses = try!(serde_json::from_str::<Vec<ImageStatus>>(&fixed)
             .chain_err(|| ErrorKind::ParseError("ImageStatus", fixed)));
         Ok(statuses)
     }
