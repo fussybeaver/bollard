@@ -76,7 +76,7 @@ pub struct Config {
     // TODO: The source says `Option<String>` but I've seen
     // `Option<Vec<String>>` on the wire.  Ignore until we figure it out.
     //pub Entrypoint: Option<Vec<String>>,
-    pub Env: Vec<String>,
+    pub Env: Option<Vec<String>>,
     pub ExposedPorts: Option<HashMap<String, UnspecifiedObject>>,
     pub Hostname: String,
     pub Image: String,
