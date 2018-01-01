@@ -3,10 +3,6 @@ dist: trusty
 cache:
   apt: true
   cargo: true
-  pip: true
-  directories:
-  - "$TRAVIS_BUILD_DIR/target"
-  - "$HOME/Library/Python/2.7"
 sudo: required
 matrix:
   include:
@@ -18,14 +14,9 @@ matrix:
     # Disable OpenSSL on MacOS X, because it's annoying to debug this on
     # Travis.  PRs to re-enable this are welcome.
     env: "FEATURE_OPTS='--no-default-features'"
-before_script:
-- |
-  pip install 'travis-cargo<0.2' --user &&
-  export PATH=$HOME/.local/bin:$HOME/Library/Python/2.7/bin:$HOME/.cargo/bin:$PATH
 script:
-- |
-  travis-cargo build -- $FEATURE_OPTS &&
-  travis-cargo test -- $FEATURE_OPTS
+- cargo build $FEATURE_OPTS
+- cargo test $FEATURE_OPTS
 notifications:
   webhooks:
     urls:
