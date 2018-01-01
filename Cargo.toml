@@ -12,6 +12,11 @@ documentation = "https://docs.rs/boondock"
 readme = "README.md"
 keywords = ["docker"]
 
+[badges]
+appveyor = { repository = "faradayio/boondock", branch = "master", service = "github" }
+travis-ci = { repository = "faradayio/boondock", branch = "master" }
+maintenance = { status = "passively-maintained" }
+
 [features]
 # OpenSSL is fairly hard to build on certain platforms, especially if you
 # want to produce release binaries.  So we enable it by default, but allow
