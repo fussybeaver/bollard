@@ -8,6 +8,6 @@ fn main() {
     let containers = docker.containers(opts).unwrap();
     
     for container in &containers {
-        println!("{} -> Created: {}, Image: {}, Status: {}", container.Id. container.Created, container.Image, container.Status);
+        println!("{} -> Created: {}, Image: {}, Status: {}", container.Id, container.Created, container.Image, container.Status);
     }
 }
