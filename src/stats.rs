@@ -37,7 +37,7 @@ impl iter::Iterator for StatsReader {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stats {
     pub read: String,
-    pub network: Network,
+    pub networks: Network,
     pub memory_stats: MemoryStats,
     pub cpu_stats: CpuStats,
     pub blkio_stats: BlkioStats
@@ -45,21 +45,21 @@ pub struct Stats {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Network {
-    pub rx_dropped: u64,
-    pub rx_bytes: u64,
-    pub rx_errors: u64,
-    pub tx_packets: u64,
-    pub tx_dropped: u64,
-    pub rx_packets: u64,
-    pub tx_errors: u64,
-    pub tx_bytes: u64
+    pub rx_dropped: Option<u64>,
+    pub rx_bytes: Option<u64>,
+    pub rx_errors: Option<u64>,
+    pub tx_packets: Option<u64>,
+    pub tx_dropped: Option<u64>,
+    pub rx_packets: Option<u64>,
+    pub tx_errors: Option<u64>,
+    pub tx_bytes: Option<u64>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryStats {
     pub max_usage: u64,
     pub usage: u64,
-    pub failcnt: u64,
+    pub failcnt: Option<u64>,
     pub limit: u64,
     pub stats: MemoryStat
 }
@@ -95,9 +95,7 @@ pub struct MemoryStat {
     pub active_file: u64,
     pub pgfault: u64,
     pub inactive_file: u64,
-    pub total_pgpgin: u64,
-    pub swap: u64,
-    pub total_swap: u64
+    pub total_pgpgin: u64
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
