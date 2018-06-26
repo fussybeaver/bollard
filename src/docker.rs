@@ -1,6 +1,6 @@
 use std;
 use std::collections::BTreeMap;
-use std::env;
+use std::{env, time};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::io::{self, Read};
@@ -363,5 +363,9 @@ impl Docker {
 
     pub fn version(&self) -> Result<Version> {
         self.decode_url("Version", "/version")
+    }
+
+    pub fn set_read_timeout(&mut self, dur: Option<time::Duration>) {
+        self.client.set_read_timeout(dur)
     }
 }
