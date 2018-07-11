@@ -1,6 +1,7 @@
 extern crate hyper;
 
 use std;
+use std::collections::HashMap;
 use std::iter;
 use std::io::{BufRead, BufReader};
 use hyper::client::response::Response;
@@ -37,7 +38,7 @@ impl iter::Iterator for StatsReader {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stats {
     pub read: String,
-    pub networks: Network,
+    pub networks: HashMap<String, Network>,
     pub memory_stats: MemoryStats,
     pub cpu_stats: CpuStats,
     pub blkio_stats: BlkioStats
@@ -45,14 +46,14 @@ pub struct Stats {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Network {
-    pub rx_dropped: Option<u64>,
-    pub rx_bytes: Option<u64>,
-    pub rx_errors: Option<u64>,
-    pub tx_packets: Option<u64>,
-    pub tx_dropped: Option<u64>,
-    pub rx_packets: Option<u64>,
-    pub tx_errors: Option<u64>,
-    pub tx_bytes: Option<u64>
+    pub rx_dropped: u64,
+    pub rx_bytes: u64,
+    pub rx_errors: u64,
+    pub tx_packets: u64,
+    pub tx_dropped: u64,
+    pub rx_packets: u64,
+    pub tx_errors: u64,
+    pub tx_bytes: u64
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
