@@ -205,7 +205,10 @@ impl Docker {
 
     fn execute_request(&self, request: RequestBuilder) -> Result<String> {
         let mut response = try!(request.send());
-        assert!(response.status.is_success());
+
+        if !response.status.is_success() {
+            return Ok(Err(ErrorKind::DockerNoSuccessError(response.status.to_u16()))?)
+        }
 
         let mut body = String::new();
         try!(response.read_to_string(&mut body));
@@ -214,7 +217,11 @@ impl Docker {
 
     fn start_request(&self, request: RequestBuilder) -> Result<Response> {
         let response = try!(request.send());
-        assert!(response.status.is_success());
+
+        if !response.status.is_success() {
+            return Ok(Err(ErrorKind::DockerNoSuccessError(response.status.to_u16()))?)
+        }
+
         Ok(response)
     }
 

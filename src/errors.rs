@@ -46,5 +46,10 @@ error_chain! {
             description("unsupported Docker URL scheme")
             display("do not know how to connect to Docker at '{}'", &host)
         }
+
+        DockerNoSuccessError(status_code: u16) {
+            description("Docker server failed to respond with a successful message")
+            display("Docker responded with status code {}", status_code )
+        }
     }
 }
