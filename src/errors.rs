@@ -1,55 +1,58 @@
-//! Error-handling with the `error_chain` crate.
-
-use hyper;
-use std::env;
-use std::io;
-
-error_chain! {
-    foreign_links {
-        env::VarError, EnvVar;
-        hyper::Error, Hyper;
-        io::Error, Io;
-    }
-
-    errors {
-        ContainerInfo(id: String) {
-            description("could not fetch information about container")
-            display("could not fetch information about container '{}'", &id)
-        }
-
-        CouldNotConnect(host: String) {
-            description("could not connect to Docker")
-            display("could not connected to Docker at '{}'", &host)
-        }
-
-        NoCertPath {
-            description("could not find DOCKER_CERT_PATH")
-            display("could not find DOCKER_CERT_PATH")
-        }
-
-        ParseError(wanted: &'static str, input: String) {
-            description("error parsing JSON from Docker")
-            display("could not parse JSON for {} from Docker", wanted)
-        }
-
-        SslDisabled {
-            description("Docker SSL support was disabled at compile time")
-            display("Docker SSL support was disabled at compile time")
-        }
-
-        SslError(host: String) {
-            description("could not connect to Docker using SSL")
-            display("could not connect to Docker at '{}' using SSL", &host)
-        }
-
-        UnsupportedScheme(host: String) {
-            description("unsupported Docker URL scheme")
-            display("do not know how to connect to Docker at '{}'", &host)
-        }
-
-        DockerNoSuccessError(status_code: u16) {
-            description("Docker server failed to respond with a successful message")
-            display("Docker responded with status code {}", status_code )
-        }
-    }
+#[derive(Fail, Debug)]
+#[fail(display = "could not fetch information about container '{}'", id)]
+pub struct ContainerInfoError {
+    pub id: String,
 }
+
+#[derive(Fail, Debug)]
+#[fail(display = "could not connected to Docker at '{}'", host)]
+pub struct CouldNotConnectError {
+    pub host: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "could not find DOCKER_CERT_PATH")]
+pub struct NoCertPathError {}
+
+#[derive(Fail, Debug)]
+#[fail(display = "could not parse JSON for {} from Docker", wanted)]
+pub struct ParseError {
+    pub wanted: String,
+    pub input: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "Docker SSL support was disabled at compile time")]
+pub struct SslDisabled {}
+
+#[derive(Fail, Debug)]
+#[fail(display = "could not connect to Docker at '{}' using SSL", host)]
+pub struct SslError {
+    pub host: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "unsupported Docker URL scheme '{}'", scheme)]
+pub struct UnsupportedScheme {
+    pub scheme: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "container not found with id {}", id)]
+pub struct ContainerNotFoundError {
+    pub id: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "Docker responded with status code {}", status_code)]
+pub struct DockerServerError {
+    pub status_code: u16,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "API queried with a bad parameter")]
+pub struct BadParameterError { }
+
+#[derive(Fail, Debug)]
+#[fail(display = "API responded with a read error")]
+pub struct ReadError { }

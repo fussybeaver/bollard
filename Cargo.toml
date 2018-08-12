@@ -1,21 +1,17 @@
 [package]
 name = "boondock"
 description = "Docker daemon API (a fork of Graham Lee's rust-docker)"
-version = "0.0.50"
+version = "0.1.0"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
-           "Eric Kidd <git@randomhacks.net>"]
+           "Eric Kidd <git@randomhacks.net>",
+	   "Niel Drummond <niel@drummond.lu>"]
 license = "Apache-2.0"
-homepage = "https://github.com/faradayio/boondock"
-repository = "https://github.com/faradayio/boondock"
+homepage = "https://github.com/fussybeaver/boondock"
+repository = "https://github.com/fussybeaver/boondock"
 documentation = "https://docs.rs/boondock"
 readme = "README.md"
 keywords = ["docker"]
-
-[badges]
-appveyor = { repository = "faradayio/boondock", branch = "master", service = "github" }
-travis-ci = { repository = "faradayio/boondock", branch = "master" }
-maintenance = { status = "passively-maintained" }
 
 [features]
 # OpenSSL is fairly hard to build on certain platforms, especially if you
@@ -24,16 +20,22 @@ maintenance = { status = "passively-maintained" }
 default = ["ssl"]
 
 # Enable OpenSSL both directly and for Hyper.
-ssl = ["openssl", "hyper/ssl"]
-
+ssl = ["openssl"]
 [dependencies]
-error-chain = "0.5.0"
-hyper = { version = "0.9", default-features = false }
-openssl = { version = "0.7", optional = true }
+failure = "0.1.2"
+hyper = { version = "0.12.8", default-features = false }
+hyper-tls = "0.3.0"
+openssl = { version = "0.10.11", optional = true }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 url = "1.2.2"
+http = "0.1.10"
+native-tls = "0.2.1"
+futures = "0.1.21"
+tokio = "0.1.7"
+hyper-openssl = "0.6.1"
+hyperlocal = "0.5"
 
 [target.'cfg(unix)'.dependencies]
 unix_socket = "0.5.0"

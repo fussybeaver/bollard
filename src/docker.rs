@@ -1,34 +1,36 @@
-use std;
-use std::collections::BTreeMap;
-use std::{env, time};
+use std::env;
 use std::path::{Path, PathBuf};
+use std::str::from_utf8;
 use std::sync::Arc;
-use std::io::{self, Read};
-use hyper;
-use hyper::Client;
-use hyper::client::RequestBuilder;
-use hyper::client::pool::{Config, Pool};
-use hyper::client::response::Response;
-use hyper::net::HttpConnector;
-#[cfg(feature="openssl")]
-use hyper::net::{HttpsConnector, Openssl};
-#[cfg(feature="openssl")]
-use openssl::ssl::{SslContext, SslMethod};
-#[cfg(feature="openssl")]
-use openssl::ssl::error::SslError;
-#[cfg(feature="openssl")]
-use openssl::x509::X509FileType;
-#[cfg(unix)]
-use unix::HttpUnixConnector;
+use std::time::{Duration, Instant};
 
-use errors::*;
+use futures::future::result;
+use futures::Stream;
+use hyper::client::connect::Connect;
+use hyper::client::HttpConnector;
+use hyper::rt::Future;
+use hyper::StatusCode;
+use hyper::{Body, Client, Request, Response};
+use hyper_openssl::HttpsConnector;
+#[cfg(unix)]
+use hyperlocal::{UnixConnector, Uri};
+#[cfg(feature = "openssl")]
+use openssl::pkcs12::Pkcs12;
+use openssl::ssl::{SslConnector, SslConnectorBuilder};
+#[cfg(feature = "openssl")]
+use openssl::ssl::{SslContext, SslFiletype, SslMethod};
+use tokio::timer::{Deadline, DeadlineError};
+use tokio::util::FutureExt;
+
 use container::{Container, ContainerInfo};
+use errors::*;
+use failure::Error;
+use filesystem::FilesystemChange;
+use image::{Image, ImageStatus};
 use options::*;
 use process::{Process, Top};
-use stats::StatsReader;
+use stats::Stats;
 use system::SystemInfo;
-use image::{Image, ImageStatus};
-use filesystem::FilesystemChange;
 use version::Version;
 
 use serde::de::DeserializeOwned;
@@ -48,14 +50,12 @@ pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
 
 /// The default directory in which to look for our Docker certificate
 /// files.
-pub fn default_cert_path() -> Result<PathBuf> {
-    let from_env = env::var("DOCKER_CERT_PATH")
-        .or_else(|_| env::var("DOCKER_CONFIG"));
+pub fn default_cert_path() -> Result<PathBuf, Error> {
+    let from_env = env::var("DOCKER_CERT_PATH").or_else(|_| env::var("DOCKER_CONFIG"));
     if let Ok(ref path) = from_env {
         Ok(Path::new(path).to_owned())
     } else {
-        let home = try!(env::home_dir()
-            .ok_or_else(|| ErrorKind::NoCertPath));
+        let home = env::home_dir().ok_or_else(|| NoCertPathError {})?;
         Ok(home.join(".docker"))
     }
 }
@@ -65,314 +65,475 @@ enum ClientType {
     Tcp,
 }
 
-pub struct Docker {
-    client: Client,
-    client_type: ClientType,
-    client_addr: String,
+fn arrayify(s: &str) -> String {
+    let wrapped = format!("[{}]", s);
+    wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
 }
 
-impl Docker {
+fn decode_response<T>(response: Response<Body>) -> impl Future<Item = T, Error = Error>
+where
+    T: DeserializeOwned,
+{
+    response
+        .into_body()
+        .concat2()
+        .map_err(|e| e.into())
+        .and_then(|body| from_utf8(&body).map(|x| x.to_owned()).map_err(|e| e.into()))
+        .and_then(|contents| serde_json::from_str::<T>(&contents).map_err(|e| e.into()))
+}
+
+pub struct Docker<C> {
+    client: Arc<Client<C>>,
+    client_type: ClientType,
+    client_addr: String,
+    client_timeout: u64,
+}
+
+const DEFAULT_NUM_THREADS: usize = 4;
+const DEFAULT_TIMEOUT: u64 = 4000;
+
+#[cfg(feature = "openssl")]
+impl Docker<HttpsConnector<HttpConnector>> {
     /// Connect to the Docker daemon using the standard Docker
     /// configuration options.  This includes `DOCKER_HOST`,
     /// `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` and `DOCKER_CONFIG`, and we
     /// try to interpret these as much like the standard `docker` client as
     /// possible.
-    pub fn connect_with_defaults() -> Result<Docker> {
-        // Read in our configuration from the Docker environment.
-        let host = env::var("DOCKER_HOST")
-            .unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        let tls_verify = env::var("DOCKER_TLS_VERIFY").is_ok();
-        let cert_path = try!(default_cert_path());
+    pub fn new() -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        let cert_path = default_cert_path()?;
 
-        // Dispatch to the correct connection function.
-        let mkerr = || ErrorKind::CouldNotConnect(host.clone());
-        if host.starts_with("unix://") {
-            Docker::connect_with_unix(&host).chain_err(&mkerr)
-        } else if host.starts_with("tcp://") {
-            if tls_verify {
-                Docker::connect_with_ssl(&host,
-                                         &cert_path.join("key.pem"),
-                                         &cert_path.join("cert.pem"),
-                                         &cert_path.join("ca.pem"))
-                    .chain_err(&mkerr)
-            } else {
-                Docker::connect_with_http(&host).chain_err(&mkerr)
-            }
-        } else {
-            Err(ErrorKind::UnsupportedScheme(host.clone()).into())
-        }
+        Docker::connect_with_ssl(
+            &host,
+            &cert_path.join("key.pem"),
+            &cert_path.join("cert.pem"),
+            &cert_path.join("ca.pem"),
+            DEFAULT_NUM_THREADS,
+            DEFAULT_TIMEOUT,
+        )
     }
 
-    #[cfg(unix)]
-    pub fn connect_with_unix(addr: &str) -> Result<Docker> {
-        // This ensures that using a fully-qualified path --
-        // e.g. unix://.... -- works.  The unix socket provider expects a
-        // Path, so we don't need scheme.
-        //
-        // TODO: Fix `replace` here and in other connect_* functions to only
-        // replace at the beginning of the string.
-        let client_addr = addr.clone().replace("unix://", "");
-
-        let http_unix_connector = HttpUnixConnector::new(&client_addr);
-        let connection_pool_config = Config { max_idle: 8 };
-        let connection_pool = Pool::with_connector(connection_pool_config, http_unix_connector);
-
-        let client = Client::with_connector(connection_pool);
-        let docker = Docker { client: client, client_type: ClientType::Unix, client_addr: client_addr };
-
-        return Ok(docker);
-    }
-
-    #[cfg(not(unix))]
-    pub fn connect_with_unix(addr: &str) -> Result<Docker> {
-        Err(ErrorKind::UnsupportedScheme(addr.to_owned()).into())
-    }
-
-    #[cfg(feature="openssl")]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker> {
+    pub fn connect_with_ssl(
+        addr: &str,
+        ssl_key: &Path,
+        ssl_cert: &Path,
+        ssl_ca: &Path,
+        num_threads: usize,
+        timeout: u64,
+    ) -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "https://");
 
-        let mkerr = || ErrorKind::SslError(addr.to_owned());
-        let mut ssl_context = try!(SslContext::new(SslMethod::Sslv23)
-            .chain_err(&mkerr));
-        try!(ssl_context.set_CA_file(ssl_ca).chain_err(&mkerr));
-        try!(ssl_context.set_certificate_file(ssl_cert, X509FileType::PEM)
-            .chain_err(&mkerr));
-        try!(ssl_context.set_private_key_file(ssl_key, X509FileType::PEM)
-            .chain_err(&mkerr));
+        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
 
-        let hyper_ssl_context = Openssl { context: Arc::new(ssl_context) };
-        let https_connector = HttpsConnector::new(hyper_ssl_context);
-        let connection_pool_config = Config { max_idle: 8 };
-        let connection_pool = Pool::with_connector(connection_pool_config, https_connector);
+        ssl_connector_builder.set_ca_file(ssl_ca)?;
+        ssl_connector_builder.set_certificate_file(ssl_cert, SslFiletype::PEM)?;
+        ssl_connector_builder.set_private_key_file(ssl_key, SslFiletype::PEM)?;
 
-        let client = Client::with_connector(connection_pool);
+        let mut http_connector = HttpConnector::new(num_threads);
+        http_connector.enforce_http(false);
+
+        let mut https_connector: HttpsConnector<HttpConnector> =
+            HttpsConnector::with_connector(http_connector, ssl_connector_builder)?;
+
+        let client_builder = Client::builder();
+        let client = client_builder.build(https_connector);
         let docker = Docker {
-            client: client,
-            client_type:
-            ClientType::Tcp,
+            client: Arc::new(client),
+            client_type: ClientType::Tcp,
             client_addr: client_addr.to_owned(),
+            client_timeout: timeout,
         };
 
-        return Ok(docker);
+        Ok(docker)
     }
+}
 
-    #[cfg(not(feature="openssl"))]
-    pub fn connect_with_ssl(addr: &str, ssl_key: &Path, ssl_cert: &Path, ssl_ca: &Path) -> Result<Docker> {
-        Err(ErrorKind::SslDisabled.into())
+impl Docker<HttpConnector> {
+    pub fn new() -> Result<Docker<HttpConnector>, Error> {
+        // Read in our configuration from the Docker environment.
+        let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        Docker::connect_with_http(&host, DEFAULT_NUM_THREADS, DEFAULT_TIMEOUT)
     }
 
     /// Connect using unsecured HTTP.  This is strongly discouraged
     /// everywhere but on Windows when npipe support is not available.
-    pub fn connect_with_http(addr: &str) -> Result<Docker> {
+    pub fn connect_with_http(
+        addr: &str,
+        num_threads: usize,
+        timeout: u64,
+    ) -> Result<Docker<HttpConnector>, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.clone().replace("tcp://", "http://");
 
-        let http_connector = HttpConnector::default();
-        let connection_pool_config = Config { max_idle: 8 };
-        let connection_pool = Pool::with_connector(connection_pool_config, http_connector);
+        let http_connector = HttpConnector::new(num_threads);
 
-        let client = Client::with_connector(connection_pool);
-        let docker = Docker { client: client, client_type: ClientType::Tcp, client_addr: client_addr };
-
-        return Ok(docker);
-
-    }
-
-    fn get_url(&self, path: &str) -> String {
-        let mut base = match self.client_type {
-            ClientType::Tcp => self.client_addr.clone(),
-            ClientType::Unix => {
-                // We need a host so the HTTP headers can be generated, so we just spoof it and say
-                // that we're talking to localhost.  The hostname doesn't matter one bit.
-                "http://localhost/".to_string()
-            }
+        let client_builder = Client::builder();
+        let client = client_builder.build(http_connector);
+        let docker = Docker {
+            client: Arc::new(client),
+            client_type: ClientType::Tcp,
+            client_addr: client_addr.to_owned(),
+            client_timeout: timeout,
         };
-        let new_path = path.clone();
-        base.push_str(&*new_path);
 
-        base
+        Ok(docker)
+    }
+}
+
+#[cfg(unix)]
+impl Docker<UnixConnector> {
+    pub fn new() -> Result<Docker<UnixConnector>, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        Docker::connect_with_unix(&host, DEFAULT_TIMEOUT)
     }
 
-    fn build_get_request(&self, request_url: &str) -> RequestBuilder {
-        self.client.get(request_url)
+    pub fn connect_with_unix(addr: &str, timeout: u64) -> Result<Docker<UnixConnector>, Error> {
+        let client_addr = addr.clone().replace("unix://", "");
+
+        let unix_connector = UnixConnector::new();
+
+        let mut client_builder = Client::builder();
+        client_builder.keep_alive(false);
+        let client = client_builder.build(unix_connector);
+        let docker = Docker {
+            client: Arc::new(client),
+            client_type: ClientType::Unix,
+            client_addr: client_addr.to_owned(),
+            client_timeout: timeout,
+        };
+
+        Ok(docker)
     }
+}
 
-    fn build_post_request(&self, request_url: &str) -> RequestBuilder {
-        self.client.post(request_url)
-    }
-
-    fn execute_request(&self, request: RequestBuilder) -> Result<String> {
-        let mut response = try!(request.send());
-
-        if !response.status.is_success() {
-            return Ok(Err(ErrorKind::DockerNoSuccessError(response.status.to_u16()))?)
+impl<'docker, C> Docker<C>
+where
+    C: Connect + Sync + 'static,
+    C::Error: 'static,
+    C::Transport: 'static,
+{
+    fn build_get_request(&self, path: &str) -> Result<Request<Body>, Error> {
+        match self.client_type {
+            ClientType::Tcp => {
+                let mut request_url = self.client_addr.clone();
+                request_url.push_str(path);
+                Ok(Request::get(request_url).body(Body::empty())?)
+            }
+            ClientType::Unix => {
+                let request_uri: ::hyper::Uri = Uri::new(self.client_addr.clone(), path).into();
+                Ok(Request::get(request_uri).body(Body::empty())?)
+            }
         }
-
-        let mut body = String::new();
-        try!(response.read_to_string(&mut body));
-        Ok(body)
     }
 
-    fn start_request(&self, request: RequestBuilder) -> Result<Response> {
-        let response = try!(request.send());
-
-        if !response.status.is_success() {
-            return Ok(Err(ErrorKind::DockerNoSuccessError(response.status.to_u16()))?)
+    fn build_post_request(&self, path: &str) -> Result<Request<Body>, Error> {
+        match self.client_type {
+            ClientType::Tcp => {
+                let mut request_url = self.client_addr.clone();
+                request_url.push_str(path);
+                Ok(Request::post(request_url).body(Body::empty())?)
+            }
+            ClientType::Unix => {
+                let request_uri: ::hyper::Uri = Uri::new(self.client_addr.clone(), path).into();
+                Ok(Request::post(request_uri).body(Body::empty())?)
+            }
         }
-
-        Ok(response)
     }
 
-    fn arrayify(&self, s: &str) -> String {
-        let wrapped = format!("[{}]", s);
-        wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
+    fn execute_request(
+        client: Arc<Client<C>>,
+        request: Request<Body>,
+        timeout: Duration,
+    ) -> impl Future<Item = Response<Body>, Error = Error> {
+        let now = Instant::now();
+
+        client
+            .request(request)
+            .deadline(now + timeout)
+            .map_err(|e| e.into())
     }
 
-    /// `GET` a URL and decode it.
-    fn decode_url<T>(&self, type_name: &'static str, url: &str) -> Result<T>
-        where T: DeserializeOwned<>
-    {
-        let request_url = self.get_url(url);
-        let request = self.build_get_request(&request_url);
-        let body = try!(self.execute_request(request));
-        let info = try!(serde_json::from_str::<T>(&body)
-            .chain_err(|| ErrorKind::ParseError(type_name, body)));
-        Ok(info)
-    }
-
-    pub fn containers(&self, opts: ContainerListOptions)
-                      -> Result<Vec<Container>> {
+    pub fn containers(
+        &self,
+        opts: ContainerListOptions,
+    ) -> impl Future<Item = Vec<Container>, Error = Error> {
         let url = format!("/containers/json?{}", opts.to_url_params());
-        self.decode_url("Container", &url)
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                // Status code 200 - 299
+                s if s.is_success() => Ok(response),
+
+                // Status code 400: Bad request
+                StatusCode::BAD_REQUEST => Err(BadParameterError {}.into()),
+
+                // All other status codes
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(move |response| decode_response(response))
     }
 
-    pub fn processes(&self, container: &Container) -> Result<Vec<Process>> {
+    pub fn processes(
+        &self,
+        container: &Container,
+    ) -> impl Future<Item = Vec<Process>, Error = Error> {
         let url = format!("/containers/{}/top", container.Id);
-        let top: Top = try!(self.decode_url("Top", &url));
 
-        let mut processes: Vec<Process> = Vec::new();
-        let mut process_iter = top.Processes.iter();
-        loop {
-            let process = match process_iter.next() {
-                Some(process) => process,
-                None => { break; }
-            };
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
 
-            let mut p = Process{
-                user: String::new(),
-                pid: String::new(),
-                cpu: None,
-                memory: None,
-                vsz: None,
-                rss: None,
-                tty: None,
-                stat: None,
-                start: None,
-                time: None,
-                command: String::new()
-            };
+        let container_id = container.Id.clone();
 
-            let mut value_iter = process.iter();
-            let mut i: usize = 0;
-            loop {
-                let value = match value_iter.next() {
-                    Some(value) => value,
-                    None => { break; }
-                };
-                let key = &top.Titles[i];
-                match key.as_ref() {
-                    "UID" => { p.user = value.clone() },
-                    "USER" => {p.user = value.clone() },
-                    "PID" => { p.pid = value.clone() },
-                    "%CPU" => { p.cpu = Some(value.clone()) },
-                    "%MEM" => { p.memory = Some(value.clone()) },
-                    "VSZ" => { p.vsz = Some(value.clone()) },
-                    "RSS" => { p.rss = Some(value.clone()) },
-                    "TTY" => { p.tty = Some(value.clone()) },
-                    "STAT" => { p.stat = Some(value.clone()) },
-                    "START" => { p.start = Some(value.clone()) },
-                    "STIME" => { p.start = Some(value.clone()) },
-                    "TIME" => { p.time = Some(value.clone()) },
-                    "CMD" => { p.command = value.clone() },
-                    "COMMAND" => { p.command = value.clone() },
-                    _ => {}
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(move |response| decode_response(response))
+            .and_then(|top: Top| {
+                let mut processes: Vec<Process> = Vec::new();
+                let mut process_iter = top.Processes.iter();
+                loop {
+                    let process = match process_iter.next() {
+                        Some(process) => process,
+                        None => {
+                            break;
+                        }
+                    };
+
+                    let mut p = Process {
+                        user: String::new(),
+                        pid: String::new(),
+                        cpu: None,
+                        memory: None,
+                        vsz: None,
+                        rss: None,
+                        tty: None,
+                        stat: None,
+                        start: None,
+                        time: None,
+                        command: String::new(),
+                    };
+
+                    let mut value_iter = process.iter();
+                    let mut i: usize = 0;
+                    loop {
+                        let value = match value_iter.next() {
+                            Some(value) => value,
+                            None => {
+                                break;
+                            }
+                        };
+                        let key = &top.Titles[i];
+                        match key.as_ref() {
+                            "UID" => p.user = value.clone(),
+                            "USER" => p.user = value.clone(),
+                            "PID" => p.pid = value.clone(),
+                            "%CPU" => p.cpu = Some(value.clone()),
+                            "%MEM" => p.memory = Some(value.clone()),
+                            "VSZ" => p.vsz = Some(value.clone()),
+                            "RSS" => p.rss = Some(value.clone()),
+                            "TTY" => p.tty = Some(value.clone()),
+                            "STAT" => p.stat = Some(value.clone()),
+                            "START" => p.start = Some(value.clone()),
+                            "STIME" => p.start = Some(value.clone()),
+                            "TIME" => p.time = Some(value.clone()),
+                            "CMD" => p.command = value.clone(),
+                            "COMMAND" => p.command = value.clone(),
+                            _ => {}
+                        }
+
+                        i = i + 1;
+                    }
+                    processes.push(p);
                 }
 
-                i = i + 1;
-            }
-            processes.push(p);
-        }
-
-        Ok(processes)
+                Ok(processes)
+            })
     }
 
-    pub fn stats(&self, container: &Container) -> Result<StatsReader> {
-        if container.Status.contains("Up") == false {
-            return Err("The container is already stopped.".into());
-        }
+    pub fn stats(&self, container: &Container) -> impl Future<Item = Stats, Error = Error> {
+        let url = format!("/containers/{}/stats", container.Id);
 
-        let request_url = self.get_url(&format!("/containers/{}/stats", container.Id));
-        let request = self.build_get_request(&request_url);
-        let response = try!(self.start_request(request));
-        Ok(StatsReader::new(response))
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        let container_id = container.Id.clone();
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn create_image(&self, image: String, tag: String) -> Result<Vec<ImageStatus>> {
-        let request_url = self.get_url(&format!("/images/create?fromImage={}&tag={}", image, tag));
-        let request = self.build_post_request(&request_url);
-        let body = try!(self.execute_request(request));
-        let fixed = self.arrayify(&body);
-        let statuses = try!(serde_json::from_str::<Vec<ImageStatus>>(&fixed)
-            .chain_err(|| ErrorKind::ParseError("ImageStatus", fixed)));
-        Ok(statuses)
+    pub fn create_image(
+        &'static self,
+        image: String,
+        tag: String,
+    ) -> impl Future<Item = Vec<ImageStatus>, Error = Error> {
+        let url = format!("/images/create?fromImage={}&tag={}", image, tag);
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_post_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                StatusCode::NOT_FOUND => Err(ReadError {}.into()),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn images(&self, all: bool) -> Result<Vec<Image>> {
+    pub fn images(&self, all: bool) -> impl Future<Item = Vec<Image>, Error = Error> {
         let a = match all {
             true => "1",
-            false => "0"
+            false => "0",
         };
-        let url = format!("/images/json?a={}", a);
-        self.decode_url("Image", &url)
+        let url = format!("/images/json?all={}", a);
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn system_info(&self) -> Result<SystemInfo> {
-        self.decode_url("SystemInfo", &format!("/info"))
+    pub fn system_info(&self) -> impl Future<Item = SystemInfo, Error = Error> {
+        let url = format!("/info");
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn container_info(&self, container: &Container) -> Result<ContainerInfo> {
+    pub fn container_info(
+        &self,
+        container: &Container,
+    ) -> impl Future<Item = ContainerInfo, Error = Error> {
         let url = format!("/containers/{}/json", container.Id);
-        self.decode_url("ContainerInfo", &url)
-            .chain_err(|| ErrorKind::ContainerInfo(container.Id.clone()))
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        let container_id = container.Id.clone();
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn filesystem_changes(&self, container: &Container) -> Result<Vec<FilesystemChange>> {
+    pub fn filesystem_changes(
+        &self,
+        container: &Container,
+    ) -> impl Future<Item = Vec<FilesystemChange>, Error = Error> {
         let url = format!("/containers/{}/changes", container.Id);
-        self.decode_url("FilesystemChange", &url)
+
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        let container_id = container.Id.clone();
+
+        result(self.build_get_request(&url))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn export_container(&self, container: &Container) -> Result<Response> {
-        let url = format!("/containers/{}/export", container.Id);
-        let request_url = self.get_url(&url);
-        let request = self.build_get_request(&request_url);
-        let response = try!(self.start_request(request));
-        Ok(response)
+    pub fn ping(&self) -> impl Future<Item = (), Error = Error> {
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_get_request("/_ping"))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|_| Ok(()))
     }
 
-    pub fn ping(&self) -> Result<String> {
-        let request_url = self.get_url(&format!("/_ping"));
-        let request = self.build_get_request(&request_url);
-        let body = try!(self.execute_request(request));
-        Ok(body)
+    pub fn version(&self) -> impl Future<Item = Version, Error = Error> {
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(self.build_get_request("/version"))
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| match response.status() {
+                s if s.is_success() => Ok(response),
+
+                _ => Err(DockerServerError {
+                    status_code: response.status().as_u16(),
+                }.into()),
+            })
+            .and_then(|response| decode_response(response))
     }
 
-    pub fn version(&self) -> Result<Version> {
-        self.decode_url("Version", "/version")
-    }
-
-    pub fn set_read_timeout(&mut self, dur: Option<time::Duration>) {
-        self.client.set_read_timeout(dur)
+    pub fn set_read_timeout(&mut self, duration: u64) {
+        self.client_timeout = duration;
     }
 }

@@ -1,39 +1,45 @@
 //! Docker
-#![doc(html_root_url="https://ghmlee.github.io/rust-docker/doc")]
-
+#![doc(html_root_url = "https://ghmlee.github.io/rust-docker/doc")]
 // Increase the compiler's recursion limit for the `error_chain` crate.
 #![recursion_limit = "1024"]
 
 // import external libraries
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
+extern crate futures;
+extern crate http;
 extern crate hyper;
-#[cfg(feature="openssl")]
-extern crate openssl;
+extern crate hyper_tls;
 #[cfg(windows)]
 extern crate named_pipe;
+extern crate native_tls;
+#[cfg(feature = "openssl")]
+extern crate openssl;
 #[cfg(unix)]
 extern crate unix_socket;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
+extern crate hyperlocal;
+extern crate hyper_openssl;
 extern crate serde;
+extern crate serde_json;
+extern crate tokio;
 extern crate url;
 
 // declare modules
-mod test;
-mod util;
-#[cfg(unix)]
-mod unix;
-mod options;
+pub mod container;
 mod docker;
 pub mod errors;
-pub mod container;
+pub mod filesystem;
+pub mod image;
+mod options;
+pub mod process;
 pub mod stats;
 pub mod system;
-pub mod image;
-pub mod process;
-pub mod filesystem;
+mod test;
+#[cfg(unix)]
+mod unix;
+mod util;
 pub mod version;
 
 // publicly re-export

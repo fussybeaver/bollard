@@ -3,7 +3,6 @@ use std::vec::Vec;
 use std::io::{Read, Write, Result};
 use std::time::Duration;
 use std::net::{SocketAddr, Shutdown};
-use hyper::net::NetworkStream;
 
 pub struct MemoryStream {
     buf: Vec<u8>,
@@ -39,24 +38,6 @@ impl Write for MemoryStream {
     }
 
     fn flush(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
-
-impl NetworkStream for MemoryStream {
-    fn peer_addr(&mut self) -> Result<SocketAddr> {
-        Ok("127.0.0.1:1337".parse().unwrap())
-    }
-
-    fn set_read_timeout(&self, _dur: Option<Duration>) -> Result<()> {
-        Ok(())
-    }
-
-    fn set_write_timeout(&self, _dur: Option<Duration>) -> Result<()> {
-        Ok(())
-    }
-
-    fn close(&mut self, _how: Shutdown) -> Result<()> {
         Ok(())
     }
 }
