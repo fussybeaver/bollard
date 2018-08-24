@@ -34,11 +34,16 @@ http = "0.1.10"
 native-tls = "0.2.1"
 futures = "0.1.21"
 tokio = "0.1.7"
-hyper-openssl = "0.6.1"
-hyperlocal = "0.5"
+tokio-reactor = "0.1.4"
+hyper-openssl = { version = "0.6.1", optional = true }
+hex = "0.3.2"
+tokio-io = "0.1.8"
+bytes = "0.4.9"
+mio = "0.6.15"
 
 [target.'cfg(unix)'.dependencies]
-unix_socket = "0.5.0"
+hyperlocal = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-named_pipe = "0.2.2"
+mio-named-pipes = "0.1.6"
+winapi = "0.3.5"

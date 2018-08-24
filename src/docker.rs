@@ -9,13 +9,14 @@ use futures::Stream;
 use hyper::client::connect::Connect;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
-use hyper::StatusCode;
-use hyper::{Body, Client, Request, Response};
+use hyper::{self, header, Body, Client, Request, Response, StatusCode};
+#[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(unix)]
-use hyperlocal::{UnixConnector, Uri};
+use hyperlocal::{self, UnixConnector};
 #[cfg(feature = "openssl")]
 use openssl::pkcs12::Pkcs12;
+#[cfg(feature = "openssl")]
 use openssl::ssl::{SslConnector, SslConnectorBuilder};
 #[cfg(feature = "openssl")]
 use openssl::ssl::{SslContext, SslFiletype, SslMethod};
@@ -27,6 +28,7 @@ use errors::*;
 use failure::Error;
 use filesystem::FilesystemChange;
 use image::{Image, ImageStatus};
+use named_pipe::{self, NamedPipeConnector};
 use options::*;
 use process::{Process, Top};
 use stats::Stats;
@@ -63,6 +65,7 @@ pub fn default_cert_path() -> Result<PathBuf, Error> {
 enum ClientType {
     Unix,
     Tcp,
+    NamedPipe,
 }
 
 fn arrayify(s: &str) -> String {
@@ -207,13 +210,44 @@ impl Docker<UnixConnector> {
     }
 }
 
+#[cfg(windows)]
+impl Docker<NamedPipeConnector> {
+    pub fn new() -> Result<Docker<NamedPipeConnector>, Error> {
+        // TODO: check if this environment is relevant here
+        let addr = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        Docker::connect_with_named_pipe(&addr, DEFAULT_TIMEOUT)
+    }
+
+    pub fn connect_with_named_pipe(
+        addr: &str,
+        timeout: u64,
+    ) -> Result<Docker<NamedPipeConnector>, Error> {
+        let client_addr = addr.clone();
+
+        let named_pipe_connector = NamedPipeConnector::new();
+
+        let mut client_builder = Client::builder();
+        client_builder.keep_alive(false);
+        client_builder.http1_title_case_headers(true);
+        let client = client_builder.build(named_pipe_connector);
+        let docker = Docker {
+            client: Arc::new(client),
+            client_type: ClientType::NamedPipe,
+            client_addr: client_addr.to_owned(),
+            client_timeout: timeout,
+        };
+
+        Ok(docker)
+    }
+}
+
 impl<'docker, C> Docker<C>
 where
     C: Connect + Sync + 'static,
     C::Error: 'static,
     C::Transport: 'static,
 {
-    fn build_get_request(&self, path: &str) -> Result<Request<Body>, Error> {
+    fn build_request(&self, path: &str) -> Result<Request<Body>, Error> {
         match self.client_type {
             ClientType::Tcp => {
                 let mut request_url = self.client_addr.clone();
@@ -221,22 +255,27 @@ where
                 Ok(Request::get(request_url).body(Body::empty())?)
             }
             ClientType::Unix => {
-                let request_uri: ::hyper::Uri = Uri::new(self.client_addr.clone(), path).into();
-                Ok(Request::get(request_uri).body(Body::empty())?)
+                #[cfg(unix)]
+                {
+                    let request_uri: hyper::Uri =
+                        hyperlocal::Uri::new(self.client_addr.clone(), path).into();
+                    Ok(Request::get(request_uri).body(Body::empty())?)
+                }
+                #[cfg(not(unix))]
+                {
+                    unreachable!();
+                }
             }
-        }
-    }
-
-    fn build_post_request(&self, path: &str) -> Result<Request<Body>, Error> {
-        match self.client_type {
-            ClientType::Tcp => {
-                let mut request_url = self.client_addr.clone();
-                request_url.push_str(path);
-                Ok(Request::post(request_url).body(Body::empty())?)
-            }
-            ClientType::Unix => {
-                let request_uri: ::hyper::Uri = Uri::new(self.client_addr.clone(), path).into();
-                Ok(Request::post(request_uri).body(Body::empty())?)
+            ClientType::NamedPipe => {
+                let request_uri: hyper::Uri =
+                    named_pipe::Uri::new(self.client_addr.clone(), path).into();
+                Ok(Request::get(request_uri)
+                    .header(header::CONTENT_TYPE, "text/plain")
+                    .header(header::ACCEPT, "text/plain")
+                    .header(header::USER_AGENT, "Docker.boondock")
+                    .header(header::CONNECTION, "upgrade")
+                    .header(header::UPGRADE, "tcp")
+                    .body(Body::empty())?)
             }
         }
     }
@@ -263,7 +302,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 // Status code 200 - 299
@@ -291,7 +330,7 @@ where
 
         let container_id = container.Id.clone();
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -373,7 +412,7 @@ where
 
         let container_id = container.Id.clone();
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -397,7 +436,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_post_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -421,7 +460,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -439,7 +478,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -462,7 +501,7 @@ where
 
         let container_id = container.Id.clone();
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -487,7 +526,7 @@ where
 
         let container_id = container.Id.clone();
 
-        result(self.build_get_request(&url))
+        result(self.build_request(&url))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -505,7 +544,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_get_request("/_ping"))
+        result(self.build_request("/_ping"))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),
@@ -521,7 +560,7 @@ where
         let client = self.client.clone();
         let timeout = Duration::from_millis(self.client_timeout);
 
-        result(self.build_get_request("/version"))
+        result(self.build_request("/version"))
             .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| match response.status() {
                 s if s.is_success() => Ok(response),

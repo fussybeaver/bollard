@@ -1,0 +1,19 @@
+image: Visual Studio 2017
+
+install:
+  - docker version
+  - ps: Start-FileDownload "https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe"
+  - rustup-init.exe -y --default-host i686-pc-windows-gnu
+  - SET PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  - SET PATH=%PATH%;C:\MinGW\bin
+  - rustc -V
+  - cargo -V
+
+build_script:
+  - cargo build --verbose --no-default-features --example version_named_pipe
+
+test_script:
+  - SET RUST_BACKTRACE=1
+  - SET DOCKER_HOST=\\.\\pipe\\docker_engine
+  - target\debug\examples\version_named_pipe
+
