@@ -17,6 +17,7 @@ extern crate openssl;
 #[macro_use]
 extern crate serde_derive;
 extern crate bytes;
+extern crate chrono;
 extern crate hex;
 #[cfg(feature = "openssl")]
 extern crate hyper_openssl;
@@ -28,6 +29,7 @@ extern crate mio_named_pipes;
 extern crate serde;
 extern crate serde_json;
 extern crate tokio;
+extern crate tokio_codec;
 extern crate tokio_io;
 extern crate tokio_reactor;
 extern crate url;
@@ -35,20 +37,22 @@ extern crate url;
 extern crate winapi;
 
 // declare modules
+pub mod auth;
 pub mod container;
 mod docker;
+mod either;
 pub mod errors;
-pub mod filesystem;
 pub mod image;
-pub mod named_pipe;
+mod named_pipe;
 mod options;
 pub mod process;
-pub mod stats;
-pub mod system;
-mod test;
-mod util;
+mod read;
+mod uri;
 pub mod version;
 
+#[cfg(test)]
+#[macro_use]
+extern crate yup_hyper_mock as hyper_mock;
+
 // publicly re-export
-pub use docker::Docker;
-pub use options::*;
+pub use docker::{ClientType, Docker, DockerChain};

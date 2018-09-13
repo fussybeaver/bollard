@@ -1,58 +1,57 @@
 #[derive(Fail, Debug)]
-#[fail(display = "could not fetch information about container '{}'", id)]
-pub struct ContainerInfoError {
-    pub id: String,
-}
-
-#[derive(Fail, Debug)]
-#[fail(display = "could not connected to Docker at '{}'", host)]
-pub struct CouldNotConnectError {
-    pub host: String,
-}
-
-#[derive(Fail, Debug)]
 #[fail(display = "could not find DOCKER_CERT_PATH")]
 pub struct NoCertPathError {}
 
 #[derive(Fail, Debug)]
-#[fail(display = "could not parse JSON for {} from Docker", wanted)]
-pub struct ParseError {
-    pub wanted: String,
-    pub input: String,
+#[fail(display = "API responded with a 404 not found: {}", message)]
+pub struct DockerResponseNotFoundError {
+    pub message: String,
 }
 
 #[derive(Fail, Debug)]
-#[fail(display = "Docker SSL support was disabled at compile time")]
-pub struct SslDisabled {}
-
-#[derive(Fail, Debug)]
-#[fail(display = "could not connect to Docker at '{}' using SSL", host)]
-pub struct SslError {
-    pub host: String,
-}
-
-#[derive(Fail, Debug)]
-#[fail(display = "unsupported Docker URL scheme '{}'", scheme)]
-pub struct UnsupportedScheme {
-    pub scheme: String,
-}
-
-#[derive(Fail, Debug)]
-#[fail(display = "container not found with id {}", id)]
-pub struct ContainerNotFoundError {
-    pub id: String,
-}
-
-#[derive(Fail, Debug)]
-#[fail(display = "Docker responded with status code {}", status_code)]
-pub struct DockerServerError {
+#[fail(
+    display = "Docker responded with status code {}: {}",
+    status_code,
+    message
+)]
+pub struct DockerResponseServerError {
     pub status_code: u16,
+    pub message: String,
 }
 
 #[derive(Fail, Debug)]
-#[fail(display = "API queried with a bad parameter")]
-pub struct BadParameterError { }
+#[fail(display = "API queried with a bad parameter: {}", message)]
+pub struct DockerResponseBadParameterError {
+    pub message: String,
+}
 
 #[derive(Fail, Debug)]
-#[fail(display = "API responded with a read error")]
-pub struct ReadError { }
+pub struct JsonDataError {
+    pub message: String,
+    pub contents: String,
+    pub column: usize,
+}
+
+use std::cmp;
+use std::fmt::{Display, Formatter, Result};
+
+impl Display for JsonDataError {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let backtrack_len: usize = 24;
+        let peek_len: usize = 32;
+        let description = "Failed to deserialize near ...";
+        let from_start_length = self.column.checked_sub(backtrack_len).unwrap_or(0);
+        let spaces = ::std::iter::repeat(" ")
+            .take(description.len() + cmp::min(backtrack_len, self.column))
+            .collect::<String>();
+        write!(
+            f,
+            "{}{}...\n{}^---- {}",
+            description,
+            &self.contents
+                [from_start_length..cmp::min(self.contents.len(), self.column + peek_len)],
+            spaces,
+            self.message
+        )
+    }
+}

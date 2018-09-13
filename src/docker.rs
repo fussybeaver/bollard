@@ -1,58 +1,72 @@
 use std::env;
+#[cfg(feature = "openssl")]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures::future::result;
+use failure::Error;
+use futures::future::{self, result};
 use futures::Stream;
+use http::header::CONTENT_TYPE;
+use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
-use hyper::{self, header, Body, Client, Request, Response, StatusCode};
+use hyper::Method;
+use hyper::{self, Body, Client, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(unix)]
-use hyperlocal::{self, UnixConnector};
+use hyperlocal::UnixConnector;
 #[cfg(feature = "openssl")]
 use openssl::pkcs12::Pkcs12;
 #[cfg(feature = "openssl")]
-use openssl::ssl::{SslConnector, SslConnectorBuilder};
+use openssl::ssl::SslConnector;
 #[cfg(feature = "openssl")]
-use openssl::ssl::{SslContext, SslFiletype, SslMethod};
-use tokio::timer::{Deadline, DeadlineError};
+use openssl::ssl::{SslFiletype, SslMethod};
 use tokio::util::FutureExt;
+use tokio_codec::FramedRead;
 
-use container::{Container, ContainerInfo};
-use errors::*;
-use failure::Error;
-use filesystem::FilesystemChange;
-use image::{Image, ImageStatus};
-use named_pipe::{self, NamedPipeConnector};
-use options::*;
-use process::{Process, Top};
-use stats::Stats;
-use system::SystemInfo;
-use version::Version;
+use container::LogOutput;
+use either::EitherResponse;
+use errors::{
+    DockerResponseBadParameterError, DockerResponseNotFoundError, DockerResponseServerError,
+    JsonDataError,
+};
+#[cfg(windows)]
+use named_pipe::NamedPipeConnector;
+use options::EncodableQueryString;
+use options::NoParams;
+use read::{JsonLineDecoder, LineDecoder, StreamReader};
+use uri::Uri;
 
 use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 use serde_json;
 
-/// The default `DOCKER_HOST` address that we will try to connect to.
+/// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
-pub const DEFAULT_DOCKER_HOST: &'static str = "unix:///var/run/docker.sock";
+pub const DEFAULT_SOCKET: &'static str = "unix:///var/run/docker.sock";
+
+/// The default `DOCKER_NAMED_PIPE` address that a windows client will try to connect to.
+#[cfg(windows)]
+pub const DEFAULT_NAMED_PIPE: &'static str = "npipe:////./pipe/docker_engine";
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
-///
-/// This should technically be `"npipe:////./pipe/docker_engine"` on
-/// Windows, but we don't support Windows pipes yet.  However, the TCP port
-/// is still available.
-#[cfg(windows)]
 pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
+
+const DEFAULT_NUM_THREADS: usize = 1;
+
+/// Default timeout for all requests is 2 minutes.
+const DEFAULT_TIMEOUT: u64 = 120000;
 
 /// The default directory in which to look for our Docker certificate
 /// files.
+#[cfg(feature = "openssl")]
 pub fn default_cert_path() -> Result<PathBuf, Error> {
+    use errors::NoCertPathError;
+
     let from_env = env::var("DOCKER_CERT_PATH").or_else(|_| env::var("DOCKER_CONFIG"));
     if let Ok(ref path) = from_env {
         Ok(Path::new(path).to_owned())
@@ -62,47 +76,45 @@ pub fn default_cert_path() -> Result<PathBuf, Error> {
     }
 }
 
-enum ClientType {
+#[derive(Debug, Clone)]
+pub enum ClientType {
     Unix,
-    Tcp,
+    Http,
+    SSL,
     NamedPipe,
 }
 
-fn arrayify(s: &str) -> String {
-    let wrapped = format!("[{}]", s);
-    wrapped.clone().replace("}\r\n{", "}{").replace("}{", "},{")
-}
-
-fn decode_response<T>(response: Response<Body>) -> impl Future<Item = T, Error = Error>
-where
-    T: DeserializeOwned,
-{
-    response
-        .into_body()
-        .concat2()
-        .map_err(|e| e.into())
-        .and_then(|body| from_utf8(&body).map(|x| x.to_owned()).map_err(|e| e.into()))
-        .and_then(|contents| serde_json::from_str::<T>(&contents).map_err(|e| e.into()))
-}
-
+/// ---
+/// # Docker
+///
+/// The main interface for calling the Docker API. Construct a new Docker instance using one of the
+/// connect methods:
+///  - [`Docker::connect_with_http_defaults`](struct.Docker.html#method.connect_with_http_defaults)
+///  - [`Docker::connect_with_named_pipe_defaults`](struct.Docker.html#method.connect_with_pipe_defaults)
+///  - [`Docker::connect_with_ssl_defaults`](struct.Docker.html#method.connect_with_ssl_defaults)
+///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
+///
 pub struct Docker<C> {
-    client: Arc<Client<C>>,
-    client_type: ClientType,
-    client_addr: String,
-    client_timeout: u64,
+    pub(crate) client: Arc<Client<C>>,
+    pub(crate) client_type: ClientType,
+    pub(crate) client_addr: String,
+    pub(crate) client_timeout: Duration,
 }
 
-const DEFAULT_NUM_THREADS: usize = 4;
-const DEFAULT_TIMEOUT: u64 = 4000;
+impl<C> Clone for Docker<C> {
+    fn clone(&self) -> Docker<C> {
+        Docker {
+            client: self.client.clone(),
+            client_type: self.client_type.clone(),
+            client_addr: self.client_addr.clone(),
+            client_timeout: self.client_timeout.clone(),
+        }
+    }
+}
 
 #[cfg(feature = "openssl")]
 impl Docker<HttpsConnector<HttpConnector>> {
-    /// Connect to the Docker daemon using the standard Docker
-    /// configuration options.  This includes `DOCKER_HOST`,
-    /// `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` and `DOCKER_CONFIG`, and we
-    /// try to interpret these as much like the standard `docker` client as
-    /// possible.
-    pub fn new() -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
+    pub fn connect_with_ssl_defaults() -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
         let cert_path = default_cert_path()?;
 
@@ -112,7 +124,7 @@ impl Docker<HttpsConnector<HttpConnector>> {
             &cert_path.join("cert.pem"),
             &cert_path.join("ca.pem"),
             DEFAULT_NUM_THREADS,
-            DEFAULT_TIMEOUT,
+            Duration::from_millis(DEFAULT_TIMEOUT),
         )
     }
 
@@ -122,10 +134,10 @@ impl Docker<HttpsConnector<HttpConnector>> {
         ssl_cert: &Path,
         ssl_ca: &Path,
         num_threads: usize,
-        timeout: u64,
+        timeout: Duration,
     ) -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
-        let client_addr = addr.clone().replace("tcp://", "https://");
+        let client_addr = addr.clone().replace("tcp://", "");
 
         let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
 
@@ -143,7 +155,7 @@ impl Docker<HttpsConnector<HttpConnector>> {
         let client = client_builder.build(https_connector);
         let docker = Docker {
             client: Arc::new(client),
-            client_type: ClientType::Tcp,
+            client_type: ClientType::SSL,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
         };
@@ -153,29 +165,81 @@ impl Docker<HttpsConnector<HttpConnector>> {
 }
 
 impl Docker<HttpConnector> {
-    pub fn new() -> Result<Docker<HttpConnector>, Error> {
-        // Read in our configuration from the Docker environment.
+    /// Connect using unsecured HTTP.
+    ///
+    /// # Defaults
+    ///
+    ///  - The connection url is sourced from the `DOCKER_HOST` environment variable.
+    ///  - The number of threads used for the HTTP connection pool defaults to 1.
+    ///  - The request timeout defaults to 2 minutes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # extern crate boondock;
+    /// # extern crate futures;
+    /// # fn main () {
+    /// use boondock::Docker;
+    ///
+    /// use futures::future::Future;
+    ///
+    /// let connection = Docker::connect_with_http_defaults().unwrap();
+    /// connection.ping()
+    ///   .and_then(|_| Ok(println!("Connected!")));
+    /// # }
+    /// ```
+    pub fn connect_with_http_defaults() -> Result<Docker<impl Connect>, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        Docker::connect_with_http(&host, DEFAULT_NUM_THREADS, DEFAULT_TIMEOUT)
+        Docker::connect_with_http(
+            &host,
+            DEFAULT_NUM_THREADS,
+            Duration::from_millis(DEFAULT_TIMEOUT),
+        )
     }
 
-    /// Connect using unsecured HTTP.  This is strongly discouraged
-    /// everywhere but on Windows when npipe support is not available.
+    /// Connect using unsecured HTTP.  
+    ///
+    /// # Arguments
+    ///
+    ///  - `addr`: connection url including scheme and port.
+    ///  - `num_threads`: the number of threads for the HTTP connection pool.
+    ///  - `timeout`: the read/write timeout to use for every hyper connection
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # extern crate boondock;
+    /// # extern crate futures;
+    /// # fn main () {
+    /// use boondock::Docker;
+    ///
+    /// use futures::future::Future;
+    ///
+    /// use std::time::Duration;
+    ///
+    /// let connection = Docker::connect_with_http(
+    ///                    "http://my-custom-docker-server:2735", 4, Duration::from_secs(20))
+    ///                    .unwrap();
+    /// connection.ping()
+    ///   .and_then(|_| Ok(println!("Connected!")));
+    /// # }
+    /// ```
     pub fn connect_with_http(
         addr: &str,
         num_threads: usize,
-        timeout: u64,
-    ) -> Result<Docker<HttpConnector>, Error> {
+        timeout: Duration,
+    ) -> Result<Docker<impl Connect>, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
-        let client_addr = addr.clone().replace("tcp://", "http://");
+        let client_addr = addr.clone().replace("tcp://", "");
 
         let http_connector = HttpConnector::new(num_threads);
 
-        let client_builder = Client::builder();
+        let mut client_builder = Client::builder();
+        client_builder.keep_alive(true);
         let client = client_builder.build(http_connector);
         let docker = Docker {
             client: Arc::new(client),
-            client_type: ClientType::Tcp,
+            client_type: ClientType::Http,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
         };
@@ -185,13 +249,30 @@ impl Docker<HttpConnector> {
 }
 
 #[cfg(unix)]
+/// A Docker implementation typed to connect to a Unix socket.
 impl Docker<UnixConnector> {
-    pub fn new() -> Result<Docker<UnixConnector>, Error> {
-        let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        Docker::connect_with_unix(&host, DEFAULT_TIMEOUT)
+    /// Connect using a Unix socket.
+    ///
+    /// # Defaults
+    ///
+    ///  - The socket location defaults to `/var/run/docker.sock`.
+    ///  - The number of threads used for the tokio executor defaults to 1.
+    ///  - The request timeout defaults to 2 minutes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// //use boondock::Docker;
+    ///
+    /// //let connection = Docker::connect_with_http_defaults().unwrap();
+    /// //connection.ping().and_then(|_| println!("Connected!"));
+    /// ```
+    pub fn connect_with_unix_defaults() -> Result<Docker<impl Connect>, Error> {
+        let host = DEFAULT_SOCKET.to_string();
+        Docker::connect_with_unix(&host, Duration::from_millis(DEFAULT_TIMEOUT))
     }
 
-    pub fn connect_with_unix(addr: &str, timeout: u64) -> Result<Docker<UnixConnector>, Error> {
+    pub fn connect_with_unix(addr: &str, timeout: Duration) -> Result<Docker<impl Connect>, Error> {
         let client_addr = addr.clone().replace("unix://", "");
 
         let unix_connector = UnixConnector::new();
@@ -212,17 +293,16 @@ impl Docker<UnixConnector> {
 
 #[cfg(windows)]
 impl Docker<NamedPipeConnector> {
-    pub fn new() -> Result<Docker<NamedPipeConnector>, Error> {
-        // TODO: check if this environment is relevant here
-        let addr = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        Docker::connect_with_named_pipe(&addr, DEFAULT_TIMEOUT)
+    pub fn connect_with_named_pipe_defaults() -> Result<Docker<NamedPipeConnector>, Error> {
+        let addr = DEFAULT_NAMED_PIPE.to_string();
+        Docker::connect_with_named_pipe(&addr, Duration::from_millis(DEFAULT_TIMEOUT))
     }
 
     pub fn connect_with_named_pipe(
         addr: &str,
-        timeout: u64,
+        timeout: Duration,
     ) -> Result<Docker<NamedPipeConnector>, Error> {
-        let client_addr = addr.clone();
+        let client_addr = addr.clone().replace("npipe://", "");
 
         let named_pipe_connector = NamedPipeConnector::new();
 
@@ -241,43 +321,199 @@ impl Docker<NamedPipeConnector> {
     }
 }
 
-impl<'docker, C> Docker<C>
+impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
-    C::Error: 'static,
-    C::Transport: 'static,
 {
-    fn build_request(&self, path: &str) -> Result<Request<Body>, Error> {
-        match self.client_type {
-            ClientType::Tcp => {
-                let mut request_url = self.client_addr.clone();
-                request_url.push_str(path);
-                Ok(Request::get(request_url).body(Body::empty())?)
-            }
-            ClientType::Unix => {
-                #[cfg(unix)]
-                {
-                    let request_uri: hyper::Uri =
-                        hyperlocal::Uri::new(self.client_addr.clone(), path).into();
-                    Ok(Request::get(request_uri).body(Body::empty())?)
+    pub fn connect_with(connector: C, client_addr: String) -> Result<Docker<C>, Error> {
+        let timeout = Duration::from_secs(5);
+
+        let mut client_builder = Client::builder();
+        client_builder.keep_alive(false);
+        let client = client_builder.build(connector);
+
+        let docker = Docker {
+            client: Arc::new(client),
+            client_type: ClientType::Http,
+            client_addr,
+            client_timeout: timeout,
+        };
+
+        Ok(docker)
+    }
+}
+
+/// ---
+/// # DockerChain
+///
+/// Retains the same API as the [Docker
+/// Client](struct.Docker.html), but consumes the instance and returns the
+/// instance as part of the response.
+///
+/// # Examples
+///
+/// ```rust,norun
+/// use boondock::Docker;
+/// let docker = Docker::connect_with_http_defaults().unwrap();
+/// docker.chain();
+/// ```
+pub struct DockerChain<C> {
+    pub(crate) inner: Docker<C>,
+}
+
+impl<C> Docker<C>
+where
+    C: Connect + Sync + 'static,
+{
+    pub fn chain(self) -> DockerChain<C> {
+        DockerChain { inner: self }
+    }
+
+    pub(crate) fn process_into_value<O, T, S>(
+        &self,
+        url: &str,
+        builder: &mut Builder,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Future<Item = T, Error = Error>
+    where
+        O: EncodableQueryString,
+        T: DeserializeOwned,
+        S: Serialize,
+    {
+        self.process_request(url, builder, params, body)
+            .and_then(Docker::<C>::decode_response)
+    }
+
+    pub(crate) fn process_into_stream<O, T, S>(
+        &self,
+        url: &str,
+        builder: &mut Builder,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Stream<Item = T, Error = Error>
+    where
+        O: EncodableQueryString,
+        T: DeserializeOwned,
+        S: Serialize,
+    {
+        self.process_request(url, builder, params, body)
+            .into_stream()
+            .map(Docker::<C>::decode_into_stream::<T>)
+            .flatten()
+    }
+
+    pub(crate) fn process_into_stream_string<O, S>(
+        &self,
+        url: &str,
+        builder: &mut Builder,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Stream<Item = LogOutput, Error = Error>
+    where
+        O: EncodableQueryString,
+        S: Serialize,
+    {
+        self.process_request(url, builder, params, body)
+            .map_err(|e| {
+                println!("process_request");
+                e
+            })
+            .into_stream()
+            .map(Docker::<C>::decode_into_stream_string)
+            .flatten()
+    }
+
+    pub(crate) fn process_into_void<O, S>(
+        &self,
+        url: &str,
+        builder: &mut Builder,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        O: EncodableQueryString,
+        S: Serialize,
+    {
+        self.process_request(url, builder, params, body)
+            .and_then(|_| Ok(()))
+    }
+
+    fn process_request<O, S>(
+        &self,
+        url: &str,
+        builder: &mut Builder,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Future<Item = Response<Body>, Error = Error>
+    where
+        O: EncodableQueryString,
+        S: Serialize,
+    {
+        let client = self.client.clone();
+        let timeout = self.client_timeout.clone();
+
+        let des_request_body = match body.map(|inst| serde_json::to_string(&inst)) {
+            Some(Ok(res)) => Ok(Some(res)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }.map_err(|e| e.into());
+
+        result(des_request_body.and_then(|payload| {
+            let body = payload
+                .map(|content| content.into())
+                .unwrap_or(Body::empty());
+            self.build_request(url, builder, params, body)
+        })).and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| {
+                let status = response.status();
+                match status {
+                    // Status code 200 - 299
+                    s if s.is_success() => EitherResponse::A(future::ok(response)),
+
+                    // Status code 400: Bad request
+                    StatusCode::BAD_REQUEST => {
+                        EitherResponse::D(Docker::<C>::decode_into_string(response).and_then(
+                            |message| Err(DockerResponseBadParameterError { message }.into()),
+                        ))
+                    }
+
+                    // Status code 404: Not Found
+                    StatusCode::NOT_FOUND => {
+                        EitherResponse::C(Docker::<C>::decode_into_string(response).and_then(
+                            |message| Err(DockerResponseNotFoundError { message }.into()),
+                        ))
+                    }
+
+                    // All other status codes
+                    _ => EitherResponse::B(Docker::<C>::decode_into_string(response).and_then(
+                        move |message| {
+                            Err(DockerResponseServerError {
+                                status_code: status.as_u16(),
+                                message,
+                            }.into())
+                        },
+                    )),
                 }
-                #[cfg(not(unix))]
-                {
-                    unreachable!();
-                }
-            }
-            ClientType::NamedPipe => {
-                let request_uri: hyper::Uri =
-                    named_pipe::Uri::new(self.client_addr.clone(), path).into();
-                Ok(Request::get(request_uri)
-                    .header(header::CONTENT_TYPE, "text/plain")
-                    .header(header::ACCEPT, "text/plain")
-                    .header(header::USER_AGENT, "Docker.boondock")
-                    .header(header::CONNECTION, "upgrade")
-                    .header(header::UPGRADE, "tcp")
-                    .body(Body::empty())?)
-            }
-        }
+            })
+    }
+
+    fn build_request<'a, O>(
+        &self,
+        path: &str,
+        builder: &mut Builder,
+        query: Option<O>,
+        payload: Body,
+    ) -> Result<Request<Body>, Error>
+    where
+        O: EncodableQueryString,
+    {
+        let uri = Uri::parse(self.client_addr.clone(), &self.client_type, path, query)?;
+        let request_uri: hyper::Uri = uri.into();
+        Ok(builder
+            .uri(request_uri)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload)?)
     }
 
     fn execute_request(
@@ -293,286 +529,64 @@ where
             .map_err(|e| e.into())
     }
 
-    pub fn containers(
-        &self,
-        opts: ContainerListOptions,
-    ) -> impl Future<Item = Vec<Container>, Error = Error> {
-        let url = format!("/containers/json?{}", opts.to_url_params());
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                // Status code 200 - 299
-                s if s.is_success() => Ok(response),
-
-                // Status code 400: Bad request
-                StatusCode::BAD_REQUEST => Err(BadParameterError {}.into()),
-
-                // All other status codes
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(move |response| decode_response(response))
+    fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = T, Error = Error>
+    where
+        T: DeserializeOwned,
+    {
+        FramedRead::new(
+            StreamReader::new(res.into_body().from_err()),
+            JsonLineDecoder::new(),
+        )
     }
 
-    pub fn processes(
-        &self,
-        container: &Container,
-    ) -> impl Future<Item = Vec<Process>, Error = Error> {
-        let url = format!("/containers/{}/top", container.Id);
+    fn decode_into_stream_string(
+        res: Response<Body>,
+    ) -> impl Stream<Item = LogOutput, Error = Error> {
+        FramedRead::new(
+            StreamReader::new(res.into_body().from_err()),
+            LineDecoder::new(),
+        ).map_err(|e| {
+            println!("decode_into_stream_string");
+            e
+        })
+    }
 
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
+    fn decode_into_string(response: Response<Body>) -> impl Future<Item = String, Error = Error> {
+        response
+            .into_body()
+            .concat2()
+            .map_err(|e| e.into())
+            .and_then(|body| from_utf8(&body).map(|x| x.to_owned()).map_err(|e| e.into()))
+    }
 
-        let container_id = container.Id.clone();
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(move |response| decode_response(response))
-            .and_then(|top: Top| {
-                let mut processes: Vec<Process> = Vec::new();
-                let mut process_iter = top.Processes.iter();
-                loop {
-                    let process = match process_iter.next() {
-                        Some(process) => process,
-                        None => {
-                            break;
-                        }
-                    };
-
-                    let mut p = Process {
-                        user: String::new(),
-                        pid: String::new(),
-                        cpu: None,
-                        memory: None,
-                        vsz: None,
-                        rss: None,
-                        tty: None,
-                        stat: None,
-                        start: None,
-                        time: None,
-                        command: String::new(),
-                    };
-
-                    let mut value_iter = process.iter();
-                    let mut i: usize = 0;
-                    loop {
-                        let value = match value_iter.next() {
-                            Some(value) => value,
-                            None => {
-                                break;
-                            }
-                        };
-                        let key = &top.Titles[i];
-                        match key.as_ref() {
-                            "UID" => p.user = value.clone(),
-                            "USER" => p.user = value.clone(),
-                            "PID" => p.pid = value.clone(),
-                            "%CPU" => p.cpu = Some(value.clone()),
-                            "%MEM" => p.memory = Some(value.clone()),
-                            "VSZ" => p.vsz = Some(value.clone()),
-                            "RSS" => p.rss = Some(value.clone()),
-                            "TTY" => p.tty = Some(value.clone()),
-                            "STAT" => p.stat = Some(value.clone()),
-                            "START" => p.start = Some(value.clone()),
-                            "STIME" => p.start = Some(value.clone()),
-                            "TIME" => p.time = Some(value.clone()),
-                            "CMD" => p.command = value.clone(),
-                            "COMMAND" => p.command = value.clone(),
-                            _ => {}
-                        }
-
-                        i = i + 1;
-                    }
-                    processes.push(p);
+    fn decode_response<T>(response: Response<Body>) -> impl Future<Item = T, Error = Error>
+    where
+        T: DeserializeOwned,
+    {
+        Docker::<C>::decode_into_string(response).and_then(|contents| {
+            println!("{}", &contents);
+            serde_json::from_str::<T>(&contents).map_err(|e| {
+                if e.is_data() {
+                    JsonDataError {
+                        message: e.to_string(),
+                        column: e.column(),
+                        contents: contents.to_owned(),
+                    }.into()
+                } else {
+                    e.into()
                 }
-
-                Ok(processes)
             })
+        })
     }
 
-    pub fn stats(&self, container: &Container) -> impl Future<Item = Stats, Error = Error> {
-        let url = format!("/containers/{}/stats", container.Id);
+    pub fn ping(&self) -> impl Future<Item = String, Error = Error> {
+        let url = "/_ping";
 
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        let container_id = container.Id.clone();
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn create_image(
-        &'static self,
-        image: String,
-        tag: String,
-    ) -> impl Future<Item = Vec<ImageStatus>, Error = Error> {
-        let url = format!("/images/create?fromImage={}&tag={}", image, tag);
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                StatusCode::NOT_FOUND => Err(ReadError {}.into()),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn images(&self, all: bool) -> impl Future<Item = Vec<Image>, Error = Error> {
-        let a = match all {
-            true => "1",
-            false => "0",
-        };
-        let url = format!("/images/json?all={}", a);
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn system_info(&self) -> impl Future<Item = SystemInfo, Error = Error> {
-        let url = format!("/info");
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn container_info(
-        &self,
-        container: &Container,
-    ) -> impl Future<Item = ContainerInfo, Error = Error> {
-        let url = format!("/containers/{}/json", container.Id);
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        let container_id = container.Id.clone();
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn filesystem_changes(
-        &self,
-        container: &Container,
-    ) -> impl Future<Item = Vec<FilesystemChange>, Error = Error> {
-        let url = format!("/containers/{}/changes", container.Id);
-
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        let container_id = container.Id.clone();
-
-        result(self.build_request(&url))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                StatusCode::NOT_FOUND => Err(ContainerNotFoundError { id: container_id }.into()),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn ping(&self) -> impl Future<Item = (), Error = Error> {
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request("/_ping"))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|_| Ok(()))
-    }
-
-    pub fn version(&self) -> impl Future<Item = Version, Error = Error> {
-        let client = self.client.clone();
-        let timeout = Duration::from_millis(self.client_timeout);
-
-        result(self.build_request("/version"))
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
-            .and_then(|response| match response.status() {
-                s if s.is_success() => Ok(response),
-
-                _ => Err(DockerServerError {
-                    status_code: response.status().as_u16(),
-                }.into()),
-            })
-            .and_then(|response| decode_response(response))
-    }
-
-    pub fn set_read_timeout(&mut self, duration: u64) {
-        self.client_timeout = duration;
+        self.process_into_value(
+            url,
+            Builder::new().method(Method::GET),
+            None::<NoParams>,
+            None::<NoParams>,
+        )
     }
 }

@@ -10,10 +10,22 @@ install:
   - cargo -V
 
 build_script:
-  - cargo build --verbose --no-default-features --example version_named_pipe
+  - ps: |
+        $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
+        Set-Item -path env:HOST_IP -value $ipv4
+  - ipconfig
+  - echo %HOST_IP%
+  - ps: |
+        cd dockerfiles/windows/registry 
+        docker build -t stefanscherer/registry-windows -f Dockerfile .
+        cd ../../../
+  - ps: | 
+        cd dockerfiles/windows/consul
+        docker build -t stefanscherer/consul-windows -f Dockerfile .
+        cd ../../../
+  - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
+  - cargo build --verbose 
 
 test_script:
-  - SET RUST_BACKTRACE=1
-  - SET DOCKER_HOST=\\.\\pipe\\docker_engine
-  - target\debug\examples\version_named_pipe
-
+  - ps: Set-Item -path env:RUST_BACKTRACE -value 1
+  - cargo test --verbose -- --nocapture --test-threads 1

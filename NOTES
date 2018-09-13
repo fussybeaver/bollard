@@ -1,0 +1,22 @@
+# To generate the SSL certificate
+docker run --rm -e SSL_SUBJECT=test.example.com -v /tmp/certs:/certs paulczar/omgwtfssl
+
+# To run the docker server with TLS support
+docker run -h test.example.com --rm -v /tmp/certs:/etc/docker/ssl -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay --tlsverify --tlscacert=/etc/docker/ssl/ca.pem --tlscert=/etc/docker/ssl/cert.pem --tlskey=/etc/docker/ssl/key.pem
+
+# To check that the client version is different than the server version
+docker run -v /tmp/certs:/root/.docker --rm --link test-docker-daemon:docker docker:18.03 --tls version
+
+# Current invocation
+docker run -e -ti -e DOCKER_HOST='https://test.example.com:2375' -e RUST_BACKTRACE=1 -v /tmp/certs:/root/.docker --rm --link test-docker-daemon:docker boondock /usr/local/bin/version_tls
+
+#TYPE Microsoft.PowerShell.Commands.HistoryInfo
+"Id","CommandLine","ExecutionStatus","StartExecutionTime","EndExecutionTime"
+"1","[System.Environment]::SetEnvironmentVariable(""DOCKER_HOST"", ""\\.\pipe\docker_engine"")","Completed","8/27/2018 10:50:46 PM","8/27/2018 10:50:46 PM"
+"11","[IO.Directory]::GetAccessControl('\\.\pipe\docker_engine')","Completed","8/27/2018 11:33:23 PM","8/27/2018 11:33:23 PM"
+"12","$PipeAcl = [IO.Directory]::GetAccessControl('\\.\pipe\docker_engine')","Completed","8/27/2018 11:33:41 PM","8/27/2018 11:33:41 PM"
+"13","$PipeAccessRule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(""Everyone"", 'FullControl', 'Allow')","Completed","8/27/2018 11:33:52 PM","8/27/2018 11:33:52 PM"
+"14","$PipeAcl.AddAccessRule($PipeAccessRule)","Completed","8/27/2018 11:34:08 PM","8/27/2018 11:34:08 PM"
+"15","[IO.Directory]::SetAccessControl('\\.\pipe\docker_engine', $PipeAcl)","Completed","8/27/2018 11:34:18 PM","8/27/2018 11:34:18 PM"
+"16","[IO.Directory]::GetAccessControl('\\.\pipe\docker_engine')","Completed","8/27/2018 11:34:22 PM","8/27/2018 11:34:22 PM"
+"18","\\VBOXSVR\boondock\target\i686-pc-windows-gnu\debug\examples\version_named_pipe.exe","Completed","8/27/2018 11:35:46 PM","8/27/2018 11:35:51 PM"

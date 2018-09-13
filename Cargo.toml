@@ -14,32 +14,36 @@ readme = "README.md"
 keywords = ["docker"]
 
 [features]
-# OpenSSL is fairly hard to build on certain platforms, especially if you
-# want to produce release binaries.  So we enable it by default, but allow
-# it to be excluded using `default-features = false`.
-default = ["ssl"]
-
 # Enable OpenSSL both directly and for Hyper.
-ssl = ["openssl"]
+ssl = ["openssl", "hyper-openssl"]
+test_http = []
+
 [dependencies]
 failure = "0.1.2"
-hyper = { version = "0.12.8", default-features = false }
+hyper = { version = "0.12.10" }
 hyper-tls = "0.3.0"
 openssl = { version = "0.10.11", optional = true }
+hyper-openssl = { version = "0.6.1", optional = true }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 url = "1.2.2"
 http = "0.1.10"
 native-tls = "0.2.1"
-futures = "0.1.21"
+futures = "0.1.24"
 tokio = "0.1.7"
 tokio-reactor = "0.1.4"
-hyper-openssl = { version = "0.6.1", optional = true }
 hex = "0.3.2"
 tokio-io = "0.1.8"
 bytes = "0.4.9"
 mio = "0.6.15"
+tokio-codec = "0.1.0"
+chrono = { version = "0.4.6", features = ["serde"] }
+arrayvec = "0.4.7"
+
+[dev-dependencies]
+yup-hyper-mock = "*"
+log = "*"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal = "0.5"

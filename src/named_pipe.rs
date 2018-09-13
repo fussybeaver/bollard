@@ -1,33 +1,26 @@
 #![cfg(windows)]
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
 use futures::future::{self, FutureResult};
 use futures::IntoFuture;
 use futures::{Async, Future, Poll};
-use hex::{FromHex, ToHex};
 use hyper::client::connect::{Connect, Connected, Destination};
-use hyper::Uri as HyperUri;
 use mio::Ready;
 use mio_named_pipes::NamedPipe;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_reactor::PollEvented;
-use winapi::um::fileapi::*;
 use winapi::um::winbase::*;
-use winapi::*;
 
-use std::borrow::Cow;
-use std::cmp;
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs::OpenOptions;
-use std::io::Error;
 use std::io::{self, Read, Write};
 use std::mem;
-use std::os::raw::{c_int, c_ulong, c_void};
 use std::os::windows::fs::*;
 use std::os::windows::io::*;
 use std::path::Path;
-use std::ptr;
+
+use super::ClientType;
+use uri::Uri;
 
 pub struct NamedPipeStream {
     io: PollEvented<NamedPipe>,
@@ -170,6 +163,7 @@ impl<'a> AsyncWrite for &'a NamedPipeStream {
         Ok(().into())
     }
 
+    #[allow(unused_unsafe)]
     fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
         if let Async::NotReady = <NamedPipeStream>::poll_write_ready(self)? {
             return Ok(Async::NotReady);
@@ -270,7 +264,7 @@ impl Connect for NamedPipeConnector {
     type Future = FutureResult<(NamedPipeStream, Connected), io::Error>;
 
     fn connect(&self, destination: Destination) -> Self::Future {
-        match Uri::socket_path_dest(&destination) {
+        match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
             Some(ref os_str) => {
                 println!("destination: {:?}", &destination);
                 println!("connecting to: {}", os_str);
@@ -285,59 +279,5 @@ impl Connect for NamedPipeConnector {
                 format!("Invalid uri {:?}", destination),
             )),
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Uri<'a> {
-    encoded: Cow<'a, str>,
-}
-
-impl<'a> Into<HyperUri> for Uri<'a> {
-    fn into(self) -> HyperUri {
-        self.encoded.as_ref().parse().unwrap()
-    }
-}
-
-impl<'a> Uri<'a> {
-    pub fn new<P>(socket: P, path: &'a str) -> Self
-    where
-        P: AsRef<OsStr>,
-    {
-        let mut host = String::new();
-        println!("socket: {}", socket.as_ref().to_str().unwrap());
-        socket
-            .as_ref()
-            .to_string_lossy()
-            .as_bytes()
-            .write_hex(&mut host);
-        let host_str = format!("net.pipe://{}:0{}", host, path);
-        println!("host_str: {}", host_str);
-        Uri {
-            encoded: Cow::Owned(host_str),
-        }
-    }
-
-    fn socket_path(uri: &HyperUri) -> Option<String> {
-        uri.host()
-            .iter()
-            .filter_map(|host| {
-                println!("host: {}", host);
-                Vec::from_hex(host).ok().map(|raw| {
-                    println!("raw: {}", String::from_utf8_lossy(&raw));
-                    String::from_utf8_lossy(&raw).into_owned()
-                })
-            })
-            .next()
-    }
-
-    fn socket_path_dest(dest: &Destination) -> Option<String> {
-        format!("net.pipe://{}", dest.host())
-            .parse()
-            .ok()
-            .and_then(|uri| {
-                println!("uri: {}", uri);
-                Self::socket_path(&uri)
-            })
     }
 }
