@@ -20,6 +20,7 @@ use std::default::Default;
 #[macro_use]
 mod common;
 
+/*
 fn create_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
@@ -165,3 +166,4 @@ fn integration_test_remove_image() {
     connect_to_docker_and_run!(create_image_test);
     connect_to_docker_and_run!(remove_image_test);
 }
+*/

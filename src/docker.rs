@@ -342,6 +342,25 @@ impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
 {
+    pub(crate) fn process_into_value2<O, T, S, K, V>(
+        &self,
+        url: &str,
+        method: Method,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Future<Item = T, Error = Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        T: DeserializeOwned,
+        S: Serialize,
+    {
+        self.process_request2(url, method, params, body)
+            .and_then(Docker::<C>::decode_response)
+    }
+
     pub(crate) fn process_into_value<O, T, S>(
         &self,
         url: &str,
@@ -356,6 +375,27 @@ where
     {
         self.process_request(url, method, params, body)
             .and_then(Docker::<C>::decode_response)
+    }
+
+    pub(crate) fn process_into_stream2<O, T, S, K, V>(
+        &self,
+        url: &str,
+        method: Method,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Stream<Item = T, Error = Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        T: DeserializeOwned,
+        S: Serialize,
+    {
+        self.process_request2(url, method, params, body)
+            .into_stream()
+            .map(Docker::<C>::decode_into_stream::<T>)
+            .flatten()
     }
 
     pub(crate) fn process_into_stream<O, T, S>(
@@ -391,6 +431,69 @@ where
             .and_then(|_| Ok(()))
     }
 
+    fn process_request2<O, S, K, V>(
+        &self,
+        url: &str,
+        method: Method,
+        params: Option<O>,
+        body: Option<S>,
+    ) -> impl Future<Item = Response<Body>, Error = Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        S: Serialize,
+    {
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        let des_request_body = match body.map(|inst| serde_json::to_string(&inst)) {
+            Some(Ok(res)) => Ok(Some(res)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }.map_err(|e| e.into());
+
+        result(des_request_body.and_then(|payload| {
+            println!("{}", payload.clone().unwrap_or_else(String::new));
+            let body = payload
+                .map(|content| content.into())
+                .unwrap_or(Body::empty());
+            self.build_request2(url, method, params, body)
+        })).and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| {
+                let status = response.status();
+                match status {
+                    // Status code 200 - 299
+                    s if s.is_success() => Either4::A(future::ok(response)),
+
+                    // Status code 400: Bad request
+                    StatusCode::BAD_REQUEST => Either4::D(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseBadParameterError { message }.into())
+                        }),
+                    ),
+
+                    // Status code 404: Not Found
+                    StatusCode::NOT_FOUND => Either4::C(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseNotFoundError { message }.into())
+                        }),
+                    ),
+
+                    // All other status codes
+                    _ => Either4::B(Docker::<C>::decode_into_string(response).and_then(
+                        move |message| {
+                            Err(DockerResponseServerError {
+                                status_code: status.as_u16(),
+                                message,
+                            }.into())
+                        },
+                    )),
+                }
+            })
+    }
+
     fn process_request<O, S>(
         &self,
         url: &str,
@@ -418,39 +521,65 @@ where
                 .unwrap_or(Body::empty());
             self.build_request(url, method, params, body)
         })).and_then(move |request| Docker::execute_request(client, request, timeout))
-        .and_then(|response| {
-            let status = response.status();
-            match status {
-                // Status code 200 - 299
-                s if s.is_success() => Either4::A(future::ok(response)),
+            .and_then(|response| {
+                let status = response.status();
+                match status {
+                    // Status code 200 - 299
+                    s if s.is_success() => Either4::A(future::ok(response)),
 
-                // Status code 400: Bad request
-                StatusCode::BAD_REQUEST => Either4::D(
-                    Docker::<C>::decode_into_string(response).and_then(|message| {
-                        Err(DockerResponseBadParameterError { message }.into())
-                    }),
-                ),
+                    // Status code 400: Bad request
+                    StatusCode::BAD_REQUEST => Either4::D(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseBadParameterError { message }.into())
+                        }),
+                    ),
 
-                // Status code 404: Not Found
-                StatusCode::NOT_FOUND => Either4::C(
-                    Docker::<C>::decode_into_string(response)
-                        .and_then(|message| Err(DockerResponseNotFoundError { message }.into())),
-                ),
+                    // Status code 404: Not Found
+                    StatusCode::NOT_FOUND => Either4::C(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseNotFoundError { message }.into())
+                        }),
+                    ),
 
-                // All other status codes
-                _ => Either4::B(Docker::<C>::decode_into_string(response).and_then(
-                    move |message| {
-                        Err(DockerResponseServerError {
-                            status_code: status.as_u16(),
-                            message,
-                        }.into())
-                    },
-                )),
-            }
-        })
+                    // All other status codes
+                    _ => Either4::B(Docker::<C>::decode_into_string(response).and_then(
+                        move |message| {
+                            Err(DockerResponseServerError {
+                                status_code: status.as_u16(),
+                                message,
+                            }.into())
+                        },
+                    )),
+                }
+            })
     }
 
-    fn build_request<'a, O>(
+    fn build_request2<O, K, V>(
+        &self,
+        path: &str,
+        method: Method,
+        query: Option<O>,
+        payload: Body,
+    ) -> Result<Request<Body>, Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let uri = Uri::parse2(self.client_addr.clone(), &self.client_type, path, query)?;
+        let request_uri: hyper::Uri = uri.into();
+        match method {
+            Method::GET => Ok(Request::get(request_uri).body(payload)?),
+            Method::POST => Ok(Request::post(request_uri)
+                .header("Content-Type", "application/json")
+                .body(payload)?),
+            Method::DELETE => Ok(Request::delete(request_uri).body(payload)?),
+            _ => unreachable!(),
+        }
+    }
+
+    fn build_request<O>(
         &self,
         path: &str,
         method: Method,

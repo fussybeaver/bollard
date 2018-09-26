@@ -19,6 +19,7 @@ use std::collections::HashMap;
 #[macro_use]
 mod common;
 
+/*
 fn create_container_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
@@ -192,3 +193,4 @@ fn integration_test_create_container() {
 fn integration_test_image_push() {
     connect_to_docker_and_run!(image_push_test);
 }
+*/

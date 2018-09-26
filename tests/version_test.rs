@@ -10,6 +10,7 @@ use tokio::runtime::Runtime;
 #[macro_use]
 mod common;
 
+/*
 #[cfg(windows)]
 #[test]
 fn test_version_named_pipe() {
@@ -53,3 +54,4 @@ fn test_version_http() {
         |version: Version| assert_eq!(version.Os, "windows")
     )
 }
+*/

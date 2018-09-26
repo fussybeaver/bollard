@@ -11,6 +11,7 @@ use super::Docker;
 use container::Config;
 use options::{EncodableQueryString, NoParams};
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 /// ## Image
@@ -56,14 +57,64 @@ pub struct APIImages {
 /// Parameters available for pulling an image, used in the [Create Image
 /// API](../struct.Docker.html#method.create_image)
 #[derive(Debug, Clone, Default)]
-pub struct CreateImageOptions {
-    pub from_image: String,
-    pub from_src: String,
-    pub repo: String,
-    pub tag: String,
-    pub platform: String,
+pub struct CreateImageOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub from_image: T,
+    pub from_src: T,
+    pub repo: T,
+    pub tag: T,
+    pub platform: T,
 }
 
+pub trait CreateImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<Vec<(K, V)>, Error>;
+}
+
+impl<'a> CreateImageQueryParams<&'a str, &'a str> for CreateImageOptions<&'a str> {
+    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
+        Ok(vec![
+            ("fromImage", self.from_image),
+            ("fromSrc", self.from_src),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("platform", self.platform),
+        ])
+    }
+}
+
+impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> {
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        Ok(vec![
+            ("fromImage", self.from_image),
+            ("fromSrc", self.from_src),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("platform", self.platform),
+        ])
+    }
+}
+
+/*
+impl<'a> CreateImageOptionsTrait<'a> for CreateImage<'a> {
+    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
+        Ok(vec![
+            ("fromImage", self.from_image),
+            ("fromSrc", self.from_src),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("platform", self.platform),
+        ])
+    }
+}
+*/
+
+/*
 impl EncodableQueryString for CreateImageOptions {
     fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
         Ok(vec![
@@ -74,7 +125,7 @@ impl EncodableQueryString for CreateImageOptions {
             ("platform", self.platform),
         ])
     }
-}
+}*/
 
 /// ## Create Images Results : Create Image Progress Detail
 ///
@@ -114,6 +165,8 @@ pub enum CreateImageResults {
         error: String,
     },
 }
+/*
+
 
 /// ## List Images Options
 ///
@@ -286,10 +339,13 @@ impl EncodableQueryString for PushImageOptions {
     }
 }
 
+*/
+
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
 {
+    /*
     /// ---
     ///
     /// # List Images
@@ -325,6 +381,7 @@ where
 
         self.process_into_value(url, Method::GET, options, None::<NoParams>)
     }
+    */
 
     /// ---
     /// # Create Image
@@ -346,7 +403,7 @@ where
     /// use std::default::Default;
     ///
     /// let options = Some(CreateImageOptions{
-    ///   from_image: String::from("hello-world"),
+    ///   from_image: "hello-world",
     ///   ..Default::default()
     /// });
     ///
@@ -359,15 +416,28 @@ where
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image(
+    pub fn create_image<K, V>(
         &self,
-        options: Option<CreateImageOptions>,
-    ) -> impl Stream<Item = CreateImageResults, Error = Error> {
+        options: Option<impl CreateImageQueryParams<K, V>>,
+    ) -> impl Stream<Item = CreateImageResults, Error = Error>
+    where
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = "/images/create";
 
-        self.process_into_stream(url, Method::POST, options, None::<NoParams>)
+        self.process_into_stream2(
+            url,
+            Method::POST,
+            options.and_then(|o| match o.into_array() {
+                Ok(res) => Some(res),
+                Err(e) => None,
+            }),
+            None::<NoParams>,
+        )
     }
 
+    /*
     /// ---
     ///
     /// # Inspect Image
@@ -484,6 +554,32 @@ where
         self.process_into_value(url, Method::GET, Some(options), None::<NoParams>)
     }
 
+    /// ---
+    ///
+    /// # Remove Image
+    ///
+    /// Remove an image, along with any untagged parent images that were referenced by that image.
+    ///
+    /// # Returns
+    ///
+    ///  - Vector of [Remove Image Results](image/struct.RemoveImageResults.html), wrapped in a
+    ///  Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use boondock::Docker;
+    ///
+    /// use boondock::image::RemoveImageOptions;
+    ///
+    /// # let docker = Docker::connect_with_unix_defaults().unwrap();
+    /// let remove_options = RemoveImageOptions {
+    ///     force: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// docker.remove_image("hello-world", remove_options);
+    /// ```
     pub fn remove_image(
         &self,
         image_name: &str,
@@ -619,12 +715,9 @@ mod tests {
         let future = image_history_results
             .map_err(|e| panic!("error = {:?}", e))
             .map(|vec| {
-                assert!(
-                    vec.into_iter()
-                        .take(1)
-                        .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                            == "hello-world:latest")
-                )
+                assert!(vec.into_iter().take(1).any(|history| {
+                    history.tags.unwrap_or(vec![String::new()])[0] == "hello-world:latest"
+                }))
             });
 
         tokio::runtime::run(future);
@@ -687,4 +780,5 @@ mod tests {
 
         tokio::runtime::run(future);
     }
+    */
 }
