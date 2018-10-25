@@ -1,4 +1,3 @@
-use std::cmp;
 use std::env;
 #[cfg(feature = "openssl")]
 use std::path::{Path, PathBuf};
@@ -342,6 +341,7 @@ impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
 {
+    /*
     pub(crate) fn process_into_value2<O, T, S, K, V>(
         &self,
         url: &str,
@@ -360,6 +360,7 @@ where
         self.process_request2(url, method, params, body)
             .and_then(Docker::<C>::decode_response)
     }
+    */
 
     pub(crate) fn process_into_value<O, T, S>(
         &self,
@@ -375,6 +376,19 @@ where
     {
         self.process_request(url, method, params, body)
             .and_then(Docker::<C>::decode_response)
+    }
+
+    pub(crate) fn process_into_stream3<T>(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Stream<Item = T, Error = Error>
+    where
+        T: DeserializeOwned,
+    {
+        self.process_request3(req)
+            .into_stream()
+            .map(Docker::<C>::decode_into_stream::<T>)
+            .flatten()
     }
 
     pub(crate) fn process_into_stream2<O, T, S, K, V>(
@@ -429,6 +443,48 @@ where
     {
         self.process_request(url, method, params, body)
             .and_then(|_| Ok(()))
+    }
+
+    fn process_request3(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Future<Item = Response<Body>, Error = Error> {
+        let client = self.client.clone();
+        let timeout = Duration::from_millis(self.client_timeout);
+
+        result(req)
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(|response| {
+                let status = response.status();
+                match status {
+                    // Status code 200 - 299
+                    s if s.is_success() => Either4::A(future::ok(response)),
+
+                    // Status code 400: Bad request
+                    StatusCode::BAD_REQUEST => Either4::D(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseBadParameterError { message }.into())
+                        }),
+                    ),
+
+                    // Status code 404: Not Found
+                    StatusCode::NOT_FOUND => Either4::C(
+                        Docker::<C>::decode_into_string(response).and_then(|message| {
+                            Err(DockerResponseNotFoundError { message }.into())
+                        }),
+                    ),
+
+                    // All other status codes
+                    _ => Either4::B(Docker::<C>::decode_into_string(response).and_then(
+                        move |message| {
+                            Err(DockerResponseServerError {
+                                status_code: status.as_u16(),
+                                message,
+                            }.into())
+                        },
+                    )),
+                }
+            })
     }
 
     fn process_request2<O, S, K, V>(
@@ -494,6 +550,33 @@ where
             })
     }
 
+    pub(crate) fn transpose_option<T>(
+        option: Option<Result<T, Error>>,
+    ) -> Result<Option<T>, Error> {
+        match option {
+            Some(Ok(x)) => Ok(Some(x)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
+    where
+        S: Serialize,
+    {
+        match body.map(|inst| serde_json::to_string(&inst)) {
+            Some(Ok(res)) => Ok(Some(res)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }.map_err(|e| e.into())
+            .map(|payload| {
+                println!("{}", payload.clone().unwrap_or_else(String::new));
+                payload
+                    .map(|content| content.into())
+                    .unwrap_or(Body::empty())
+            })
+    }
+
     fn process_request<O, S>(
         &self,
         url: &str,
@@ -554,7 +637,36 @@ where
             })
     }
 
-    fn build_request2<O, K, V>(
+    pub(crate) fn build_request3<O, K, V>(
+        &self,
+        path: &str,
+        method: Method,
+        query: Result<Option<O>, Error>,
+        payload: Result<Body, Error>,
+    ) -> Result<Request<Body>, Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        query
+            .and_then(|q| payload.map(|body| (q, body)))
+            .and_then(|(q, body)| {
+                let uri = Uri::parse2(self.client_addr.clone(), &self.client_type, path, q)?;
+                let request_uri: hyper::Uri = uri.into();
+                match method {
+                    Method::GET => Ok(Request::get(request_uri).body(body)?),
+                    Method::POST => Ok(Request::post(request_uri)
+                        .header("content-type", "application/json")
+                        .body(body)?),
+                    Method::DELETE => Ok(Request::delete(request_uri).body(body)?),
+                    _ => unreachable!(),
+                }
+            })
+    }
+
+    pub(crate) fn build_request2<O, K, V>(
         &self,
         path: &str,
         method: Method,

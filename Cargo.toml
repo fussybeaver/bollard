@@ -39,6 +39,7 @@ bytes = "0.4.9"
 mio = "0.6.15"
 tokio-codec = "0.1.0"
 chrono = { version = "0.4.6", features = ["serde"] }
+arrayvec = "0.4.7"
 
 [dev-dependencies]
 yup-hyper-mock = "*"

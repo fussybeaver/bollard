@@ -22,6 +22,34 @@ impl<'a> Into<HyperUri> for Uri<'a> {
 }
 
 impl<'a> Uri<'a> where {
+    pub(crate) fn parse3<O, P, K, V>(
+        socket: P,
+        client_type: &ClientType,
+        path: &'a str,
+        pairs: O,
+    ) -> Result<Self, Error>
+    where
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        P: AsRef<OsStr>,
+    {
+        let host: String = Uri::socket_host(socket, client_type)?;
+
+        let host_str = format!("{}://{}{}", Uri::socket_scheme(client_type), host, path);
+        println!("::{}", host_str);
+        let mut url = Url::parse(host_str.as_ref()).unwrap();
+        url = url.join(path).unwrap();
+
+        url.query_pairs_mut().extend_pairs(pairs);
+
+        println!("::{}", url.as_str());
+        Ok(Uri {
+            encoded: Cow::Owned(url.as_str().to_owned()),
+        })
+    }
+
     pub(crate) fn parse2<O, P, K, V>(
         socket: P,
         client_type: &ClientType,

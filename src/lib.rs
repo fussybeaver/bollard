@@ -16,6 +16,7 @@ extern crate native_tls;
 extern crate openssl;
 #[macro_use]
 extern crate serde_derive;
+extern crate arrayvec;
 extern crate bytes;
 extern crate chrono;
 extern crate hex;

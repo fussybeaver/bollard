@@ -1,17 +1,17 @@
+use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
 use futures::Stream;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::Method;
+use hyper::{Body, Method};
 use serde_json;
 
 use super::Docker;
 use container::Config;
 use options::{EncodableQueryString, NoParams};
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 
 /// ## Image
@@ -73,32 +73,44 @@ where
     K: AsRef<str>,
     V: AsRef<str>,
 {
-    fn into_array(self) -> Result<Vec<(K, V)>, Error>;
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 5]>, Error>;
 }
 
 impl<'a> CreateImageQueryParams<&'a str, &'a str> for CreateImageOptions<&'a str> {
-    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
-        Ok(vec![
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 5]>, Error> {
+        Ok(ArrayVec::from([
             ("fromImage", self.from_image),
             ("fromSrc", self.from_src),
             ("repo", self.repo),
             ("tag", self.tag),
             ("platform", self.platform),
-        ])
+        ]))
     }
 }
 
-impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> {
-    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
-            ("fromImage", self.from_image),
-            ("fromSrc", self.from_src),
-            ("repo", self.repo),
-            ("tag", self.tag),
-            ("platform", self.platform),
-        ])
-    }
-}
+//impl<'a> CreateImageQueryParams<&'a str, &'a str> for CreateImageOptions<&'a str> {
+//    fn into_array(self) -> Result<[(&'a str, &'a str); 5], Error> {
+//        Ok([
+//            ("fromImage", self.from_image),
+//            ("fromSrc", self.from_src),
+//            ("repo", self.repo),
+//            ("tag", self.tag),
+//            ("platform", self.platform),
+//        ])
+//    }
+//}
+
+//impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> {
+//    fn into_array<'b>(self) -> Result<&'b [(&'a str, String); 5], Error> {
+//        Ok([
+//            ("fromImage", self.from_image),
+//            ("fromSrc", self.from_src),
+//            ("repo", self.repo),
+//            ("tag", self.tag),
+//            ("platform", self.platform),
+//        ])
+//    }
+//}
 
 /*
 impl<'a> CreateImageOptionsTrait<'a> for CreateImage<'a> {
@@ -416,25 +428,25 @@ where
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image<K, V>(
+    pub fn create_image<T, K, V>(
         &self,
-        options: Option<impl CreateImageQueryParams<K, V>>,
+        options: Option<T>,
     ) -> impl Stream<Item = CreateImageResults, Error = Error>
     where
+        T: CreateImageQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
         let url = "/images/create";
 
-        self.process_into_stream2(
+        let req = self.build_request3(
             url,
             Method::POST,
-            options.and_then(|o| match o.into_array() {
-                Ok(res) => Some(res),
-                Err(e) => None,
-            }),
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_stream3(req)
     }
 
     /*
