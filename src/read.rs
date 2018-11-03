@@ -26,12 +26,10 @@ impl Decoder for LineDecoder {
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let nl_index = src.iter().position(|b| *b == b'\n');
 
-        //println!("{}", ::std::str::from_utf8(&src).unwrap());
         if let Some(pos) = nl_index {
             let slice = src.split_to(pos + 1);
             let slice = &slice[..slice.len() - 1];
 
-            //println!("{}", ::std::str::from_utf8(&slice).unwrap());
             match &slice[0..1] {
                 &[] => {
                     println!("empty");
@@ -89,18 +87,6 @@ impl Decoder for LineDecoder {
             Ok(None)
         }
     }
-    //fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-    //    match try!(self.decode(buf)) {
-    //        Some(frame) => Ok(Some(frame)),
-    //        None => {
-    //            if buf.is_empty() {
-    //                Ok(None)
-    //            } else {
-    //                Err(io::Error::new(io::ErrorKind::Other, "bytes remaining on stream").into())
-    //            }
-    //        }
-    //    }
-    //}
 }
 
 pub(crate) struct JsonLineDecoder<T> {

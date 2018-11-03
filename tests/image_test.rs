@@ -36,10 +36,9 @@ where
     let future = docker
         .chain()
         .search_images(SearchImagesOptions {
-            term: "hello-world".to_string(),
+            term: "hello-world",
             ..Default::default()
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
             assert!(
                 result
                     .into_iter()
@@ -94,12 +93,11 @@ where
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| {
-            docker.list_images(Some(ListImagesOptions {
+            docker.list_images(Some(ListImagesOptions::<String> {
                 all: true,
                 ..Default::default()
             }))
-        })
-        .map(move |(docker, result)| {
+        }).map(move |(docker, result)| {
             assert!(result.into_iter().any(|api_image| {
                 api_image
                     .repo_tags
@@ -146,7 +144,10 @@ fn prune_images_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    rt_exec!(docker.prune_images(None), |_| ());
+    rt_exec!(
+        docker.prune_images(None::<PruneImagesOptions<String>>),
+        |_| ()
+    );
 }
 
 fn remove_image_test<C>(docker: Docker<C>)
@@ -163,8 +164,7 @@ where
                     ..Default::default()
                 }),
             )
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
             match result[0].to_owned() {
                 RemoveImageResults::RemoveImageUntagged { untagged } => {
                     assert_eq!(untagged, "hello-world:latest")
@@ -209,6 +209,5 @@ fn integration_test_prune_images() {
 
 #[test]
 fn integration_test_remove_image() {
-    connect_to_docker_and_run!(create_image_test);
     connect_to_docker_and_run!(remove_image_test);
 }

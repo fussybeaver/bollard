@@ -24,32 +24,34 @@ where
 {
     let image = || {
         if cfg!(windows) {
-            String::from("hello-world:nanoserver")
+            "hello-world:nanoserver"
         } else {
-            String::from("hello-world:linux")
+            "hello-world:linux"
         }
     };
 
     let rt = Runtime::new().unwrap();
-    let future = chain_create_container_hello_world(
-        docker.chain(),
-        "integration_test_list_containers",
-    ).and_then(move |docker| {
-        docker.list_containers(Some(ListContainersOptions {
-            all: true,
-            ..Default::default()
-        }))
-    })
-        .map(move |(docker, result)| {
-            assert_ne!(0, result.len());
-            assert!(
-                result
-                    .into_iter()
-                    .any(|container| container.image == image())
-            );
-            docker
-        })
-        .and_then(move |docker| docker.remove_container("integration_test_list_containers", None));
+    let future =
+        chain_create_container_hello_world(docker.chain(), "integration_test_list_containers")
+            .and_then(move |docker| {
+                docker.list_containers(Some(ListContainersOptions::<String> {
+                    all: true,
+                    ..Default::default()
+                }))
+            }).map(move |(docker, result)| {
+                assert_ne!(0, result.len());
+                assert!(
+                    result
+                        .into_iter()
+                        .any(|container| container.image == image())
+                );
+                docker
+            }).and_then(move |docker| {
+                docker.remove_container(
+                    "integration_test_list_containers",
+                    None::<RemoveContainerOptions>,
+                )
+            });
 
     run_runtime(rt, future);
 }
@@ -66,6 +68,14 @@ where
         }
     };
 
+    let image = || {
+        if cfg!(windows) {
+            "hello-world:nanoserver"
+        } else {
+            "hello-world:linux"
+        }
+    };
+
     let rt = Runtime::new().unwrap();
 
     let future = docker.chain();
@@ -73,13 +83,12 @@ where
     let future = chain_create_registry(future, "integration_test_image_push");
 
     let future = future
-        .and_then(|docker| {
+        .and_then(move |docker| {
             docker.create_image(Some(CreateImageOptions {
-                from_image: String::from("hello-world"),
+                from_image: image(),
                 ..Default::default()
             }))
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.tag_image(
                 "hello-world",
                 Some(TagImageOptions {
@@ -87,15 +96,13 @@ where
                     ..Default::default()
                 }),
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.push_image(
                 format!("{}:5000/my-hello-world", host()).as_ref(),
-                None,
+                None::<PushImageOptions<String>>,
                 None,
             )
-        })
-        .and_then(move |(docker, _)| chain_kill_container(docker, "integration_test_image_push"));
+        }).and_then(move |(docker, _)| chain_kill_container(docker, "integration_test_image_push"));
 
     run_runtime(rt, future);
 }
@@ -108,22 +115,28 @@ where
     let future = chain_create_daemon(docker.chain(), "integration_test_restart_container");
 
     let future = future
-        .and_then(|docker| docker.inspect_container("integration_test_restart_container", None))
-        .map(|(docker, result)| (docker, result.state.started_at))
+        .and_then(|docker| {
+            docker.inspect_container(
+                "integration_test_restart_container",
+                None::<InspectContainerOptions>,
+            )
+        }).map(|(docker, result)| (docker, result.state.started_at))
         .and_then(|(docker, started_at)| {
             docker
-                .restart_container("integration_test_restart_container", None)
-                .map(move |(docker, _)| (docker, started_at))
-        })
-        .and_then(|(docker, started_at)| {
+                .restart_container(
+                    "integration_test_restart_container",
+                    None::<RestartContainerOptions>,
+                ).map(move |(docker, _)| (docker, started_at))
+        }).and_then(|(docker, started_at)| {
             docker
-                .inspect_container("integration_test_restart_container", None)
-                .map(move |(docker, result)| {
+                .inspect_container(
+                    "integration_test_restart_container",
+                    None::<InspectContainerOptions>,
+                ).map(move |(docker, result)| {
                     assert_ne!(started_at, result.state.started_at);
                     (docker, result)
                 })
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             chain_kill_container(docker, "integration_test_restart_container")
         });
 
@@ -137,9 +150,7 @@ where
     let top_options = if cfg!(windows) {
         None
     } else {
-        Some(TopOptions {
-            ps_args: "aux".to_string(),
-        })
+        Some(TopOptions { ps_args: "aux" })
     };
 
     let expected = if cfg!(windows) {
@@ -160,8 +171,7 @@ where
         .map(move |(docker, result)| {
             assert_eq!(result.titles[0], expected);
             docker
-        })
-        .and_then(|docker| chain_kill_container(docker, "integration_test_top_processes"));
+        }).and_then(|docker| chain_kill_container(docker, "integration_test_top_processes"));
 
     run_runtime(rt, future);
 }
@@ -181,8 +191,7 @@ where
                     ..Default::default()
                 }),
             )
-        })
-        .map(|(docker, stream)| {
+        }).map(|(docker, stream)| {
             stream
                 .skip(1)
                 .into_future()
@@ -191,16 +200,15 @@ where
                         format!("{}", value.unwrap()),
                         "Hello from Docker!".to_string()
                     );
-                })
-                .or_else(|e| {
+                }).or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                })
-                .wait()
+                }).wait()
                 .unwrap();
             docker
-        })
-        .and_then(move |docker| docker.remove_container("integration_test_logs", None));
+        }).and_then(move |docker| {
+            docker.remove_container("integration_test_logs", None::<RemoveContainerOptions>)
+        });
 
     run_runtime(rt, future);
 }
@@ -221,8 +229,12 @@ where
                 };
 
                 docker
-            })
-            .and_then(|docker| docker.remove_container("integration_test_container_changes", None));
+            }).and_then(|docker| {
+                docker.remove_container(
+                    "integration_test_container_changes",
+                    None::<RemoveContainerOptions>,
+                )
+            });
 
     run_runtime(rt, future);
 }
@@ -238,22 +250,18 @@ where
                 "integration_test_stats",
                 Some(StatsOptions { stream: false }),
             )
-        })
-        .map(|(docker, stream)| {
+        }).map(|(docker, stream)| {
             stream
                 .into_future()
                 .map(|(value, _)| {
                     assert_eq!(value.unwrap().name, "/integration_test_stats".to_string())
-                })
-                .or_else(|e| {
+                }).or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                })
-                .wait()
+                }).wait()
                 .unwrap();
             docker
-        })
-        .and_then(|docker| chain_kill_container(docker, "integration_test_stats"));
+        }).and_then(|docker| chain_kill_container(docker, "integration_test_stats"));
 
     run_runtime(rt, future);
 }
@@ -262,14 +270,17 @@ fn kill_container_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let kill_options = Some(KillContainerOptions {
-        signal: "SIGKILL".to_string(),
-    });
+    let kill_options = Some(KillContainerOptions { signal: "SIGKILL" });
 
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_kill_container")
         .and_then(|docker| docker.kill_container("integration_test_kill_container", kill_options))
-        .and_then(|(docker, _)| docker.remove_container("integration_test_kill_container", None));
+        .and_then(|(docker, _)| {
+            docker.remove_container(
+                "integration_test_kill_container",
+                None::<RemoveContainerOptions>,
+            )
+        });
 
     run_runtime(rt, future);
 }
@@ -288,20 +299,38 @@ where
     let future = chain_create_daemon(docker.chain(), "integration_test_update_container")
         .and_then(|docker| {
             docker.update_container("integration_test_update_container", update_options)
-        })
-        .and_then(|(docker, _)| docker.inspect_container("integration_test_update_container", None))
-        .map(|(docker, result)| {
+        }).and_then(|(docker, _)| {
+            docker.inspect_container(
+                "integration_test_update_container",
+                None::<InspectContainerOptions>,
+            )
+        }).map(|(docker, result)| {
             assert_eq!(314572800, result.host_config.memory.unwrap());
             docker
-        })
-        .and_then(|docker| docker.kill_container("integration_test_update_container", None))
-        .and_then(|(docker, _)| docker.wait_container("integration_test_update_container", None))
-        .and_then(|(docker, _)| docker.inspect_container("integration_test_update_container", None))
-        .map(|(docker, result)| {
+        }).and_then(|docker| {
+            docker.kill_container(
+                "integration_test_update_container",
+                None::<KillContainerOptions<String>>,
+            )
+        }).and_then(|(docker, _)| {
+            docker.wait_container(
+                "integration_test_update_container",
+                None::<WaitContainerOptions<String>>,
+            )
+        }).and_then(|(docker, _)| {
+            docker.inspect_container(
+                "integration_test_update_container",
+                None::<InspectContainerOptions>,
+            )
+        }).map(|(docker, result)| {
             assert_eq!("exited", result.state.status);
             docker
-        })
-        .and_then(|docker| docker.remove_container("integration_test_update_container", None));
+        }).and_then(|docker| {
+            docker.remove_container(
+                "integration_test_update_container",
+                None::<RemoveContainerOptions>,
+            )
+        });
 
     run_runtime(rt, future);
 }
@@ -320,9 +349,11 @@ where
                         name: "integration_test_rename_container_renamed".to_string(),
                     },
                 )
-            })
-            .and_then(|(docker, _)| {
-                docker.remove_container("integration_test_rename_container_renamed", None)
+            }).and_then(|(docker, _)| {
+                docker.remove_container(
+                    "integration_test_rename_container_renamed",
+                    None::<RemoveContainerOptions>,
+                )
             });
 
     run_runtime(rt, future);
@@ -335,18 +366,24 @@ where
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_pause_container")
         .and_then(|docker| docker.pause_container("integration_test_pause_container"))
-        .and_then(|(docker, _)| docker.inspect_container("integration_test_pause_container", None))
-        .map(|(docker, result)| {
+        .and_then(|(docker, _)| {
+            docker.inspect_container(
+                "integration_test_pause_container",
+                None::<InspectContainerOptions>,
+            )
+        }).map(|(docker, result)| {
             assert_eq!("paused".to_string(), result.state.status);
             docker
-        })
-        .and_then(|docker| docker.unpause_container("integration_test_pause_container"))
-        .and_then(|(docker, _)| docker.inspect_container("integration_test_pause_container", None))
-        .map(|(docker, result)| {
+        }).and_then(|docker| docker.unpause_container("integration_test_pause_container"))
+        .and_then(|(docker, _)| {
+            docker.inspect_container(
+                "integration_test_pause_container",
+                None::<InspectContainerOptions>,
+            )
+        }).map(|(docker, result)| {
             assert_eq!("running".to_string(), result.state.status);
             docker
-        })
-        .and_then(|docker| chain_kill_container(docker, "integration_test_pause_container"));
+        }).and_then(|docker| chain_kill_container(docker, "integration_test_pause_container"));
 
     run_runtime(rt, future);
 }
@@ -358,14 +395,14 @@ where
     let rt = Runtime::new().unwrap();
     let future = docker
         .chain()
-        .prune_containers(None)
+        .prune_containers(None::<PruneContainersOptions<String>>)
         .and_then(|(docker, _)| {
-            docker.list_containers(Some(ListContainersOptions {
+            docker.list_containers(Some(ListContainersOptions::<String> {
                 all: true,
                 ..Default::default()
             }))
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
+            println!("{:?}", result.iter().map(|c| c.clone().names));
             assert_eq!(0, result.len());
             docker
         });

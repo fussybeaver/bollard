@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
@@ -5,30 +6,78 @@ use futures::{stream, Stream};
 use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::Method;
+use hyper::{Body, Method};
+use serde::Serialize;
 use serde_json;
 
+use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::Hash;
 
 use super::{Docker, DockerChain};
+use docker::{FALSE_STR, TRUE_STR};
 use either::EitherStream;
-use options::{EncodableQueryString, NoParams};
 
 /// ## List Container Options
 ///
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::ListContainersOptions;
+///
+/// use std::collections::HashMap;
+/// use std::default::Default;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("health", "unhealthy");
+///
+/// ListContainersOptions{
+///     all: true,
+///     filters: filters,
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::container::ListContainersOptions;
+/// # use std::default::Default;
+/// ListContainersOptions::<String>{
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct ListContainersOptions {
+pub struct ListContainersOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
     pub all: bool,
     pub limit: Option<isize>,
     pub size: bool,
-    pub filters: Option<String>,
+    pub filters: HashMap<T, T>,
 }
 
-impl EncodableQueryString for ListContainersOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
+/// ## List Containers Query Params
+///
+/// Trait providing implementations for [List Containers Options](struct.ListContainersOptions.html)
+/// struct.
+pub trait ListContainersQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 4]>, Error>;
+}
+
+impl<'a, T: AsRef<str> + ::std::cmp::Eq + ::std::hash::Hash>
+    ListContainersQueryParams<&'a str, String> for ListContainersOptions<T>
+where
+    T: ::serde::Serialize,
+{
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 4]>, Error> {
+        Ok(ArrayVec::from([
             ("all", self.all.to_string()),
             (
                 "limit",
@@ -38,31 +87,59 @@ impl EncodableQueryString for ListContainersOptions {
             ),
             ("size", self.size.to_string()),
             ("filters", serde_json::to_string(&self.filters)?),
-        ])
+        ]))
     }
 }
 
 /// ## Create Container Options
 ///
 /// Parameters used in the [Create Container API](../struct.Docker.html#method.create_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::CreateContainerOptions;
+///
+/// CreateContainerOptions{
+///     name: "my-new-container",
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct CreateContainerOptions {
-    pub name: String,
+pub struct CreateContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub name: T,
 }
 
-impl EncodableQueryString for CreateContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("name", self.name)])
+/// ## Create Container Query Params
+///
+/// Trait providing implementations for [Create Container Options](struct.CreateContainerOptions.html)
+/// struct.
+pub trait CreateContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("name", self.name)]))
     }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct HostConfig {
-    pub binds: Option<Vec<String>>,
-    pub links: Option<Vec<String>>,
+pub struct HostConfig<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub binds: Option<Vec<T>>,
+    pub links: Option<Vec<T>>,
     pub memory: Option<u64>,
-    pub memory_swap: Option<u64>,
+    pub memory_swap: Option<i64>,
     pub memory_reservation: Option<u64>,
     pub kernel_memory: Option<u64>,
     pub nano_cpus: Option<u64>,
@@ -72,67 +149,62 @@ pub struct HostConfig {
     pub cpu_realtime_period: Option<u64>,
     pub cpu_realtime_runtime: Option<u64>,
     pub cpu_quota: Option<u64>,
-    pub cpuset_cpus: Option<String>,
-    pub cpuset_mems: Option<String>,
-    #[serde(rename = "MaximumIOPs")]
-    pub maximum_iops: Option<u64>,
-    #[serde(rename = "MaximumIOBPs")]
-    pub maximum_iobps: Option<u64>,
+    pub cpuset_cpus: Option<T>,
+    pub cpuset_mems: Option<T>,
     pub blkio_weight: Option<u64>,
-    pub blkio_weight_device: Option<Vec<HashMap<String, String>>>,
-    pub blkio_device_read_bps: Option<Vec<HashMap<String, String>>>,
-    pub blkio_device_write_bps: Option<Vec<HashMap<String, String>>>,
+    pub blkio_weight_device: Option<Vec<HashMap<T, T>>>,
+    pub blkio_device_read_bps: Option<Vec<HashMap<T, T>>>,
+    pub blkio_device_write_bps: Option<Vec<HashMap<T, T>>>,
     #[serde(rename = "BlkioDeviceReadIOps")]
-    pub blkio_device_read_iops: Option<Vec<HashMap<String, String>>>,
+    pub blkio_device_read_iops: Option<Vec<HashMap<T, T>>>,
     #[serde(rename = "BlkioDeviceWriteIOps")]
-    pub blkio_device_write_iops: Option<Vec<HashMap<String, String>>>,
+    pub blkio_device_write_iops: Option<Vec<HashMap<T, T>>>,
     pub memory_swappiness: Option<u64>,
     pub oom_kill_disable: Option<bool>,
     pub oom_score_adj: Option<isize>,
     pub pid_mode: Option<String>,
     pub pids_limit: Option<u64>,
-    pub port_bindings: Option<HashMap<String, Vec<PortBinding>>>,
+    pub port_bindings: Option<HashMap<T, Vec<PortBinding<T>>>>,
     pub publish_all_ports: Option<bool>,
     pub privileged: Option<bool>,
     pub readonly_rootfs: Option<bool>,
-    pub dns: Option<Vec<String>>,
-    pub dns_options: Option<Vec<String>>,
-    pub dns_search: Option<Vec<String>>,
-    pub volumes_from: Option<Vec<String>>,
-    pub cap_add: Option<Vec<String>>,
-    pub cap_drop: Option<Vec<String>>,
-    pub group_add: Option<Vec<String>>,
-    pub restart_policy: Option<RestartPolicy>,
+    pub dns: Option<Vec<T>>,
+    pub dns_options: Option<Vec<T>>,
+    pub dns_search: Option<Vec<T>>,
+    pub volumes_from: Option<Vec<T>>,
+    pub cap_add: Option<Vec<T>>,
+    pub cap_drop: Option<Vec<T>>,
+    pub group_add: Option<Vec<T>>,
+    pub restart_policy: Option<RestartPolicy<T>>,
     pub auto_remove: Option<bool>,
-    pub network_mode: Option<String>,
-    pub devices: Option<Vec<String>>,
-    pub ulimits: Option<Vec<HashMap<String, String>>>,
+    pub network_mode: Option<T>,
+    pub devices: Option<Vec<T>>,
+    pub ulimits: Option<Vec<HashMap<T, T>>>,
     pub log_config: Option<LogConfig>,
-    pub security_opt: Option<Vec<String>>,
-    pub storage_opt: Option<HashMap<String, String>>,
-    pub cgroup_parent: Option<String>,
-    pub volume_driver: Option<String>,
+    pub security_opt: Option<Vec<T>>,
+    pub cgroup_parent: Option<T>,
+    pub volume_driver: Option<T>,
     pub shm_size: Option<u64>,
     #[serde(rename = "ContainerIDFile")]
     pub container_id_file: Option<String>,
-    pub extra_hosts: Option<Vec<String>>,
-    pub ipc_mode: Option<String>,
-    pub cgroup: Option<String>,
+    pub extra_hosts: Option<Vec<T>>,
+    pub ipc_mode: Option<T>,
+    pub cgroup: Option<T>,
     #[serde(rename = "UTSMode")]
-    pub uts_mode: Option<String>,
-    pub userns_mode: Option<String>,
-    pub runtime: Option<String>,
-    pub console_size: Option<Vec<usize>>,
-    pub isolation: Option<String>,
-    pub device_cgroup_rules: Option<Vec<String>>,
+    pub uts_mode: Option<T>,
+    pub userns_mode: Option<T>,
+    pub runtime: Option<T>,
+    pub console_size: Option<Vec<isize>>,
+    pub isolation: Option<T>,
+    pub device_cgroup_rules: Option<Vec<T>>,
     pub disk_quota: Option<u64>,
     pub cpu_count: Option<u64>,
     #[serde(rename = "IOMaximumIOps")]
     pub io_maximum_iops: Option<u64>,
     #[serde(rename = "IOMaximumBandwidth")]
     pub io_maximum_bandwidth: Option<u64>,
-    pub masked_paths: Option<Vec<String>>,
-    pub readonly_paths: Option<Vec<String>>,
+    pub masked_paths: Option<Vec<T>>,
+    pub readonly_paths: Option<Vec<T>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,16 +216,22 @@ pub struct GraphDriver {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct PortBinding {
+pub struct PortBinding<T>
+where
+    T: AsRef<str>,
+{
     #[serde(rename = "HostIP")]
-    pub host_ip: String,
-    pub host_port: String,
+    pub host_ip: T,
+    pub host_port: T,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct RestartPolicy {
-    pub name: Option<String>,
+pub struct RestartPolicy<T>
+where
+    T: AsRef<str>,
+{
+    pub name: Option<T>,
     pub maximum_retry_count: Option<isize>,
 }
 
@@ -195,13 +273,13 @@ pub struct EndpointConfig {
     pub gateway: Option<String>,
     #[serde(rename = "IPAddress")]
     pub ip_address: Option<String>,
-    pub ip_prefix_len: Option<u64>,
+    pub ip_prefix_len: Option<i64>,
     #[serde(rename = "IPv6Gateway")]
     pub ipv6_gateway: Option<String>,
     #[serde(rename = "GlobalIPv6Address")]
     pub global_ipv6_address: Option<String>,
     #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: Option<u64>,
+    pub global_ipv6_prefix_len: Option<i64>,
     pub mac_address: Option<String>,
 }
 */
@@ -217,13 +295,13 @@ pub struct ContainerNetwork {
     #[serde(rename = "GlobalIPv6Address")]
     pub global_ipv6_address: String,
     #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: usize,
+    pub global_ipv6_prefix_len: isize,
     #[serde(rename = "IPv6Gateway")]
     pub ipv6_gateway: String,
     #[serde(rename = "IPAddress")]
     pub ip_address: String,
     #[serde(rename = "IPPrefixLen")]
-    pub ip_prefix_len: u64,
+    pub ip_prefix_len: i64,
     pub gateway: String,
     #[serde(rename = "EndpointID")]
     pub endpoint_id: String,
@@ -232,14 +310,14 @@ pub struct ContainerNetwork {
     pub driver_opts: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct NetworkSettings {
     pub networks: HashMap<String, ContainerNetwork>,
     #[serde(rename = "IPAddress")]
     pub ip_address: String,
     #[serde(rename = "IPPrefixLen")]
-    pub ip_prefix_len: usize,
+    pub ip_prefix_len: isize,
     pub mac_address: String,
     pub gateway: String,
     pub bridge: String,
@@ -249,13 +327,13 @@ pub struct NetworkSettings {
     #[serde(rename = "GlobalIPv6Address")]
     pub global_ipv6_address: String,
     #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: usize,
+    pub global_ipv6_prefix_len: isize,
     #[serde(rename = "IPv6Gateway")]
     pub ipv6_gateway: String,
     #[serde(rename = "LinkLocalIPv6Address")]
     pub link_local_ipv6_address: String,
     #[serde(rename = "LinkLocalIPv6PrefixLen")]
-    pub link_local_ipv6_prefix_len: usize,
+    pub link_local_ipv6_prefix_len: isize,
     #[serde(rename = "SecondaryIPAddresses")]
     pub secondary_ip_addresses: Option<Vec<String>>,
     #[serde(rename = "SecondaryIPv6Addresses")]
@@ -263,7 +341,7 @@ pub struct NetworkSettings {
     #[serde(rename = "SandboxID")]
     pub sandbox_id: String,
     pub hairpin_mode: bool,
-    pub ports: HashMap<String, Option<Vec<PortBinding>>>,
+    pub ports: HashMap<String, Option<Vec<PortBinding<String>>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,7 +369,7 @@ pub struct State {
     #[serde(rename = "OOMKilled")]
     pub oomkilled: bool,
     pub dead: bool,
-    pub pid: usize,
+    pub pid: isize,
     pub exit_code: u16,
     pub error: String,
     pub started_at: DateTime<Utc>,
@@ -337,20 +415,20 @@ pub struct APIContainers {
     pub size_root_fs: Option<i64>,
     pub mounts: Vec<Mount>,
     pub network_settings: NetworkList,
-    pub host_config: HostConfig,
+    pub host_config: HostConfig<String>,
 }
 
 /// ## Container
 ///
 /// Result type for the [Inspect Container API](../struct.Docker.html#method.inspect_container)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Container {
     pub id: String,
     pub created: DateTime<Utc>,
     pub path: String,
     pub args: Vec<String>,
-    pub config: Config,
+    pub config: Config<String>,
     pub state: State,
     pub image: String,
     pub network_settings: NetworkSettings,
@@ -361,8 +439,8 @@ pub struct Container {
     pub name: String,
     pub driver: String,
     pub mounts: Vec<Mount>,
-    pub host_config: HostConfig,
-    pub restart_count: usize,
+    pub host_config: HostConfig<String>,
+    pub restart_count: isize,
     pub platform: String,
     pub mount_label: String,
     pub process_label: String,
@@ -374,10 +452,13 @@ pub struct Container {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct Config {
-    pub hostname: Option<String>,
-    pub domainname: Option<String>,
-    pub user: Option<String>,
+pub struct Config<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub hostname: Option<T>,
+    pub domainname: Option<T>,
+    pub user: Option<T>,
     pub attach_stdin: Option<bool>,
     pub attach_stdout: Option<bool>,
     pub attach_stderr: Option<bool>,
@@ -385,20 +466,20 @@ pub struct Config {
     pub tty: Option<bool>,
     pub open_stdin: Option<bool>,
     pub stdin_once: Option<bool>,
-    pub env: Option<Vec<String>>,
-    pub cmd: Vec<String>,
-    pub entrypoint: Option<Vec<String>>,
-    pub image: Option<String>,
-    pub labels: Option<HashMap<String, String>>,
-    pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
-    pub working_dir: Option<String>,
+    pub env: Option<Vec<T>>,
+    pub cmd: Vec<T>,
+    pub entrypoint: Option<Vec<T>>,
+    pub image: Option<T>,
+    pub labels: Option<HashMap<T, T>>,
+    pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
+    pub working_dir: Option<T>,
     pub network_disabled: Option<bool>,
-    pub on_build: Option<Vec<String>>,
-    pub mac_address: Option<String>,
-    pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
-    pub stop_signal: Option<String>,
-    pub stop_timeout: Option<usize>,
-    pub host_config: Option<HostConfig>,
+    pub on_build: Option<Vec<T>>,
+    pub mac_address: Option<T>,
+    pub exposed_ports: Option<HashMap<T, HashMap<(), ()>>>,
+    pub stop_signal: Option<T>,
+    pub stop_timeout: Option<isize>,
+    pub host_config: Option<HostConfig<T>>,
     pub networking_config: Option<NetworkingConfig>,
 }
 
@@ -415,34 +496,89 @@ pub struct CreateContainerResults {
 /// ## Stop Container Options
 ///
 /// Parameters used in the [Stop Container API](../struct.Docker.html#method.stop_container)
+///
+/// ## Examples
+///
+/// use boondock::container::StopContainerOptions;
+///
+/// StopContainerOptions{
+///     t: 30,
+/// };
 #[derive(Debug, Clone, Default)]
 pub struct StopContainerOptions {
-    pub t: u64,
+    pub t: i64,
 }
 
-impl EncodableQueryString for StopContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("t", self.t.to_string())])
+/// ## Stop Container Query Params
+///
+/// Trait providing implementations for [Stop Container Options](struct.StopContainerOptions.html).
+pub trait StopContainerQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a> StopContainerQueryParams<&'a str> for StopContainerOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([("t", self.t.to_string())]))
     }
 }
 
 /// ## Start Container Options
 ///
 /// Parameters used in the [Start Container API](../struct.Docker.html#method.start_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::StartContainerOptions;
+///
+/// StartContainerOptions{
+///     detach_keys: "ctrl-^"
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct StartContainerOptions {
-    pub detach_keys: String,
+pub struct StartContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub detach_keys: T,
 }
 
-impl EncodableQueryString for StartContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("detachKeys", self.detach_keys)])
+/// ## Start Container Query Params
+///
+/// Trait providing implementations for [Start Container Options](struct.StartContainerOptions.html).
+pub trait StartContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> StartContainerQueryParams<&'a str, T> for StartContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("detachKeys", self.detach_keys)]))
     }
 }
 
 /// ## Remove Container Options
 ///
 /// Parameters used in the [Remove Container API](../struct.Docker.html#method.remove_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::RemoveContainerOptions;
+///
+/// use std::default::Default;
+///
+/// RemoveContainerOptions{
+///     force: true,
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RemoveContainerOptions {
     pub v: bool,
@@ -450,27 +586,62 @@ pub struct RemoveContainerOptions {
     pub link: bool,
 }
 
-impl EncodableQueryString for RemoveContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
-            ("v", self.v.to_string()),
-            ("force", self.force.to_string()),
-            ("link", self.link.to_string()),
-        ])
+/// ## Remove Container Query Params
+///
+/// Trait providing implementations for [Remove Container Options](struct.RemoveContainerOptions.html).
+pub trait RemoveContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 3]>, Error>;
+}
+
+impl<'a> RemoveContainerQueryParams<&'a str, &'a str> for RemoveContainerOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 3]>, Error> {
+        Ok(ArrayVec::from([
+            ("v", if self.v { TRUE_STR } else { FALSE_STR }),
+            ("force", if self.force { TRUE_STR } else { FALSE_STR }),
+            ("link", if self.link { TRUE_STR } else { FALSE_STR }),
+        ]))
     }
 }
 
 /// ## Wait Container Options
 ///
 /// Parameters used in the [Wait Container API](../struct.Docker.html#method.wait_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::WaitContainerOptions;
+///
+/// WaitContainerOptions{
+///     condition: "not-running",
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct WaitContainerOptions {
-    pub condition: String,
+pub struct WaitContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub condition: T,
 }
 
-impl EncodableQueryString for WaitContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("condition", self.condition)])
+/// ## Wait Container Query Params
+///
+/// Trait providing implementations for [Wait Container Options](struct.WaitContainerOptions.html).
+pub trait WaitContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> WaitContainerQueryParams<&'a str, T> for WaitContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("condition", self.condition)]))
     }
 }
 
@@ -493,42 +664,110 @@ pub struct WaitContainerResults {
 /// ## Restart Container Options
 ///
 /// Parameters used in the [Restart Container API](../struct.Docker.html#method.restart_container)
+///
+/// ## Example
+///
+/// ```rust
+/// use boondock::container::RestartContainerOptions;
+///
+/// RestartContainerOptions{
+///     t: 30,
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RestartContainerOptions {
-    pub t: usize,
+    pub t: isize,
 }
 
-impl EncodableQueryString for RestartContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("t", self.t.to_string())])
+/// ## Restart Container Query Params
+///
+/// Trait providing implementations for [Restart Container Options](struct.RestartContainerOptions.html).
+pub trait RestartContainerQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a> RestartContainerQueryParams<&'a str> for RestartContainerOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([("t", self.t.to_string())]))
     }
 }
 
 /// ## Inspect Container Options
 ///
 /// Parameters used in the [Inspect Container API](../struct.Docker.html#method.inspect_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::InspectContainerOptions;
+///
+/// InspectContainerOptions{
+///     size: false,
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct InspectContainerOptions {
     pub size: bool,
 }
 
-impl EncodableQueryString for InspectContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("size", self.size.to_string())])
+/// ## Inspect Container Query Params
+///
+/// Trait providing implementations for [Inspect Container Options](struct.InspectContainerOptions.html).
+pub trait InspectContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a> InspectContainerQueryParams<&'a str, &'a str> for InspectContainerOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "size",
+            if self.size { TRUE_STR } else { FALSE_STR },
+        )]))
     }
 }
 
 /// ## Top Options
 ///
 /// Parameters used in the [Top Processes API](../struct.Docker.html#method.top_processes)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::TopOptions;
+///
+/// TopOptions{
+///     ps_args: "aux",
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct TopOptions {
-    pub ps_args: String,
+pub struct TopOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub ps_args: T,
 }
 
-impl EncodableQueryString for TopOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("ps_args", self.ps_args.to_string())])
+/// ## Top Query Params
+///
+/// Trait providing implementations for [Top Options](struct.TopOptions.html).
+pub trait TopQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("ps_args", self.ps_args)]))
     }
 }
 
@@ -545,20 +784,43 @@ pub struct TopResult {
 /// ## Logs Options
 ///
 /// Parameters used in the [Logs API](../struct.Docker.html#method.logs)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::LogsOptions;
+///
+/// use std::default::Default;
+///
+/// LogsOptions{
+///     stdout: true,
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct LogsOptions {
     pub follow: bool,
     pub stdout: bool,
     pub stderr: bool,
-    pub since: u64,
-    pub until: u64,
+    pub since: i64,
+    pub until: i64,
     pub timestamps: bool,
     pub tail: String,
 }
 
-impl EncodableQueryString for LogsOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
+/// ## Logs Query Params
+///
+/// Trait providing implementations for [Logs Options](struct.LogsOptions.html).
+pub trait LogsQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 7]>, Error>;
+}
+
+impl<'a> LogsQueryParams<&'a str> for LogsOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 7]>, Error> {
+        Ok(ArrayVec::from([
             ("follow", self.follow.to_string()),
             ("stdout", self.stdout.to_string()),
             ("stderr", self.stderr.to_string()),
@@ -566,7 +828,7 @@ impl EncodableQueryString for LogsOptions {
             ("until", self.until.to_string()),
             ("timestamps", self.timestamps.to_string()),
             ("tail", self.tail),
-        ])
+        ]))
     }
 }
 
@@ -597,7 +859,7 @@ impl fmt::Display for LogOutput {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Change {
     pub path: String,
-    pub kind: usize,
+    pub kind: isize,
 }
 
 impl fmt::Display for Change {
@@ -614,14 +876,38 @@ impl fmt::Display for Change {
 /// ## Stats Options
 ///
 /// Parameters used in the [Stats API](../struct.Docker.html#method.stats)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::StatsOptions;
+///
+/// StatsOptions{
+///     stream: false,
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct StatsOptions {
     pub stream: bool,
 }
 
-impl EncodableQueryString for StatsOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("stream", self.stream.to_string())])
+/// ## Stats Query Params
+///
+/// Trait providing implementations for [Stats Options](struct.StatsOptions.html).
+pub trait StatsQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a> StatsQueryParams<&'a str, &'a str> for StatsOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "stream",
+            if self.stream { TRUE_STR } else { FALSE_STR },
+        )]))
     }
 }
 
@@ -774,14 +1060,38 @@ pub struct BlkioStatsEntry {
 /// ## Kill Container Options
 ///
 /// Parameters used in the [Kill Container API](../struct.Docker.html#method.kill_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::KillContainerOptions;
+///
+/// KillContainerOptions{
+///     signal: "SIGINT",
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct KillContainerOptions {
-    pub signal: String,
+pub struct KillContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub signal: T,
 }
 
-impl EncodableQueryString for KillContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("signal", self.signal)])
+/// ## Kill Container Query Params
+///
+/// Trait providing implementations for [Kill Container Options](struct.KillContainerOptions.html).
+pub trait KillContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> KillContainerQueryParams<&'a str, T> for KillContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("signal", self.signal)]))
     }
 }
 
@@ -789,14 +1099,14 @@ impl EncodableQueryString for KillContainerOptions {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UpdateContainerOptionsBlkioWeight {
     pub path: String,
-    pub weight: u64,
+    pub weight: isize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UpdateContainerOptionsBlkioDeviceRate {
     pub path: String,
-    pub rate: u64,
+    pub rate: isize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -825,11 +1135,24 @@ pub struct UpdateContainerOptionsRestartPolicy {
 /// ## Update Container Options
 ///
 /// Configuration for the [Update Container API](../struct.Docker.html#method.update_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::UpdateContainerOptions;
+/// use std::default::Default;
+///
+/// UpdateContainerOptions {
+///     memory: Some(314572800),
+///     memory_swap: Some(314572800),
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UpdateContainerOptions {
     pub cpu_shares: Option<isize>,
-    pub memory: Option<i64>,
+    pub memory: Option<u64>,
     pub cgroup_parent: Option<String>,
     pub blkio_weight: Option<isize>,
     pub blkio_weight_device: Vec<UpdateContainerOptionsBlkioWeight>,
@@ -838,58 +1161,115 @@ pub struct UpdateContainerOptions {
     pub blkio_device_write_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
     #[serde(rename = "BlkioDeviceReadIOps")]
     pub blkio_device_read_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
-    pub cpu_period: Option<i64>,
-    pub cpu_quota: Option<i64>,
-    pub cpu_realtime_period: Option<i64>,
-    pub cpu_realtime_runtime: Option<i64>,
+    pub cpu_period: Option<u64>,
+    pub cpu_quota: Option<u64>,
+    pub cpu_realtime_period: Option<u64>,
+    pub cpu_realtime_runtime: Option<u64>,
     pub cpuset_cpus: Option<String>,
     pub cpuset_mems: Option<String>,
     pub devices: Option<Vec<UpdateContainerOptionsDevices>>,
     pub device_cgroup_rules: Option<Vec<String>>,
-    pub disk_quota: Option<i64>,
-    pub kernel_memory: Option<i64>,
-    pub memory_reservation: Option<i64>,
+    pub disk_quota: Option<u64>,
+    pub kernel_memory: Option<u64>,
+    pub memory_reservation: Option<u64>,
     pub memory_swap: Option<i64>,
-    pub memory_swappiness: Option<i64>,
-    pub nano_cpus: Option<i64>,
+    pub memory_swappiness: Option<u64>,
+    pub nano_cpus: Option<u64>,
     pub oom_kill_disable: Option<bool>,
     pub init: Option<bool>,
-    pub pids_limit: Option<i64>,
+    pub pids_limit: Option<u64>,
     pub ulimits: Vec<UpdateContainerOptionsUlimits>,
-    pub cpu_count: Option<i64>,
-    pub cpu_percent: Option<i64>,
+    pub cpu_count: Option<u64>,
+    pub cpu_percent: Option<u64>,
     #[serde(rename = "IOMaximumIOps")]
-    pub io_maximum_iops: Option<i64>,
+    pub io_maximum_iops: Option<u64>,
     #[serde(rename = "IOMaximumBandwidth")]
-    pub io_maximum_bandwidth: Option<i64>,
+    pub io_maximum_bandwidth: Option<u64>,
     pub restart_policy: Option<UpdateContainerOptionsRestartPolicy>,
 }
 
 /// ## Rename Container Options
 ///
 /// Parameters used in the [Rename Container API](../struct.Docker.html#method.rename_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::RenameContainerOptions;
+///
+/// RenameContainerOptions {
+///     name: "my_new_container_name"
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct RenameContainerOptions {
-    pub name: String,
+pub struct RenameContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub name: T,
 }
 
-impl EncodableQueryString for RenameContainerOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("name", self.name)])
+/// ## Rename Container Query Params
+///
+/// Trait providing implementations for [Rename Container Options](struct.RenameContainerOptions.html).
+pub trait RenameContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> RenameContainerQueryParams<&'a str, T> for RenameContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("name", self.name)]))
     }
 }
 
 /// ## Prune Container Options
 ///
 /// Parameters used in the [Prune Container API](../struct.Docker.html#method.prune_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::container::PruneContainersOptions;
+///
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("until", "10m");
+///
+/// PruneContainersOptions{
+///     filters: filters
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct PruneContainersOptions {
-    pub filters: HashMap<String, String>,
+pub struct PruneContainersOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub filters: HashMap<T, T>,
 }
 
-impl EncodableQueryString for PruneContainersOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("filters", serde_json::to_string(&self.filters)?)])
+/// ## Prune Container Query Params
+///
+/// Trait providing implementations for [Prune Container Options](struct.PruneContainerOptions.html).
+pub trait PruneContainersQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a str>
+    for PruneContainersOptions<T>
+{
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "filters",
+            serde_json::to_string(&self.filters)?,
+        )]))
     }
 }
 
@@ -900,7 +1280,7 @@ impl EncodableQueryString for PruneContainersOptions {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct PruneContainersResults {
     pub containers_deleted: Option<Vec<String>>,
-    pub space_reclaimed: i64,
+    pub space_reclaimed: u64,
 }
 
 impl<C> Docker<C>
@@ -911,6 +1291,10 @@ where
     /// # List Containers
     ///
     /// Returns a list of containers.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [ListContainerOptions](struct.ListContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -923,33 +1307,49 @@ where
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use boondock::container::{ListContainersOptions};
     ///
+    /// use std::collections::HashMap;
     /// use std::default::Default;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("health", "unhealthy");
     ///
     /// let options = Some(ListContainersOptions{
     ///     all: true,
+    ///     filters: filters,
     ///     ..Default::default()
     /// });
     ///
     /// docker.list_containers(options);
     /// ```
-    pub fn list_containers(
+    pub fn list_containers<T, K>(
         &self,
-        options: Option<ListContainersOptions>,
-    ) -> impl Future<Item = Vec<APIContainers>, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = Vec<APIContainers>, Error = Error>
+    where
+        T: ListContainersQueryParams<K, String>,
+        K: AsRef<str>,
+    {
         let url = "/containers/json";
 
-        self.process_into_value(
+        let req = self.build_request2(
             url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
     /// # Create Container
     ///
     /// Prepares a container for a subsequent start operation.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Create Container Options](struct.CreateContainerOptions.html) struct.
+    ///  - Container [Config](container/struct.Config.html) struct.
     ///
     /// # Returns
     ///
@@ -965,7 +1365,7 @@ where
     /// use std::default::Default;
     ///
     /// let options = Some(CreateContainerOptions{
-    ///     name: String::from("my-new-container"),
+    ///     name: "my-new-container",
     /// });
     ///
     /// let config = Config {
@@ -976,19 +1376,27 @@ where
     ///
     /// docker.create_container(options, config);
     /// ```
-    pub fn create_container(
+    pub fn create_container<T, K, V, Z>(
         &self,
-        options: Option<CreateContainerOptions>,
-        config: Config,
-    ) -> impl Future<Item = CreateContainerResults, Error = Error> {
+        options: Option<T>,
+        config: Config<Z>,
+    ) -> impl Future<Item = CreateContainerResults, Error = Error>
+    where
+        T: CreateContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        Z: AsRef<str> + Eq + Hash + Serialize,
+    {
         let url = "/containers/create";
 
-        self.process_into_value(
+        let req = self.build_request2(
             url,
             Builder::new().method(Method::POST),
-            options,
-            Some(config),
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::<C>::serialize_payload(Some(config)),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
@@ -996,6 +1404,11 @@ where
     ///
     /// Starts a container, after preparing it with the [Create Container
     /// API](struct.Docker.html#method.create_container).
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Optional [Start Container Options](struct.StartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1006,28 +1419,41 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use boondock::container::StartContainerOptions;
     ///
-    /// docker.start_container("hello-world", None);
+    /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub fn start_container(
+    pub fn start_container<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<StartContainerOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: StartContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/start", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Stop Container
     ///
     /// Stops a container.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Stop Container Options](struct.StopContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1046,25 +1472,36 @@ where
     ///
     /// docker.stop_container("hello-world", options);
     /// ```
-    pub fn stop_container(
+    pub fn stop_container<T, K>(
         &self,
         container_name: &str,
-        options: Option<StopContainerOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: StopContainerQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = format!("/containers/{}/stop", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Remove Container
     ///
     /// Remove a container.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as a string slice.
+    /// - Optional [Remove Container Options](struct.RemoveContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1087,19 +1524,26 @@ where
     ///
     /// docker.remove_container("hello-world", options);
     /// ```
-    pub fn remove_container(
+    pub fn remove_container<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<RemoveContainerOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: RemoveContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
@@ -1107,6 +1551,11 @@ where
     ///
     /// Wait for a container to stop. This is a non-blocking operation, the resulting stream will
     /// end when the container stops.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Wait Container Options](struct.WaitContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1122,30 +1571,42 @@ where
     /// use boondock::container::WaitContainerOptions;
     ///
     /// let options = Some(WaitContainerOptions{
-    ///     condition: String::from("not-running"),
+    ///     condition: "not-running",
     /// });
     ///
     /// docker.wait_container("hello-world", options);
     /// ```
-    pub fn wait_container(
+    pub fn wait_container<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<WaitContainerOptions>,
-    ) -> impl Stream<Item = WaitContainerResults, Error = Error> {
+        options: Option<T>,
+    ) -> impl Stream<Item = WaitContainerResults, Error = Error>
+    where
+        T: WaitContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/wait", container_name);
 
-        self.process_into_stream(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_stream2(req)
     }
 
     /// ---
     /// # Restart Container
     ///
     /// Restart a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Restart Container Options](struct.RestartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1165,25 +1626,36 @@ where
     ///
     /// docker.restart_container("postgres", options);
     /// ```
-    pub fn restart_container(
+    pub fn restart_container<T, K>(
         &self,
         container_name: &str,
-        options: Option<RestartContainerOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: RestartContainerQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = format!("/containers/{}/restart", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Inspect Container
     ///
     /// Inspect a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Optional [Inspect Container Options](struct.InspectContainerOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -1194,7 +1666,7 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{InspectContainerOptions, Config};
+    /// use boondock::container::InspectContainerOptions;
     ///
     /// let options = Some(InspectContainerOptions{
     ///     size: false,
@@ -1202,25 +1674,37 @@ where
     ///
     /// docker.inspect_container("hello-world", options);
     /// ```
-    pub fn inspect_container(
+    pub fn inspect_container<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<InspectContainerOptions>,
-    ) -> impl Future<Item = Container, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = Container, Error = Error>
+    where
+        T: InspectContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/json", container_name);
 
-        self.process_into_value(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
     /// # Top Processes
     ///
     /// List processes running inside a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Top Options](struct.TopOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -1234,30 +1718,42 @@ where
     /// use boondock::container::TopOptions;
     ///
     /// let options = Some(TopOptions{
-    ///     ps_args: "aux".to_string(),
+    ///     ps_args: "aux",
     /// });
     ///
     /// docker.top_processes("fnichol/uhttpd", options);
     /// ```
-    pub fn top_processes(
+    pub fn top_processes<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<TopOptions>,
-    ) -> impl Future<Item = TopResult, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = TopResult, Error = Error>
+    where
+        T: TopQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/top", container_name);
 
-        self.process_into_value(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
     /// # Logs
     ///
     /// Get container logs.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Logs Query Params](struct.LogsQueryParams.html) struct.
     ///
     /// # Returns
     ///
@@ -1281,25 +1777,35 @@ where
     ///
     /// docker.logs("hello-world", options);
     /// ```
-    pub fn logs(
+    pub fn logs<T, K>(
         &self,
         container_name: &str,
-        options: Option<LogsOptions>,
-    ) -> impl Stream<Item = LogOutput, Error = Error> {
+        options: Option<T>,
+    ) -> impl Stream<Item = LogOutput, Error = Error>
+    where
+        T: LogsQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = format!("/containers/{}/logs", container_name);
 
-        self.process_into_stream_string(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_stream_string2(req)
     }
 
     /// ---
     /// # Container Changes
     ///
     /// Get changes on a container's filesystem.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
     ///
     /// # Returns
     ///
@@ -1320,18 +1826,25 @@ where
     ) -> impl Future<Item = Option<Vec<Change>>, Error = Error> {
         let url = format!("/containers/{}/changes", container_name);
 
-        self.process_into_value(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::GET),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
     /// # Stats
     ///
     /// Get container stats based on resource usage.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Stats Options](struct.StatsOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1352,25 +1865,37 @@ where
     ///
     /// docker.stats("hello-world", options);
     /// ```
-    pub fn stats(
+    pub fn stats<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<StatsOptions>,
-    ) -> impl Stream<Item = Stats, Error = Error> {
+        options: Option<T>,
+    ) -> impl Stream<Item = Stats, Error = Error>
+    where
+        T: StatsQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/stats", container_name);
 
-        self.process_into_stream(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_stream2(req)
     }
 
     /// ---
     /// # Kill Container
     ///
     /// Kill a container.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Kill Container Options](struct.KillContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1385,30 +1910,42 @@ where
     /// use boondock::container::KillContainerOptions;
     ///
     /// let options = Some(KillContainerOptions{
-    ///     signal: "SIGINT".to_string(),
+    ///     signal: "SIGINT",
     /// });
     ///
     /// docker.kill_container("postgres", options);
     /// ```
-    pub fn kill_container(
+    pub fn kill_container<T, K, V>(
         &self,
         container_name: &str,
-        options: Option<KillContainerOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: KillContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/kill", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Update Container
     ///
     /// Update a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - [Update Container Options](struct.UpdateContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1438,18 +1975,25 @@ where
     ) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/update", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
-            None::<NoParams>,
-            Some(config),
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Docker::<C>::serialize_payload(Some(config)),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Rename Container
     ///
     /// Rename a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - [Rename Container Options](struct.RenameContainerOptions.html) struct
     ///
     /// # Returns
     ///
@@ -1464,30 +2008,41 @@ where
     /// use boondock::container::RenameContainerOptions;
     ///
     /// let required = RenameContainerOptions {
-    ///     name: "my_new_container_name".to_string()
+    ///     name: "my_new_container_name"
     /// };
     ///
     /// docker.rename_container("hello-world", required);
     /// ```
-    pub fn rename_container(
+    pub fn rename_container<T, K, V>(
         &self,
         container_name: &str,
-        options: RenameContainerOptions,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: T,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: RenameContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/containers/{}/rename", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            Some(options),
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(Some(options.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Pause Container
     ///
     /// Use the cgroups freezer to suspend all processes in a container.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
     ///
     /// # Returns
     ///
@@ -1504,18 +2059,24 @@ where
     pub fn pause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/pause", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Unpause Container
     ///
     /// Resume a container which has been paused.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
     ///
     /// # Returns
     ///
@@ -1532,18 +2093,24 @@ where
     pub fn unpause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/unpause", container_name);
 
-        self.process_into_void(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// ---
     /// # Prune Containers
     ///
     /// Delete stopped containers.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Prune Containers Options](struct.PruneContainersOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1555,21 +2122,37 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use boondock::container::PruneContainersOptions;
     ///
-    /// docker.unpause_container("postgres");
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
+    ///
+    /// let options = Some(PruneContainersOptions{
+    ///     filters: filters
+    /// });
+    ///
+    /// docker.prune_containers(options);
     /// ```
-    pub fn prune_containers(
+    pub fn prune_containers<T, K>(
         &self,
-        options: Option<PruneContainersOptions>,
-    ) -> impl Future<Item = PruneContainersResults, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = PruneContainersResults, Error = Error>
+    where
+        T: PruneContainersQueryParams<K>,
+        K: AsRef<str> + Eq + Hash,
+    {
         let url = "/containers/prune";
 
-        self.process_into_value(
-            url,
+        let req = self.build_request2(
+            &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 }
 
@@ -1581,6 +2164,11 @@ where
     /// # Kill Container
     ///
     /// Kill a container. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Kill Container Options](struct.KillContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1596,16 +2184,21 @@ where
     /// use boondock::container::KillContainerOptions;
     ///
     /// let options = Some(KillContainerOptions{
-    ///     signal: "SIGINT".to_string(),
+    ///     signal: "SIGINT",
     /// });
     ///
     /// docker.chain().kill_container("postgres", options);
     /// ```
-    pub fn kill_container(
+    pub fn kill_container<T, K, V>(
         self,
         container_name: &str,
-        options: Option<KillContainerOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: KillContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .kill_container(container_name, options)
             .map(|result| (self, result))
@@ -1615,6 +2208,11 @@ where
     /// # Remove Container
     ///
     /// Remove a container. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as a string slice.
+    /// - Optional [Remove Container Options](struct.RemoveContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1638,11 +2236,16 @@ where
     ///
     /// docker.chain().remove_container("hello-world", options);
     /// ```
-    pub fn remove_container(
+    pub fn remove_container<T, K, V>(
         self,
         container_name: &str,
-        options: Option<RemoveContainerOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: RemoveContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .remove_container(container_name, options)
             .map(|result| (self, result))
@@ -1652,6 +2255,11 @@ where
     /// # Create Container
     ///
     /// Prepares a container for a subsequent start operation. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Create Container Options](struct.CreateContainerOptions.html) struct.
+    ///  - Container [Config](container/struct.Config.html) struct.
     ///
     /// # Returns
     ///
@@ -1669,7 +2277,7 @@ where
     /// use std::default::Default;
     ///
     /// let options = Some(CreateContainerOptions{
-    ///     name: String::from("my-new-container"),
+    ///     name: "my-new-container",
     /// });
     ///
     /// let config = Config {
@@ -1680,11 +2288,17 @@ where
     ///
     /// docker.chain().create_container(options, config);
     /// ```
-    pub fn create_container(
+    pub fn create_container<T, K, V, Z>(
         self,
-        options: Option<CreateContainerOptions>,
-        config: Config,
-    ) -> impl Future<Item = (DockerChain<C>, CreateContainerResults), Error = Error> {
+        options: Option<T>,
+        config: Config<Z>,
+    ) -> impl Future<Item = (DockerChain<C>, CreateContainerResults), Error = Error>
+    where
+        T: CreateContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        Z: AsRef<str> + Eq + Hash + Serialize,
+    {
         self.inner
             .create_container(options, config)
             .map(|result| (self, result))
@@ -1696,6 +2310,11 @@ where
     /// Starts a container, after preparing it with the [Create Container
     /// API](struct.Docker.html#method.create_container). Consumes the client instance.
     ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Optional [Start Container Options](struct.StartContainerOptions.html) struct.
+    ///
     /// # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
@@ -1706,16 +2325,64 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use boondock::container::StartContainerOptions;
     ///
-    /// docker.chain().start_container("hello-world", None);
+    /// docker.chain().start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub fn start_container(
+    pub fn start_container<T, K, V>(
         self,
         container_name: &str,
-        options: Option<StartContainerOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: StartContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .start_container(container_name, options)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    /// # Stop Container
+    ///
+    /// Stops a container. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Stop Container Options](struct.StopContainerOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
+    ///  type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use boondock::Docker;
+    /// use boondock::container::StopContainerOptions;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// let options = Some(StopContainerOptions{
+    ///     t: 30,
+    /// });
+    ///
+    /// docker.chain().stop_container("hello-world", options);
+    /// ```
+    pub fn stop_container<T, K>(
+        self,
+        container_name: &str,
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: StopContainerQueryParams<K>,
+        K: AsRef<str>,
+    {
+        self.inner
+            .stop_container(container_name, options)
             .map(|result| (self, result))
     }
 
@@ -1723,6 +2390,10 @@ where
     /// # List Containers
     ///
     /// Returns a list of containers. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [ListContainerOptions](struct.ListContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1734,21 +2405,30 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{ListContainersOptions};
+    /// use boondock::container::ListContainersOptions;
     ///
+    /// use std::collections::HashMap;
     /// use std::default::Default;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("health", "unhealthy");
     ///
     /// let options = Some(ListContainersOptions{
     ///     all: true,
+    ///     filters: filters,
     ///     ..Default::default()
     /// });
     ///
     /// docker.chain().list_containers(options);
     /// ```
-    pub fn list_containers(
+    pub fn list_containers<T, K>(
         self,
-        options: Option<ListContainersOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIContainers>), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, Vec<APIContainers>), Error = Error>
+    where
+        T: ListContainersQueryParams<K, String>,
+        K: AsRef<str>,
+    {
         self.inner
             .list_containers(options)
             .map(|result| (self, result))
@@ -1759,6 +2439,11 @@ where
     ///
     /// Wait for a container to stop. This is a non-blocking operation, the resulting stream will
     /// end when the container stops. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Wait Container Options](struct.WaitContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1774,36 +2459,45 @@ where
     /// use boondock::container::WaitContainerOptions;
     ///
     /// let options = Some(WaitContainerOptions{
-    ///     condition: String::from("not-running"),
+    ///     condition: "not-running",
     /// });
     ///
     /// docker.chain().wait_container("hello-world", options);
     /// ```
-    pub fn wait_container(
+    pub fn wait_container<T, K, V>(
         self,
         container_name: &str,
-        options: Option<WaitContainerOptions>,
+        options: Option<T>,
     ) -> impl Future<
         Item = (
             DockerChain<C>,
             impl Stream<Item = WaitContainerResults, Error = Error>,
         ),
         Error = Error,
-    > {
+    >
+    where
+        T: WaitContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .wait_container(container_name, options)
             .into_future()
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
     /// # Inspect Container
     ///
     /// Inspect a container. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Optional [Inspect Container Options](struct.InspectContainerOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -1815,7 +2509,7 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{InspectContainerOptions, Config};
+    /// use boondock::container::InspectContainerOptions;
     ///
     /// let options = Some(InspectContainerOptions{
     ///     size: false,
@@ -1823,11 +2517,16 @@ where
     ///
     /// docker.chain().inspect_container("hello-world", options);
     /// ```
-    pub fn inspect_container(
+    pub fn inspect_container<T, K, V>(
         self,
         container_name: &str,
-        options: Option<InspectContainerOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, Container), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, Container), Error = Error>
+    where
+        T: InspectContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .inspect_container(container_name, options)
             .map(|result| (self, result))
@@ -1837,6 +2536,11 @@ where
     /// # Restart Container
     ///
     /// Restart a container. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Restart Container Options](struct.RestartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1857,11 +2561,15 @@ where
     ///
     /// docker.chain().restart_container("postgres", options);
     /// ```
-    pub fn restart_container(
+    pub fn restart_container<T, K>(
         self,
         container_name: &str,
-        options: Option<RestartContainerOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: RestartContainerQueryParams<K>,
+        K: AsRef<str>,
+    {
         self.inner
             .restart_container(container_name, options)
             .map(|result| (self, result))
@@ -1871,6 +2579,11 @@ where
     /// # Top Processes
     ///
     /// List processes running inside a container. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Top Options](struct.TopOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -1885,16 +2598,21 @@ where
     /// use boondock::container::TopOptions;
     ///
     /// let options = Some(TopOptions{
-    ///     ps_args: "aux".to_string(),
+    ///     ps_args: "aux",
     /// });
     ///
     /// docker.chain().top_processes("fnichol/uhttpd", options);
     /// ```
-    pub fn top_processes(
+    pub fn top_processes<T, K, V>(
         self,
         container_name: &str,
-        options: Option<TopOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, TopResult), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, TopResult), Error = Error>
+    where
+        T: TopQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .top_processes(container_name, options)
             .map(|result| (self, result))
@@ -1904,6 +2622,11 @@ where
     /// # Logs
     ///
     /// Get container logs. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - Optional [Logs Query Params](struct.LogsQueryParams.html) struct.
     ///
     /// # Returns
     ///
@@ -1927,11 +2650,14 @@ where
     ///
     /// docker.chain().logs("hello-world", options);
     /// ```
-    pub fn logs(
+    pub fn logs<T, K>(
         self,
         container_name: &str,
-        options: Option<LogsOptions>,
+        options: Option<T>,
     ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = LogOutput, Error = Error>), Error = Error>
+    where
+        T: LogsQueryParams<K>,
+        K: AsRef<str>,
     {
         self.inner
             .logs(container_name, options)
@@ -1939,14 +2665,17 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
     /// # Container Changes
     ///
     /// Get changes on a container's filesystem. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
     ///
     /// # Returns
     ///
@@ -1975,6 +2704,11 @@ where
     ///
     /// Get container stats based on resource usage. Consumes the client instance.
     ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Stats Options](struct.StatsOptions.html) struct.
+    ///
     /// # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
@@ -1994,11 +2728,15 @@ where
     ///
     /// docker.chain().stats("hello-world", options);
     /// ```
-    pub fn stats(
+    pub fn stats<T, K, V>(
         self,
         container_name: &str,
-        options: Option<StatsOptions>,
+        options: Option<T>,
     ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = Stats, Error = Error>), Error = Error>
+    where
+        T: StatsQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.inner
             .stats(container_name, options)
@@ -2006,14 +2744,18 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
     /// # Update Container
     ///
     /// Update a container. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - [Update Container Options](struct.UpdateContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2052,6 +2794,11 @@ where
     ///
     /// Rename a container. Consumes the client instance.
     ///
+    /// # Arguments
+    ///
+    ///  - Container name as string slice.
+    ///  - [Rename Container Options](struct.RenameContainerOptions.html) struct
+    ///
     /// # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
@@ -2066,16 +2813,21 @@ where
     /// use boondock::container::RenameContainerOptions;
     ///
     /// let required = RenameContainerOptions {
-    ///     name: "my_new_container_name".to_string()
+    ///     name: "my_new_container_name"
     /// };
     ///
     /// docker.chain().rename_container("hello-world", required);
     /// ```
-    pub fn rename_container(
+    pub fn rename_container<T, K, V>(
         self,
         container_name: &str,
-        options: RenameContainerOptions,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: T,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: RenameContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .rename_container(container_name, options)
             .map(|result| (self, result))
@@ -2086,6 +2838,10 @@ where
     ///
     /// Use the cgroups freezer to suspend all processes in a container. Consumes the client
     /// instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
     ///
     /// # Returns
     ///
@@ -2141,6 +2897,10 @@ where
     ///
     /// Delete stopped containers. Consumes the client instance.
     ///
+    /// # Arguments
+    ///
+    ///  - Optional [Prune Containers Options](struct.PruneContainersOptions.html) struct.
+    ///
     /// # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
@@ -2153,12 +2913,27 @@ where
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// docker.chain().unpause_container("postgres");
+    /// use boondock::container::PruneContainersOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
+    ///
+    /// let options = Some(PruneContainersOptions {
+    ///   filters: filters
+    /// });
+    ///
+    /// docker.chain().prune_containers(options);
     /// ```
-    pub fn prune_containers(
+    pub fn prune_containers<T, K>(
         self,
-        options: Option<PruneContainersOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, PruneContainersResults), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, PruneContainersResults), Error = Error>
+    where
+        T: PruneContainersQueryParams<K>,
+        K: AsRef<str> + Eq + Hash,
+    {
         self.inner
             .prune_containers(options)
             .map(|result| (self, result))
@@ -2186,7 +2961,7 @@ mod tests {
         });
 
         let config = Config {
-            image: Some("hello-world".to_string()),
+            image: Some("hello-world"),
             ..Default::default()
         };
 
@@ -2213,7 +2988,7 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
-        let results = docker.start_container("hello-world", None);
+        let results = docker.start_container("hello-world", None::<StartContainerOptions<String>>);
 
         let future = results
             .map_err(|e| panic!("error = {:?}", e))
@@ -2231,7 +3006,7 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
-        let results = docker.stop_container("hello-world", None);
+        let results = docker.stop_container("hello-world", None::<StopContainerOptions>);
 
         let future = results
             .map_err(|e| panic!("error = {:?}", e))
@@ -2316,7 +3091,7 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
-        let results = docker.inspect_container("uhttpd", None);
+        let results = docker.inspect_container("uhttpd", None::<InspectContainerOptions>);
 
         let future = results
             .map_err(|e| panic!("error = {:?}", e))
@@ -2354,8 +3129,7 @@ mod tests {
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!
-            \r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
@@ -2533,7 +3307,7 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
-        let results = docker.prune_containers(None);
+        let results = docker.prune_containers(None::<PruneContainersOptions<String>>);
 
         let future = results
             .map_err(|e| panic!("error = {:?}", e))

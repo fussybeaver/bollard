@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
@@ -8,16 +9,19 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::Method;
+use hyper::{Body, Method};
+use serde::Serialize;
 use serde_json;
 
 use super::{Docker, DockerChain};
 use auth::DockerCredentials;
 use container::{Config, GraphDriver};
+use docker::{FALSE_STR, TRUE_STR};
 use either::EitherStream;
-use options::{EncodableQueryString, NoParams};
 
+use std::cmp::Eq;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 /// ## Image
 ///
@@ -32,8 +36,8 @@ pub struct Image {
     pub os: String,
     pub os_version: Option<String>,
     pub architecture: String,
-    pub config: Config,
-    pub container_config: Config,
+    pub config: Config<String>,
+    pub container_config: Config<String>,
     pub parent: String,
     pub created: DateTime<Utc>,
     pub repo_digests: Vec<String>,
@@ -85,24 +89,71 @@ pub struct APIImages {
 ///
 /// Parameters available for pulling an image, used in the [Create Image
 /// API](../struct.Docker.html#method.create_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::CreateImageOptions;
+///
+/// use std::default::Default;
+///
+/// CreateImageOptions{
+///   from_image: "hello-world",
+///   ..Default::default()
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::image::CreateImageOptions;
+/// # use std::default::Default;
+/// CreateImageOptions::<String>{
+///   ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct CreateImageOptions {
-    pub from_image: String,
-    pub from_src: String,
-    pub repo: String,
-    pub tag: String,
-    pub platform: String,
+pub struct CreateImageOptions<T>
+where
+    T: AsRef<str>,
+{
+    pub from_image: T,
+    pub from_src: T,
+    pub repo: T,
+    pub tag: T,
+    pub platform: T,
 }
 
-impl EncodableQueryString for CreateImageOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
+/// ## Create Image Query Params
+///
+/// Trait providing implementations for [Create Image Options](struct.CreateImageOptions.html)
+pub trait CreateImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 5]>, Error>;
+}
+
+impl<'a> CreateImageQueryParams<&'a str, &'a str> for CreateImageOptions<&'a str> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 5]>, Error> {
+        Ok(ArrayVec::from([
             ("fromImage", self.from_image),
             ("fromSrc", self.from_src),
             ("repo", self.repo),
             ("tag", self.tag),
             ("platform", self.platform),
-        ])
+        ]))
+    }
+}
+
+impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 5]>, Error> {
+        Ok(ArrayVec::from([
+            ("fromImage", self.from_image),
+            ("fromSrc", self.from_src),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("platform", self.platform),
+        ]))
     }
 }
 
@@ -149,29 +200,119 @@ pub enum CreateImageResults {
 ///
 /// Parameters to the [List Images
 /// API](../struct.Docker.html#method.list_images)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::ListImagesOptions;
+///
+/// use std::collections::HashMap;
+/// use std::default::Default;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("dangling", "true");
+///
+/// ListImagesOptions{
+///   all: true,
+///   filters: filters,
+///   ..Default::default()
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::image::ListImagesOptions;
+/// # use std::default::Default;
+/// ListImagesOptions::<String>{
+///   ..Default::default()
+/// };
+/// ```
+///
 #[derive(Debug, Clone, Default)]
-pub struct ListImagesOptions {
+pub struct ListImagesOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
     pub all: bool,
-    pub filters: HashMap<String, String>,
+    pub filters: HashMap<T, T>,
     pub digests: bool,
 }
 
-impl EncodableQueryString for ListImagesOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
+/// ## List Images Query Params
+///
+/// Trait providing implementations for [List Images Options](struct.ListImagesOptions.html).
+pub trait ListImagesQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 3]>, Error>;
+}
+
+impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
+    for ListImagesOptions<T>
+{
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
+        Ok(ArrayVec::from([
             ("all", self.all.to_string()),
             ("filters", serde_json::to_string(&self.filters)?),
             ("digests", self.digests.to_string()),
-        ])
+        ]))
     }
 }
 
 /// ## Prune Images Options
 ///
 /// Parameters to the [Prune Images API](../struct.Docker.html#method.prune_images)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::PruneImagesOptions;
+///
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("until", "10m");
+///
+/// PruneImagesOptions{
+///   filters: filters,
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::image::PruneImagesOptions;
+/// # use std::default::Default;
+/// PruneImagesOptions::<String>{
+///   ..Default::default()
+/// };
+/// ```
+///
 #[derive(Debug, Clone, Default)]
-pub struct PruneImagesOptions {
-    pub filters: HashMap<String, String>,
+pub struct PruneImagesOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub filters: HashMap<T, T>,
+}
+
+/// ## Prune Images Query Params
+///
+/// Trait providing implementations for [Prune Images Options](struct.PruneImagesOptions.html).
+pub trait PruneImagesQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneImagesQueryParams<&'a str>
+    for PruneImagesOptions<T>
+{
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "filters",
+            serde_json::to_string(&self.filters)?,
+        )]))
+    }
 }
 
 /// ## Prune Images Results : Images Deleted
@@ -181,7 +322,7 @@ pub struct PruneImagesOptions {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct PruneImagesImagesDeleted {
     pub untagged: Option<String>,
-    pub deleted: String,
+    pub deleted: Option<String>,
 }
 
 /// ## Prune Images Results
@@ -192,12 +333,6 @@ pub struct PruneImagesImagesDeleted {
 pub struct PruneImagesResults {
     pub images_deleted: Option<Vec<PruneImagesImagesDeleted>>,
     pub space_reclaimed: u64,
-}
-
-impl EncodableQueryString for PruneImagesOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("filters", serde_json::to_string(&self.filters)?)])
-    }
 }
 
 /// ## Image History
@@ -218,16 +353,69 @@ pub struct ImageHistory {
 /// ## Search Images Options
 ///
 /// Parameters to the [Search Images API](../struct.Docker.html#method.search_images)
+///
+/// ## Example
+///
+/// ```rust
+/// use boondock::image::SearchImagesOptions;
+/// use std::default::Default;
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("until", "10m");
+///
+/// SearchImagesOptions {
+///     term: "hello-world",
+///     filters: filters,
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::image::SearchImagesOptions;
+/// # use std::default::Default;
+/// SearchImagesOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct SearchImagesOptions {
-    pub term: String,
+pub struct SearchImagesOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub term: T,
     pub limit: Option<u64>,
-    pub filters: HashMap<String, String>,
+    pub filters: HashMap<T, T>,
 }
 
-impl EncodableQueryString for SearchImagesOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
+/// ## Search Images Query Params
+///
+/// Trait providing implementations for [Search Images Options](struct.SearchImagesOptions.html)
+/// struct.
+pub trait SearchImagesQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 3]>, Error>;
+}
+
+impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<&'a str> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
+        Ok(ArrayVec::from([
+            ("term", self.term.to_string()),
+            (
+                "limit",
+                self.limit
+                    .map(|limit| limit.to_string())
+                    .unwrap_or_else(String::new),
+            ),
+            ("filters", serde_json::to_string(&self.filters)?),
+        ]))
+    }
+}
+impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<String> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
+        Ok(ArrayVec::from([
             ("term", self.term),
             (
                 "limit",
@@ -236,7 +424,7 @@ impl EncodableQueryString for SearchImagesOptions {
                     .unwrap_or_else(String::new),
             ),
             ("filters", serde_json::to_string(&self.filters)?),
-        ])
+        ]))
     }
 }
 
@@ -257,18 +445,42 @@ pub struct APIImageSearch {
 /// ## Remove Image Options
 ///
 /// Parameters to the [Remove Image API](../struct.Docker.html#method.remove_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::RemoveImageOptions;
+/// use std::default::Default;
+///
+/// RemoveImageOptions {
+///     force: true,
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RemoveImageOptions {
     pub force: bool,
     pub noprune: bool,
 }
 
-impl EncodableQueryString for RemoveImageOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![
-            ("force", self.force.to_string()),
-            ("noprune", self.noprune.to_string()),
-        ])
+/// ## Remove Image Query Params
+///
+/// Trait providing implementations for [Remove Image Options](struct.RemoveImageOptions.html)
+/// struct.
+pub trait RemoveImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
+}
+
+impl<'a> RemoveImageQueryParams<&'a str, &'a str> for RemoveImageOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 2]>, Error> {
+        Ok(ArrayVec::from([
+            ("force", if self.force { TRUE_STR } else { FALSE_STR }),
+            ("noprune", if self.noprune { TRUE_STR } else { FALSE_STR }),
+        ]))
     }
 }
 
@@ -287,29 +499,91 @@ pub enum RemoveImageResults {
 /// ## Tag Image Options
 ///
 /// Parameters to the [Tag Image API](../struct.Docker.html#method.tag_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::TagImageOptions;
+/// use std::default::Default;
+///
+/// let tag_options = TagImageOptions {
+///     tag: "v1.0.1",
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```rust
+/// # use boondock::image::TagImageOptions;
+/// # use std::default::Default;
+/// let tag_options = TagImageOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct TagImageOptions {
-    pub repo: String,
-    pub tag: String,
+pub struct TagImageOptions<T> {
+    pub repo: T,
+    pub tag: T,
 }
 
-impl EncodableQueryString for TagImageOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("repo", self.repo), ("tag", self.tag)])
+/// ## Tag Image Query Params
+///
+/// Trait providing implementations for [Tag Image Options](struct.TagImageOptions.html)
+/// struct.
+pub trait TagImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> TagImageQueryParams<&'a str, T> for TagImageOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 2]>, Error> {
+        Ok(ArrayVec::from([("repo", self.repo), ("tag", self.tag)]))
     }
 }
 
 /// ## Push Image Options
 ///
 /// Parameters to the [Push Image API](../struct.Docker.html#method.push_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use boondock::image::PushImageOptions;
+///
+/// PushImageOptions {
+///     tag: "v1.0.1",
+/// };
+/// ```
+///
+/// ```
+/// # use boondock::image::PushImageOptions;
+/// # use std::default::Default;
+/// PushImageOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct PushImageOptions {
-    pub tag: String,
+pub struct PushImageOptions<T> {
+    pub tag: T,
 }
 
-impl EncodableQueryString for PushImageOptions {
-    fn into_array<'a>(self) -> Result<Vec<(&'a str, String)>, Error> {
-        Ok(vec![("tag", self.tag)])
+/// ## Push Image Query Params
+///
+/// Trait providing implementations for [Push Image Options](struct.PushImageOptions.html)
+/// struct.
+pub trait PushImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> PushImageQueryParams<&'a str, T> for PushImageOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("tag", self.tag)]))
     }
 }
 
@@ -324,9 +598,13 @@ where
     /// Returns a list of images on the server. Note that it uses a different, smaller
     /// representation of an image than inspecting a single image
     ///
-    ///  # Returns
+    /// # Arguments
     ///
-    ///  - Vector of [APIImages](image/struct.APIImages.html), wrapped in a Future.
+    ///  - An optional [List Images Options](image/struct.ListImagesOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - Vector of [API Images](image/struct.APIImages.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -335,33 +613,48 @@ where
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use boondock::image::ListImagesOptions;
     ///
+    /// use std::collections::HashMap;
     /// use std::default::Default;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("dangling", "true");
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
+    ///   filters: filters,
     ///   ..Default::default()
     /// });
     ///
     /// docker.list_images(options);
     /// ```
-    pub fn list_images(
+    pub fn list_images<T, K>(
         &self,
-        options: Option<ListImagesOptions>,
-    ) -> impl Future<Item = Vec<APIImages>, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = Vec<APIImages>, Error = Error>
+    where
+        T: ListImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = "/images/json";
 
-        self.process_into_value(
+        let req = self.build_request2(
             url,
             Builder::new().method(Method::GET),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
     /// # Create Image
     ///
     /// Create an image by either pulling it from a registry or importing it.
+    ///
+    /// # Arguments
+    ///
+    ///  - An optional [Create Image Options](image/struct.CreateImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -378,7 +671,7 @@ where
     /// use std::default::Default;
     ///
     /// let options = Some(CreateImageOptions{
-    ///   from_image: String::from("hello-world"),
+    ///   from_image: "hello-world",
     ///   ..Default::default()
     /// });
     ///
@@ -391,18 +684,25 @@ where
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image(
+    pub fn create_image<T, K, V>(
         &self,
-        options: Option<CreateImageOptions>,
-    ) -> impl Stream<Item = CreateImageResults, Error = Error> {
+        options: Option<T>,
+    ) -> impl Stream<Item = CreateImageResults, Error = Error>
+    where
+        T: CreateImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = "/images/create";
 
-        self.process_into_stream(
+        let req = self.build_request2(
             url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_stream2(req)
     }
 
     /// ---
@@ -410,6 +710,10 @@ where
     /// # Inspect Image
     ///
     /// Return low-level information about an image.
+    ///
+    /// # Arguments
+    ///
+    /// - Image name as a string slice.
     ///
     /// # Returns
     ///
@@ -428,12 +732,14 @@ where
     pub fn inspect_image(&self, image_name: &str) -> impl Future<Item = Image, Error = Error> {
         let url = format!("/images/{}/json", image_name);
 
-        self.process_into_value(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::GET),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
@@ -441,6 +747,10 @@ where
     /// # Prune Images
     ///
     /// Delete unused images.
+    ///
+    /// # Arguments
+    ///
+    /// - An optional [Prune Images Options](image/struct.PruneImagesOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -451,21 +761,37 @@ where
     /// ```rust,norun
     /// # use boondock::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use boondock::image::PruneImagesOptions;
     ///
-    /// docker.prune_images(None);
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
+    ///
+    /// let options = Some(PruneImagesOptions {
+    ///   filters: filters
+    /// });
+    ///
+    /// docker.prune_images(options);
     /// ```
-    pub fn prune_images(
+    pub fn prune_images<T, K>(
         &self,
-        options: Option<PruneImagesOptions>,
-    ) -> impl Future<Item = PruneImagesResults, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = PruneImagesResults, Error = Error>
+    where
+        T: PruneImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = "/images/prune";
 
-        self.process_into_value(
-            &url,
+        let req = self.build_request2(
+            url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
@@ -473,6 +799,10 @@ where
     /// # Image History
     ///
     /// Return parent layers of an image.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
     ///
     /// # Returns
     ///
@@ -493,12 +823,14 @@ where
     ) -> impl Future<Item = Vec<ImageHistory>, Error = Error> {
         let url = format!("/images/{}/history", image_name);
 
-        self.process_into_value(
+        let req = self.build_request2::<_, String, String>(
             &url,
             Builder::new().method(Method::GET),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
@@ -506,6 +838,10 @@ where
     /// # Search Images
     ///
     /// Search for an image on Docker Hub.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Search Image Options](struct.SearchImagesOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -519,27 +855,38 @@ where
     ///
     /// use boondock::image::SearchImagesOptions;
     /// use std::default::Default;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let search_options = SearchImagesOptions {
-    ///     term: "hello-world".to_string(),
+    ///     term: "hello-world",
+    ///     filters: filters,
     ///     ..Default::default()
     /// };
     ///
     /// docker.search_images(search_options);
     /// ```
-    pub fn search_images(
+    pub fn search_images<T, K>(
         &self,
-        options: SearchImagesOptions,
-    ) -> impl Future<Item = Vec<APIImageSearch>, Error = Error> {
+        options: T,
+    ) -> impl Future<Item = Vec<APIImageSearch>, Error = Error>
+    where
+        T: SearchImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
         let url = "/images/search";
 
-        self.process_into_value(
+        let req = self.build_request2(
             url,
             Builder::new().method(Method::GET),
-            Some(options),
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(Some(options.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// ---
@@ -547,6 +894,11 @@ where
     /// # Remove Image
     ///
     /// Remove an image, along with any untagged parent images that were referenced by that image.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - An optional [Remove Image Options](image/struct.RemoveImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -569,24 +921,36 @@ where
     ///
     /// docker.remove_image("hello-world", remove_options);
     /// ```
-    pub fn remove_image(
+    pub fn remove_image<T, K, V>(
         &self,
         image_name: &str,
-        options: Option<RemoveImageOptions>,
-    ) -> impl Future<Item = Vec<RemoveImageResults>, Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = Vec<RemoveImageResults>, Error = Error>
+    where
+        T: RemoveImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/images/{}", image_name);
 
-        self.process_into_value(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 
     /// # Tag Image
     ///
     /// Tag an image so that it becomes part of a repository.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - Optional [Tag Image Options](struct.TagImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -602,30 +966,43 @@ where
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let tag_options = Some(TagImageOptions {
-    ///     tag: "v1.0.1".to_string(),
+    ///     tag: "v1.0.1",
     ///     ..Default::default()
     /// });
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
-    pub fn tag_image(
+    pub fn tag_image<T, K, V>(
         &self,
         image_name: &str,
-        options: Option<TagImageOptions>,
-    ) -> impl Future<Item = (), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: TagImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/images/{}/tag", image_name);
 
-        self.process_into_void(
+        let req = self.build_request2(
             &url,
             Builder::new().method(Method::POST),
-            options,
-            None::<NoParams>,
-        )
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req)
     }
 
     /// # Push Image
     ///
     /// Push an image to a registry.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
@@ -641,7 +1018,7 @@ where
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
-    ///     tag: "v1.0.1".to_string(),
+    ///     tag: "v1.0.1",
     /// });
     ///
     /// let credentials = Some(DockerCredentials {
@@ -653,28 +1030,35 @@ where
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image(
+    pub fn push_image<T, K, V>(
         &self,
         image_name: &str,
-        options: Option<PushImageOptions>,
+        options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (), Error = Error> {
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: PushImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let url = format!("/images/{}/push", image_name);
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
         })) {
-            Ok(ser_cred) => Either::A(
-                self.process_into_void(
+            Ok(ser_cred) => {
+                let req = self.build_request2(
                     &url,
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-REGISTRY-AUTH", ser_cred),
-                    options,
-                    None::<NoParams>,
-                ),
-            ),
+                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Ok(Body::empty()),
+                );
+
+                Either::A(self.process_into_unit(req))
+            }
             Err(e) => Either::B(future::err(e.into())),
         }
     }
@@ -689,6 +1073,10 @@ where
     ///
     /// Create an image by either pulling it from a registry or importing it. Consumes the client
     /// instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - An optional [Create Image Options](image/struct.CreateImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -705,7 +1093,7 @@ where
     /// use std::default::Default;
     ///
     /// let options = Some(CreateImageOptions{
-    ///   from_image: String::from("hello-world"),
+    ///   from_image: "hello-world",
     ///   ..Default::default()
     /// });
     ///
@@ -718,29 +1106,38 @@ where
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image(
+    pub fn create_image<T, K, V>(
         self,
-        options: Option<CreateImageOptions>,
+        options: Option<T>,
     ) -> impl Future<
         Item = (
             DockerChain<C>,
             impl Stream<Item = CreateImageResults, Error = Error>,
         ),
         Error = Error,
-    > {
+    >
+    where
+        T: CreateImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .create_image(options)
             .into_future()
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// # Tag Image
     ///
     /// Tag an image so that it becomes part of a repository. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - Optional [Tag Image Options](struct.TagImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -756,17 +1153,22 @@ where
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let tag_options = Some(TagImageOptions {
-    ///     tag: "v1.0.1".to_string(),
+    ///     tag: "v1.0.1",
     ///     ..Default::default()
     /// });
     ///
     /// docker.chain().tag_image("hello-world", tag_options);
     /// ```
-    pub fn tag_image(
+    pub fn tag_image<T, K, V>(
         self,
         image_name: &str,
-        options: Option<TagImageOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: TagImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .tag_image(image_name, options)
             .map(|result| (self, result))
@@ -775,6 +1177,12 @@ where
     /// # Push Image
     ///
     /// Push an image to a registry. Consumes the instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
@@ -791,7 +1199,7 @@ where
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
-    ///     tag: "v1.0.1".to_string(),
+    ///     tag: "v1.0.1",
     /// });
     ///
     /// let credentials = Some(DockerCredentials {
@@ -803,12 +1211,17 @@ where
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image(
+    pub fn push_image<T, K, V>(
         self,
         image_name: &str,
-        options: Option<PushImageOptions>,
+        options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: PushImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .push_image(image_name, options, credentials)
             .map(|result| (self, result))
@@ -820,6 +1233,11 @@ where
     ///
     /// Remove an image, along with any untagged parent images that were referenced by that image.
     /// Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
+    ///  - An optional [Remove Image Options](image/struct.RemoveImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -841,11 +1259,16 @@ where
     ///
     /// docker.chain().remove_image("hello-world", remove_options);
     /// ```
-    pub fn remove_image(
+    pub fn remove_image<T, K, V>(
         self,
         image_name: &str,
-        options: Option<RemoveImageOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<RemoveImageResults>), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, Vec<RemoveImageResults>), Error = Error>
+    where
+        T: RemoveImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         self.inner
             .remove_image(image_name, options)
             .map(|result| (self, result))
@@ -856,6 +1279,10 @@ where
     /// # Search Images
     ///
     /// Search for an image on Docker Hub. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Search Image Options](struct.SearchImagesOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -868,19 +1295,29 @@ where
     /// # use boondock::Docker;
     ///
     /// use boondock::image::SearchImagesOptions;
+    /// use std::default::Default;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let search_options = SearchImagesOptions {
-    ///     term: "hello-world".to_string(),
+    ///     term: "hello-world",
+    ///     filters: filters,
     ///     ..Default::default()
     /// };
     ///
     /// docker.chain().search_images(search_options);
     /// ```
-    pub fn search_images(
+    pub fn search_images<T, K>(
         self,
-        options: SearchImagesOptions,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImageSearch>), Error = Error> {
+        options: T,
+    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImageSearch>), Error = Error>
+    where
+        T: SearchImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
         self.inner
             .search_images(options)
             .map(|result| (self, result))
@@ -891,6 +1328,10 @@ where
     /// # Inspect Image
     ///
     /// Return low-level information about an image. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    /// - Image name as a string slice.
     ///
     /// # Returns
     ///
@@ -923,6 +1364,10 @@ where
     /// Returns a list of images on the server. Note that it uses a different, smaller
     /// representation of an image than inspecting a single image. Consumes the client instance.
     ///
+    /// # Arguments
+    ///
+    ///  - An optional [List Images Options](image/struct.ListImagesOptions.html) struct.
+    ///
     ///  # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
@@ -935,19 +1380,28 @@ where
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use boondock::image::ListImagesOptions;
     ///
+    /// use std::collections::HashMap;
     /// use std::default::Default;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("dangling", "true");
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
+    ///   filters: filters,
     ///   ..Default::default()
     /// });
     ///
     /// docker.chain().list_images(options);
     /// ```
-    pub fn list_images(
+    pub fn list_images<T, K>(
         self,
-        options: Option<ListImagesOptions>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImages>), Error = Error> {
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImages>), Error = Error>
+    where
+        T: ListImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
         self.inner.list_images(options).map(|result| (self, result))
     }
 
@@ -956,6 +1410,10 @@ where
     /// # Image History
     ///
     /// Return parent layers of an image. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Image name as a string slice.
     ///
     /// # Returns
     ///
@@ -978,6 +1436,51 @@ where
             .image_history(image_name)
             .map(|result| (self, result))
     }
+
+    /// ---
+    ///
+    /// # Prune Images
+    ///
+    /// Delete unused images. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    /// - An optional [Prune Images Options](image/struct.PruneImagesOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Prune Images Results](image/struct.PruneImagesResults.html), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use boondock::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use boondock::image::PruneImagesOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", "10m");
+    ///
+    /// let options = Some(PruneImagesOptions {
+    ///   filters: filters
+    /// });
+    ///
+    /// docker.chain().prune_images(options);
+    /// ```
+    pub fn prune_images<T, K>(
+        self,
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, PruneImagesResults), Error = Error>
+    where
+        T: PruneImagesQueryParams<K>,
+        K: AsRef<str>,
+    {
+        self.inner
+            .prune_images(options)
+            .map(|result| (self, result))
+    }
 }
 
 #[cfg(test)]
@@ -996,8 +1499,12 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
+        let mut filters = HashMap::new();
+        filters.insert("dangling", "true");
+
         let options = Some(ListImagesOptions {
             all: true,
+            filters: filters,
             ..Default::default()
         });
 
@@ -1061,7 +1568,7 @@ mod tests {
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
-        let prune_images_results = docker.prune_images(None);
+        let prune_images_results = docker.prune_images(None::<PruneImagesOptions<String>>);
 
         let future = prune_images_results
             .map_err(|e| panic!("error = {:?}", e))
@@ -1084,9 +1591,12 @@ mod tests {
         let future = image_history_results
             .map_err(|e| panic!("error = {:?}", e))
             .map(|vec| {
-                assert!(vec.into_iter().take(1).any(|history| {
-                    history.tags.unwrap_or(vec![String::new()])[0] == "hello-world:latest"
-                }))
+                assert!(
+                    vec.into_iter()
+                        .take(1)
+                        .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                            == "hello-world:latest")
+                )
             });
 
         tokio::runtime::run(future);

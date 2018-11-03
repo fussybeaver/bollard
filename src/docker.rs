@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use std::env;
 #[cfg(feature = "openssl")]
 use std::path::{Path, PathBuf};
@@ -36,8 +37,6 @@ use errors::{
 };
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
-use options::EncodableQueryString;
-use options::NoParams;
 use read::{JsonLineDecoder, LineDecoder, StreamReader};
 use uri::Uri;
 
@@ -60,6 +59,9 @@ const DEFAULT_NUM_THREADS: usize = 1;
 
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120000;
+
+pub(crate) const TRUE_STR: &'static str = "true";
+pub(crate) const FALSE_STR: &'static str = "false";
 
 /// The default directory in which to look for our Docker certificate
 /// files.
@@ -369,102 +371,83 @@ where
         DockerChain { inner: self }
     }
 
-    pub(crate) fn process_into_value<O, T, S>(
+    pub(crate) fn process_into_value2<T>(
         &self,
-        url: &str,
-        builder: &mut Builder,
-        params: Option<O>,
-        body: Option<S>,
+        req: Result<Request<Body>, Error>,
     ) -> impl Future<Item = T, Error = Error>
     where
-        O: EncodableQueryString,
         T: DeserializeOwned,
-        S: Serialize,
     {
-        self.process_request(url, builder, params, body)
+        self.process_request2(req)
             .and_then(Docker::<C>::decode_response)
     }
 
-    pub(crate) fn process_into_stream<O, T, S>(
+    pub(crate) fn process_into_stream2<T>(
         &self,
-        url: &str,
-        builder: &mut Builder,
-        params: Option<O>,
-        body: Option<S>,
+        req: Result<Request<Body>, Error>,
     ) -> impl Stream<Item = T, Error = Error>
     where
-        O: EncodableQueryString,
         T: DeserializeOwned,
-        S: Serialize,
     {
-        self.process_request(url, builder, params, body)
+        self.process_request2(req)
             .into_stream()
             .map(Docker::<C>::decode_into_stream::<T>)
             .flatten()
     }
 
-    pub(crate) fn process_into_stream_string<O, S>(
+    pub(crate) fn process_into_stream_string2(
         &self,
-        url: &str,
-        builder: &mut Builder,
-        params: Option<O>,
-        body: Option<S>,
-    ) -> impl Stream<Item = LogOutput, Error = Error>
-    where
-        O: EncodableQueryString,
-        S: Serialize,
-    {
-        self.process_request(url, builder, params, body)
-            .map_err(|e| {
-                println!("process_request");
-                e
-            })
+        req: Result<Request<Body>, Error>,
+    ) -> impl Stream<Item = LogOutput, Error = Error> {
+        self.process_request2(req)
             .into_stream()
             .map(Docker::<C>::decode_into_stream_string)
             .flatten()
     }
 
-    pub(crate) fn process_into_void<O, S>(
+    pub(crate) fn process_into_unit(
         &self,
-        url: &str,
-        builder: &mut Builder,
-        params: Option<O>,
-        body: Option<S>,
-    ) -> impl Future<Item = (), Error = Error>
-    where
-        O: EncodableQueryString,
-        S: Serialize,
-    {
-        self.process_request(url, builder, params, body)
-            .and_then(|_| Ok(()))
+        req: Result<Request<Body>, Error>,
+    ) -> impl Future<Item = (), Error = Error> {
+        self.process_request2(req).and_then(|_| Ok(()))
     }
 
-    fn process_request<O, S>(
-        &self,
-        url: &str,
-        builder: &mut Builder,
-        params: Option<O>,
-        body: Option<S>,
-    ) -> impl Future<Item = Response<Body>, Error = Error>
+    pub(crate) fn transpose_option<T>(
+        option: Option<Result<T, Error>>,
+    ) -> Result<Option<T>, Error> {
+        match option {
+            Some(Ok(x)) => Ok(Some(x)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
     where
-        O: EncodableQueryString,
         S: Serialize,
     {
-        let client = self.client.clone();
-        let timeout = self.client_timeout.clone();
-
-        let des_request_body = match body.map(|inst| serde_json::to_string(&inst)) {
+        match body.map(|inst| serde_json::to_string(&inst)) {
             Some(Ok(res)) => Ok(Some(res)),
             Some(Err(e)) => Err(e),
             None => Ok(None),
-        }.map_err(|e| e.into());
-
-        result(des_request_body.and_then(|payload| {
-            let body = payload
+        }.map_err(|e| e.into())
+        .map(|payload| {
+            println!("{}", payload.clone().unwrap_or_else(String::new));
+            payload
                 .map(|content| content.into())
-                .unwrap_or(Body::empty());
-            self.build_request(url, builder, params, body)
-        })).and_then(move |request| Docker::execute_request(client, request, timeout))
+                .unwrap_or(Body::empty())
+        })
+    }
+
+    fn process_request2(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Future<Item = Response<Body>, Error = Error> {
+        let client = self.client.clone();
+        let timeout = self.client_timeout.clone();
+
+        result(req)
+            .and_then(move |request| Docker::execute_request(client, request, timeout))
             .and_then(|response| {
                 let status = response.status();
                 match status {
@@ -498,22 +481,29 @@ where
             })
     }
 
-    fn build_request<'a, O>(
+    pub(crate) fn build_request2<O, K, V>(
         &self,
         path: &str,
         builder: &mut Builder,
-        query: Option<O>,
-        payload: Body,
+        query: Result<Option<O>, Error>,
+        payload: Result<Body, Error>,
     ) -> Result<Request<Body>, Error>
     where
-        O: EncodableQueryString,
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
-        let uri = Uri::parse(self.client_addr.clone(), &self.client_type, path, query)?;
-        let request_uri: hyper::Uri = uri.into();
-        Ok(builder
-            .uri(request_uri)
-            .header(CONTENT_TYPE, "application/json")
-            .body(payload)?)
+        query
+            .and_then(|q| payload.map(|body| (q, body)))
+            .and_then(|(q, body)| {
+                let uri = Uri::parse2(self.client_addr.clone(), &self.client_type, path, q)?;
+                let request_uri: hyper::Uri = uri.into();
+                Ok(builder
+                    .uri(request_uri)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body)?)
+            })
     }
 
     fn execute_request(
@@ -582,11 +572,13 @@ where
     pub fn ping(&self) -> impl Future<Item = String, Error = Error> {
         let url = "/_ping";
 
-        self.process_into_value(
-            url,
+        let req = self.build_request2::<_, String, String>(
+            &url,
             Builder::new().method(Method::GET),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 }

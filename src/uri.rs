@@ -1,5 +1,7 @@
 use failure::Error;
-use hex::{FromHex, ToHex};
+#[cfg(windows)]
+use hex::FromHex;
+use hex::ToHex;
 #[cfg(windows)]
 use hyper::client::connect::Destination;
 use hyper::Uri as HyperUri;
@@ -9,7 +11,6 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 
 use super::ClientType;
-use options::EncodableQueryString;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -23,14 +24,17 @@ impl<'a> Into<HyperUri> for Uri<'a> {
 }
 
 impl<'a> Uri<'a> where {
-    pub(crate) fn parse<O, P>(
+    pub(crate) fn parse2<O, P, K, V>(
         socket: P,
         client_type: &ClientType,
         path: &'a str,
         query: Option<O>,
     ) -> Result<Self, Error>
     where
-        O: EncodableQueryString,
+        O: IntoIterator,
+        O::Item: ::std::borrow::Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
         P: AsRef<OsStr>,
     {
         let host: String = Uri::socket_host(socket, client_type)?;
@@ -41,7 +45,7 @@ impl<'a> Uri<'a> where {
         url = url.join(path).unwrap();
 
         if let Some(pairs) = query {
-            url.query_pairs_mut().extend_pairs(pairs.into_array()?);
+            url.query_pairs_mut().extend_pairs(pairs);
         }
 
         println!("::{}", url.as_str());

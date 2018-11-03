@@ -241,14 +241,6 @@ impl IsZero for i32 {
     }
 }
 
-pub fn cvt<I: IsZero>(i: I) -> io::Result<I> {
-    if i.is_zero() {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(i)
-    }
-}
-
 #[derive(Clone)]
 pub struct NamedPipeConnector;
 

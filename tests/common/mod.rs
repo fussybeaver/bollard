@@ -23,8 +23,7 @@ macro_rules! rt_exec {
                 .or_else(|e| {
                     println!("{}", e);
                     Err(e)
-                })
-                .unwrap(),
+                }).unwrap(),
         );
         rt.shutdown_now().wait().unwrap();
         res
@@ -44,8 +43,7 @@ macro_rules! rt_stream {
                 .or_else(|e| {
                     println!("{}", e);
                     Err(e)
-                })
-                .unwrap(),
+                }).unwrap(),
         );
         rt.shutdown_now().wait().unwrap();
     }};
@@ -85,8 +83,7 @@ where
         .or_else(|e| {
             println!("{}", e);
             Err(e)
-        })
-        .unwrap();
+        }).unwrap();
 
     rt.shutdown_now().wait().unwrap();
 }
@@ -101,28 +98,23 @@ where
 {
     let image = || {
         if cfg!(windows) {
-            String::from("hello-world:nanoserver")
+            "hello-world:nanoserver"
         } else {
-            String::from("hello-world:linux")
+            "hello-world:linux"
         }
     };
 
     let cmd = if cfg!(windows) {
-        vec![
-            "cmd".to_string(),
-            "/C".to_string(),
-            "type C:\\hello.txt".to_string(),
-        ]
+        vec!["cmd", "/C", "type C:\\hello.txt"]
     } else {
-        vec!["/hello".to_string()]
+        vec!["/hello"]
     };
 
     chain
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        }))
-        .and_then(move |(docker, _)| {
+        })).and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -133,14 +125,14 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
             assert_ne!(result.id.len(), 0);
             docker
-        })
-        .and_then(move |docker| docker.start_container(container_name, None))
-        .and_then(move |(docker, _)| docker.wait_container(container_name, None))
-        .map(|(docker, stream)| {
+        }).and_then(move |docker| {
+            docker.start_container(container_name, None::<StartContainerOptions<String>>)
+        }).and_then(move |(docker, _)| {
+            docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
+        }).map(|(docker, stream)| {
             stream
                 .take(1)
                 .into_future()
@@ -148,8 +140,7 @@ where
                 .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                })
-                .wait()
+                }).wait()
                 .unwrap();
             docker
         })
@@ -190,8 +181,7 @@ where
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        }))
-        .and_then(move |(docker, _)| {
+        })).and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -216,9 +206,10 @@ where
                                         .unwrap_or("0.0.0.0".to_string()),
                                     host_port: "5000".to_string(),
                                 }],
-                            )].iter()
+                            )]
+                                .iter()
                                 .cloned()
-                                .collect::<HashMap<String, Vec<PortBinding>>>(),
+                                .collect::<HashMap<String, Vec<PortBinding<String>>>>(),
                         ),
                         publish_all_ports: Some(true),
                         restart_policy: Some(RestartPolicy {
@@ -230,9 +221,9 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .and_then(move |(docker, _)| docker.start_container(container_name, None))
-        .map(|(docker, _)| docker)
+        }).and_then(move |(docker, _)| {
+            docker.start_container(container_name, None::<StartContainerOptions<String>>)
+        }).map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -255,41 +246,36 @@ where
 {
     let image = || {
         if cfg!(windows) {
-            String::from("stefanscherer/consul-windows")
+            "stefanscherer/consul-windows"
         } else {
-            String::from("fnichol/uhttpd")
+            "fnichol/uhttpd"
         }
     };
 
     let cmd = || {
         if cfg!(windows) {
             vec![
-                "C:\\consul.exe".to_string(),
-                "agent".to_string(),
-                "-ui".to_string(),
-                "-dev".to_string(),
-                "-client".to_string(),
-                "0.0.0.0".to_string(),
+                "C:\\consul.exe",
+                "agent",
+                "-ui",
+                "-dev",
+                "-client",
+                "0.0.0.0",
             ]
         } else {
-            vec![
-                "/usr/sbin/run_uhttpd".to_string(),
-                "-f".to_string(),
-                "-p".to_string(),
-                "80".to_string(),
-                "-h".to_string(),
-                "/www".to_string(),
-            ]
+            vec!["/usr/sbin/run_uhttpd", "-f", "-p", "80", "-h", "/www"]
         }
     };
 
+    let chain = future::ok(chain);
     #[cfg(unix)]
     let chain = chain
-        .create_image(Some(CreateImageOptions {
-            from_image: image(),
-            ..Default::default()
-        }))
-        .map(|(docker, _)| docker);
+        .and_then(move |docker| {
+            docker.create_image(Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }))
+        }).map(|(docker, _)| docker);
 
     chain
         .and_then(move |docker| {
@@ -303,13 +289,12 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
             assert_ne!(result.id.len(), 0);
-            (docker, result)
-        })
-        .and_then(move |(docker, _)| docker.start_container(container_name, None))
-        .map(|(docker, _)| docker)
+            docker
+        }).and_then(move |docker| {
+            docker.start_container(container_name, None::<StartContainerOptions<String>>)
+        }).map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -321,10 +306,12 @@ where
     C: Connect + Sync + 'static,
 {
     chain
-        .kill_container(container_name, None)
-        .and_then(move |(docker, _)| docker.wait_container(container_name, None))
-        .and_then(move |(docker, _)| docker.remove_container(container_name, None))
-        .map(|(docker, _)| docker)
+        .kill_container(container_name, None::<KillContainerOptions<String>>)
+        .and_then(move |(docker, _)| {
+            docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
+        }).and_then(move |(docker, _)| {
+            docker.remove_container(container_name, None::<RemoveContainerOptions>)
+        }).map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -336,9 +323,9 @@ where
 {
     let image = || {
         if cfg!(windows) {
-            String::from("hello-world:nanoserver")
+            "hello-world:nanoserver"
         } else {
-            String::from("hello-world:latest")
+            "hello-world:linux"
         }
     };
 
@@ -346,8 +333,7 @@ where
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        }))
-        .map(|(docker, result)| {
+        })).map(|(docker, result)| {
             result
                 .take(1)
                 .into_future()
@@ -356,15 +342,13 @@ where
                         CreateImageResults::CreateImageProgressResponse {
                             id: Some(ref id),
                             ..
-                        } => assert_eq!(id, "latest"),
+                        } => assert_eq!(id, if cfg!(windows) { "nanoserver" } else { "linux" }),
                         _ => panic!(),
                     };
-                })
-                .or_else(|e| {
+                }).or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                })
-                .wait()
+                }).wait()
                 .unwrap();
             docker
         })

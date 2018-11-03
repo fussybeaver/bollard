@@ -1,11 +1,11 @@
+use arrayvec::ArrayVec;
 use failure::Error;
 use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::Method;
+use hyper::{Body, Method};
 
 use super::Docker;
-use options::NoParams;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -26,11 +26,13 @@ where
     C: Connect + Sync + 'static,
 {
     pub fn version(&self) -> impl Future<Item = Version, Error = Error> {
-        self.process_into_value(
+        let req = self.build_request2::<_, String, String>(
             "/version",
             Builder::new().method(Method::GET),
-            None::<NoParams>,
-            None::<NoParams>,
-        )
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value2(req)
     }
 }
