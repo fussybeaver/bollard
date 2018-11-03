@@ -54,17 +54,19 @@ fn inspect_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "hello-world:nanoserver"
+            format!("{}/hello-world:nanoserver", host())
         } else {
-            "hello-world:linux"
+            format!("{}/hello-world:linux", host())
         }
     };
 
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| docker.inspect_image(image()))
+        .and_then(move |docker| docker.inspect_image(&image()))
         .map(move |(docker, result)| {
             assert!(
                 result
@@ -82,11 +84,13 @@ fn list_images_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "hello-world:nanoserver"
+            format!("{}/hello-world:nanoserver", host())
         } else {
-            "hello-world:linux"
+            format!("{}/hello-world:linux", host())
         }
     };
 
@@ -115,17 +119,19 @@ fn image_history_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "hello-world:nanoserver"
+            format!("{}/hello-world:nanoserver", host())
         } else {
-            "hello-world:linux"
+            format!("{}/hello-world:linux", host())
         }
     };
 
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| docker.image_history(image()))
+        .and_then(move |docker| docker.image_history(&image()))
         .map(move |(docker, result)| {
             assert!(result.into_iter().take(1).any(|history| {
                 history
@@ -154,23 +160,31 @@ fn remove_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
+        if cfg!(windows) {
+            format!("{}/hello-world:nanoserver", host())
+        } else {
+            format!("{}/hello-world:linux", host())
+        }
+    };
+
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain())
-        .and_then(|docker| {
+        .and_then(move |docker| {
             docker.remove_image(
-                "hello-world",
+                &image(),
                 Some(RemoveImageOptions {
                     noprune: true,
                     ..Default::default()
                 }),
             )
-        }).map(|(docker, result)| {
-            match result[0].to_owned() {
-                RemoveImageResults::RemoveImageUntagged { untagged } => {
-                    assert_eq!(untagged, "hello-world:latest")
-                }
-                _ => panic!(),
-            };
+        }).map(move |(docker, result)| {
+            assert!(result.into_iter().any(|s| match s {
+                RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
+                _ => false,
+            }));
             docker
         });
 

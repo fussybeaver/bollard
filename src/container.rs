@@ -347,10 +347,10 @@ pub struct NetworkSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Mount {
-    pub name: String,
+    pub name: Option<String>,
     pub source: String,
     pub destination: String,
-    pub driver: String,
+    pub driver: Option<String>,
     pub mode: String,
     #[serde(rename = "RW")]
     pub rw: bool,
@@ -2486,7 +2486,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2665,7 +2666,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2744,7 +2746,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2946,9 +2949,11 @@ mod tests {
     use super::*;
     use hyper_mock::SequentialConnector;
     use tokio;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_create_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 89\r\n\r\n{\"Id\":\"696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc\",\"Warnings\":null}\r\n\r\n".to_string()
@@ -2967,20 +2972,26 @@ mod tests {
 
         let results = docker.create_container(options, config);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|result| {
-                assert_eq!(
-                    result.id,
-                    "696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc".to_string()
-                )
-            });
+        let future = results.map(|result| {
+            assert_eq!(
+                result.id,
+                "696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc".to_string()
+            )
+        });
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_start_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -2990,15 +3001,21 @@ mod tests {
 
         let results = docker.start_container("hello-world", None::<StartContainerOptions<String>>);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_stop_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3012,11 +3029,19 @@ mod tests {
             .map_err(|e| panic!("error = {:?}", e))
             .map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_remove_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3031,18 +3056,24 @@ mod tests {
 
         let results = docker.remove_container("hello-world", options);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_wait_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 29\r\n\r\n{\"Error\":null,\"StatusCode\":0}\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 33\r\n\r\n{\"Error\":null,\"StatusCode\":0}\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
@@ -3055,14 +3086,21 @@ mod tests {
 
         let future = stream
             .into_future()
-            .map_err(|e| panic!("error = {:?}", e.0))
             .map(|result| assert_eq!(0, result.0.unwrap().status_code));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e.0);
+                Err(e.0)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_restart_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3074,15 +3112,21 @@ mod tests {
 
         let results = docker.restart_container("hello-world", options);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_inspect_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
@@ -3093,15 +3137,22 @@ mod tests {
 
         let results = docker.inspect_container("uhttpd", None::<InspectContainerOptions>);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|result| assert_eq!(result.path, "/usr/sbin/run_uhttpd".to_string()));
+        let future =
+            results.map(|result| assert_eq!(result.path, "/usr/sbin/run_uhttpd".to_string()));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_top_processes() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
@@ -3117,19 +3168,25 @@ mod tests {
             }),
         );
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|result| assert_eq!(result.titles[0], "USER".to_string()));
+        let future = results.map(|result| assert_eq!(result.titles[0], "USER".to_string()));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_logs() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\n\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
@@ -3142,21 +3199,26 @@ mod tests {
             }),
         );
 
-        let future = stream
-            .into_future()
-            .map_err(|e| panic!("error = {:?}", e.0))
-            .map(|result| {
-                assert_eq!(
-                    format!("{}", result.0.unwrap()),
-                    "Hello from Docker!".to_string()
-                )
-            });
+        let future = stream.into_future().map(|result| {
+            assert_eq!(
+                format!("{}", result.0.unwrap()),
+                "Hello from Docker!".to_string()
+            )
+        });
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e.0);
+                Err(e.0)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_container_changes() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
@@ -3167,19 +3229,25 @@ mod tests {
 
         let result = docker.container_changes("hello-world");
 
-        let future = result
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|result| assert!(result.is_none()));
+        let future = result.map(|result| assert!(result.is_none()));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_stats() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
 
         connector.content.push(
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1862\r\n\r\n{\"read\":\"2018-10-19T06:11:22.220728356Z\",\"preread\":\"2018-10-19T06:11:21.218466258Z\",\"pids_stats\":{\"current\":1},\"blkio_stats\":{\"io_service_bytes_recursive\":[],\"io_serviced_recursive\":[],\"io_queue_recursive\":[],\"io_service_time_recursive\":[],\"io_wait_time_recursive\":[],\"io_merged_recursive\":[],\"io_time_recursive\":[],\"sectors_recursive\":[]},\"num_procs\":0,\"storage_stats\":{},\"cpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447677200000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"precpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447673150000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"memory_stats\":{\"usage\":962560,\"max_usage\":5406720,\"stats\":{\"active_anon\":86016,\"active_file\":0,\"cache\":0,\"dirty\":0,\"hierarchical_memory_limit\":9223372036854771712,\"hierarchical_memsw_limit\":0,\"inactive_anon\":0,\"inactive_file\":0,\"mapped_file\":0,\"pgfault\":1485,\"pgmajfault\":0,\"pgpgin\":1089,\"pgpgout\":1084,\"rss\":0,\"rss_huge\":0,\"total_active_anon\":86016,\"total_active_file\":0,\"total_cache\":0,\"total_dirty\":0,\"total_inactive_anon\":0,\"total_inactive_file\":0,\"total_mapped_file\":0,\"total_pgfault\":1485,\"total_pgmajfault\":0,\"total_pgpgin\":1089,\"total_pgpgout\":1084,\"total_rss\":0,\"total_rss_huge\":0,\"total_unevictable\":0,\"total_writeback\":0,\"unevictable\":0,\"writeback\":0},\"limit\":16750219264},\"name\":\"/integration_test_stats\",\"id\":\"66667eab5737dda2da2f578e9496e45c074d1bc5badc0484314f1c3afccfaeb0\",\"networks\":{\"eth0\":{\"rx_bytes\":1635,\"rx_packets\":14,\"rx_errors\":0,\"rx_dropped\":0,\"tx_bytes\":0,\"tx_packets\":0,\"tx_errors\":0,\"tx_dropped\":0}}}\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1866\r\n\r\n{\"read\":\"2018-10-19T06:11:22.220728356Z\",\"preread\":\"2018-10-19T06:11:21.218466258Z\",\"pids_stats\":{\"current\":1},\"blkio_stats\":{\"io_service_bytes_recursive\":[],\"io_serviced_recursive\":[],\"io_queue_recursive\":[],\"io_service_time_recursive\":[],\"io_wait_time_recursive\":[],\"io_merged_recursive\":[],\"io_time_recursive\":[],\"sectors_recursive\":[]},\"num_procs\":0,\"storage_stats\":{},\"cpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447677200000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"precpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447673150000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"memory_stats\":{\"usage\":962560,\"max_usage\":5406720,\"stats\":{\"active_anon\":86016,\"active_file\":0,\"cache\":0,\"dirty\":0,\"hierarchical_memory_limit\":9223372036854771712,\"hierarchical_memsw_limit\":0,\"inactive_anon\":0,\"inactive_file\":0,\"mapped_file\":0,\"pgfault\":1485,\"pgmajfault\":0,\"pgpgin\":1089,\"pgpgout\":1084,\"rss\":0,\"rss_huge\":0,\"total_active_anon\":86016,\"total_active_file\":0,\"total_cache\":0,\"total_dirty\":0,\"total_inactive_anon\":0,\"total_inactive_file\":0,\"total_mapped_file\":0,\"total_pgfault\":1485,\"total_pgmajfault\":0,\"total_pgpgin\":1089,\"total_pgpgout\":1084,\"total_rss\":0,\"total_rss_huge\":0,\"total_unevictable\":0,\"total_writeback\":0,\"unevictable\":0,\"writeback\":0},\"limit\":16750219264},\"name\":\"/integration_test_stats\",\"id\":\"66667eab5737dda2da2f578e9496e45c074d1bc5badc0484314f1c3afccfaeb0\",\"networks\":{\"eth0\":{\"rx_bytes\":1635,\"rx_packets\":14,\"rx_errors\":0,\"rx_dropped\":0,\"tx_bytes\":0,\"tx_packets\":0,\"tx_errors\":0,\"tx_dropped\":0}}}\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
@@ -3188,14 +3256,21 @@ mod tests {
 
         let future = stream
             .into_future()
-            .map_err(|e| panic!("error = {:?}", e.0))
             .map(|result| assert_eq!(result.0.unwrap().pids_stats.current.unwrap(), 1));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e.0);
+                Err(e.0)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_kill_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3209,15 +3284,21 @@ mod tests {
 
         let results = docker.kill_container("postgres", options);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_update_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3233,15 +3314,21 @@ mod tests {
 
         let results = docker.update_container("postgres", config);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_rename_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3255,15 +3342,21 @@ mod tests {
 
         let results = docker.rename_container("postgres", options);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_pause_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3273,15 +3366,21 @@ mod tests {
 
         let results = docker.pause_container("postgres");
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_unpause_container() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
@@ -3291,28 +3390,39 @@ mod tests {
 
         let results = docker.unpause_container("postgres");
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 
     #[test]
     fn test_prune_containers() {
+        let mut rt = Runtime::new().unwrap();
         let mut connector = SequentialConnector::default();
         connector.content.push(
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 41\r\n\r\n{\"ImagesDeleted\":null,\"SpaceReclaimed\":0}\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 45\r\n\r\n{\"ContainersDeleted\":null,\"SpaceReclaimed\":0}\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, String::new()).unwrap();
 
         let results = docker.prune_containers(None::<PruneContainersOptions<String>>);
 
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
+        let future = results.map(|_| assert!(true));
 
-        tokio::runtime::run(future);
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 }

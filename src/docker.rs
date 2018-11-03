@@ -360,7 +360,15 @@ where
 /// docker.chain();
 /// ```
 pub struct DockerChain<C> {
-    pub(crate) inner: Docker<C>,
+    pub(super) inner: Docker<C>,
+}
+
+impl<C> Clone for DockerChain<C> {
+    fn clone(&self) -> DockerChain<C> {
+        DockerChain {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<C> Docker<C>

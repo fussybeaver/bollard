@@ -96,18 +96,24 @@ pub fn chain_create_container_hello_world<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "hello-world:nanoserver"
+            format!("{}/hello-world:nanoserver", host())
         } else {
-            "hello-world:linux"
+            format!("{}/hello-world:linux", host())
         }
     };
 
     let cmd = if cfg!(windows) {
-        vec!["cmd", "/C", "type C:\\hello.txt"]
+        vec![
+            "cmd".to_string(),
+            "/C".to_string(),
+            "type C:\\hello.txt".to_string(),
+        ]
     } else {
-        vec!["/hello"]
+        vec!["/hello".to_string()]
     };
 
     chain
@@ -244,26 +250,28 @@ pub fn chain_create_daemon<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "stefanscherer/consul-windows"
+            format!("{}/nanoserver/iis", host())
         } else {
-            "fnichol/uhttpd"
+            format!("{}/fnichol/uhttpd", host())
         }
     };
 
     let cmd = || {
         if cfg!(windows) {
-            vec![
-                "C:\\consul.exe",
-                "agent",
-                "-ui",
-                "-dev",
-                "-client",
-                "0.0.0.0",
-            ]
+            vec![]
         } else {
-            vec!["/usr/sbin/run_uhttpd", "-f", "-p", "80", "-h", "/www"]
+            vec![
+                "/usr/sbin/run_uhttpd".to_string(),
+                "-f".to_string(),
+                "-p".to_string(),
+                "80".to_string(),
+                "-h".to_string(),
+                "/www".to_string(),
+            ]
         }
     };
 
@@ -278,7 +286,10 @@ where
         }).map(|(docker, _)| docker);
 
     chain
-        .and_then(move |docker| {
+        .map(|docker| {
+            ::std::thread::sleep(::std::time::Duration::from_secs(20));
+            docker
+        }).and_then(move |docker| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -294,7 +305,31 @@ where
             docker
         }).and_then(move |docker| {
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
-        }).map(|(docker, _)| docker)
+        }).and_then(move |(docker, _)| {
+            // note: windows workaround for non-starting container ?
+            docker.restart_container(container_name, None::<RestartContainerOptions>)
+        }).map(|(docker, _)| {
+            docker
+            //}).and_then(move |docker| {
+            //    // allow daemon to startup o_O
+            //    docker.logs(
+            //        container_name,
+            //        Some(LogsOptions {
+            //            stdout: true,
+            //            stderr: false,
+            //            ..Default::default()
+            //        }),
+            //    )
+            //}).map(|(docker, stream)| {
+            //    stream
+            //        .fold(vec![], |mut v, line| {
+            //            println!("{}", line);
+            //            v.push(line);
+            //            future::ok::<_, Error>(v)
+            //        }).wait()
+            //        .unwrap();
+            //    docker
+        })
 }
 
 #[allow(dead_code)]
@@ -305,9 +340,12 @@ pub fn chain_kill_container<C>(
 where
     C: Connect + Sync + 'static,
 {
+    let cloned = chain.clone();
     chain
         .kill_container(container_name, None::<KillContainerOptions<String>>)
-        .and_then(move |(docker, _)| {
+        .map(|(docker, _)| docker)
+        .or_else(move |_| future::ok(cloned))
+        .and_then(move |docker| {
             docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
         }).and_then(move |(docker, _)| {
             docker.remove_container(container_name, None::<RemoveContainerOptions>)
@@ -321,11 +359,13 @@ pub fn chain_create_image_hello_world<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let image = || {
+    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
+
+    let image = move || {
         if cfg!(windows) {
-            "hello-world:nanoserver"
+            format!("{}/hello-world:nanoserver", host())
         } else {
-            "hello-world:linux"
+            format!("{}/hello-world:linux", host())
         }
     };
 
