@@ -32,8 +32,8 @@ use tokio_codec::FramedRead;
 use container::LogOutput;
 use either::EitherResponse;
 use errors::{
-    DockerResponseBadParameterError, DockerResponseNotFoundError, DockerResponseServerError,
-    JsonDataError,
+    DockerResponseBadParameterError, DockerResponseConflictError, DockerResponseNotFoundError,
+    DockerResponseNotModifiedError, DockerResponseServerError, JsonDataError,
 };
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
@@ -439,12 +439,12 @@ where
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }.map_err(|e| e.into())
-        .map(|payload| {
-            println!("{}", payload.clone().unwrap_or_else(String::new));
-            payload
-                .map(|content| content.into())
-                .unwrap_or(Body::empty())
-        })
+            .map(|payload| {
+                println!("{}", payload.clone().unwrap_or_else(String::new));
+                payload
+                    .map(|content| content.into())
+                    .unwrap_or(Body::empty())
+            })
     }
 
     fn process_request2(
@@ -461,6 +461,20 @@ where
                 match status {
                     // Status code 200 - 299
                     s if s.is_success() => EitherResponse::A(future::ok(response)),
+
+                    // Status code 304: Not Modified
+                    StatusCode::NOT_MODIFIED => {
+                        EitherResponse::F(Docker::<C>::decode_into_string(response).and_then(
+                            |message| Err(DockerResponseNotModifiedError { message }.into()),
+                        ))
+                    }
+
+                    // Status code 409: Conflict
+                    StatusCode::CONFLICT => {
+                        EitherResponse::E(Docker::<C>::decode_into_string(response).and_then(
+                            |message| Err(DockerResponseConflictError { message }.into()),
+                        ))
+                    }
 
                     // Status code 400: Bad request
                     StatusCode::BAD_REQUEST => {

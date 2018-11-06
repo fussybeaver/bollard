@@ -1,3 +1,6 @@
+use std::cmp;
+use std::fmt::{Display, Formatter, Result};
+
 #[derive(Fail, Debug)]
 #[fail(display = "could not find DOCKER_CERT_PATH")]
 pub struct NoCertPathError {}
@@ -9,11 +12,7 @@ pub struct DockerResponseNotFoundError {
 }
 
 #[derive(Fail, Debug)]
-#[fail(
-    display = "Docker responded with status code {}: {}",
-    status_code,
-    message
-)]
+#[fail(display = "Docker responded with status code {}: {}", status_code, message)]
 pub struct DockerResponseServerError {
     pub status_code: u16,
     pub message: String,
@@ -26,14 +25,23 @@ pub struct DockerResponseBadParameterError {
 }
 
 #[derive(Fail, Debug)]
+#[fail(display = "API responded with a 409 conflict: {}", message)]
+pub struct DockerResponseConflictError {
+    pub message: String,
+}
+
+#[derive(Fail, Debug)]
+#[fail(display = "API responded with a 304, resource was not modified: {}", message)]
+pub struct DockerResponseNotModifiedError {
+    pub message: String,
+}
+
+#[derive(Fail, Debug)]
 pub struct JsonDataError {
     pub message: String,
     pub contents: String,
     pub column: usize,
 }
-
-use std::cmp;
-use std::fmt::{Display, Formatter, Result};
 
 impl Display for JsonDataError {
     fn fmt(&self, f: &mut Formatter) -> Result {
