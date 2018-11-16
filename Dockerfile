@@ -1,10 +1,10 @@
 FROM ekidd/rust-musl-builder AS builder
 
-WORKDIR /tmp/boondock
+WORKDIR /tmp/bollard
 
 COPY . ./
 
-RUN sudo chown -R rust:rust /tmp/boondock \
+RUN sudo chown -R rust:rust /tmp/bollard \
   && sudo groupadd --gid 999 docker \
   && sudo usermod -a -G docker rust
 

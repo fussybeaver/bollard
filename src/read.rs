@@ -12,6 +12,9 @@ use std::{
 use tokio_codec::Decoder;
 use tokio_io::AsyncRead;
 
+use errors::JsonDataError;
+
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct LineDecoder {}
 impl LineDecoder {
     pub(crate) fn new() -> LineDecoder {
@@ -31,64 +34,39 @@ impl Decoder for LineDecoder {
             let slice = &slice[..slice.len() - 1];
 
             match &slice[0..1] {
-                &[] => {
-                    println!("empty");
-                    Ok(None)
-                }
-                &[0] if slice.len() <= 8 => {
-                    println!("lessthan8");
-                    Ok(Some(LogOutput::StdIn {
-                        message: String::new(),
-                    }))
-                }
-                &[0] => {
-                    println!("stdin");
-                    ::std::str::from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdIn {
-                            message: s.to_string(),
-                        })
+                &[0] if slice.len() <= 8 => Ok(Some(LogOutput::StdIn {
+                    message: String::new(),
+                })),
+                &[0] => ::std::str::from_utf8(&slice[8..]).map(|s| {
+                    Some(LogOutput::StdIn {
+                        message: s.to_string(),
                     })
-                }
-                &[1] if slice.len() <= 8 => {
-                    println!("lessthan8");
-                    Ok(Some(LogOutput::StdOut {
-                        message: String::new(),
-                    }))
-                }
-                &[1] => {
-                    println!("stdout");
-                    ::std::str::from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdOut {
-                            message: s.to_string(),
-                        })
+                }),
+                &[1] if slice.len() <= 8 => Ok(Some(LogOutput::StdOut {
+                    message: String::new(),
+                })),
+                &[1] => ::std::str::from_utf8(&slice[8..]).map(|s| {
+                    Some(LogOutput::StdOut {
+                        message: s.to_string(),
                     })
-                }
-                &[2] if slice.len() <= 8 => {
-                    println!("lessthan8");
-                    Ok(Some(LogOutput::StdErr {
-                        message: String::new(),
-                    }))
-                }
-                &[2] => {
-                    println!("stderr");
-                    ::std::str::from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdErr {
-                            message: s.to_string(),
-                        })
+                }),
+                &[2] if slice.len() <= 8 => Ok(Some(LogOutput::StdErr {
+                    message: String::new(),
+                })),
+                &[2] => ::std::str::from_utf8(&slice[8..]).map(|s| {
+                    Some(LogOutput::StdErr {
+                        message: s.to_string(),
                     })
-                }
-                _ => unreachable!(),
-            }.map_err(|e| {
-                println!("fail");
-                e.into()
-            })
+                }),
+                _ => Ok(None),
+            }.map_err(|e| e.into())
         } else {
-            println!("nonewline");
             Ok(None)
         }
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct JsonLineDecoder<T> {
     ty: PhantomData<T>,
 }
@@ -113,9 +91,11 @@ where
             let slice = src.split_to(pos + 1);
             let slice = &slice[..slice.len() - 1];
 
-            println!("{}", ::std::str::from_utf8(&slice).unwrap());
+            debug!(
+                "Decoding JSON line from stream: {}",
+                ::std::str::from_utf8(&slice).unwrap()
+            );
 
-            use errors::JsonDataError;
             match serde_json::from_slice(slice) {
                 Ok(json) => Ok(json),
                 Err(ref e) if e.is_data() => ::std::str::from_utf8(&slice)
@@ -134,11 +114,14 @@ where
         }
     }
 }
+
+#[derive(Debug)]
 enum ReadState {
     Ready(Chunk, usize),
     NotReady,
 }
 
+#[derive(Debug)]
 pub(crate) struct StreamReader<S> {
     stream: S,
     state: ReadState,
@@ -175,10 +158,8 @@ where
                     *pos += len;
 
                     if *pos == chunk.len() {
-                        println!(";;pos: {}, chunk.len: {}, len: {}", pos, chunk.len(), len);
                         ret = len;
                     } else {
-                        println!(";;pos: {}, len: {}", pos, len);
                         return Ok(len);
                     }
                 }
@@ -191,11 +172,9 @@ where
                     }
                     Ok(Async::Ready(None)) => return Ok(0),
                     Ok(Async::NotReady) => {
-                        println!(";;wouldblock");
                         return Err(io::ErrorKind::WouldBlock.into());
                     }
                     Err(e) => {
-                        println!(";;itdidactuallyerror");
                         return Err(io::Error::new(io::ErrorKind::Other, e.to_string()));
                     }
                 },

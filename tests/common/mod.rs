@@ -9,9 +9,9 @@ use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 
-use boondock::container::*;
-use boondock::image::*;
-use boondock::DockerChain;
+use bollard::container::*;
+use bollard::image::*;
+use bollard::DockerChain;
 
 #[allow(unused_macros)]
 macro_rules! rt_exec {
@@ -23,7 +23,8 @@ macro_rules! rt_exec {
                 .or_else(|e| {
                     println!("{}", e);
                     Err(e)
-                }).unwrap(),
+                })
+                .unwrap(),
         );
         rt.shutdown_now().wait().unwrap();
         res
@@ -43,7 +44,8 @@ macro_rules! rt_stream {
                 .or_else(|e| {
                     println!("{}", e);
                     Err(e)
-                }).unwrap(),
+                })
+                .unwrap(),
         );
         rt.shutdown_now().wait().unwrap();
     }};
@@ -73,19 +75,22 @@ macro_rules! connect_to_docker_and_run {
     }};
 }
 
+pub(crate) fn registry_http_addr() -> String {
+    ::std::env::var("REGISTRY_HTTP_ADDR").unwrap_or_else(|_| "localhost:5000".to_string())
+}
+
 #[allow(dead_code)]
-pub(crate) fn run_runtime<T, Y>(mut rt: Runtime, future: T)
+pub(crate) fn run_runtime<T, Y>(rt: Runtime, future: T)
 where
     T: Future<Item = Y, Error = Error> + Send + 'static,
     Y: Send + 'static,
 {
-    rt.block_on(future)
+    rt.block_on_all(future)
         .or_else(|e| {
             println!("{}", e);
             Err(e)
-        }).unwrap();
-
-    rt.shutdown_now().wait().unwrap();
+        })
+        .unwrap();
 }
 
 #[allow(dead_code)]
@@ -96,13 +101,11 @@ pub fn chain_create_container_hello_world<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -120,7 +123,8 @@ where
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        })).and_then(move |(docker, _)| {
+        }))
+        .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -131,14 +135,18 @@ where
                     ..Default::default()
                 },
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_ne!(result.id.len(), 0);
             docker
-        }).and_then(move |docker| {
+        })
+        .and_then(move |docker| {
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
-        }).map(|(docker, stream)| {
+        })
+        .map(|(docker, stream)| {
             stream
                 .take(1)
                 .into_future()
@@ -146,7 +154,8 @@ where
                 .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                }).wait()
+                })
+                .wait()
                 .unwrap();
             docker
         })
@@ -187,7 +196,8 @@ where
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        })).and_then(move |(docker, _)| {
+        }))
+        .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -212,8 +222,7 @@ where
                                         .unwrap_or("0.0.0.0".to_string()),
                                     host_port: "5000".to_string(),
                                 }],
-                            )]
-                                .iter()
+                            )].iter()
                                 .cloned()
                                 .collect::<HashMap<String, Vec<PortBinding<String>>>>(),
                         ),
@@ -227,9 +236,11 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
-        }).map(|(docker, _)| docker)
+        })
+        .map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -250,13 +261,11 @@ pub fn chain_create_daemon<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/nanoserver/iis", host())
+            format!("{}/nanoserver/iis", registry_http_addr())
         } else {
-            format!("{}/fnichol/uhttpd", host())
+            format!("{}/fnichol/uhttpd", registry_http_addr())
         }
     };
 
@@ -283,13 +292,12 @@ where
                 from_image: image(),
                 ..Default::default()
             }))
-        }).map(|(docker, _)| docker);
+        })
+        .map(|(docker, _)| docker);
 
     chain
-        .map(|docker| {
-            ::std::thread::sleep(::std::time::Duration::from_secs(20));
-            docker
-        }).and_then(move |docker| {
+        .map(|docker| docker)
+        .and_then(move |docker| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: container_name.to_string(),
@@ -300,36 +308,19 @@ where
                     ..Default::default()
                 },
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_ne!(result.id.len(), 0);
             docker
-        }).and_then(move |docker| {
+        })
+        .and_then(move |docker| {
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             // note: windows workaround for non-starting container ?
             docker.restart_container(container_name, None::<RestartContainerOptions>)
-        }).map(|(docker, _)| {
-            docker
-            //}).and_then(move |docker| {
-            //    // allow daemon to startup o_O
-            //    docker.logs(
-            //        container_name,
-            //        Some(LogsOptions {
-            //            stdout: true,
-            //            stderr: false,
-            //            ..Default::default()
-            //        }),
-            //    )
-            //}).map(|(docker, stream)| {
-            //    stream
-            //        .fold(vec![], |mut v, line| {
-            //            println!("{}", line);
-            //            v.push(line);
-            //            future::ok::<_, Error>(v)
-            //        }).wait()
-            //        .unwrap();
-            //    docker
         })
+        .map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -347,9 +338,11 @@ where
         .or_else(move |_| future::ok(cloned))
         .and_then(move |docker| {
             docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.remove_container(container_name, None::<RemoveContainerOptions>)
-        }).map(|(docker, _)| docker)
+        })
+        .map(|(docker, _)| docker)
 }
 
 #[allow(dead_code)]
@@ -359,13 +352,11 @@ pub fn chain_create_image_hello_world<C>(
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -373,7 +364,8 @@ where
         .create_image(Some(CreateImageOptions {
             from_image: image(),
             ..Default::default()
-        })).map(|(docker, result)| {
+        }))
+        .map(|(docker, result)| {
             result
                 .take(1)
                 .into_future()
@@ -385,10 +377,12 @@ where
                         } => assert_eq!(id, if cfg!(windows) { "nanoserver" } else { "linux" }),
                         _ => panic!(),
                     };
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                }).wait()
+                })
+                .wait()
                 .unwrap();
             docker
         })

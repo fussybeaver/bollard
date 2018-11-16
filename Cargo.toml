@@ -1,6 +1,6 @@
 [package]
-name = "boondock"
-description = "Docker daemon API (a fork of Graham Lee's rust-docker)"
+name = "bollard"
+description = "An asynchronous Docker daemon API"
 version = "0.1.0"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
@@ -9,18 +9,21 @@ authors = ["Graham Lee <ghmlee@ghmlee.com>",
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/boondock"
 repository = "https://github.com/fussybeaver/boondock"
-documentation = "https://docs.rs/boondock"
+documentation = "https://docs.rs/bollard"
 readme = "README.md"
 keywords = ["docker"]
 
 [features]
 # Enable OpenSSL both directly and for Hyper.
 ssl = ["openssl", "hyper-openssl"]
+# Enable tests specifically for the http connector
 test_http = []
+# Enable tests specifically for the tls connector
+test_tls = []
 
 [dependencies]
 failure = "0.1.2"
-hyper = { version = "0.12.10" }
+hyper = { version = "0.12.13" }
 hyper-tls = "0.3.0"
 openssl = { version = "0.10.11", optional = true }
 hyper-openssl = { version = "0.6.1", optional = true }
@@ -31,7 +34,7 @@ url = "1.2.2"
 http = "0.1.10"
 native-tls = "0.2.1"
 futures = "0.1.24"
-tokio = "0.1.7"
+tokio = "0.1.11"
 tokio-reactor = "0.1.4"
 hex = "0.3.2"
 tokio-io = "0.1.8"
@@ -40,10 +43,15 @@ mio = "0.6.15"
 tokio-codec = "0.1.0"
 chrono = { version = "0.4.6", features = ["serde"] }
 arrayvec = "0.4.7"
+dirs = "1.0.4"
+log = "0.4.6"
+env_logger = "0.6.0"
+tokio-timer = "0.2.8"
 
 [dev-dependencies]
 yup-hyper-mock = "*"
-log = "*"
+tokio-threadpool = "0.1.9"
+tokio-executor = "0.1.5"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal = "0.5"

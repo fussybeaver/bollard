@@ -1,42 +1,58 @@
+//! Errors for this module.
 use std::cmp;
 use std::fmt::{Display, Formatter, Result};
 
-#[derive(Fail, Debug)]
+/// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable is
+/// invalid.
+#[derive(Fail, Copy, Clone, Debug)]
 #[fail(display = "could not find DOCKER_CERT_PATH")]
+#[allow(missing_docs)]
 pub struct NoCertPathError {}
 
+/// Error emitted by the docker server, when it responds with a 404.
 #[derive(Fail, Debug)]
 #[fail(display = "API responded with a 404 not found: {}", message)]
+#[allow(missing_docs)]
 pub struct DockerResponseNotFoundError {
     pub message: String,
 }
 
+/// Generic error emitted by the docker server.
 #[derive(Fail, Debug)]
 #[fail(display = "Docker responded with status code {}: {}", status_code, message)]
+#[allow(missing_docs)]
 pub struct DockerResponseServerError {
     pub status_code: u16,
     pub message: String,
 }
 
+/// Error emitted by the docker server, when it responds with a 400.
 #[derive(Fail, Debug)]
 #[fail(display = "API queried with a bad parameter: {}", message)]
+#[allow(missing_docs)]
 pub struct DockerResponseBadParameterError {
     pub message: String,
 }
 
+/// Error emitted by the docker server, when it responds with a 409.
 #[derive(Fail, Debug)]
 #[fail(display = "API responded with a 409 conflict: {}", message)]
+#[allow(missing_docs)]
 pub struct DockerResponseConflictError {
     pub message: String,
 }
 
+/// Error emitted by the docker server, when it responds with a 304.
 #[derive(Fail, Debug)]
 #[fail(display = "API responded with a 304, resource was not modified: {}", message)]
+#[allow(missing_docs)]
 pub struct DockerResponseNotModifiedError {
     pub message: String,
 }
 
+/// Error facilitating debugging failed JSON parsing.
 #[derive(Fail, Debug)]
+#[allow(missing_docs)]
 pub struct JsonDataError {
     pub message: String,
     pub contents: String,

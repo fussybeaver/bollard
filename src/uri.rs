@@ -10,7 +10,7 @@ use url::Url;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 
-use super::ClientType;
+use docker::ClientType;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -24,8 +24,8 @@ impl<'a> Into<HyperUri> for Uri<'a> {
 }
 
 impl<'a> Uri<'a> where {
-    pub(crate) fn parse2<O, P, K, V>(
-        socket: P,
+    pub(crate) fn parse<O, K, V>(
+        socket: &'a str,
         client_type: &ClientType,
         path: &'a str,
         query: Option<O>,
@@ -35,12 +35,10 @@ impl<'a> Uri<'a> where {
         O::Item: ::std::borrow::Borrow<(K, V)>,
         K: AsRef<str>,
         V: AsRef<str>,
-        P: AsRef<OsStr>,
     {
         let host: String = Uri::socket_host(socket, client_type)?;
 
         let host_str = format!("{}://{}{}", Uri::socket_scheme(client_type), host, path);
-        println!("::{}", host_str);
         let mut url = Url::parse(host_str.as_ref()).unwrap();
         url = url.join(path).unwrap();
 
@@ -48,7 +46,7 @@ impl<'a> Uri<'a> where {
             url.query_pairs_mut().extend_pairs(pairs);
         }
 
-        println!("::{}", url.as_str());
+        debug!("Parsing uri: {}", url.as_str());
         Ok(Uri {
             encoded: Cow::Owned(url.as_str().to_owned()),
         })
@@ -62,7 +60,18 @@ impl<'a> Uri<'a> where {
             ClientType::Http | ClientType::SSL => {
                 Ok(socket.as_ref().to_string_lossy().into_owned())
             }
-            ClientType::Unix | ClientType::NamedPipe => {
+            #[cfg(unix)]
+            ClientType::Unix => {
+                let mut host: String = String::new();
+                socket
+                    .as_ref()
+                    .to_string_lossy()
+                    .as_bytes()
+                    .write_hex(&mut host)?;
+                Ok(host)
+            }
+            #[cfg(windows)]
+            ClientType::NamedPipe => {
                 let mut host: String = String::new();
                 socket
                     .as_ref()
@@ -78,7 +87,9 @@ impl<'a> Uri<'a> where {
         match client_type {
             ClientType::Http => "http",
             ClientType::SSL => "https",
+            #[cfg(unix)]
             ClientType::Unix => "unix",
+            #[cfg(windows)]
             ClientType::NamedPipe => "net.pipe",
         }
     }
@@ -91,7 +102,8 @@ impl<'a> Uri<'a> where {
                 Vec::from_hex(host)
                     .ok()
                     .map(|raw| String::from_utf8_lossy(&raw).into_owned())
-            }).next()
+            })
+            .next()
     }
 
     #[cfg(windows)]

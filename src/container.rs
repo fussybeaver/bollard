@@ -1,3 +1,5 @@
+//! Container API: run docker containers and manage their lifecycle
+
 use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
@@ -19,20 +21,18 @@ use super::{Docker, DockerChain};
 use docker::{FALSE_STR, TRUE_STR};
 use either::EitherStream;
 
-/// ## List Container Options
-///
-/// Parameters used in the [List Container API](../struct.Docker.html#method.list_container)
+/// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::ListContainersOptions;
+/// use bollard::container::ListContainersOptions;
 ///
 /// use std::collections::HashMap;
 /// use std::default::Default;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("health", "unhealthy");
+/// filters.insert("health", vec!("unhealthy"));
 ///
 /// ListContainersOptions{
 ///     all: true,
@@ -42,7 +42,7 @@ use either::EitherStream;
 /// ```
 ///
 /// ```rust
-/// # use boondock::container::ListContainersOptions;
+/// # use bollard::container::ListContainersOptions;
 /// # use std::default::Default;
 /// ListContainersOptions::<String>{
 ///     ..Default::default()
@@ -53,14 +53,32 @@ pub struct ListContainersOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
 {
+    /// Return all containers. By default, only running containers are shown
     pub all: bool,
+    /// Return this number of most recently created containers, including non-running ones
     pub limit: Option<isize>,
+    /// Return the size of container as fields `SizeRw` and `SizeRootFs`
     pub size: bool,
-    pub filters: HashMap<T, T>,
+    /// Filters to process on the container list, encoded as JSON. Available filters:
+    ///  - `ancestor`=`(<image-name>[:<tag>]`, `<image id>`, or `<image@digest>`)
+    ///  - `before`=(`<container id>` or `<container name>`)
+    ///  - `expose`=(`<port>[/<proto>]`|`<startport-endport>`/`[<proto>]`)
+    ///  - `exited`=`<int>` containers with exit code of `<int>`
+    ///  - `health`=(`starting`|`healthy`|`unhealthy`|`none`)
+    ///  - `id`=`<ID>` a container's ID
+    ///  - `isolation`=(`default`|`process`|`hyperv`) (Windows daemon only)
+    ///  - `is-task`=`(true`|`false`)
+    ///  - `label`=`key` or `label`=`"key=value"` of a container label
+    ///  - `name`=`<name>` a container's name
+    ///  - `network`=(`<network id>` or `<network name>`)
+    ///  - `publish`=(`<port>[/<proto>]`|`<startport-endport>`/`[<proto>]`)
+    ///  - `since`=(`<container id>` or `<container name>`)
+    ///  - `status`=(`created`|`restarting`|`running`|`removing`|`paused`|`exited`|`dead`)
+    ///  - `volume`=(`<volume name>` or `<mount point destination>`)
+    pub filters: HashMap<T, Vec<T>>,
 }
 
-/// ## List Containers Query Params
-///
+#[allow(missing_docs)]
 /// Trait providing implementations for [List Containers Options](struct.ListContainersOptions.html)
 /// struct.
 pub trait ListContainersQueryParams<K, V>
@@ -91,14 +109,12 @@ where
     }
 }
 
-/// ## Create Container Options
-///
 /// Parameters used in the [Create Container API](../struct.Docker.html#method.create_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::CreateContainerOptions;
+/// use bollard::container::CreateContainerOptions;
 ///
 /// CreateContainerOptions{
 ///     name: "my-new-container",
@@ -109,13 +125,13 @@ pub struct CreateContainerOptions<T>
 where
     T: AsRef<str>,
 {
+    /// Assign the specified name to the container.
     pub name: T,
 }
 
-/// ## Create Container Query Params
-///
 /// Trait providing implementations for [Create Container Options](struct.CreateContainerOptions.html)
 /// struct.
+#[allow(missing_docs)]
 pub trait CreateContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -130,92 +146,192 @@ impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContain
     }
 }
 
+/// Container configuration that depends on the host we are running on
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct HostConfig<T>
 where
     T: AsRef<str> + Eq + Hash,
 {
+    /// A list of volume bindings for this container. Each volume binding is a string in one of these forms:
+    /// - `host-src:container-dest` to bind-mount a host path into the container. Both `host-src`, and `container-dest` must be an *absolute* path.
+    /// - `host-src:container-dest:ro` to make the bind mount read-only inside the container. Both `host-src`, and `container-dest` must be an *absolute* path.
+    /// - `volume-name:container-dest` to bind-mount a volume managed by a volume driver into the container. `container-dest` must be an *absolute* path.
+    /// - `volume-name:container-dest:ro` to mount the volume read-only inside the container. `container-dest` must be an *absolute* path.
     pub binds: Option<Vec<T>>,
+    /// A list of links for the container in the form `container_name:alias`.
     pub links: Option<Vec<T>>,
+    /// Memory limit in bytes.
     pub memory: Option<u64>,
+    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
     pub memory_swap: Option<i64>,
+    /// Memory soft limit in bytes.
     pub memory_reservation: Option<u64>,
+    /// Kernel memory limit in bytes.
     pub kernel_memory: Option<u64>,
+    /// CPU quota in units of 10<sup>-9</sup> CPUs.
     pub nano_cpus: Option<u64>,
     pub cpu_percent: Option<u64>,
+    /// An integer value representing this container's relative CPU weight versus other containers.
     pub cpu_shares: Option<u64>,
+    /// The length of a CPU period in microseconds.
     pub cpu_period: Option<u64>,
+    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
     pub cpu_realtime_period: Option<u64>,
+    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
     pub cpu_realtime_runtime: Option<u64>,
+    /// Microseconds of CPU time that the container can get in a CPU period.
     pub cpu_quota: Option<u64>,
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
     pub cpuset_cpus: Option<T>,
+    /// Memory nodes (MEMs) in which to allow execution (`0-3`, `0,1`). Only effective on NUMA systems.
     pub cpuset_mems: Option<T>,
+    /// Block IO weight (relative weight).
     pub blkio_weight: Option<u64>,
+    /// Block IO weight (relative device weight).
     pub blkio_weight_device: Option<Vec<HashMap<T, T>>>,
+    /// Limit read rate (bytes per second) from a device.
     pub blkio_device_read_bps: Option<Vec<HashMap<T, T>>>,
+    /// Limit write rate (bytes per second) to a device.
     pub blkio_device_write_bps: Option<Vec<HashMap<T, T>>>,
+    /// Limit read rate (IO per second) from a device.
     #[serde(rename = "BlkioDeviceReadIOps")]
     pub blkio_device_read_iops: Option<Vec<HashMap<T, T>>>,
+    /// Limit write rate (IO per second) to a device.
     #[serde(rename = "BlkioDeviceWriteIOps")]
     pub blkio_device_write_iops: Option<Vec<HashMap<T, T>>>,
+    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
     pub memory_swappiness: Option<u64>,
+    /// Disable OOM Killer for the container.
     pub oom_kill_disable: Option<bool>,
+    /// An integer value containing the score given to the container in order to tune OOM killer
+    /// preferences.
     pub oom_score_adj: Option<isize>,
+    /// Set the PID (Process) Namespace mode for the container. It can be either:
+    /// - `"container:<name|id>"`: joins another container's PID namespace
+    /// - `"host"`: use the host's PID namespace inside the container
     pub pid_mode: Option<String>,
+    /// Tune a container's pids limit. Set `-1` for unlimited.
     pub pids_limit: Option<u64>,
+    /// PortMap describes the mapping of container ports to host ports, using the container's
+    /// port-number and protocol as key in the format `<port>/<protocol`>, for example, `80/udp`.  If a
+    /// container's port is mapped for multiple protocols, separate entries are added to the
+    /// mapping table.
     pub port_bindings: Option<HashMap<T, Vec<PortBinding<T>>>>,
+    /// Allocates an ephemeral host port for all of a container's exposed ports.
+    /// Ports are de-allocated when the container stops and allocated when the container starts.
+    /// The allocated port might be changed when restarting the container.  
+    /// The port is selected from the ephemeral port range that depends on the kernel. For example,
+    /// on Linux the range is defined by `/proc/sys/net/ipv4/ip_local_port_range`.
     pub publish_all_ports: Option<bool>,
+    /// Gives the container full access to the host.
     pub privileged: Option<bool>,
+    /// Mount the container's root filesystem as read only.
     pub readonly_rootfs: Option<bool>,
+    /// A list of DNS servers for the container to use.
     pub dns: Option<Vec<T>>,
+    /// A list of DNS options.
     pub dns_options: Option<Vec<T>>,
+    /// A list of DNS search domains.
     pub dns_search: Option<Vec<T>>,
+    /// A list of volumes to inherit from another container, specified in the form `<container
+    /// name>[:<ro|rw>]`.
     pub volumes_from: Option<Vec<T>>,
+    /// A list of kernel capabilities to add to the container.
     pub cap_add: Option<Vec<T>>,
+    /// A list of kernel capabilities to drop from the container.
     pub cap_drop: Option<Vec<T>>,
     pub group_add: Option<Vec<T>>,
+    /// The behavior to apply when the container exits. The default is not to restart.
+    /// An ever increasing delay (double the previous delay, starting at 100ms) is added before
+    /// each restart to prevent flooding the server.
     pub restart_policy: Option<RestartPolicy<T>>,
+    /// Automatically remove the container when the container's process exits. This has no effect
+    /// if `RestartPolicy` is set.
     pub auto_remove: Option<bool>,
+    /// Network mode to use for this container. Supported standard values are: `bridge`, `host`,
+    /// `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to
+    /// which this container should connect to.
     pub network_mode: Option<T>,
     pub devices: Option<Vec<T>>,
+    /// A list of resource limits to set in the container. For example: `{"Name": "nofile", "Soft":
+    /// 1024, "Hard": 2048}`
     pub ulimits: Option<Vec<HashMap<T, T>>>,
+    /// The logging configuration for this container.
     pub log_config: Option<LogConfig>,
+    /// A list of string values to customize labels for MLS systems, such as SELinux.
     pub security_opt: Option<Vec<T>>,
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute,
+    /// the path is considered to be relative to the `cgroups` path of the init process. Cgroups are
+    /// created if they do not already exist.
     pub cgroup_parent: Option<T>,
+    /// Driver that this container uses to mount volumes.
     pub volume_driver: Option<T>,
+    /// Size of `/dev/shm` in bytes. If omitted, the system uses 64MB.
     pub shm_size: Option<u64>,
+    /// Path to a file where the container ID is written.
     #[serde(rename = "ContainerIDFile")]
     pub container_id_file: Option<String>,
+    /// A list of hostnames/IP mappings to add to the container's `/etc/hosts` file. Specified in
+    /// the form `["hostname:IP"]`.
     pub extra_hosts: Option<Vec<T>>,
+    /// IPC sharing mode for the container. Possible values are:
+    ///  - `"none"`: own private IPC namespace, with /dev/shm not mounted
+    ///  - `"private"`: own private IPC namespace
+    ///  - `"shareable"`: own private IPC namespace, with a possibility to share it with other containers
+    ///  - `"container:<name|id>"`: join another (shareable) container's IPC namespace
+    ///  - `"host"`: use the host system's IPC namespace
+    /// If not specified, daemon default is used, which can either be "private" or "shareable",
+    /// depending on daemon version and configuration.
     pub ipc_mode: Option<T>,
+    /// Cgroup to use for the container.
     pub cgroup: Option<T>,
+    /// UTS namespace to use for the container.
     #[serde(rename = "UTSMode")]
     pub uts_mode: Option<T>,
+    /// Sets the usernamespace mode for the container when usernamespace remapping option is enabled.
     pub userns_mode: Option<T>,
+    /// Runtime to use with this container.
     pub runtime: Option<T>,
+    /// Initial console size, as an [height, width] array. (Windows only)
     pub console_size: Option<Vec<isize>>,
+    /// Isolation technology of the container. (Windows only)
     pub isolation: Option<T>,
+    /// A list of cgroup rules to apply to the container.
     pub device_cgroup_rules: Option<Vec<T>>,
+    /// Disk limit (in bytes).
     pub disk_quota: Option<u64>,
+    /// The usable percentage of the available CPUs (Windows only).
+    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
+    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
     pub cpu_count: Option<u64>,
+    /// Maximum IOps for the container system drive (Windows only).
     #[serde(rename = "IOMaximumIOps")]
     pub io_maximum_iops: Option<u64>,
+    /// Maximum IO in bytes per second for the container system drive (Windows only).
     #[serde(rename = "IOMaximumBandwidth")]
     pub io_maximum_bandwidth: Option<u64>,
     pub masked_paths: Option<Vec<T>>,
     pub readonly_paths: Option<Vec<T>>,
 }
 
+/// Storage driver name and configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct GraphDriver {
     pub name: String,
     pub data: Option<HashMap<String, String>>,
 }
 
+/// Describes the mapping of container ports to host ports, using the container's
+/// port-number and protocol as key in the format `<port>/<protocol>`, for example, `80/udp`.  If a
+/// container's port is mapped for multiple protocols, separate entries are added to the mapping
+/// table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct PortBinding<T>
 where
     T: AsRef<str>,
@@ -225,8 +341,12 @@ where
     pub host_port: T,
 }
 
+/// The behavior to apply when the container exits. The default is not to restart.  An ever
+/// increasing delay (double the previous delay, starting at 100ms) is added before each restart to
+/// prevent flooding the server.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct RestartPolicy<T>
 where
     T: AsRef<str>,
@@ -235,22 +355,28 @@ where
     pub maximum_retry_count: Option<isize>,
 }
 
+/// The logging configuration for this container.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct LogConfig {
     #[serde(rename = "Type")]
     pub type_: Option<String>,
     pub config: Option<HashMap<String, String>>,
 }
 
+/// This container's networking configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct NetworkingConfig {
     pub endpoints_config: HashMap<String, ContainerNetwork>,
 }
 
+/// EndpointIPAMConfig represents an endpoint's IPAM configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct EndpointIPAMConfig {
     #[serde(rename = "IPV4Address")]
     pub ipv4_address: String,
@@ -258,34 +384,10 @@ pub struct EndpointIPAMConfig {
     pub ipv6_address: String,
 }
 
-/*
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct EndpointConfig {
-    #[serde(rename = "IPAMConfig")]
-    pub ipam_config: Option<EndpointIPAMConfig>,
-    pub links: Option<Vec<String>>,
-    pub aliases: Option<Vec<String>>,
-    #[serde(rename = "NetworkID")]
-    pub network_id: Option<String>,
-    #[serde(rename = "EndpointID")]
-    pub endpoint_id: Option<String>,
-    pub gateway: Option<String>,
-    #[serde(rename = "IPAddress")]
-    pub ip_address: Option<String>,
-    pub ip_prefix_len: Option<i64>,
-    #[serde(rename = "IPv6Gateway")]
-    pub ipv6_gateway: Option<String>,
-    #[serde(rename = "GlobalIPv6Address")]
-    pub global_ipv6_address: Option<String>,
-    #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: Option<i64>,
-    pub mac_address: Option<String>,
-}
-*/
-
+/// Configuration for a network endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct ContainerNetwork {
     #[serde(rename = "IPAMConfig")]
     pub ipam_config: Option<EndpointIPAMConfig>,
@@ -310,8 +412,10 @@ pub struct ContainerNetwork {
     pub driver_opts: Option<HashMap<String, String>>,
 }
 
+/// Network Settings for a container.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct NetworkSettings {
     pub networks: HashMap<String, ContainerNetwork>,
     #[serde(rename = "IPAddress")]
@@ -344,8 +448,10 @@ pub struct NetworkSettings {
     pub ports: HashMap<String, Option<Vec<PortBinding<String>>>>,
 }
 
+/// Specification for mounts to be added to the container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct Mount {
     pub name: Option<String>,
     pub source: String,
@@ -359,8 +465,10 @@ pub struct Mount {
     pub propagation: String,
 }
 
+/// Runtime status of the container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct State {
     pub status: String,
     pub running: bool,
@@ -376,8 +484,10 @@ pub struct State {
     pub finished_at: DateTime<Utc>,
 }
 
+/// Maps internal container port to external host port.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct APIPort {
     #[serde(rename = "IP")]
     pub ip: Option<String>,
@@ -387,17 +497,18 @@ pub struct APIPort {
     pub type_: String,
 }
 
+/// A mapping of network name to endpoint configuration for that network.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct NetworkList {
     pub networks: HashMap<String, ContainerNetwork>,
 }
 
-/// ## API Containers
-///
 /// Result type for the [List Containers API](../struct.Docker.html#method.list_containers)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct APIContainers {
     pub id: String,
     pub names: Vec<String>,
@@ -418,11 +529,10 @@ pub struct APIContainers {
     pub host_config: HostConfig<String>,
 }
 
-/// ## Container
-///
 /// Result type for the [Inspect Container API](../struct.Docker.html#method.inspect_container)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct Container {
     pub id: String,
     pub created: DateTime<Utc>,
@@ -450,68 +560,97 @@ pub struct Container {
     pub graph_driver: GraphDriver,
 }
 
+/// Container to create.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Config<T>
 where
     T: AsRef<str> + Eq + Hash,
 {
+    /// The hostname to use for the container, as a valid RFC 1123 hostname.
     pub hostname: Option<T>,
+    /// The domain name to use for the container.
     pub domainname: Option<T>,
+    /// The user that commands are run as inside the container.
     pub user: Option<T>,
+    /// Whether to attach to `stdin`.
     pub attach_stdin: Option<bool>,
+    /// Whether to attach to `stdout`.
     pub attach_stdout: Option<bool>,
+    /// Whether to attach to `stderr`.
     pub attach_stderr: Option<bool>,
+    /// Command is already escaped (Windows only).
     pub args_escaped: Option<bool>,
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed.
     pub tty: Option<bool>,
+    /// Open `stdin`.
     pub open_stdin: Option<bool>,
+    /// Close stdin after one attached client disconnects.
     pub stdin_once: Option<bool>,
+    /// A list of environment variables to set inside the container in the form `["VAR=value", ...]`.
+    /// A variable without `=` is removed from the environment, rather than to have an empty value.
     pub env: Option<Vec<T>>,
+    /// Command to run specified as a string or an array of strings.
     pub cmd: Vec<T>,
+    /// The entry point for the container as a string or an array of strings.
+    ///
+    /// If the array consists of exactly one empty string (`[""]`) then the entry point is reset to
+    /// system default (i.e., the entry point used by docker when there is no `ENTRYPOINT`
+    /// instruction in the `Dockerfile`).
     pub entrypoint: Option<Vec<T>>,
+    /// The name of the image to use when creating the container.
     pub image: Option<T>,
+    /// User-defined key/value metadata.
     pub labels: Option<HashMap<T, T>>,
+    /// An object mapping mount point paths inside the container to empty objects.
     pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
+    /// The working directory for commands to run in.
     pub working_dir: Option<T>,
+    /// Disable networking for the container.
     pub network_disabled: Option<bool>,
+    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`.
     pub on_build: Option<Vec<T>>,
+    /// MAC address of the container.
     pub mac_address: Option<T>,
+    /// An object mapping ports to an empty object in the form:
+    /// `{"<port>/<tcp|udp|sctp>": {}}`
     pub exposed_ports: Option<HashMap<T, HashMap<(), ()>>>,
+    /// Signal to stop a container as a string or unsigned integer.
     pub stop_signal: Option<T>,
+    /// Timeout to stop a container in seconds.
     pub stop_timeout: Option<isize>,
+    /// Container configuration that depends on the host we are running on.
     pub host_config: Option<HostConfig<T>>,
+    /// This container's networking configuration.
     pub networking_config: Option<NetworkingConfig>,
 }
 
-/// ## Create Container Results
-///
 /// Result type for the [Create Container API](../struct.Docker.html#method.create_container)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct CreateContainerResults {
     pub id: String,
     pub warnings: Option<Vec<String>>,
 }
 
-/// ## Stop Container Options
-///
 /// Parameters used in the [Stop Container API](../struct.Docker.html#method.stop_container)
 ///
 /// ## Examples
 ///
-/// use boondock::container::StopContainerOptions;
+/// use bollard::container::StopContainerOptions;
 ///
 /// StopContainerOptions{
 ///     t: 30,
 /// };
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct StopContainerOptions {
+    /// Number of seconds to wait before killing the container
     pub t: i64,
 }
 
-/// ## Stop Container Query Params
-///
 /// Trait providing implementations for [Stop Container Options](struct.StopContainerOptions.html).
+#[allow(missing_docs)]
 pub trait StopContainerQueryParams<K>
 where
     K: AsRef<str>,
@@ -525,14 +664,12 @@ impl<'a> StopContainerQueryParams<&'a str> for StopContainerOptions {
     }
 }
 
-/// ## Start Container Options
-///
 /// Parameters used in the [Start Container API](../struct.Docker.html#method.start_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::StartContainerOptions;
+/// use bollard::container::StartContainerOptions;
 ///
 /// StartContainerOptions{
 ///     detach_keys: "ctrl-^"
@@ -543,12 +680,13 @@ pub struct StartContainerOptions<T>
 where
     T: AsRef<str>,
 {
+    /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or
+    /// `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`.
     pub detach_keys: T,
 }
 
-/// ## Start Container Query Params
-///
 /// Trait providing implementations for [Start Container Options](struct.StartContainerOptions.html).
+#[allow(missing_docs)]
 pub trait StartContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -563,14 +701,12 @@ impl<'a, T: AsRef<str>> StartContainerQueryParams<&'a str, T> for StartContainer
     }
 }
 
-/// ## Remove Container Options
-///
 /// Parameters used in the [Remove Container API](../struct.Docker.html#method.remove_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::RemoveContainerOptions;
+/// use bollard::container::RemoveContainerOptions;
 ///
 /// use std::default::Default;
 ///
@@ -579,16 +715,18 @@ impl<'a, T: AsRef<str>> StartContainerQueryParams<&'a str, T> for StartContainer
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct RemoveContainerOptions {
+    /// Remove the volumes associated with the container.
     pub v: bool,
+    /// If the container is running, kill it before removing it.
     pub force: bool,
+    /// Remove the specified link associated with the container.
     pub link: bool,
 }
 
-/// ## Remove Container Query Params
-///
 /// Trait providing implementations for [Remove Container Options](struct.RemoveContainerOptions.html).
+#[allow(missing_docs)]
 pub trait RemoveContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -607,14 +745,12 @@ impl<'a> RemoveContainerQueryParams<&'a str, &'a str> for RemoveContainerOptions
     }
 }
 
-/// ## Wait Container Options
-///
 /// Parameters used in the [Wait Container API](../struct.Docker.html#method.wait_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::WaitContainerOptions;
+/// use bollard::container::WaitContainerOptions;
 ///
 /// WaitContainerOptions{
 ///     condition: "not-running",
@@ -625,12 +761,13 @@ pub struct WaitContainerOptions<T>
 where
     T: AsRef<str>,
 {
+    /// Wait until a container state reaches the given condition, either 'not-running' (default),
+    /// 'next-exit', or 'removed'.
     pub condition: T,
 }
 
-/// ## Wait Container Query Params
-///
 /// Trait providing implementations for [Wait Container Options](struct.WaitContainerOptions.html).
+#[allow(missing_docs)]
 pub trait WaitContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -645,43 +782,42 @@ impl<'a, T: AsRef<str>> WaitContainerQueryParams<&'a str, T> for WaitContainerOp
     }
 }
 
+/// Error messages returned in the [Wait Container API](../struct.Docker.html#method.wait_container)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct WaitContainerResultsError {
     pub message: String,
 }
 
-/// ## Wait Container Results
-///
 /// Result type for the [Wait Container API](../struct.Docker.html#method.wait_container)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct WaitContainerResults {
     pub status_code: u16,
     pub error: Option<WaitContainerResultsError>,
 }
 
-/// ## Restart Container Options
-///
 /// Parameters used in the [Restart Container API](../struct.Docker.html#method.restart_container)
 ///
 /// ## Example
 ///
 /// ```rust
-/// use boondock::container::RestartContainerOptions;
+/// use bollard::container::RestartContainerOptions;
 ///
 /// RestartContainerOptions{
 ///     t: 30,
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct RestartContainerOptions {
+    /// Number of seconds to wait before killing the container.
     pub t: isize,
 }
 
-/// ## Restart Container Query Params
-///
 /// Trait providing implementations for [Restart Container Options](struct.RestartContainerOptions.html).
+#[allow(missing_docs)]
 pub trait RestartContainerQueryParams<K>
 where
     K: AsRef<str>,
@@ -695,27 +831,25 @@ impl<'a> RestartContainerQueryParams<&'a str> for RestartContainerOptions {
     }
 }
 
-/// ## Inspect Container Options
-///
 /// Parameters used in the [Inspect Container API](../struct.Docker.html#method.inspect_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::InspectContainerOptions;
+/// use bollard::container::InspectContainerOptions;
 ///
 /// InspectContainerOptions{
 ///     size: false,
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct InspectContainerOptions {
+    /// Return the size of container as fields `SizeRw` and `SizeRootFs`
     pub size: bool,
 }
 
-/// ## Inspect Container Query Params
-///
 /// Trait providing implementations for [Inspect Container Options](struct.InspectContainerOptions.html).
+#[allow(missing_docs)]
 pub trait InspectContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -733,14 +867,12 @@ impl<'a> InspectContainerQueryParams<&'a str, &'a str> for InspectContainerOptio
     }
 }
 
-/// ## Top Options
-///
 /// Parameters used in the [Top Processes API](../struct.Docker.html#method.top_processes)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::TopOptions;
+/// use bollard::container::TopOptions;
 ///
 /// TopOptions{
 ///     ps_args: "aux",
@@ -751,12 +883,14 @@ pub struct TopOptions<T>
 where
     T: AsRef<str>,
 {
+    /// The arguments to pass to `ps`. For example, `aux`
     pub ps_args: T,
 }
 
 /// ## Top Query Params
 ///
 /// Trait providing implementations for [Top Options](struct.TopOptions.html).
+#[allow(missing_docs)]
 pub trait TopQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -771,24 +905,21 @@ impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
     }
 }
 
-/// ## Top Result
-///
 /// Result type for the [Top Processes API](../struct.Docker.html#method.top_processes)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct TopResult {
     pub titles: Vec<String>,
     pub processes: Vec<Vec<String>>,
 }
 
-/// ## Logs Options
-///
 /// Parameters used in the [Logs API](../struct.Docker.html#method.logs)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::LogsOptions;
+/// use bollard::container::LogsOptions;
 ///
 /// use std::default::Default;
 ///
@@ -799,18 +930,25 @@ pub struct TopResult {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct LogsOptions {
+    /// Return the logs as a finite stream.
     pub follow: bool,
+    /// Return logs from `stdout`.
     pub stdout: bool,
+    /// Return logs from `stderr`.
     pub stderr: bool,
+    /// Only return logs since this time, as a UNIX timestamp.
     pub since: i64,
+    /// Only return logs before this time, as a UNIX timestamp.
     pub until: i64,
+    /// Add timestamps to every log line.
     pub timestamps: bool,
+    /// Only return this number of log lines from the end of the logs. Specify as an integer or all
+    /// to output `all` log lines.
     pub tail: String,
 }
 
-/// ## Logs Query Params
-///
 /// Trait providing implementations for [Logs Options](struct.LogsOptions.html).
+#[allow(missing_docs)]
 pub trait LogsQueryParams<K>
 where
     K: AsRef<str>,
@@ -832,10 +970,9 @@ impl<'a> LogsQueryParams<&'a str> for LogsOptions {
     }
 }
 
-/// ## Log Output
-///
 /// Result type for the [Logs API](../struct.Docker.html#method.logs)
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub enum LogOutput {
     StdErr { message: String },
     StdOut { message: String },
@@ -852,11 +989,10 @@ impl fmt::Display for LogOutput {
     }
 }
 
-/// ## Change
-///
 /// Result type for the [Container Changes API](../struct.Docker.html#method.container_changes)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct Change {
     pub path: String,
     pub kind: isize,
@@ -873,27 +1009,25 @@ impl fmt::Display for Change {
     }
 }
 
-/// ## Stats Options
-///
 /// Parameters used in the [Stats API](../struct.Docker.html#method.stats)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::StatsOptions;
+/// use bollard::container::StatsOptions;
 ///
 /// StatsOptions{
 ///     stream: false,
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct StatsOptions {
+    /// Stream the output. If false, the stats will be output once and then it will disconnect.
     pub stream: bool,
 }
 
-/// ## Stats Query Params
-///
 /// Trait providing implementations for [Stats Options](struct.StatsOptions.html).
+#[allow(missing_docs)]
 pub trait StatsQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -911,8 +1045,10 @@ impl<'a> StatsQueryParams<&'a str, &'a str> for StatsOptions {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Granular memory statistics for the container.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct MemoryStatsStats {
     pub cache: u64,
     pub dirty: u64,
@@ -948,8 +1084,10 @@ pub struct MemoryStatsStats {
     pub hierarchical_memsw_limit: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// General memory statistics for the container.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct MemoryStats {
     pub stats: Option<MemoryStatsStats>,
     pub max_usage: Option<u64>,
@@ -959,18 +1097,21 @@ pub struct MemoryStats {
     pub commit: Option<u64>,
     pub commit_peak: Option<u64>,
     pub commitbytes: Option<u64>,
-    //pub commitpeakbytes: Option<u64>,
     pub private_working_set: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Process ID statistics for the container.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct PidsStats {
     pub current: Option<u64>,
 }
 
+/// I/O statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
     pub io_serviced_recursive: Option<Vec<BlkioStatsEntry>>,
@@ -982,8 +1123,10 @@ pub struct BlkioStats {
     pub sectors_recursive: Option<Vec<BlkioStatsEntry>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// File I/O statistics for the container.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct StorageStats {
     pub read_count_normalized: Option<u64>,
     pub read_size_bytes: Option<u64>,
@@ -991,8 +1134,10 @@ pub struct StorageStats {
     pub write_size_bytes: Option<u64>,
 }
 
+/// Statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct Stats {
     pub read: DateTime<Utc>,
     pub preread: DateTime<Utc>,
@@ -1009,8 +1154,10 @@ pub struct Stats {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Network statistics for the container.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct NetworkStats {
     pub rx_dropped: u64,
     pub rx_bytes: u64,
@@ -1022,8 +1169,10 @@ pub struct NetworkStats {
     pub tx_bytes: u64,
 }
 
+/// CPU usage statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct CPUUsage {
     pub percpu_usage: Option<Vec<u64>>,
     pub usage_in_usermode: u64,
@@ -1031,16 +1180,20 @@ pub struct CPUUsage {
     pub usage_in_kernelmode: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// CPU throttling statistics.
+#[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct ThrottlingData {
     pub periods: u64,
     pub throttled_periods: u64,
     pub throttled_time: u64,
 }
 
+/// General CPU statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct CPUStats {
     pub cpu_usage: CPUUsage,
     pub system_cpu_usage: Option<u64>,
@@ -1050,6 +1203,7 @@ pub struct CPUStats {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BlkioStatsEntry {
     pub major: u64,
     pub minor: u64,
@@ -1057,14 +1211,12 @@ pub struct BlkioStatsEntry {
     pub value: u64,
 }
 
-/// ## Kill Container Options
-///
 /// Parameters used in the [Kill Container API](../struct.Docker.html#method.kill_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::KillContainerOptions;
+/// use bollard::container::KillContainerOptions;
 ///
 /// KillContainerOptions{
 ///     signal: "SIGINT",
@@ -1075,12 +1227,12 @@ pub struct KillContainerOptions<T>
 where
     T: AsRef<str>,
 {
+    /// Signal to send to the container as an integer or string (e.g. `SIGINT`)
     pub signal: T,
 }
 
-/// ## Kill Container Query Params
-///
 /// Trait providing implementations for [Kill Container Options](struct.KillContainerOptions.html).
+#[allow(missing_docs)]
 pub trait KillContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -1095,51 +1247,62 @@ impl<'a, T: AsRef<str>> KillContainerQueryParams<&'a str, T> for KillContainerOp
     }
 }
 
+/// Block IO weight (relative device weight).
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioWeight {
     pub path: String,
     pub weight: isize,
 }
 
+/// Limit read/write rate (IO/bytes per second) from/to a device.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioDeviceRate {
     pub path: String,
     pub rate: isize,
 }
 
+/// A list of devices to add to the container.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct UpdateContainerOptionsDevices {
     pub path_on_host: String,
     pub path_in_container: String,
     pub cgroup_permissions: String,
 }
 
+/// A list of resource limits to set in the container.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct UpdateContainerOptionsUlimits {
     pub name: String,
     pub soft: isize,
     pub hard: isize,
 }
 
+/// The behavior to apply when the container exits. The default is not to restart.
+///
+/// An ever increasing delay (double the previous delay, starting at 100ms) is added before each
+/// restart to prevent flooding the server.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct UpdateContainerOptionsRestartPolicy {
     pub name: String,
     pub maximum_retry_count: isize,
 }
 
-/// ## Update Container Options
-///
 /// Configuration for the [Update Container API](../struct.Docker.html#method.update_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::UpdateContainerOptions;
+/// use bollard::container::UpdateContainerOptions;
 /// use std::default::Default;
 ///
 /// UpdateContainerOptions {
@@ -1151,51 +1314,92 @@ pub struct UpdateContainerOptionsRestartPolicy {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UpdateContainerOptions {
+    /// An integer value representing this container's relative CPU weight versus other containers.
     pub cpu_shares: Option<isize>,
+    /// Memory limit in bytes.
     pub memory: Option<u64>,
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute,
+    /// the path is considered to be relative to the `cgroups` path of the init process. Cgroups are
+    /// created if they do not already exist.
     pub cgroup_parent: Option<String>,
+    /// Block IO weight (relative weight).
     pub blkio_weight: Option<isize>,
+    /// Block IO weight (relative device weight).
     pub blkio_weight_device: Vec<UpdateContainerOptionsBlkioWeight>,
+    /// Limit read rate (bytes per second) from a device.
     pub blkio_device_read_bps: Vec<UpdateContainerOptionsBlkioDeviceRate>,
+    /// Limit write rate (bytes per second) to a device.
     #[serde(rename = "BlkioDeviceWriteIOps")]
     pub blkio_device_write_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
+    /// Limit read rate (IO per second) from a device.
     #[serde(rename = "BlkioDeviceReadIOps")]
     pub blkio_device_read_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
+    /// The length of a CPU period in microseconds.
     pub cpu_period: Option<u64>,
+    /// Microseconds of CPU time that the container can get in a CPU period.
     pub cpu_quota: Option<u64>,
+    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
     pub cpu_realtime_period: Option<u64>,
+    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
     pub cpu_realtime_runtime: Option<u64>,
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
     pub cpuset_cpus: Option<String>,
+    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems.
     pub cpuset_mems: Option<String>,
+    /// A list of devices to add to the container.
     pub devices: Option<Vec<UpdateContainerOptionsDevices>>,
+    /// A list of cgroup rules to apply to the container.
     pub device_cgroup_rules: Option<Vec<String>>,
+    /// Disk limit (in bytes).
     pub disk_quota: Option<u64>,
+    /// Kernel memory limit in bytes.
     pub kernel_memory: Option<u64>,
+    /// Memory soft limit in bytes.
     pub memory_reservation: Option<u64>,
+    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
     pub memory_swap: Option<i64>,
+    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
     pub memory_swappiness: Option<u64>,
+    /// CPU quota in units of 10<sup>-9</sup> CPUs.
     pub nano_cpus: Option<u64>,
+    /// Disable OOM Killer for the container.
     pub oom_kill_disable: Option<bool>,
+    /// Run an init inside the container that forwards signals and reaps processes. This field is
+    /// omitted if empty, and the default (as configured on the daemon) is used.
     pub init: Option<bool>,
+    /// Tune a container's pids limit. Set -1 for unlimited.
     pub pids_limit: Option<u64>,
+    /// A list of resource limits to set in the container.
     pub ulimits: Vec<UpdateContainerOptionsUlimits>,
+    /// The number of usable CPUs (Windows only).
+    ///
+    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
+    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
     pub cpu_count: Option<u64>,
+    /// The usable percentage of the available CPUs (Windows only).
+    ///
+    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
+    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
     pub cpu_percent: Option<u64>,
+    /// Maximum IOps for the container system drive (Windows only).
     #[serde(rename = "IOMaximumIOps")]
     pub io_maximum_iops: Option<u64>,
+    /// Maximum IO in bytes per second for the container system drive (Windows only).
     #[serde(rename = "IOMaximumBandwidth")]
     pub io_maximum_bandwidth: Option<u64>,
+    /// The behavior to apply when the container exits. The default is not to restart.
+    ///
+    /// An ever increasing delay (double the previous delay, starting at 100ms) is added before
+    /// each restart to prevent flooding the server.
     pub restart_policy: Option<UpdateContainerOptionsRestartPolicy>,
 }
 
-/// ## Rename Container Options
-///
 /// Parameters used in the [Rename Container API](../struct.Docker.html#method.rename_container)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::RenameContainerOptions;
+/// use bollard::container::RenameContainerOptions;
 ///
 /// RenameContainerOptions {
 ///     name: "my_new_container_name"
@@ -1206,12 +1410,12 @@ pub struct RenameContainerOptions<T>
 where
     T: AsRef<str>,
 {
+    /// New name for the container.
     pub name: T,
 }
 
-/// ## Rename Container Query Params
-///
 /// Trait providing implementations for [Rename Container Options](struct.RenameContainerOptions.html).
+#[allow(missing_docs)]
 pub trait RenameContainerQueryParams<K, V>
 where
     K: AsRef<str>,
@@ -1226,19 +1430,17 @@ impl<'a, T: AsRef<str>> RenameContainerQueryParams<&'a str, T> for RenameContain
     }
 }
 
-/// ## Prune Container Options
-///
-/// Parameters used in the [Prune Container API](../struct.Docker.html#method.prune_container)
+/// Parameters used in the [Prune Containers API](../struct.Docker.html#method.prune_containers)
 ///
 /// ## Examples
 ///
 /// ```rust
-/// use boondock::container::PruneContainersOptions;
+/// use bollard::container::PruneContainersOptions;
 ///
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("until", "10m");
+/// filters.insert("until", vec!("10m"));
 ///
 /// PruneContainersOptions{
 ///     filters: filters
@@ -1249,12 +1451,16 @@ pub struct PruneContainersOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
 {
-    pub filters: HashMap<T, T>,
+    /// Filters to process on the prune list, encoded as JSON.
+    ///
+    /// Available filters:
+    ///  - `until=<timestamp>` Prune containers created before this timestamp. The `<timestamp>` can be Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`) computed relative to the daemon machine's time.
+    ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune containers with (or without, in case `label!=...` is used) the specified labels.
+    pub filters: HashMap<T, Vec<T>>,
 }
 
-/// ## Prune Container Query Params
-///
-/// Trait providing implementations for [Prune Container Options](struct.PruneContainerOptions.html).
+/// Trait providing implementations for [Prune Containers Options](struct.PruneContainersOptions.html).
+#[allow(missing_docs)]
 pub trait PruneContainersQueryParams<K>
 where
     K: AsRef<str>,
@@ -1273,11 +1479,10 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a s
     }
 }
 
-/// ## Prune Container Results
-///
-/// Result type for the [Prune Container API](../struct.Docker.html#method.prune_container)
+/// Result type for the [Prune Containers API](../struct.Docker.html#method.prune_containers)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct PruneContainersResults {
     pub containers_deleted: Option<Vec<String>>,
     pub space_reclaimed: u64,
@@ -1288,30 +1493,31 @@ where
     C: Connect + Sync + 'static,
 {
     /// ---
+    ///
     /// # List Containers
     ///
     /// Returns a list of containers.
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListContainerOptions](struct.ListContainerOptions.html) struct.
+    ///  - Optional [ListContainersOptions](container/struct.ListContainersOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [Container](container/struct.Container.html), wrapped in a Future.
+    ///  - Vector of [APIContainers](container/struct.APIContainers.html), wrapped in a Future.
     ///
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{ListContainersOptions};
+    /// use bollard::container::{ListContainersOptions};
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("health", "unhealthy");
+    /// filters.insert("health", vec!("unhealthy"));
     ///
     /// let options = Some(ListContainersOptions{
     ///     all: true,
@@ -1331,24 +1537,25 @@ where
     {
         let url = "/containers/json";
 
-        let req = self.build_request2(
+        let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 
     /// ---
+    ///
     /// # Create Container
     ///
     /// Prepares a container for a subsequent start operation.
     ///
     /// # Arguments
     ///
-    ///  - Optional [Create Container Options](struct.CreateContainerOptions.html) struct.
+    ///  - Optional [Create Container Options](container/struct.CreateContainerOptions.html) struct.
     ///  - Container [Config](container/struct.Config.html) struct.
     ///
     /// # Returns
@@ -1358,9 +1565,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{CreateContainerOptions, Config};
+    /// use bollard::container::{CreateContainerOptions, Config};
     ///
     /// use std::default::Default;
     ///
@@ -1369,8 +1576,8 @@ where
     /// });
     ///
     /// let config = Config {
-    ///     image: Some(String::from("hello-world")),
-    ///     cmd: vec![String::from("/hello")],
+    ///     image: Some("hello-world"),
+    ///     cmd: vec!["/hello"],
     ///     ..Default::default()
     /// };
     ///
@@ -1389,17 +1596,18 @@ where
     {
         let url = "/containers/create";
 
-        let req = self.build_request2(
+        let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Docker::<C>::serialize_payload(Some(config)),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 
     /// ---
+    ///
     /// # Start Container
     ///
     /// Starts a container, after preparing it with the [Create Container
@@ -1408,7 +1616,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Start Container Options](struct.StartContainerOptions.html) struct.
+    ///  - Optional [Start Container Options](container/struct.StartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1417,9 +1625,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::StartContainerOptions;
+    /// use bollard::container::StartContainerOptions;
     ///
     /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
@@ -1435,7 +1643,7 @@ where
     {
         let url = format!("/containers/{}/start", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
@@ -1446,6 +1654,7 @@ where
     }
 
     /// ---
+    ///
     /// # Stop Container
     ///
     /// Stops a container.
@@ -1453,7 +1662,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stop Container Options](struct.StopContainerOptions.html) struct.
+    /// - Optional [Stop Container Options](container/struct.StopContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1462,8 +1671,8 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
-    /// use boondock::container::StopContainerOptions;
+    /// # use bollard::Docker;
+    /// use bollard::container::StopContainerOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// let options = Some(StopContainerOptions{
@@ -1483,7 +1692,7 @@ where
     {
         let url = format!("/containers/{}/stop", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
@@ -1494,6 +1703,7 @@ where
     }
 
     /// ---
+    ///
     /// # Remove Container
     ///
     /// Remove a container.
@@ -1501,7 +1711,7 @@ where
     /// # Arguments
     ///
     /// - Container name as a string slice.
-    /// - Optional [Remove Container Options](struct.RemoveContainerOptions.html) struct.
+    /// - Optional [Remove Container Options](container/struct.RemoveContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1510,10 +1720,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RemoveContainerOptions;
+    /// use bollard::container::RemoveContainerOptions;
     ///
     /// use std::default::Default;
     ///
@@ -1536,7 +1746,7 @@ where
     {
         let url = format!("/containers/{}", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
@@ -1547,6 +1757,7 @@ where
     }
 
     /// ---
+    ///
     /// # Wait Container
     ///
     /// Wait for a container to stop. This is a non-blocking operation, the resulting stream will
@@ -1555,7 +1766,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Wait Container Options](struct.WaitContainerOptions.html) struct.
+    /// - Optional [Wait Container Options](container/struct.WaitContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1565,10 +1776,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::WaitContainerOptions;
+    /// use bollard::container::WaitContainerOptions;
     ///
     /// let options = Some(WaitContainerOptions{
     ///     condition: "not-running",
@@ -1588,17 +1799,18 @@ where
     {
         let url = format!("/containers/{}/wait", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_stream2(req)
+        self.process_into_stream(req)
     }
 
     /// ---
+    ///
     /// # Restart Container
     ///
     /// Restart a container.
@@ -1606,7 +1818,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Restart Container Options](struct.RestartContainerOptions.html) struct.
+    ///  - Optional [Restart Container Options](container/struct.RestartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1615,10 +1827,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RestartContainerOptions;
+    /// use bollard::container::RestartContainerOptions;
     ///
     /// let options = Some(RestartContainerOptions{
     ///     t: 30,
@@ -1637,7 +1849,7 @@ where
     {
         let url = format!("/containers/{}/restart", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
@@ -1648,6 +1860,7 @@ where
     }
 
     /// ---
+    ///
     /// # Inspect Container
     ///
     /// Inspect a container.
@@ -1655,7 +1868,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](struct.InspectContainerOptions.struct) struct.
+    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -1664,9 +1877,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::InspectContainerOptions;
+    /// use bollard::container::InspectContainerOptions;
     ///
     /// let options = Some(InspectContainerOptions{
     ///     size: false,
@@ -1686,17 +1899,18 @@ where
     {
         let url = format!("/containers/{}/json", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 
     /// ---
+    ///
     /// # Top Processes
     ///
     /// List processes running inside a container.
@@ -1704,7 +1918,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Top Options](struct.TopOptions.struct) struct.
+    ///  - Optional [Top Options](container/struct.TopOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1713,9 +1927,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::TopOptions;
+    /// use bollard::container::TopOptions;
     ///
     /// let options = Some(TopOptions{
     ///     ps_args: "aux",
@@ -1735,17 +1949,18 @@ where
     {
         let url = format!("/containers/{}/top", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 
     /// ---
+    ///
     /// # Logs
     ///
     /// Get container logs.
@@ -1753,7 +1968,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Logs Query Params](struct.LogsQueryParams.html) struct.
+    ///  - Optional [Logs Query Params](container/struct.LogsQueryParams.html) struct.
     ///
     /// # Returns
     ///
@@ -1763,10 +1978,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::LogsOptions;
+    /// use bollard::container::LogsOptions;
     ///
     /// use std::default::Default;
     ///
@@ -1788,17 +2003,18 @@ where
     {
         let url = format!("/containers/{}/logs", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_stream_string2(req)
+        self.process_into_stream_string(req)
     }
 
     /// ---
+    ///
     /// # Container Changes
     ///
     /// Get changes on a container's filesystem.
@@ -1815,7 +2031,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.container_changes("hello-world");
@@ -1826,17 +2042,18 @@ where
     ) -> impl Future<Item = Option<Vec<Change>>, Error = Error> {
         let url = format!("/containers/{}/changes", container_name);
 
-        let req = self.build_request2::<_, String, String>(
+        let req = self.build_request::<_, String, String>(
             &url,
             Builder::new().method(Method::GET),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
             Ok(Body::empty()),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 
     /// ---
+    ///
     /// # Stats
     ///
     /// Get container stats based on resource usage.
@@ -1844,7 +2061,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stats Options](struct.StatsOptions.html) struct.
+    /// - Optional [Stats Options](container/struct.StatsOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1854,10 +2071,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::StatsOptions;
+    /// use bollard::container::StatsOptions;
     ///
     /// let options = Some(StatsOptions{
     ///     stream: false,
@@ -1877,17 +2094,18 @@ where
     {
         let url = format!("/containers/{}/stats", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_stream2(req)
+        self.process_into_stream(req)
     }
 
     /// ---
+    ///
     /// # Kill Container
     ///
     /// Kill a container.
@@ -1895,7 +2113,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Kill Container Options](struct.KillContainerOptions.html) struct.
+    /// - Optional [Kill Container Options](container/struct.KillContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1904,10 +2122,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::KillContainerOptions;
+    /// use bollard::container::KillContainerOptions;
     ///
     /// let options = Some(KillContainerOptions{
     ///     signal: "SIGINT",
@@ -1927,7 +2145,7 @@ where
     {
         let url = format!("/containers/{}/kill", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
@@ -1938,6 +2156,7 @@ where
     }
 
     /// ---
+    ///
     /// # Update Container
     ///
     /// Update a container.
@@ -1945,7 +2164,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Update Container Options](struct.UpdateContainerOptions.html) struct.
+    ///  - [Update Container Options](container/struct.UpdateContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1954,10 +2173,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::UpdateContainerOptions;
+    /// use bollard::container::UpdateContainerOptions;
     /// use std::default::Default;
     ///
     /// let config = UpdateContainerOptions {
@@ -1975,7 +2194,7 @@ where
     ) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/update", container_name);
 
-        let req = self.build_request2::<_, String, String>(
+        let req = self.build_request::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
@@ -1986,6 +2205,7 @@ where
     }
 
     /// ---
+    ///
     /// # Rename Container
     ///
     /// Rename a container.
@@ -1993,7 +2213,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Rename Container Options](struct.RenameContainerOptions.html) struct
+    ///  - [Rename Container Options](container/struct.RenameContainerOptions.html) struct
     ///
     /// # Returns
     ///
@@ -2002,10 +2222,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RenameContainerOptions;
+    /// use bollard::container::RenameContainerOptions;
     ///
     /// let required = RenameContainerOptions {
     ///     name: "my_new_container_name"
@@ -2025,7 +2245,7 @@ where
     {
         let url = format!("/containers/{}/rename", container_name);
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(Some(options.into_array())),
@@ -2036,6 +2256,7 @@ where
     }
 
     /// ---
+    ///
     /// # Pause Container
     ///
     /// Use the cgroups freezer to suspend all processes in a container.
@@ -2051,7 +2272,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.pause_container("postgres");
@@ -2059,7 +2280,7 @@ where
     pub fn pause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/pause", container_name);
 
-        let req = self.build_request2::<_, String, String>(
+        let req = self.build_request::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
@@ -2070,6 +2291,7 @@ where
     }
 
     /// ---
+    ///
     /// # Unpause Container
     ///
     /// Resume a container which has been paused.
@@ -2085,7 +2307,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.unpause_container("postgres");
@@ -2093,7 +2315,7 @@ where
     pub fn unpause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
         let url = format!("/containers/{}/unpause", container_name);
 
-        let req = self.build_request2::<_, String, String>(
+        let req = self.build_request::<_, String, String>(
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
@@ -2104,13 +2326,14 @@ where
     }
 
     /// ---
+    ///
     /// # Prune Containers
     ///
     /// Delete stopped containers.
     ///
     /// # Arguments
     ///
-    ///  - Optional [Prune Containers Options](struct.PruneContainersOptions.html) struct.
+    ///  - Optional [Prune Containers Options](container/struct.PruneContainersOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2120,14 +2343,14 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::PruneContainersOptions;
+    /// use bollard::container::PruneContainersOptions;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!("10m"));
     ///
     /// let options = Some(PruneContainersOptions{
     ///     filters: filters
@@ -2145,14 +2368,14 @@ where
     {
         let url = "/containers/prune";
 
-        let req = self.build_request2(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Docker::<C>::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
-        self.process_into_value2(req)
+        self.process_into_value(req)
     }
 }
 
@@ -2161,6 +2384,7 @@ where
     C: Connect + Sync + 'static,
 {
     /// ---
+    ///
     /// # Kill Container
     ///
     /// Kill a container. Consumes the client instance.
@@ -2168,7 +2392,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Kill Container Options](struct.KillContainerOptions.html) struct.
+    /// - Optional [Kill Container Options](container/struct.KillContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2178,10 +2402,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::KillContainerOptions;
+    /// use bollard::container::KillContainerOptions;
     ///
     /// let options = Some(KillContainerOptions{
     ///     signal: "SIGINT",
@@ -2205,6 +2429,7 @@ where
     }
 
     /// ---
+    ///
     /// # Remove Container
     ///
     /// Remove a container. Consumes the instance.
@@ -2212,7 +2437,7 @@ where
     /// # Arguments
     ///
     /// - Container name as a string slice.
-    /// - Optional [Remove Container Options](struct.RemoveContainerOptions.html) struct.
+    /// - Optional [Remove Container Options](container/struct.RemoveContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2222,10 +2447,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RemoveContainerOptions;
+    /// use bollard::container::RemoveContainerOptions;
     ///
     /// use std::default::Default;
     ///
@@ -2252,13 +2477,14 @@ where
     }
 
     /// ---
+    ///
     /// # Create Container
     ///
     /// Prepares a container for a subsequent start operation. Consumes the instance.
     ///
     /// # Arguments
     ///
-    ///  - Optional [Create Container Options](struct.CreateContainerOptions.html) struct.
+    ///  - Optional [Create Container Options](container/struct.CreateContainerOptions.html) struct.
     ///  - Container [Config](container/struct.Config.html) struct.
     ///
     /// # Returns
@@ -2270,9 +2496,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::{CreateContainerOptions, Config};
+    /// use bollard::container::{CreateContainerOptions, Config};
     ///
     /// use std::default::Default;
     ///
@@ -2281,8 +2507,8 @@ where
     /// });
     ///
     /// let config = Config {
-    ///     image: Some(String::from("hello-world")),
-    ///     cmd: vec![String::from("/hello")],
+    ///     image: Some("hello-world"),
+    ///     cmd: vec!["/hello"],
     ///     ..Default::default()
     /// };
     ///
@@ -2305,6 +2531,7 @@ where
     }
 
     /// ---
+    ///
     /// # Start Container
     ///
     /// Starts a container, after preparing it with the [Create Container
@@ -2313,7 +2540,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Start Container Options](struct.StartContainerOptions.html) struct.
+    ///  - Optional [Start Container Options](container/struct.StartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2323,9 +2550,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::StartContainerOptions;
+    /// use bollard::container::StartContainerOptions;
     ///
     /// docker.chain().start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
@@ -2345,6 +2572,7 @@ where
     }
 
     /// ---
+    ///
     /// # Stop Container
     ///
     /// Stops a container. Consumes the client instance.
@@ -2352,7 +2580,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stop Container Options](struct.StopContainerOptions.html) struct.
+    /// - Optional [Stop Container Options](container/struct.StopContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2362,8 +2590,8 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
-    /// use boondock::container::StopContainerOptions;
+    /// # use bollard::Docker;
+    /// use bollard::container::StopContainerOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// let options = Some(StopContainerOptions{
@@ -2387,31 +2615,32 @@ where
     }
 
     /// ---
+    ///
     /// # List Containers
     ///
     /// Returns a list of containers. Consumes the client instance.
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListContainerOptions](struct.ListContainerOptions.html) struct.
+    ///  - Optional [ListContainersOptions](container/struct.ListContainersOptions.html) struct.
     ///
     /// # Returns
     ///
     ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    ///  of [Container](container/struct.Container.html), wrapped in a Future.
+    ///  of [APIContainers](container/struct.APIContainers.html), wrapped in a Future.
     ///
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::ListContainersOptions;
+    /// use bollard::container::ListContainersOptions;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("health", "unhealthy");
+    /// filters.insert("health", vec!("unhealthy"));
     ///
     /// let options = Some(ListContainersOptions{
     ///     all: true,
@@ -2435,6 +2664,7 @@ where
     }
 
     /// ---
+    ///
     /// # Wait Container
     ///
     /// Wait for a container to stop. This is a non-blocking operation, the resulting stream will
@@ -2443,7 +2673,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Wait Container Options](struct.WaitContainerOptions.html) struct.
+    /// - Optional [Wait Container Options](container/struct.WaitContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2453,10 +2683,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::WaitContainerOptions;
+    /// use bollard::container::WaitContainerOptions;
     ///
     /// let options = Some(WaitContainerOptions{
     ///     condition: "not-running",
@@ -2491,6 +2721,7 @@ where
     }
 
     /// ---
+    ///
     /// # Inspect Container
     ///
     /// Inspect a container. Consumes the instance.
@@ -2498,7 +2729,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](struct.InspectContainerOptions.struct) struct.
+    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.struct) struct.
     ///
     /// # Returns
     ///
@@ -2508,9 +2739,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::InspectContainerOptions;
+    /// use bollard::container::InspectContainerOptions;
     ///
     /// let options = Some(InspectContainerOptions{
     ///     size: false,
@@ -2534,6 +2765,7 @@ where
     }
 
     /// ---
+    ///
     /// # Restart Container
     ///
     /// Restart a container. Consumes the client instance.
@@ -2541,7 +2773,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Restart Container Options](struct.RestartContainerOptions.html) struct.
+    ///  - Optional [Restart Container Options](container/struct.RestartContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2551,10 +2783,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RestartContainerOptions;
+    /// use bollard::container::RestartContainerOptions;
     ///
     /// let options = Some(RestartContainerOptions{
     ///     t: 30,
@@ -2577,6 +2809,7 @@ where
     }
 
     /// ---
+    ///
     /// # Top Processes
     ///
     /// List processes running inside a container. Consumes the client instance.
@@ -2584,7 +2817,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Top Options](struct.TopOptions.struct) struct.
+    ///  - Optional [Top Options](container/struct.TopOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2594,9 +2827,9 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use boondock::container::TopOptions;
+    /// use bollard::container::TopOptions;
     ///
     /// let options = Some(TopOptions{
     ///     ps_args: "aux",
@@ -2620,6 +2853,7 @@ where
     }
 
     /// ---
+    ///
     /// # Logs
     ///
     /// Get container logs. Consumes the client instance.
@@ -2627,7 +2861,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Logs Query Params](struct.LogsQueryParams.html) struct.
+    ///  - Optional [Logs Query Params](container/struct.LogsQueryParams.html) struct.
     ///
     /// # Returns
     ///
@@ -2637,10 +2871,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::LogsOptions;
+    /// use bollard::container::LogsOptions;
     ///
     /// use std::default::Default;
     ///
@@ -2671,6 +2905,7 @@ where
     }
 
     /// ---
+    ///
     /// # Container Changes
     ///
     /// Get changes on a container's filesystem. Consumes the client instance.
@@ -2687,7 +2922,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.chain().container_changes("hello-world");
@@ -2702,6 +2937,7 @@ where
     }
 
     /// ---
+    ///
     /// # Stats
     ///
     /// Get container stats based on resource usage. Consumes the client instance.
@@ -2709,7 +2945,7 @@ where
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stats Options](struct.StatsOptions.html) struct.
+    /// - Optional [Stats Options](container/struct.StatsOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2719,10 +2955,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::StatsOptions;
+    /// use bollard::container::StatsOptions;
     ///
     /// let options = Some(StatsOptions{
     ///     stream: false,
@@ -2751,6 +2987,7 @@ where
     }
 
     /// ---
+    ///
     /// # Update Container
     ///
     /// Update a container. Consumes the client instance.
@@ -2758,7 +2995,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Update Container Options](struct.UpdateContainerOptions.html) struct.
+    ///  - [Update Container Options](container/struct.UpdateContainerOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2768,10 +3005,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::UpdateContainerOptions;
+    /// use bollard::container::UpdateContainerOptions;
     /// use std::default::Default;
     ///
     /// let config = UpdateContainerOptions {
@@ -2793,6 +3030,7 @@ where
     }
 
     /// ---
+    ///
     /// # Rename Container
     ///
     /// Rename a container. Consumes the client instance.
@@ -2800,7 +3038,7 @@ where
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Rename Container Options](struct.RenameContainerOptions.html) struct
+    ///  - [Rename Container Options](container/struct.RenameContainerOptions.html) struct
     ///
     /// # Returns
     ///
@@ -2810,10 +3048,10 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::RenameContainerOptions;
+    /// use bollard::container::RenameContainerOptions;
     ///
     /// let required = RenameContainerOptions {
     ///     name: "my_new_container_name"
@@ -2837,6 +3075,7 @@ where
     }
 
     /// ---
+    ///
     /// # Pause Container
     ///
     /// Use the cgroups freezer to suspend all processes in a container. Consumes the client
@@ -2854,7 +3093,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.chain().pause_container("postgres");
@@ -2869,6 +3108,7 @@ where
     }
 
     /// ---
+    ///
     /// # Unpause Container
     ///
     /// Resume a container which has been paused. Consumes the client instance.
@@ -2881,7 +3121,7 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.chain().unpause_container("postgres");
@@ -2896,13 +3136,14 @@ where
     }
 
     /// ---
+    ///
     /// # Prune Containers
     ///
     /// Delete stopped containers. Consumes the client instance.
     ///
     /// # Arguments
     ///
-    ///  - Optional [Prune Containers Options](struct.PruneContainersOptions.html) struct.
+    ///  - Optional [Prune Containers Options](container/struct.PruneContainersOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -2913,15 +3154,15 @@ where
     /// # Examples
     ///
     /// ```rust,norun
-    /// # use boondock::Docker;
+    /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use boondock::container::PruneContainersOptions;
+    /// use bollard::container::PruneContainersOptions;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!("10m"));
     ///
     /// let options = Some(PruneContainersOptions {
     ///   filters: filters
@@ -2948,7 +3189,6 @@ mod tests {
 
     use super::*;
     use hyper_mock::SequentialConnector;
-    use tokio;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -2959,7 +3199,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 89\r\n\r\n{\"Id\":\"696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc\",\"Warnings\":null}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = Some(CreateContainerOptions {
             name: "unit-test".to_string(),
@@ -2997,7 +3237,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.start_container("hello-world", None::<StartContainerOptions<String>>);
 
@@ -3021,7 +3261,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.stop_container("hello-world", None::<StopContainerOptions>);
 
@@ -3047,7 +3287,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = Some(RemoveContainerOptions {
             force: true,
@@ -3076,7 +3316,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 33\r\n\r\n{\"Error\":null,\"StatusCode\":0}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = Some(WaitContainerOptions {
             condition: String::from("not-running"),
@@ -3106,7 +3346,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = Some(RestartContainerOptions { t: 30 });
 
@@ -3133,7 +3373,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2594\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\"},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":[],\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.inspect_container("uhttpd", None::<InspectContainerOptions>);
 
@@ -3159,7 +3399,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 243\r\n\r\n{\"Processes\":[[\"root\",\"3773\",\"0.0\",\"0.0\",\"11056\",\"348\",\"?\",\"Ss\",\"19:42\",\"0:00\",\"/usr/sbin/uhttpd -f -p 80 -h /www /usr/sbin/run_uhttpd -f -p 80 -h /www\"]],\"Titles\":[\"USER\",\"PID\",\"%CPU\",\"%MEM\",\"VSZ\",\"RSS\",\"TTY\",\"STAT\",\"START\",\"TIME\",\"COMMAND\"]}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.top_processes(
             "uhttpd",
@@ -3189,7 +3429,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\n\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let stream = docker.logs(
             "hello-world",
@@ -3225,7 +3465,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nnull\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let result = docker.container_changes("hello-world");
 
@@ -3250,7 +3490,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1866\r\n\r\n{\"read\":\"2018-10-19T06:11:22.220728356Z\",\"preread\":\"2018-10-19T06:11:21.218466258Z\",\"pids_stats\":{\"current\":1},\"blkio_stats\":{\"io_service_bytes_recursive\":[],\"io_serviced_recursive\":[],\"io_queue_recursive\":[],\"io_service_time_recursive\":[],\"io_wait_time_recursive\":[],\"io_merged_recursive\":[],\"io_time_recursive\":[],\"sectors_recursive\":[]},\"num_procs\":0,\"storage_stats\":{},\"cpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447677200000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"precpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447673150000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"memory_stats\":{\"usage\":962560,\"max_usage\":5406720,\"stats\":{\"active_anon\":86016,\"active_file\":0,\"cache\":0,\"dirty\":0,\"hierarchical_memory_limit\":9223372036854771712,\"hierarchical_memsw_limit\":0,\"inactive_anon\":0,\"inactive_file\":0,\"mapped_file\":0,\"pgfault\":1485,\"pgmajfault\":0,\"pgpgin\":1089,\"pgpgout\":1084,\"rss\":0,\"rss_huge\":0,\"total_active_anon\":86016,\"total_active_file\":0,\"total_cache\":0,\"total_dirty\":0,\"total_inactive_anon\":0,\"total_inactive_file\":0,\"total_mapped_file\":0,\"total_pgfault\":1485,\"total_pgmajfault\":0,\"total_pgpgin\":1089,\"total_pgpgout\":1084,\"total_rss\":0,\"total_rss_huge\":0,\"total_unevictable\":0,\"total_writeback\":0,\"unevictable\":0,\"writeback\":0},\"limit\":16750219264},\"name\":\"/integration_test_stats\",\"id\":\"66667eab5737dda2da2f578e9496e45c074d1bc5badc0484314f1c3afccfaeb0\",\"networks\":{\"eth0\":{\"rx_bytes\":1635,\"rx_packets\":14,\"rx_errors\":0,\"rx_dropped\":0,\"tx_bytes\":0,\"tx_packets\":0,\"tx_errors\":0,\"tx_dropped\":0}}}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let stream = docker.stats("hello-world", Some(StatsOptions { stream: false }));
 
@@ -3276,7 +3516,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = Some(KillContainerOptions {
             signal: "SIGKILL".to_string(),
@@ -3304,7 +3544,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let config = UpdateContainerOptions {
             memory: Some(314572800),
@@ -3334,7 +3574,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let options = RenameContainerOptions {
             name: "my_new_container_name".to_string(),
@@ -3362,7 +3602,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.pause_container("postgres");
 
@@ -3386,7 +3626,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.unpause_container("postgres");
 
@@ -3410,7 +3650,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 45\r\n\r\n{\"ContainersDeleted\":null,\"SpaceReclaimed\":0}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, String::new()).unwrap();
+        let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
 
         let results = docker.prune_containers(None::<PruneContainersOptions<String>>);
 

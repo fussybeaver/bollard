@@ -16,7 +16,7 @@ build_script:
   - ipconfig
   - echo %HOST_IP%
   - ps: |
-        cd dockerfiles/windows/registry 
+        cd dockerfiles/windows/registry
         docker build -t stefanscherer/registry-windows -f Dockerfile .
         cd ../../../
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
@@ -26,9 +26,9 @@ build_script:
   - docker tag nanoserver/iis localhost:5000/nanoserver/iis
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
-  - cargo build --verbose 
+  - cargo build --verbose
 
 test_script:
   - ps: Set-Item -path env:RUST_BACKTRACE -value 1
-  - ps: Set-Item -path env:REGISTRY_DNS -value localhost:5000
-  - cargo test --verbose -- --nocapture --test-threads 1 
+  - ps: Set-Item -path env:REGISTRY_HTTP_ADDR -value localhost:5000
+  - cargo test --verbose -- --nocapture --test-threads 1

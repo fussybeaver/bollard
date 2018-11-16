@@ -19,7 +19,7 @@ use std::os::windows::fs::*;
 use std::os::windows::io::*;
 use std::path::Path;
 
-use super::ClientType;
+use docker::ClientType;
 use uri::Uri;
 
 pub struct NamedPipeStream {
@@ -241,7 +241,7 @@ impl IsZero for i32 {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct NamedPipeConnector;
 
 impl NamedPipeConnector {
@@ -258,8 +258,7 @@ impl Connect for NamedPipeConnector {
     fn connect(&self, destination: Destination) -> Self::Future {
         match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
             Some(ref os_str) => {
-                println!("destination: {:?}", &destination);
-                println!("connecting to: {}", os_str);
+                debug!("connecting to destination: {:?}", &destination);
 
                 NamedPipeStream::connect(os_str)
                 .wait() // blocks until connected

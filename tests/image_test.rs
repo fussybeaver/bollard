@@ -1,4 +1,4 @@
-extern crate boondock;
+extern crate bollard;
 extern crate failure;
 extern crate futures;
 extern crate hyper;
@@ -10,8 +10,8 @@ use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
-use boondock::image::*;
-use boondock::Docker;
+use bollard::image::*;
+use bollard::Docker;
 
 use std::default::Default;
 
@@ -38,7 +38,8 @@ where
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert!(
                 result
                     .into_iter()
@@ -54,13 +55,11 @@ fn inspect_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -84,13 +83,11 @@ fn list_images_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -101,7 +98,8 @@ where
                 all: true,
                 ..Default::default()
             }))
-        }).map(move |(docker, result)| {
+        })
+        .map(move |(docker, result)| {
             assert!(result.into_iter().any(|api_image| {
                 api_image
                     .repo_tags
@@ -119,13 +117,11 @@ fn image_history_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -160,13 +156,11 @@ fn remove_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let host = || ::std::env::var("REGISTRY_DNS").unwrap_or_else(|_| "localhost".to_string());
-
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", host())
+            format!("{}/hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", host())
+            format!("{}/hello-world:linux", registry_http_addr())
         }
     };
 
@@ -180,7 +174,8 @@ where
                     ..Default::default()
                 }),
             )
-        }).map(move |(docker, result)| {
+        })
+        .map(move |(docker, result)| {
             assert!(result.into_iter().any(|s| match s {
                 RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
                 _ => false,

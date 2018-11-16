@@ -26,6 +26,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum EitherResponse<B, C, D, E, F> {
     A(future::FutureResult<Response<Body>, Error>),
     B(B),
