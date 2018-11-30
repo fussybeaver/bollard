@@ -2,7 +2,6 @@
     missing_docs, missing_debug_implementations, missing_copy_implementations, trivial_casts,
     trivial_numeric_casts, unstable_features, unused_import_braces, unused_qualifications
 )]
-#![type_length_limit = "2097152"]
 //! # Bollard: an asynchronous rust client library for the docker API
 //!
 //! Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
