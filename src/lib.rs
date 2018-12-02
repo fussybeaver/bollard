@@ -1,6 +1,12 @@
 #![deny(
-    missing_docs, missing_debug_implementations, missing_copy_implementations, trivial_casts,
-    trivial_numeric_casts, unstable_features, unused_import_braces, unused_qualifications
+    missing_docs,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications
 )]
 //! # Bollard: an asynchronous rust client library for the docker API
 //!
@@ -124,7 +130,7 @@
 //! // let docker = Docker::connect_...;
 //! # use yup_hyper_mock::SequentialConnector;
 //! # let mut connector = SequentialConnector::default();
-//! let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //!
 //! docker.version()
 //!     .map(|version| {
@@ -153,7 +159,7 @@
 //! // let docker = Docker::connect_...;
 //! # use yup_hyper_mock::SequentialConnector;
 //! # let mut connector = SequentialConnector::default();
-//! let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //!
 //! docker.list_images(Some(ListImagesOptions::<String> {
 //!    all: true,
@@ -187,7 +193,7 @@
 //! // let docker = Docker::connect_...;
 //! # use yup_hyper_mock::SequentialConnector;
 //! # let mut connector = SequentialConnector::default();
-//! let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //!
 //! docker.stats("postgres", Some(StatsOptions {
 //!    stream: true,
@@ -222,7 +228,7 @@
 //! use std::default::Default;
 //! # use yup_hyper_mock::SequentialConnector;
 //! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //! docker.chain().create_image(Some(CreateImageOptions{
 //!     from_image: "hello-world",
 //!     ..Default::default()
@@ -265,7 +271,7 @@
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let mut connector = SequentialConnector::default();
-//! let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //! let future = docker.list_images(None::<ListImagesOptions<String>>);
 //! # }
 //! ```
@@ -284,7 +290,7 @@
 //! # use yup_hyper_mock::SequentialConnector;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
 //! rt.spawn(future);
 //! # }
@@ -307,7 +313,7 @@
 //! # connector.content.push(
 //! #   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
 //! # );
-//! # let docker = Docker::connect_with(connector, String::new(), 5).unwrap();
+//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
 //! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
 //! let result = rt.block_on(future);
 //! # }

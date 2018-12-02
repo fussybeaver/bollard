@@ -134,7 +134,7 @@ where
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// docker.chain.ping();
+    /// docker.chain().ping();
     /// ```
     pub fn ping(self) -> impl Future<Item = (DockerChain<C>, String), Error = Error> {
         self.inner.ping().map(|result| (self, result))

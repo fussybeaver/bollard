@@ -46,7 +46,12 @@ impl<'a> Uri<'a> where {
             url.query_pairs_mut().extend_pairs(pairs);
         }
 
-        debug!("Parsing uri: {}", url.as_str());
+        debug!(
+            "Parsing uri: {}, client_type: {:?}, socket: {}",
+            url.as_str(),
+            client_type,
+            socket
+        );
         Ok(Uri {
             encoded: Cow::Owned(url.as_str().to_owned()),
         })

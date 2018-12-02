@@ -38,8 +38,7 @@ where
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
-        })
-        .map(|(docker, result)| {
+        }).map(|(docker, result)| {
             assert!(
                 result
                     .into_iter()
@@ -57,9 +56,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -85,9 +84,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -98,8 +97,7 @@ where
                 all: true,
                 ..Default::default()
             }))
-        })
-        .map(move |(docker, result)| {
+        }).map(move |(docker, result)| {
             assert!(result.into_iter().any(|api_image| {
                 api_image
                     .repo_tags
@@ -119,9 +117,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -158,9 +156,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -174,8 +172,7 @@ where
                     ..Default::default()
                 }),
             )
-        })
-        .map(move |(docker, result)| {
+        }).map(move |(docker, result)| {
             assert!(result.into_iter().any(|s| match s {
                 RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
                 _ => false,

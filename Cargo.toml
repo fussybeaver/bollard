@@ -49,12 +49,12 @@ env_logger = "0.6.0"
 tokio-timer = "0.2.8"
 
 [dev-dependencies]
-yup-hyper-mock = "*"
-tokio-threadpool = "0.1.9"
+yup-hyper-mock = { git = "https://github.com/fussybeaver/yup-hyper-mock", branch = "ND-clear-write-ready" }
+tokio-threadpool = "0.1.7"
 tokio-executor = "0.1.5"
 
 [target.'cfg(unix)'.dependencies]
-hyperlocal = "0.5"
+hyperlocal = "0.6.0"
 
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"

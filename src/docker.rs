@@ -374,7 +374,9 @@ impl Docker<UnixConnector> {
 
         let unix_connector = UnixConnector::new();
 
-        let client_builder = Client::builder();
+        let mut client_builder = Client::builder();
+        client_builder.keep_alive(false);
+
         let client = client_builder.build(unix_connector);
         let docker = Docker {
             client: Arc::new(client),
@@ -658,7 +660,7 @@ where
 
         let docker = Docker {
             client: Arc::new(client),
-            client_type: ClientType::Http,
+            client_type: ClientType::Unix,
             client_addr,
             client_timeout: timeout,
         };
@@ -771,12 +773,12 @@ where
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }.map_err(|e| e.into())
-            .map(|payload| {
-                debug!("{}", payload.clone().unwrap_or_else(String::new));
-                payload
-                    .map(|content| content.into())
-                    .unwrap_or(Body::empty())
-            })
+        .map(|payload| {
+            debug!("{}", payload.clone().unwrap_or_else(String::new));
+            payload
+                .map(|content| content.into())
+                .unwrap_or(Body::empty())
+        })
     }
 
     fn process_request(
@@ -784,7 +786,7 @@ where
         req: Result<Request<Body>, Error>,
     ) -> impl Future<Item = Response<Body>, Error = Error> {
         let client = self.client.clone();
-        let timeout = self.client_timeout.clone();
+        let timeout = self.client_timeout;
 
         result(req)
             .and_then(move |request| Docker::execute_request(client, request, timeout))

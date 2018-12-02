@@ -76,7 +76,14 @@ macro_rules! connect_to_docker_and_run {
 }
 
 pub(crate) fn registry_http_addr() -> String {
-    ::std::env::var("REGISTRY_HTTP_ADDR").unwrap_or_else(|_| "localhost:5000".to_string())
+    if ::std::env::var("DISABLE_REGISTRY").is_ok() {
+        String::new()
+    } else {
+        format!(
+            "{}/",
+            ::std::env::var("REGISTRY_HTTP_ADDR").unwrap_or_else(|_| "localhost:5000".to_string())
+        )
+    }
 }
 
 #[allow(dead_code)]
@@ -87,7 +94,7 @@ where
 {
     rt.block_on_all(future)
         .or_else(|e| {
-            println!("{}", e);
+            println!("{:?}", e);
             Err(e)
         })
         .unwrap();
@@ -103,9 +110,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -263,9 +270,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/nanoserver/iis", registry_http_addr())
+            format!("{}nanoserver/iis", registry_http_addr())
         } else {
-            format!("{}/fnichol/uhttpd", registry_http_addr())
+            format!("{}fnichol/uhttpd", registry_http_addr())
         }
     };
 
@@ -354,9 +361,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 

@@ -1,5 +1,6 @@
 #![type_length_limit = "2097152"]
 extern crate bollard;
+extern crate env_logger;
 extern crate failure;
 extern crate futures;
 extern crate hyper;
@@ -25,9 +26,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -65,9 +66,9 @@ where
 {
     let image = move || {
         if cfg!(windows) {
-            format!("{}/hello-world:nanoserver", registry_http_addr())
+            format!("{}hello-world:nanoserver", registry_http_addr())
         } else {
-            format!("{}/hello-world:linux", registry_http_addr())
+            format!("{}hello-world:linux", registry_http_addr())
         }
     };
 
@@ -84,13 +85,13 @@ where
             docker.tag_image(
                 &image(),
                 Some(TagImageOptions {
-                    repo: format!("{}/my-hello-world", registry_http_addr()),
+                    repo: format!("{}my-hello-world", registry_http_addr()),
                     ..Default::default()
                 }),
             )
         }).and_then(move |(docker, _)| {
             docker.push_image(
-                format!("{}/my-hello-world", registry_http_addr()).as_ref(),
+                format!("{}my-hello-world", registry_http_addr()).as_ref(),
                 None::<PushImageOptions<String>>,
                 None,
             )
@@ -471,6 +472,7 @@ fn integration_test_logs() {
 
 #[test]
 fn integration_test_container_changes() {
+    env_logger::init();
     connect_to_docker_and_run!(container_changes_test);
 }
 
