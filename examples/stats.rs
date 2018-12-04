@@ -21,7 +21,10 @@ fn main() {
     env_logger::init();
 
     let mut rt = Runtime::new().unwrap();
+    #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
+    #[cfg(windows)]
+    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     let future = loop_fn(
         (docker.chain(), HashMap::new()),
@@ -45,7 +48,10 @@ fn main() {
                         {
                             println!("Starting tokio spawn for container {}", &c.0);
                             tokio::executor::spawn(future::lazy(move || {
+                                #[cfg(unix)]
                                 let client = Docker::connect_with_unix_defaults().unwrap();
+                                #[cfg(windows)]
+                                let client = Docker::connect_with_named_pipe_defaults().unwrap();
                                 client
                                     .stats(&c.0, Some(StatsOptions { stream: true }))
                                     .for_each(move |s| Ok(println!("{:?}:{} {:?}", c.1, c.2, s)))

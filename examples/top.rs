@@ -43,7 +43,10 @@ where
 
 fn main() {
     let mut rt = Runtime::new().unwrap();
+    #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
+    #[cfg(windows)]
+    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);

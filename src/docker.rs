@@ -453,6 +453,7 @@ impl Docker<NamedPipeConnector> {
         let named_pipe_connector = NamedPipeConnector::new();
 
         let mut client_builder = Client::builder();
+        client_builder.keep_alive(false);
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
         let docker = Docker {
@@ -658,9 +659,14 @@ where
         let client_builder = Client::builder();
         let client = client_builder.build(connector);
 
+        #[cfg(unix)]
+        let client_type = ClientType::Unix;
+        #[cfg(windows)]
+        let client_type = ClientType::NamedPipe;
+
         let docker = Docker {
             client: Arc::new(client),
-            client_type: ClientType::Unix,
+            client_type: client_type,
             client_addr,
             client_timeout: timeout,
         };
@@ -773,12 +779,12 @@ where
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }.map_err(|e| e.into())
-        .map(|payload| {
-            debug!("{}", payload.clone().unwrap_or_else(String::new));
-            payload
-                .map(|content| content.into())
-                .unwrap_or(Body::empty())
-        })
+            .map(|payload| {
+                debug!("{}", payload.clone().unwrap_or_else(String::new));
+                payload
+                    .map(|content| content.into())
+                    .unwrap_or(Body::empty())
+            })
     }
 
     fn process_request(

@@ -74,6 +74,7 @@ fn test_version_tls() {
     )
 }
 
+#[cfg(all(unix, not(feature = "test_http"), not(feature = "ssl")))]
 #[test]
 fn test_threadpool() {
     let reactor = reactor::Reactor::new().unwrap();
@@ -93,7 +94,8 @@ fn test_threadpool() {
                     w.run();
                 });
             });
-        }).custom_park(move |worker_id| {
+        })
+        .custom_park(move |worker_id| {
             // Create a new timer
             let timer =
                 ::tokio_timer::timer::Timer::new(::tokio_threadpool::park::DefaultPark::new());
@@ -121,7 +123,8 @@ fn test_threadpool() {
                 .map(|v| {
                     println!("{:?}", v);
                     Async::Ready(())
-                }).map_err(|e| panic!("{:?}", e))
+                })
+                .map_err(|e| panic!("{:?}", e))
         }
     }
 

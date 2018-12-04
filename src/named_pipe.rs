@@ -1,8 +1,6 @@
 #![cfg(windows)]
 
 use bytes::{Buf, BufMut};
-use futures::future::{self, FutureResult};
-use futures::IntoFuture;
 use futures::{Async, Future, Poll};
 use hyper::client::connect::{Connect, Connected, Destination};
 use mio::Ready;
@@ -253,22 +251,69 @@ impl NamedPipeConnector {
 impl Connect for NamedPipeConnector {
     type Transport = NamedPipeStream;
     type Error = io::Error;
-    type Future = FutureResult<(NamedPipeStream, Connected), io::Error>;
+    type Future = ConnectorConnectFuture;
 
     fn connect(&self, destination: Destination) -> Self::Future {
-        match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
-            Some(ref os_str) => {
-                debug!("connecting to destination: {:?}", &destination);
+        debug!("Connecting to {:?}", destination);
+        ConnectorConnectFuture::Start(destination)
+    }
+}
 
-                NamedPipeStream::connect(os_str)
-                .wait() // blocks until connected
-                .map(|s| (s, Connected::new()))
-                .into_future()
-            }
-            _ => future::err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Invalid uri {:?}", destination),
-            )),
+#[derive(Debug)]
+pub enum ConnectorConnectFuture {
+    Start(Destination),
+    Connect(ConnectFuture),
+}
+
+const NAMED_PIPE_SCHEME: &str = "net.pipe";
+
+impl Future for ConnectorConnectFuture {
+    type Item = (NamedPipeStream, Connected);
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        debug!("ConnectFuture poll triggered");
+        loop {
+            let next_state = match self {
+                ConnectorConnectFuture::Start(destination) => {
+                    debug!("ConnectFuture Start matched: {:?}", destination);
+                    if destination.scheme() != NAMED_PIPE_SCHEME {
+                        debug!(
+                            "Schema does not match {} != expected {}",
+                            destination.scheme(),
+                            NAMED_PIPE_SCHEME
+                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("Invalid scheme {:?}", destination.scheme()),
+                        ));
+                    }
+
+                    let path = match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
+                        Some(path) => path,
+
+                        None => {
+                            debug!("Failed to parse Uri {:?}", &destination,);
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                format!("Invalid uri {:?}", destination),
+                            ));
+                        }
+                    };
+
+                    debug!("All OK to connect to {}", &path);
+
+                    ConnectorConnectFuture::Connect(NamedPipeStream::connect(&path))
+                }
+
+                ConnectorConnectFuture::Connect(f) => match f.poll() {
+                    Ok(Async::Ready(stream)) => return Ok(Async::Ready((stream, Connected::new()))),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(err) => return Err(err),
+                },
+            };
+
+            *self = next_state;
         }
     }
 }

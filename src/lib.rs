@@ -362,6 +362,8 @@ extern crate serde_json;
 extern crate tokio;
 extern crate tokio_codec;
 extern crate tokio_io;
+#[cfg(windows)]
+extern crate tokio_reactor;
 extern crate tokio_timer;
 extern crate url;
 #[cfg(windows)]
