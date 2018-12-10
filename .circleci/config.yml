@@ -3,7 +3,7 @@ version: 2
 jobs:
   test_ssl:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker
@@ -14,7 +14,7 @@ jobs:
       - run: docker run -e -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2375' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features ssl -- --test test_version_ssl
   test_tls:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker
@@ -27,7 +27,7 @@ jobs:
       - run: docker run -e -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2375' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test -- --test test_version_tls
   test_http:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker
@@ -36,7 +36,7 @@ jobs:
       - run: docker run -e -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
   test_unix:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker
@@ -51,7 +51,7 @@ jobs:
       - run: docker run -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test -- --test-threads 1
   test_doc:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker
@@ -59,7 +59,7 @@ jobs:
       - run: docker run -ti  --rm bollard cargo test --doc --all-features
   test_unix:
     docker:
-      - image: docker:18.09.0-rc1
+      - image: docker:18.09.0
     steps:
       - checkout
       - setup_remote_docker

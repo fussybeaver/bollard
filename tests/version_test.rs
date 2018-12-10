@@ -76,6 +76,8 @@ fn test_version_tls() {
 
 #[cfg(all(unix, not(feature = "test_http"), not(feature = "ssl")))]
 #[test]
+// This sometimes locks up in CircleCI
+#[ignore]
 fn test_threadpool() {
     let reactor = reactor::Reactor::new().unwrap();
 

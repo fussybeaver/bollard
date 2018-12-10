@@ -157,15 +157,16 @@ where
             stream
                 .take(1)
                 .into_future()
-                .map(|(head, _)| assert_eq!(head.unwrap().status_code, 0))
+                .map(|(head, _)| {
+                    assert_eq!(head.unwrap().status_code, 0);
+                    docker
+                })
                 .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
                 })
-                .wait()
-                .unwrap();
-            docker
         })
+        .flatten()
 }
 
 #[allow(dead_code)]

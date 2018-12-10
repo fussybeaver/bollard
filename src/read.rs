@@ -58,9 +58,13 @@ impl Decoder for LineDecoder {
                         message: s.to_string(),
                     })
                 }),
-                _ => Ok(None),
+                _ => {
+                    debug!("LineDecoder returning due to unknown first byte");
+                    Ok(None)
+                }
             }.map_err(|e| e.into())
         } else {
+            debug!("LineDecoder returning due to an empty line");
             Ok(None)
         }
     }
