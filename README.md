@@ -1,63 +1,283 @@
-# Boondock: Rust library for talking to the Docker daemon
+[![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
+[![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![circle-ci](https://circleci.com/gh/fussybeaver/bollard.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard)
+[![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
+[![docs](https://docs.rs/bollard/badge.svg?version=0.1.0)](https://docs.rs/bollard/)
 
-[![Latest version](https://img.shields.io/crates/v/boondock.svg)](https://crates.io/crates/boondock) [![License](https://img.shields.io/crates/l/boondock.svg)](https://opensource.org/licenses/Apache-2.0) [![Build Status](https://travis-ci.org/faradayio/boondock.svg?branch=master)](https://travis-ci.org/faradayio/boondock) [![Build status](https://ci.appveyor.com/api/projects/status/yylowaj7rvdy7b9j?svg=true)](https://ci.appveyor.com/project/emk/boondock) [![Documentation](https://img.shields.io/badge/documentation-docs.rs-yellow.svg)](https://docs.rs/boondock/)
+## Bollard: an asynchronous rust client library for the docker API
 
-**This is a work in progress!**
+Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
+[Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
+futures and streams.
 
-This is a fork of Graham Lee's highly useful [rust-docker][] library,
-with [hyper][] support from [Toby Lawrence][nuclearfurnace-docker] and
-various other recent patches integrated.
+The library also features Windows support through Named Pipes and HTTPS support through
+optional SSL bindings or a native TLS implementation.
 
-It also adds:
+## Install
 
-- Partial support for Docker 1.12 (ongoing)
-- Support for Windows (experimental)
-- Support for building without OpenSSL
-- Support for finding and connection to the daemon using the same
-  `DOCKER_HOST`, `DOCKER_CERT_PATH`, etc. variables as the `docker` command
-  line tool
-- Consistent error-handling via [error-chain][]
+Add the following to your `Cargo.toml` file
 
-This library is used by the development tool [cage][] to talk to the Docker
-daemon.  You're welcome to use it for other things, and we're happy to
-accept pull requests!
+```nocompile
+[dependencies]
+bollard = "0.1"
+```
 
-(Also, the maintainers of [rust-docker][] are totally welcome to use any
-code that they like from this fork.  We're mostly maintaining this as a
-fork so that we can have very quick turnaround times when we need to fix an
-issue with `cage`, and we have no objections to this code being merged back
-upstream.)
+## API documentation
 
-[rust-docker]: https://github.com/ghmlee/rust-docker
-[hyper]: http://hyper.rs/
-[nuclearfurnace-docker]: https://github.com/nuclearfurnace/rust-docker
-[error-chain]: https://brson.github.io/error-chain/error_chain/index.html
-[cage]: http://cage.faraday.io/
+[API docs](https://docs.rs/bollard/)
+
+## Usage
+
+### Connecting with the docker daemon
+
+Connect to the docker server according to your architecture and security remit.
+
+#### Unix socket
+
+The client will connect to the standard unix socket location `/var/run/docker.sock`. Use the
+`Docker::connect_with_unix` method API to parameterise the
+interface.
+
+```rust,norun
+use bollard::Docker;
+#[cfg(unix)]
+Docker::connect_with_unix_defaults();
+```
+
+#### Windows named pipe
+
+The client will connect to the standard windows pipe location `\\.\pipe\docker_engine`. Use the
+`Docker::connect_with_name_pipe` method API
+to parameterise the interface.
+
+```rust,norun
+use bollard::Docker;
+#[cfg(windows)]
+Docker::connect_with_named_pipe_defaults();
+```
+
+#### HTTP
+
+The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
+`localhost:2375` if missing. Use the
+`Docker::connect_with_http` method API to
+parameterise the interface.
+
+```rust,norun
+use bollard::Docker;
+Docker::connect_with_http_defaults();
+```
+
+#### SSL via openssl
+
+Openssl is switched off by default, and can be enabled through the `ssl` cargo feature.
+
+The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
+`localhost:2375` if missing.
+
+The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
+certificates - `key.pem` for the private key, `cert.pem` for the server certificate and
+`ca.pem` for the certificate authority chain.
+
+Use the `Docker::connect_with_ssl` method API
+to parameterise the interface.
+
+```rust,norun
+use bollard::Docker;
+#[cfg(feature = "openssl")]
+Docker::connect_with_ssl_defaults();
+```
+
+#### TLS
+
+Native TLS allows you to avoid the SSL bindings.
+
+The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
+`localhost:2375` if missing.
+
+The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
+certificates - `identity.pfx` for the PKCS #12 archive and `ca.pem` for the certificate
+authority chain.
+
+Use the `Docker::connect_with_ssl` method API
+to parameterise the interface.
+
+```rust,norun
+use bollard::Docker;
+Docker::connect_with_tls_defaults();
+```
+
+### Examples
+
+Note: all these examples need a [Tokio
+Runtime](https://tokio.rs/docs/getting-started/runtime/). A small example about how to use
+Tokio is below.
+
+#### Version
+
+First, check that the API is working with your server:
+
+```rust
+use futures::Future;
+
+use bollard::Docker;
+
+// Use a connection function described above
+// let docker = Docker::connect_...;
+
+docker.version()
+    .map(|version| {
+        println!("{:?}", version);
+    });
+```
+
+#### Listing images
+
+To list docker images available on the Docker server:
+
+```rust
+use futures::Future;
+
+use bollard::Docker;
+use bollard::image::ListImagesOptions;
+
+use std::default::Default;
+
+// Use a connection function described above
+// let docker = Docker::connect_...;
+
+docker.list_images(Some(ListImagesOptions::<String> {
+   all: true,
+   ..Default::default()
+}))
+  .map(|images| {
+       for i in images {
+           println!("-> {:?}", i);
+       }
+   });
+```
+
+### Streaming Stats
+
+To receive a stream of stats for a running container.
+
+```rust
+use futures::stream::Stream;
+
+use bollard::Docker;
+use bollard::container::StatsOptions;
+
+use std::default::Default;
+
+// Use a connection function described above
+// let docker = Docker::connect_...;
+
+docker.stats("postgres", Some(StatsOptions {
+   stream: true,
+   ..Default::default()
+}))
+  .map(|stat| {
+        println!("{} - mem total: {:?} | mem usage: {:?}",
+            stat.name,
+            stat.memory_stats.max_usage,
+            stat.memory_stats.usage);
+   });
+```
+
+### Chaining docker commands
+
+It's sometimes more convenient to chain a string of Docker API calls. The `DockerChain` API
+will return an instance of itself in the return call.
+
+```rust
+use bollard::Docker;
+use bollard::image::CreateImageOptions;
+use bollard::container::CreateContainerOptions;
+use bollard::container::Config;
+
+use tokio::prelude::Future;
+
+use std::default::Default;
+
+// Use a connection function described above
+// let docker = Docker::connect_...;
+docker.chain().create_image(Some(CreateImageOptions{
+    from_image: "hello-world",
+    ..Default::default()
+})).and_then(|(docker, _)|
+    docker.create_container(
+        None::<CreateContainerOptions<String>>,
+        Config {
+            image: Some("hello-world"),
+            cmd: vec!["/hello"],
+            ..Default::default()
+        }));
+```
 
 ## Examples
 
-For example code, see the [examples directory](./examples).
+Further examples are available in the examples folder, or the integration/unit tests.
 
-## OpenSSL
+### A Primer on the Tokio Runtime
 
-On the Mac, you can set up OpenSSL as follows:
+In order to use the API effectively, you will need to be familiar with the [Tokio
+Runtime](https://tokio.rs/docs/getting-started/runtime/).
 
-```bash
-brew install openssl
-brew link --force openssl
+Create a Tokio Runtime:
 
-export OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include
-export OPENSSL_ROOT_DIR=/usr/local/opt/openssl
+```rust
+use tokio::runtime::Runtime;
+
+let mut rt = Runtime::new().unwrap();
 ```
 
-Alternatively, you can build without OpenSSL by passing
-`--no-default-features` to `cargo`, or specifying `default-features =
-false` in a `Cargo.toml` file.
+Subsequently, use the docker API:
 
-## Contributing
+```rust
+// Use a connection function described above
+// let docker = Docker::connect_...;
+let future = docker.list_images(None::<ListImagesOptions<String>>);
+```
 
-1. Fork it
-2. Create your a new remote upstream repository (`git remote add upstream git@github.com:faradayio/boondock.git`)
-3. Commit your changes (`git commit -m 'Add some feature'`)
-4. Push to the branch (`git push origin your-branch`)
-5. Create new Pull Request
+Execute the future aynchronously:
+
+```rust
+rt.spawn(future);
+```
+
+Or, to execute and receive the result:
+
+```rust
+let result = rt.block_on(future);
+```
+
+Finally, to shut down the executor:
+
+```rust
+rt.shutdown_now().wait().unwrap();
+```
+
+## History
+
+This library stems from the [boondock rust library](https://github.com/faradayio/boondock),
+which in turn originates from the [rust-docker library](https://github.com/ghmlee/rust-docker), but
+most parts were rewritten to adobt the new functionality provided by tokio. Many thanks to the
+original authors for the initial code and inspiration.
+
+## Integration tests
+
+Running the integration tests by default requires a running docker registry, with images tagged
+and pushed there. To disable this behaviour, set the `DISABLE_REGISTRY` environment variable.
+
+```bash
+docker run -d --restart always --name registry -p 5000:5000 registry:2
+docker pull hello-world:linux
+docker pull fnichol/uhttpd
+docker tag hello-world:linux localhost:5000/hello-world:linux
+docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+docker push localhost:5000/hello-world:linux
+docker push localhost:5000/fnichol/uhttpd
+REGISTRY_HTTP_ADDR=localhost:5000 cargo test --test-threads 1
+```
+
+License: Apache-2.0

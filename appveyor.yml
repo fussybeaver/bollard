@@ -1,4 +1,7 @@
+image: Visual Studio 2017
+
 install:
+  - docker version
   - ps: Start-FileDownload "https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe"
   - rustup-init.exe -y --default-host i686-pc-windows-gnu
   - SET PATH=%PATH%;C:\Users\appveyor\.cargo\bin
@@ -6,7 +9,27 @@ install:
   - rustc -V
   - cargo -V
 
-build: false
+build_script:
+  - ps: |
+        $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
+        Set-Item -path env:HOST_IP -value $ipv4
+  - ipconfig
+  - echo %HOST_IP%
+  - ps: |
+        cd dockerfiles/windows/registry
+        docker build -t stefanscherer/registry-windows -f Dockerfile .
+        cd ../../../
+  - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
+  - docker pull hello-world:nanoserver
+  - docker pull nanoserver/iis
+  - docker tag hello-world:nanoserver localhost:5000/hello-world:nanoserver
+  - docker tag nanoserver/iis localhost:5000/nanoserver/iis
+  - docker push localhost:5000/hello-world:nanoserver
+  - docker push localhost:5000/nanoserver/iis
+  - cargo build --verbose
 
 test_script:
-  - cargo test --verbose --no-default-features
+  - ps: Set-Item -path env:RUST_BACKTRACE -value 1
+  - ps: Set-Item -path env:RUST_LOG -value "hyper=trace,bollard=debug"
+  - ps: Set-Item -path env:REGISTRY_HTTP_ADDR -value localhost:5000
+  - cargo test --verbose -- --nocapture --test-threads 1

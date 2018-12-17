@@ -1,42 +1,61 @@
 [package]
-name = "boondock"
-description = "Docker daemon API (a fork of Graham Lee's rust-docker)"
-version = "0.0.50"
+name = "bollard"
+description = "An asynchronous Docker daemon API"
+version = "0.1.0"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
-           "Eric Kidd <git@randomhacks.net>"]
+           "Eric Kidd <git@randomhacks.net>",
+	   "Niel Drummond <niel@drummond.lu>"]
 license = "Apache-2.0"
-homepage = "https://github.com/faradayio/boondock"
-repository = "https://github.com/faradayio/boondock"
-documentation = "https://docs.rs/boondock"
+homepage = "https://github.com/fussybeaver/bollard"
+repository = "https://github.com/fussybeaver/bollard"
+documentation = "https://docs.rs/bollard"
 readme = "README.md"
 keywords = ["docker"]
 
-[badges]
-appveyor = { repository = "faradayio/boondock", branch = "master", service = "github" }
-travis-ci = { repository = "faradayio/boondock", branch = "master" }
-maintenance = { status = "passively-maintained" }
-
 [features]
-# OpenSSL is fairly hard to build on certain platforms, especially if you
-# want to produce release binaries.  So we enable it by default, but allow
-# it to be excluded using `default-features = false`.
-default = ["ssl"]
-
 # Enable OpenSSL both directly and for Hyper.
-ssl = ["openssl", "hyper/ssl"]
+ssl = ["openssl", "hyper-openssl"]
+# Enable tests specifically for the http connector
+test_http = []
+# Enable tests specifically for the tls connector
+test_tls = []
 
 [dependencies]
-error-chain = "0.5.0"
-hyper = { version = "0.9", default-features = false }
-openssl = { version = "0.7", optional = true }
+failure = "0.1.2"
+hyper = { version = "0.12.17" }
+hyper-tls = "0.3.0"
+openssl = { version = "0.10.11", optional = true }
+hyper-openssl = { version = "0.6.1", optional = true }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 url = "1.2.2"
+http = "0.1.10"
+native-tls = "0.2.1"
+futures = "0.1.24"
+tokio = "0.1.11"
+tokio-reactor = "0.1.4"
+hex = "0.3.2"
+tokio-io = "0.1.8"
+bytes = "0.4.9"
+mio = "0.6.15"
+tokio-codec = "0.1.0"
+chrono = { version = "0.4.6", features = ["serde"] }
+arrayvec = "0.4.7"
+dirs = "1.0.4"
+log = "0.4.6"
+env_logger = "0.6.0"
+tokio-timer = "0.2.8"
+
+[dev-dependencies]
+yup-hyper-mock = { git = "https://github.com/fussybeaver/yup-hyper-mock", branch = "ND-clear-write-ready" }
+tokio-threadpool = "0.1.7"
+tokio-executor = "0.1.5"
 
 [target.'cfg(unix)'.dependencies]
-unix_socket = "0.5.0"
+hyperlocal = "0.6.0"
 
 [target.'cfg(windows)'.dependencies]
-named_pipe = "0.2.2"
+mio-named-pipes = "0.1.6"
+winapi = "0.3.5"

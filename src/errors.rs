@@ -1,50 +1,81 @@
-//! Error-handling with the `error_chain` crate.
+//! Errors for this module.
+use std::cmp;
+use std::fmt::{Display, Formatter, Result};
 
-use hyper;
-use std::env;
-use std::io;
+/// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable is
+/// invalid.
+#[derive(Fail, Copy, Clone, Debug)]
+#[fail(display = "could not find DOCKER_CERT_PATH")]
+#[allow(missing_docs)]
+pub struct NoCertPathError {}
 
-error_chain! {
-    foreign_links {
-        env::VarError, EnvVar;
-        hyper::Error, Hyper;
-        io::Error, Io;
-    }
+/// Error emitted by the docker server, when it responds with a 404.
+#[derive(Fail, Debug)]
+#[fail(display = "API responded with a 404 not found: {}", message)]
+#[allow(missing_docs)]
+pub struct DockerResponseNotFoundError {
+    pub message: String,
+}
 
-    errors {
-        ContainerInfo(id: String) {
-            description("could not fetch information about container")
-            display("could not fetch information about container '{}'", &id)
-        }
+/// Generic error emitted by the docker server.
+#[derive(Fail, Debug)]
+#[fail(display = "Docker responded with status code {}: {}", status_code, message)]
+#[allow(missing_docs)]
+pub struct DockerResponseServerError {
+    pub status_code: u16,
+    pub message: String,
+}
 
-        CouldNotConnect(host: String) {
-            description("could not connect to Docker")
-            display("could not connected to Docker at '{}'", &host)
-        }
+/// Error emitted by the docker server, when it responds with a 400.
+#[derive(Fail, Debug)]
+#[fail(display = "API queried with a bad parameter: {}", message)]
+#[allow(missing_docs)]
+pub struct DockerResponseBadParameterError {
+    pub message: String,
+}
 
-        NoCertPath {
-            description("could not find DOCKER_CERT_PATH")
-            display("could not find DOCKER_CERT_PATH")
-        }
+/// Error emitted by the docker server, when it responds with a 409.
+#[derive(Fail, Debug)]
+#[fail(display = "API responded with a 409 conflict: {}", message)]
+#[allow(missing_docs)]
+pub struct DockerResponseConflictError {
+    pub message: String,
+}
 
-        ParseError(wanted: &'static str, input: String) {
-            description("error parsing JSON from Docker")
-            display("could not parse JSON for {} from Docker", wanted)
-        }
+/// Error emitted by the docker server, when it responds with a 304.
+#[derive(Fail, Debug)]
+#[fail(display = "API responded with a 304, resource was not modified: {}", message)]
+#[allow(missing_docs)]
+pub struct DockerResponseNotModifiedError {
+    pub message: String,
+}
 
-        SslDisabled {
-            description("Docker SSL support was disabled at compile time")
-            display("Docker SSL support was disabled at compile time")
-        }
+/// Error facilitating debugging failed JSON parsing.
+#[derive(Fail, Debug)]
+#[allow(missing_docs)]
+pub struct JsonDataError {
+    pub message: String,
+    pub contents: String,
+    pub column: usize,
+}
 
-        SslError(host: String) {
-            description("could not connect to Docker using SSL")
-            display("could not connect to Docker at '{}' using SSL", &host)
-        }
-
-        UnsupportedScheme(host: String) {
-            description("unsupported Docker URL scheme")
-            display("do not know how to connect to Docker at '{}'", &host)
-        }
+impl Display for JsonDataError {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let backtrack_len: usize = 24;
+        let peek_len: usize = 32;
+        let description = "Failed to deserialize near ...";
+        let from_start_length = self.column.checked_sub(backtrack_len).unwrap_or(0);
+        let spaces = ::std::iter::repeat(" ")
+            .take(description.len() + cmp::min(backtrack_len, self.column))
+            .collect::<String>();
+        write!(
+            f,
+            "{}{}...\n{}^---- {}",
+            description,
+            &self.contents
+                [from_start_length..cmp::min(self.contents.len(), self.column + peek_len)],
+            spaces,
+            self.message
+        )
     }
 }
