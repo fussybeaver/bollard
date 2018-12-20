@@ -49,7 +49,7 @@ env_logger = "0.6.0"
 tokio-timer = "0.2.8"
 
 [dev-dependencies]
-yup-hyper-mock = { git = "https://github.com/fussybeaver/yup-hyper-mock", branch = "ND-clear-write-ready" }
+yup-hyper-mock = "3.13.0"
 tokio-threadpool = "0.1.7"
 tokio-executor = "0.1.5"
 
