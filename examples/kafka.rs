@@ -38,7 +38,8 @@ where
         .create_container(Some(CreateContainerOptions { name: name }), config)
         .and_then(move |(docker, _)| {
             docker.start_container(name, None::<StartContainerOptions<String>>)
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.logs(
                 name,
                 Some(LogsOptions {
@@ -48,7 +49,8 @@ where
                     ..Default::default()
                 }),
             )
-        }).map(|(_, stream)| stream)
+        })
+        .map(|(_, stream)| stream)
         .into_stream()
         .flatten()
 }
@@ -73,7 +75,7 @@ fn main() {
 
     let broker1_config = Config {
         image: Some(KAFKA_IMAGE),
-        cmd: vec!["/etc/confluent/docker/run"],
+        cmd: Some(vec!["/etc/confluent/docker/run"]),
         env: Some(vec![
             "KAFKA_ZOOKEEPER_CONNECT=localhost:32181",
             "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:19092",
@@ -89,7 +91,7 @@ fn main() {
 
     let broker2_config = Config {
         image: Some(KAFKA_IMAGE),
-        cmd: vec!["/etc/confluent/docker/run"],
+        cmd: Some(vec!["/etc/confluent/docker/run"]),
         env: Some(vec![
             "KAFKA_ZOOKEEPER_CONNECT=localhost:32181",
             "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:29092",
@@ -108,19 +110,23 @@ fn main() {
         .create_image(Some(CreateImageOptions {
             from_image: ZOOKEEPER_IMAGE,
             ..Default::default()
-        })).and_then(move |(docker, _)| {
+        }))
+        .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions { name: "zookeeper" }),
                 zookeeper_config,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container("zookeeper", None::<StartContainerOptions<String>>)
-        }).map(|(docker, _)| {
+        })
+        .map(|(docker, _)| {
             let stream1 = docker
                 .create_image(Some(CreateImageOptions {
                     from_image: KAFKA_IMAGE,
                     ..Default::default()
-                })).map(move |(docker, _)| create_and_logs(docker, "kafka1", broker1_config))
+                }))
+                .map(move |(docker, _)| create_and_logs(docker, "kafka1", broker1_config))
                 .into_stream()
                 .flatten();
 
@@ -129,12 +135,14 @@ fn main() {
                 .create_image(Some(CreateImageOptions {
                     from_image: KAFKA_IMAGE,
                     ..Default::default()
-                })).map(move |(docker, _)| create_and_logs(docker, "kafka2", broker2_config))
+                }))
+                .map(move |(docker, _)| create_and_logs(docker, "kafka2", broker2_config))
                 .into_stream()
                 .flatten();
 
             stream1.select(stream2)
-        }).into_stream()
+        })
+        .into_stream()
         .flatten();
 
     let future = stream

@@ -336,7 +336,7 @@ pub struct PortBinding<T>
 where
     T: AsRef<str>,
 {
-    #[serde(rename = "HostIP")]
+    #[serde(rename = "HostIp")]
     pub host_ip: T,
     pub host_port: T,
 }
@@ -591,7 +591,7 @@ where
     /// A variable without `=` is removed from the environment, rather than to have an empty value.
     pub env: Option<Vec<T>>,
     /// Command to run specified as a string or an array of strings.
-    pub cmd: Vec<T>,
+    pub cmd: Option<Vec<T>>,
     /// The entry point for the container as a string or an array of strings.
     ///
     /// If the array consists of exactly one empty string (`[""]`) then the entry point is reset to
@@ -2716,7 +2716,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2899,7 +2900,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2980,7 +2982,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -3221,7 +3224,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3245,7 +3249,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3271,7 +3276,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3300,7 +3306,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3330,7 +3337,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3356,7 +3364,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3368,7 +3377,7 @@ mod tests {
 
         connector.m.insert(
             format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2594\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\"},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":[],\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2596\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\"},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":null,\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
@@ -3382,7 +3391,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3412,7 +3422,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3448,7 +3459,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3473,7 +3485,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3500,7 +3513,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3528,7 +3542,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3558,7 +3573,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3586,7 +3602,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3610,7 +3627,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3634,7 +3652,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3658,7 +3677,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
