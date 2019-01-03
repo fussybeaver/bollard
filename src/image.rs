@@ -597,6 +597,92 @@ impl<'a, T: AsRef<str>> PushImageQueryParams<&'a str, T> for PushImageOptions<T>
     }
 }
 
+/// Parameters to the [Commit Container API](../struct.Docker.html#method.commit_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::image::CommitContainerOptions;
+///
+/// CommitContainerOptions {
+///     container: "my-running-container",
+///     pause: true,
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```
+/// # use bollard::image::CommitContainerOptions;
+/// # use std::default::Default;
+/// CommitContainerOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct CommitContainerOptions<T> {
+    /// The ID or name of the container to commit.
+    pub container: T,
+    /// Repository name for the created image.
+    pub repo: T,
+    /// Tag name for the create image.
+    pub tag: T,
+    /// Commit message.
+    pub comment: T,
+    /// Author of the image.
+    pub author: T,
+    /// Whether to pause the container before committing.
+    pub pause: bool,
+    /// `Dockerfile` instructions to apply while committing
+    pub changes: T,
+}
+
+/// Trait providing implementations for [Commit Container Options](struct.CommitContainerOptions.html)
+/// struct.
+#[allow(missing_docs)]
+pub trait CommitContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 7]>, Error>;
+}
+
+impl<'a> CommitContainerQueryParams<&'a str, &'a str> for CommitContainerOptions<&'a str> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 7]>, Error> {
+        Ok(ArrayVec::from([
+            ("container", self.container),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("comment", self.comment),
+            ("author", self.author),
+            ("pause", if self.pause { TRUE_STR } else { FALSE_STR }),
+            ("changes", self.changes),
+        ]))
+    }
+}
+
+impl<'a> CommitContainerQueryParams<&'a str, String> for CommitContainerOptions<String> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 7]>, Error> {
+        Ok(ArrayVec::from([
+            ("container", self.container),
+            ("repo", self.repo),
+            ("tag", self.tag),
+            ("comment", self.comment),
+            ("author", self.author),
+            ("pause", self.pause.to_string()),
+            ("changes", self.changes),
+        ]))
+    }
+}
+
+/// Result type for the [Commit Container API](../struct.Docker.html#method.commit_container)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct CommitContainerResults {
+    pub id: String,
+}
+
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
@@ -1077,6 +1163,66 @@ where
             Err(e) => Either::B(future::err(e.into())),
         }
     }
+
+    /// ---
+    ///
+    /// # Commit Container
+    ///
+    /// Prepares a container for a subsequent start operation.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Commit Container Options](image/struct.CommitContainerOptions.html) struct.
+    ///  - Container [Config](container/struct.Config.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - [Commit Container Results](container/struct.CommitContainerResults.html), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::CommitContainerOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let options = CommitContainerOptions{
+    ///     container: "my-running-container",
+    ///     pause: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let config = Config::<String> {
+    ///     ..Default::default()
+    /// };
+    ///
+    /// docker.commit_container(options, config);
+    /// ```
+    pub fn commit_container<T, K, V, Z>(
+        &self,
+        options: T,
+        config: Config<Z>,
+    ) -> impl Future<Item = CommitContainerResults, Error = Error>
+    where
+        T: CommitContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        Z: AsRef<str> + Eq + Hash + Serialize,
+    {
+        let url = "/commit";
+
+        let req = self.build_request(
+            url,
+            Builder::new().method(Method::POST),
+            options.into_array().map(|v| Some(v)),
+            Docker::<C>::serialize_payload(Some(config)),
+        );
+
+        self.process_into_value(req)
+    }
 }
 
 impl<C> DockerChain<C>
@@ -1143,7 +1289,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -1501,6 +1648,59 @@ where
             .prune_images(options)
             .map(|result| (self, result))
     }
+
+    /// ---
+    ///
+    /// # Commit Container
+    ///
+    /// Prepares a container for a subsequent start operation. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Commit Container Options](image/struct.CommitContainerOptions.html) struct.
+    ///  - Container [Config](container/struct.Config.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Commit Container Results](container/struct.CommitContainerResults.html), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::CommitContainerOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let options = CommitContainerOptions{
+    ///     container: "my-running-container",
+    ///     pause: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let config = Config::<String> {
+    ///     ..Default::default()
+    /// };
+    ///
+    /// docker.chain().commit_container(options, config);
+    /// ```
+    pub fn commit_container<T, K, V, Z>(
+        self,
+        options: T,
+        config: Config<Z>,
+    ) -> impl Future<Item = (DockerChain<C>, CommitContainerResults), Error = Error>
+    where
+        T: CommitContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+        Z: AsRef<str> + Eq + Hash + Serialize,
+    {
+        self.inner
+            .commit_container(options, config)
+            .map(|result| (self, result))
+    }
 }
 
 #[cfg(test)]
@@ -1538,7 +1738,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1569,7 +1770,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1593,7 +1795,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1617,7 +1820,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1636,19 +1840,19 @@ mod tests {
         let image_history_results = docker.image_history("hello-world");
 
         let future = image_history_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .take(1)
-                    .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                        == "hello-world:latest")
-            )
+            assert!(vec
+                .into_iter()
+                .take(1)
+                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                    == "hello-world:latest"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1672,17 +1876,17 @@ mod tests {
         let search_results = docker.search_images(search_options);
 
         let future = search_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .any(|api_image| &api_image.name == "hello-world")
-            )
+            assert!(vec
+                .into_iter()
+                .any(|api_image| &api_image.name == "hello-world"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1718,7 +1922,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1753,7 +1958,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1782,7 +1988,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

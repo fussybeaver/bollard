@@ -1577,7 +1577,7 @@ where
     ///
     /// let config = Config {
     ///     image: Some("hello-world"),
-    ///     cmd: vec!["/hello"],
+    ///     cmd: Some(vec!["/hello"]),
     ///     ..Default::default()
     /// };
     ///
@@ -2508,7 +2508,7 @@ where
     ///
     /// let config = Config {
     ///     image: Some("hello-world"),
-    ///     cmd: vec!["/hello"],
+    ///     cmd: Some(vec!["/hello"]),
     ///     ..Default::default()
     /// };
     ///

@@ -44,10 +44,13 @@ jobs:
       - run: docker run -d --restart always --name registry -p 5000:5000 registry:2
       - run: docker pull hello-world:linux
       - run: docker pull fnichol/uhttpd
+      - run: docker pull alpine
       - run: docker tag hello-world:linux localhost:5000/hello-world:linux
       - run: docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+      - run: docker tag alpine localhost:5000/alpine
       - run: docker push localhost:5000/hello-world:linux
       - run: docker push localhost:5000/fnichol/uhttpd
+      - run: docker push localhost:5000/alpine
       - run: docker run -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test -- --test-threads 1
   test_doc:
     docker:
@@ -56,22 +59,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti  --rm bollard cargo test --doc --all-features
-  test_unix:
-    docker:
-      - image: docker:18.09.0
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker build -t bollard .
-      - run: docker run -d --restart always --name registry -p 5000:5000 registry:2
-      - run: docker pull hello-world:linux
-      - run: docker pull fnichol/uhttpd
-      - run: docker tag hello-world:linux localhost:5000/hello-world:linux
-      - run: docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
-      - run: docker push localhost:5000/hello-world:linux
-      - run: docker push localhost:5000/fnichol/uhttpd
-      - run: docker run -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test -- --test-threads 1
+      - run: docker run -ti --rm bollard cargo test --doc --all-features
 
 
 workflows:

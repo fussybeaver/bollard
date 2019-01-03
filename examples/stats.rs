@@ -1,4 +1,5 @@
 //! Stream stats for all running Docker containers asynchronously
+#![type_length_limit = "2097152"]
 extern crate bollard;
 #[macro_use]
 extern crate failure;
@@ -36,8 +37,7 @@ fn main() {
                     all: true,
                     filters: filter,
                     ..Default::default()
-                }))
-                .and_then(move |(docker, containers)| {
+                })).and_then(move |(docker, containers)| {
                     if containers.is_empty() {
                         Err(bail!("no running containers"))
                     } else {
@@ -65,8 +65,7 @@ fn main() {
                         }
                         Ok(Loop::Continue((docker, new_monitor)))
                     }
-                })
-                .map_err(|e| println!("{:?}", e))
+                }).map_err(|e| println!("{:?}", e))
         },
     );
 
