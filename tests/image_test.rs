@@ -13,7 +13,7 @@ use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
 use bollard::container::{
-    Config, CreateContainerOptions, LogsOptions, RemoveContainerOptions, StartContainerOptions,
+    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
     WaitContainerOptions,
 };
 use bollard::image::*;

@@ -1993,4 +1993,39 @@ mod tests {
 
         rt.shutdown_now().wait().unwrap();
     }
+
+    #[test]
+    fn test_commit_container() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 80\r\n\r\n{\"Id\":\"sha256:c69d56ed58eb9b519bb3de569de7e83f5c3eff57858eaa7883a9e206cf7ca5eb\"}\r\n\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let commit_container_options = CommitContainerOptions {
+            container: "my-running-container",
+            pause: true,
+            ..Default::default()
+        };
+
+        let config = Config::<String> {
+            ..Default::default()
+        };
+
+        let results = docker.commit_container(commit_container_options, config);
+
+        let future = results.map(|_| assert!(true));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
 }
