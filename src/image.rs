@@ -1168,7 +1168,7 @@ where
     ///
     /// # Commit Container
     ///
-    /// Prepares a container for a subsequent start operation.
+    /// Create a new image from a container.
     ///
     /// # Arguments
     ///
@@ -1653,7 +1653,7 @@ where
     ///
     /// # Commit Container
     ///
-    /// Prepares a container for a subsequent start operation. Consumes the client instance.
+    /// Create a new image from a container.
     ///
     /// # Arguments
     ///
