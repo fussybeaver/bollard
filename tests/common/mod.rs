@@ -117,13 +117,13 @@ where
     };
 
     let cmd = if cfg!(windows) {
-        vec![
+        Some(vec![
             "cmd".to_string(),
             "/C".to_string(),
             "type C:\\hello.txt".to_string(),
-        ]
+        ])
     } else {
-        vec!["/hello".to_string()]
+        Some(vec!["/hello".to_string()])
     };
 
     chain
@@ -187,16 +187,16 @@ where
 
     let cmd = || {
         if cfg!(windows) {
-            vec![
+            Some(vec![
                 "\\registry.exe".to_string(),
                 "serve".to_string(),
                 "/config/config.yml".to_string(),
-            ]
+            ])
         } else {
-            vec![
+            Some(vec![
                 "/entrypoint.sh".to_string(),
                 "/etc/docker/registry/config.yml".to_string(),
-            ]
+            ])
         }
     };
 
@@ -230,9 +230,10 @@ where
                                         .unwrap_or("0.0.0.0".to_string()),
                                     host_port: "5000".to_string(),
                                 }],
-                            )].iter()
-                                .cloned()
-                                .collect::<HashMap<String, Vec<PortBinding<String>>>>(),
+                            )]
+                            .iter()
+                            .cloned()
+                            .collect::<HashMap<String, Vec<PortBinding<String>>>>(),
                         ),
                         publish_all_ports: Some(true),
                         restart_policy: Some(RestartPolicy {
@@ -279,16 +280,16 @@ where
 
     let cmd = || {
         if cfg!(windows) {
-            vec![]
+            Some(vec![])
         } else {
-            vec![
+            Some(vec![
                 "/usr/sbin/run_uhttpd".to_string(),
                 "-f".to_string(),
                 "-p".to_string(),
                 "80".to_string(),
                 "-h".to_string(),
                 "/www".to_string(),
-            ]
+            ])
         }
     };
 

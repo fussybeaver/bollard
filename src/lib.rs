@@ -1,6 +1,12 @@
 #![deny(
-    missing_docs, missing_debug_implementations, missing_copy_implementations, trivial_casts,
-    trivial_numeric_casts, unstable_features, unused_import_braces, unused_qualifications
+    missing_docs,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications
 )]
 //! [![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
 //! [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -244,7 +250,7 @@
 //!         None::<CreateContainerOptions<String>>,
 //!         Config {
 //!             image: Some("hello-world"),
-//!             cmd: vec!["/hello"],
+//!             cmd: Some(vec!["/hello"]),
 //!             ..Default::default()
 //!         }));
 //! # }

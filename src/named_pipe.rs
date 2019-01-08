@@ -254,7 +254,6 @@ impl Connect for NamedPipeConnector {
     type Future = ConnectorConnectFuture;
 
     fn connect(&self, destination: Destination) -> Self::Future {
-        debug!("Connecting to {:?}", destination);
         ConnectorConnectFuture::Start(destination)
     }
 }
@@ -272,17 +271,10 @@ impl Future for ConnectorConnectFuture {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        debug!("ConnectFuture poll triggered");
         loop {
             let next_state = match self {
                 ConnectorConnectFuture::Start(destination) => {
-                    debug!("ConnectFuture Start matched: {:?}", destination);
                     if destination.scheme() != NAMED_PIPE_SCHEME {
-                        debug!(
-                            "Schema does not match {} != expected {}",
-                            destination.scheme(),
-                            NAMED_PIPE_SCHEME
-                        );
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             format!("Invalid scheme {:?}", destination.scheme()),
@@ -293,15 +285,12 @@ impl Future for ConnectorConnectFuture {
                         Some(path) => path,
 
                         None => {
-                            debug!("Failed to parse Uri {:?}", &destination,);
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidInput,
                                 format!("Invalid uri {:?}", destination),
                             ));
                         }
                     };
-
-                    debug!("All OK to connect to {}", &path);
 
                     ConnectorConnectFuture::Connect(NamedPipeStream::connect(&path))
                 }
