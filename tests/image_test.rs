@@ -19,6 +19,7 @@ use bollard::container::{
 use bollard::image::*;
 use bollard::Docker;
 
+use std::collections::HashMap;
 use std::default::Default;
 
 #[macro_use]
@@ -44,11 +45,12 @@ where
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
-        })
-        .map(|(docker, result)| {
-            assert!(result
-                .into_iter()
-                .any(|api_image| &api_image.name == "hello-world"));
+        }).map(|(docker, result)| {
+            assert!(
+                result
+                    .into_iter()
+                    .any(|api_image| &api_image.name == "hello-world")
+            );
             docker
         });
 
@@ -71,10 +73,12 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.inspect_image(&image()))
         .map(move |(docker, result)| {
-            assert!(result
-                .repo_tags
-                .into_iter()
-                .any(|repo_tag| repo_tag == image().to_string()));
+            assert!(
+                result
+                    .repo_tags
+                    .into_iter()
+                    .any(|repo_tag| repo_tag == image().to_string())
+            );
             docker
         });
 
@@ -100,13 +104,14 @@ where
                 all: true,
                 ..Default::default()
             }))
-        })
-        .map(move |(docker, result)| {
-            assert!(result.into_iter().any(|api_image| api_image
-                .repo_tags
-                .unwrap_or(vec![String::new()])
-                .into_iter()
-                .any(|repo_tag| repo_tag == image().to_string())));
+        }).map(move |(docker, result)| {
+            assert!(result.into_iter().any(|api_image| {
+                api_image
+                    .repo_tags
+                    .unwrap_or(vec![String::new()])
+                    .into_iter()
+                    .any(|repo_tag| repo_tag == image().to_string())
+            }));
             docker
         });
 
@@ -129,11 +134,13 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.image_history(&image()))
         .map(move |(docker, result)| {
-            assert!(result.into_iter().take(1).any(|history| history
-                .tags
-                .unwrap_or(vec![String::new()])
-                .into_iter()
-                .any(|tag| tag == image().to_string())));
+            assert!(result.into_iter().take(1).any(|history| {
+                history
+                    .tags
+                    .unwrap_or(vec![String::new()])
+                    .into_iter()
+                    .any(|tag| tag == image().to_string())
+            }));
             docker
         });
 
@@ -144,8 +151,10 @@ fn prune_images_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
+    let mut filters = HashMap::new();
+    filters.insert("label", vec!["maintainer=some_maintainer"]);
     rt_exec!(
-        docker.prune_images(None::<PruneImagesOptions<String>>),
+        docker.prune_images(Some(PruneImagesOptions { filters: filters })),
         |_| ()
     );
 }
@@ -172,8 +181,7 @@ where
                     ..Default::default()
                 }),
             )
-        })
-        .map(move |(docker, result)| {
+        }).map(move |(docker, result)| {
             assert!(result.into_iter().any(|s| match s {
                 RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
                 _ => false,
@@ -221,20 +229,17 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container",
                 None::<StartContainerOptions<String>>,
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container",
                 None::<WaitContainerOptions<String>>,
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.commit_container(
                 CommitContainerOptions {
                     container: "integration_test_commit_container",
@@ -246,8 +251,7 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: "integration_test_commit_container_next",
@@ -262,20 +266,17 @@ where
                     ..Default::default()
                 },
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container_next",
                 None::<StartContainerOptions<String>>,
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container_next",
                 None::<WaitContainerOptions<String>>,
             )
-        })
-        .map(move |(docker, stream)| {
+        }).map(move |(docker, stream)| {
             stream
                 .take(1)
                 .into_future()
@@ -286,26 +287,22 @@ where
                     }
                     assert_eq!(first.status_code, 0);
                     docker
-                })
-                .or_else(|e| {
+                }).or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
                 })
-        })
-        .flatten()
+        }).flatten()
         .and_then(move |docker| {
             docker.remove_container(
                 "integration_test_commit_container_next",
                 None::<RemoveContainerOptions>,
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.remove_image(
                 "integration_test_commit_container_next",
                 None::<RemoveImageOptions>,
             )
-        })
-        .and_then(move |(docker, _)| {
+        }).and_then(move |(docker, _)| {
             docker.remove_container(
                 "integration_test_commit_container",
                 None::<RemoveContainerOptions>,
@@ -331,7 +328,7 @@ fn integration_test_inspect_image() {
 }
 
 #[test]
-fn integration_test_image_create() {
+fn integration_test_images_list() {
     connect_to_docker_and_run!(list_images_test);
 }
 

@@ -214,7 +214,7 @@ pub enum CreateImageResults {
 /// use std::default::Default;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("dangling", "true");
+/// filters.insert("dangling", vec!["true"]);
 ///
 /// ListImagesOptions{
 ///   all: true,
@@ -244,7 +244,7 @@ where
     ///  - `label`=`key` or `label`=`"key=value"` of an image label
     ///  - `reference`=(`<image-name>[:<tag>]`)
     ///  - `since`=(`<image-name>[:<tag>]`, `<image id>` or `<image@digest>`)
-    pub filters: HashMap<T, T>,
+    pub filters: HashMap<T, Vec<T>>,
     /// Show digest information as a RepoDigests field on each image.
     pub digests: bool,
 }
@@ -280,7 +280,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("until", "10m");
+/// filters.insert("until", vec!["10m"]);
 ///
 /// PruneImagesOptions{
 ///   filters: filters,
@@ -309,7 +309,7 @@ where
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
     ///  `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
     ///  specified labels.
-    pub filters: HashMap<T, T>,
+    pub filters: HashMap<T, Vec<T>>,
 }
 
 /// Trait providing implementations for [Prune Images Options](struct.PruneImagesOptions.html).
@@ -713,7 +713,7 @@ where
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("dangling", "true");
+    /// filters.insert("dangling", vec!["true"]);
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
@@ -863,7 +863,7 @@ where
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneImagesOptions {
     ///   filters: filters
@@ -1289,8 +1289,7 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
@@ -1551,7 +1550,7 @@ where
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("dangling", "true");
+    /// filters.insert("dangling", vec!["true"]);
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
@@ -1628,7 +1627,7 @@ where
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneImagesOptions {
     ///   filters: filters
@@ -1722,7 +1721,8 @@ mod tests {
         let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
 
         let mut filters = HashMap::new();
-        filters.insert("dangling", "true");
+        filters.insert("dangling", vec!["true"]);
+        filters.insert("label", vec!["maintainer=some_maintainer"]);
 
         let options = Some(ListImagesOptions {
             all: true,
@@ -1738,8 +1738,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1770,8 +1769,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1795,8 +1793,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1820,8 +1817,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1840,19 +1836,19 @@ mod tests {
         let image_history_results = docker.image_history("hello-world");
 
         let future = image_history_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .take(1)
-                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                    == "hello-world:latest"))
+            assert!(
+                vec.into_iter()
+                    .take(1)
+                    .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                        == "hello-world:latest")
+            )
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1876,17 +1872,17 @@ mod tests {
         let search_results = docker.search_images(search_options);
 
         let future = search_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .any(|api_image| &api_image.name == "hello-world"))
+            assert!(
+                vec.into_iter()
+                    .any(|api_image| &api_image.name == "hello-world")
+            )
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1922,8 +1918,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1958,8 +1953,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1988,8 +1982,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2023,8 +2016,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
