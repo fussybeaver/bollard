@@ -683,6 +683,204 @@ pub struct CommitContainerResults {
     pub id: String,
 }
 
+/// Parameters to the [Build Image API](../struct.Docker.html#method.build_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::image::BuildImageOptions;
+///
+/// BuildImageOptions {
+///     dockerfile: "Dockerfile",
+///     t: "my-image",
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```
+/// # use bollard::image::BuildImageOptions;
+/// # use std::default::Default;
+/// BuildImageOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct BuildImageOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Path within the build context to the `Dockerfile`. This is ignored if `remote` is specified and
+    /// points to an external `Dockerfile`.
+    pub dockerfile: T,
+    /// A name and optional tag to apply to the image in the `name:tag` format. If you omit the tag
+    /// the default `latest` value is assumed. You can provide several `t` parameters.
+    pub t: T,
+    /// Extra hosts to add to `/etc/hosts`.
+    pub extrahosts: Option<T>,
+    /// A Git repository URI or HTTP/HTTPS context URI. If the URI points to a single text file,
+    /// the file’s contents are placed into a file called `Dockerfile` and the image is built from
+    /// that file. If the URI points to a tarball, the file is downloaded by the daemon and the
+    /// contents therein used as the context for the build. If the URI points to a tarball and the
+    /// `dockerfile` parameter is also specified, there must be a file with the corresponding path
+    /// inside the tarball.
+    pub remote: T,
+    /// Suppress verbose build output.
+    pub q: bool,
+    /// Do not use the cache when building the image.
+    pub nocache: bool,
+    /// JSON array of images used for build cache resolution.
+    pub cachefrom: Vec<T>,
+    /// Attempt to pull the image even if an older image exists locally.
+    pub pull: bool,
+    /// Remove intermediate containers after a successful build.
+    pub rm: bool,
+    /// Always remove intermediate containers, even upon failure.
+    pub forcerm: bool,
+    /// Set memory limit for build.
+    pub memory: Option<u64>,
+    /// Total memory (memory + swap). Set as `-1` to disable swap.
+    pub memswap: Option<i64>,
+    /// CPU shares (relative weight).
+    pub cpushares: Option<u64>,
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`).
+    pub cpusetcpus: T,
+    /// The length of a CPU period in microseconds.
+    pub cpuperiod: Option<u64>,
+    /// Microseconds of CPU time that the container can get in a CPU period.
+    pub cpuquota: Option<u64>,
+    /// JSON map of string pairs for build-time variables. Users pass these values at build-time.
+    /// Docker uses the buildargs as the environment context for commands run via the `Dockerfile`
+    /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
+    pub buildargs: HashMap<T, T>,
+    /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
+    pub shmsize: Option<u64>,
+    /// Squash the resulting images layers into a single layer.
+    pub squash: bool,
+    /// Arbitrary key/value labels to set on the image, as a JSON map of string pairs.
+    pub labels: T,
+    /// Sets the networking mode for the run commands during build. Supported standard values are:
+    /// `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's
+    /// name to which this container should connect to.
+    pub networkmode: T,
+    /// Platform in the format `os[/arch[/variant]]`
+    pub platform: T,
+}
+
+/// Trait providing implementations for [Build Image Options](struct.BuildImageOptions.html)
+/// struct.
+#[allow(missing_docs)]
+pub trait BuildImageQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<Vec<(K, String)>, Error>;
+}
+
+impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut output = vec![
+            ("dockerfile", self.dockerfile.to_string()),
+            ("t", self.t.to_string()),
+            ("remote", self.remote.to_string()),
+            ("q", self.q.to_string()),
+            ("nocache", self.nocache.to_string()),
+            ("cachefrom", serde_json::to_string(&self.cachefrom)?),
+            ("pull", self.pull.to_string()),
+            ("rm", self.rm.to_string()),
+            ("forcerm", self.forcerm.to_string()),
+            ("cpusetcpus", self.cpusetcpus.to_string()),
+            ("buildargs", serde_json::to_string(&self.buildargs)?),
+            ("squash", self.squash.to_string()),
+            ("labels", self.labels.to_string()),
+            ("networkmode", self.networkmode.to_string()),
+            ("platform", self.platform.to_string()),
+        ];
+
+        output.extend(
+            vec![
+                self.extrahosts.map(|v| ("extrahosts", v.to_string())),
+                self.memory.map(|v| ("memory", v.to_string())),
+                self.cpushares.map(|v| ("cpushares", v.to_string())),
+                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
+                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
+                self.shmsize.map(|v| ("shmsize", v.to_string())),
+            ].into_iter()
+            .flatten(),
+        );
+
+        Ok(output)
+    }
+}
+
+impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut output = vec![
+            ("dockerfile", self.dockerfile),
+            ("t", self.t),
+            ("remote", self.remote),
+            ("q", self.q.to_string()),
+            ("nocache", self.nocache.to_string()),
+            ("cachefrom", serde_json::to_string(&self.cachefrom)?),
+            ("pull", self.pull.to_string()),
+            ("rm", self.rm.to_string()),
+            ("forcerm", self.forcerm.to_string()),
+            ("cpusetcpus", self.cpusetcpus.to_string()),
+            ("buildargs", serde_json::to_string(&self.buildargs)?),
+            ("squash", self.squash.to_string()),
+            ("labels", self.labels),
+            ("networkmode", self.networkmode),
+            ("platform", self.platform),
+        ];
+
+        output.extend(
+            vec![
+                self.extrahosts.map(|v| ("extrahosts", v)),
+                self.memory.map(|v| ("memory", v.to_string())),
+                self.cpushares.map(|v| ("cpushares", v.to_string())),
+                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
+                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
+                self.shmsize.map(|v| ("shmsize", v.to_string())),
+            ].into_iter()
+            .flatten(),
+        );
+
+        Ok(output)
+    }
+}
+
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageAuxDetail {
+    #[serde(rename = "ID")]
+    id: String,
+}
+
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageErrorDetail {
+    message: String,
+}
+
+/// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+#[allow(missing_docs)]
+pub enum BuildImageResults {
+    BuildImageStream {
+        stream: String,
+    },
+    BuildImageAux {
+        aux: BuildImageAuxDetail,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildImageError {
+        error_detail: BuildImageErrorDetail,
+        error: String,
+    },
+}
+
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
@@ -1223,6 +1421,84 @@ where
 
         self.process_into_value(req)
     }
+
+    /// ---
+    ///
+    /// # Build Image
+    ///
+    /// Build an image from a tar archive with a `Dockerfile` in it.
+    ///
+    /// The `Dockerfile` specifies how the image is built from the tar archive. It is typically in
+    /// the archive's root, but can be at a different path or have a different name by specifying
+    /// the `dockerfile` parameter.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
+    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::BuildImageOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = BuildImageOptions{
+    ///     dockerfile: "Dockerfile",
+    ///     t: "my-image",
+    ///     rm: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.build_image(options, None, Some(contents.into()));
+    /// ```
+    pub fn build_image<T, K>(
+        &self,
+        options: T,
+        credentials: Option<DockerCredentials>,
+        tar: Option<Body>,
+    ) -> impl Stream<Item = BuildImageResults, Error = Error>
+    where
+        T: BuildImageQueryParams<K>,
+        K: AsRef<str>,
+    {
+        let url = "/build";
+
+        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        })) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    &url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/x-tar")
+                        .header("X-REGISTRY-AUTH", ser_cred),
+                    options.into_array().map(|v| Some(v)),
+                    Ok(tar.unwrap_or_else(|| Body::empty())),
+                );
+
+                EitherStream::A(self.process_into_stream(req))
+            }
+            Err(e) => EitherStream::B(future::err(e.into()).into_stream()),
+        }
+    }
 }
 
 impl<C> DockerChain<C>
@@ -1699,6 +1975,77 @@ where
         self.inner
             .commit_container(options, config)
             .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Build Image
+    ///
+    /// Build an image from a tar archive with a `Dockerfile` in it.
+    ///
+    /// The `Dockerfile` specifies how the image is built from the tar archive. It is typically in
+    /// the archive's root, but can be at a different path or have a different name by specifying
+    /// the `dockerfile` parameter.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
+    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,norun
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::BuildImageOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = BuildImageOptions{
+    ///     dockerfile: "Dockerfile",
+    ///     t: "my-image",
+    ///     rm: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.build_image(options, None, Some(contents.into()));
+    /// ```
+    pub fn build_image<T, K>(
+        self,
+        options: T,
+        credentials: Option<DockerCredentials>,
+        tar: Option<Body>,
+    ) -> impl Future<
+        Item = (
+            DockerChain<C>,
+            impl Stream<Item = BuildImageResults, Error = Error>,
+        ),
+        Error = Error,
+    >
+    where
+        T: BuildImageQueryParams<K>,
+        K: AsRef<str>,
+    {
+        self.inner
+            .build_image(options, credentials, tar)
+            .into_future()
+            .map(|(first, rest)| match first {
+                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
+                None => (self, EitherStream::B(stream::empty())),
+            }).map_err(|(err, _)| err)
     }
 }
 

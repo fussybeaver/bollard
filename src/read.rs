@@ -62,7 +62,8 @@ impl Decoder for LineDecoder {
                     debug!("LineDecoder returning due to unknown first byte");
                     Ok(None)
                 }
-            }.map_err(|e| e.into())
+            }
+            .map_err(|e| e.into())
         } else {
             debug!("LineDecoder returning due to an empty line");
             Ok(None)
@@ -109,7 +110,8 @@ where
                             message: e.to_string(),
                             column: e.column(),
                             contents: content.to_string(),
-                        }.into())
+                        }
+                        .into())
                     }),
                 Err(e) => Err(e.into()),
             }
