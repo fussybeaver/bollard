@@ -1,7 +1,7 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
            "Eric Kidd <git@randomhacks.net>",
@@ -52,6 +52,8 @@ tokio-timer = "0.2.8"
 yup-hyper-mock = "3.14.0"
 tokio-threadpool = "0.1.7"
 tokio-executor = "0.1.5"
+tar = "0.4.20"
+flate2 = "1.0"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal = "0.6.0"
