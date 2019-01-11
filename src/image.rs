@@ -2367,4 +2367,49 @@ mod tests {
 
         rt.shutdown_now().wait().unwrap();
     }
+
+    #[test]
+    fn test_build_image() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/x-tar\r\nContent-Length: 520\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e 3f53bb00af94\\n\"}\r\n{\"stream\":\"Step 2/2 : RUN touch bollard.txt\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e Running in 853fceb48e80\\n\"}\r\n{\"stream\":\"Removing intermediate container 853fceb48e80\\n\"}\r\n{\"stream\":\" ---\\u003e 5949ad5433c9\\n\"}\r\n{\"aux\":{\"ID\":\"sha256:5949ad5433c96bb38c6a60acc84653600ccb06f1bdd7216acdba752bc2da7460\"}}\r\n{\"stream\":\"Successfully built 5949ad5433c9\\n\"}\r\n{\"stream\":\"Successfully tagged integration_test_build_image:latest\\n\"}\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let build_image_options = BuildImageOptions {
+            t: "my-image",
+            rm: true,
+            ..Default::default()
+        };
+
+        let credentials = Some(DockerCredentials {
+            username: Some("Jack".to_string()),
+            password: Some("myverysecretpassword".to_string()),
+            email: Some("jack.smith@example.com".to_string()),
+            serveraddress: Some("localhost:5000".to_string()),
+        });
+
+        let results = docker.build_image(build_image_options, credentials, Some(Vec::new().into()));
+
+        let future = results.collect().map(|vec| {
+            assert!(vec.into_iter().any(|result| match result {
+                BuildImageResults::BuildImageStream { stream } => {
+                    stream == "Successfully tagged integration_test_build_image:latest\n"
+                }
+                _ => false,
+            }))
+        });
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            }).unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
 }
