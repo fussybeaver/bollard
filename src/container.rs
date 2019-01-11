@@ -1509,7 +1509,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::{ListContainersOptions};
@@ -1565,7 +1565,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::{CreateContainerOptions, Config};
@@ -1625,7 +1625,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::StartContainerOptions;
@@ -1671,7 +1671,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// use bollard::container::StopContainerOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
@@ -1720,7 +1720,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1776,7 +1776,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1827,7 +1827,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1877,7 +1877,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::InspectContainerOptions;
@@ -1927,7 +1927,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::TopOptions;
@@ -1978,7 +1978,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2031,7 +2031,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2071,7 +2071,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2122,7 +2122,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2173,7 +2173,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2222,7 +2222,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2272,7 +2272,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2307,7 +2307,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2343,7 +2343,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::PruneContainersOptions;
@@ -2402,7 +2402,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2447,7 +2447,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2496,7 +2496,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::{CreateContainerOptions, Config};
@@ -2550,7 +2550,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::StartContainerOptions;
@@ -2590,7 +2590,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// use bollard::container::StopContainerOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
@@ -2632,7 +2632,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::ListContainersOptions;
@@ -2683,7 +2683,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2717,8 +2717,7 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2739,7 +2738,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::InspectContainerOptions;
@@ -2783,7 +2782,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2827,7 +2826,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::TopOptions;
@@ -2871,7 +2870,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2901,8 +2900,7 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
@@ -2922,7 +2920,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2955,7 +2953,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -2983,8 +2981,7 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
@@ -3005,7 +3002,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -3048,7 +3045,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -3093,7 +3090,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -3121,7 +3118,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -3154,7 +3151,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -3225,8 +3222,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3250,8 +3246,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3277,8 +3272,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3307,8 +3301,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3338,8 +3331,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3365,8 +3357,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3392,8 +3383,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3423,8 +3413,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3460,8 +3449,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3486,8 +3474,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3514,8 +3501,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3543,8 +3529,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3574,8 +3559,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3603,8 +3587,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3628,8 +3611,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3653,8 +3635,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3678,8 +3659,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

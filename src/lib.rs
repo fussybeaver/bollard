@@ -48,7 +48,7 @@
 //! `Docker::connect_with_unix` method API to parameterise the
 //! interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(unix)]
 //! Docker::connect_with_unix_defaults();
@@ -60,7 +60,7 @@
 //! `Docker::connect_with_name_pipe` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(windows)]
 //! Docker::connect_with_named_pipe_defaults();
@@ -73,7 +73,7 @@
 //! `Docker::connect_with_http` method API to
 //! parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! Docker::connect_with_http_defaults();
 //! ```
@@ -92,7 +92,7 @@
 //! Use the `Docker::connect_with_ssl` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(feature = "openssl")]
 //! Docker::connect_with_ssl_defaults();
@@ -112,7 +112,7 @@
 //! Use the `Docker::connect_with_ssl` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! Docker::connect_with_tls_defaults();
 //! ```

@@ -902,7 +902,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ListImagesOptions;
@@ -958,7 +958,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CreateImageOptions;
@@ -1016,7 +1016,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1053,7 +1053,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::PruneImagesOptions;
@@ -1106,7 +1106,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1145,7 +1145,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::SearchImagesOptions;
@@ -1202,7 +1202,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::RemoveImageOptions;
@@ -1255,7 +1255,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::TagImageOptions;
@@ -1309,7 +1309,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::auth::DockerCredentials;
@@ -1379,7 +1379,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CommitContainerOptions;
@@ -1445,7 +1445,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::BuildImageOptions;
@@ -1523,7 +1523,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CreateImageOptions;
@@ -1586,7 +1586,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::TagImageOptions;
@@ -1633,7 +1633,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::auth::DockerCredentials;
@@ -1688,7 +1688,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::RemoveImageOptions;
@@ -1733,7 +1733,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::SearchImagesOptions;
@@ -1782,7 +1782,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1817,7 +1817,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ListImagesOptions;
@@ -1864,7 +1864,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1895,7 +1895,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::PruneImagesOptions;
@@ -1941,7 +1941,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CommitContainerOptions;
@@ -2000,7 +2000,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::BuildImageOptions;

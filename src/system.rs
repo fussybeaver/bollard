@@ -41,7 +41,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.version();
@@ -69,7 +69,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -107,7 +107,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.chain().version();
@@ -130,7 +130,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
