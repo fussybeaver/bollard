@@ -38,7 +38,7 @@ The client will connect to the standard unix socket location `/var/run/docker.so
 `Docker::connect_with_unix` method API to parameterise the
 interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(unix)]
 Docker::connect_with_unix_defaults();
@@ -50,7 +50,7 @@ The client will connect to the standard windows pipe location `\\.\pipe\docker_e
 `Docker::connect_with_name_pipe` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(windows)]
 Docker::connect_with_named_pipe_defaults();
@@ -63,7 +63,7 @@ The client will connect to the location pointed to by `DOCKER_HOST` environment 
 `Docker::connect_with_http` method API to
 parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
@@ -82,7 +82,7 @@ certificates - `key.pem` for the private key, `cert.pem` for the server certific
 Use the `Docker::connect_with_ssl` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(feature = "openssl")]
 Docker::connect_with_ssl_defaults();
@@ -102,7 +102,7 @@ authority chain.
 Use the `Docker::connect_with_ssl` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 Docker::connect_with_tls_defaults();
 ```
@@ -209,7 +209,7 @@ docker.chain().create_image(Some(CreateImageOptions{
         None::<CreateContainerOptions<String>>,
         Config {
             image: Some("hello-world"),
-            cmd: vec!["/hello"],
+            cmd: Some(vec!["/hello"]),
             ..Default::default()
         }));
 ```

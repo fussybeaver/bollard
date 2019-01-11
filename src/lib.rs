@@ -1,13 +1,3 @@
-#![deny(
-    missing_docs,
-    missing_debug_implementations,
-    missing_copy_implementations,
-    trivial_casts,
-    trivial_numeric_casts,
-    unstable_features,
-    unused_import_braces,
-    unused_qualifications
-)]
 //! [![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
 //! [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 //! [![circle-ci](https://circleci.com/gh/fussybeaver/bollard.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard)
@@ -364,12 +354,25 @@
 //! docker run -d --restart always --name registry -p 5000:5000 registry:2
 //! docker pull hello-world:linux
 //! docker pull fnichol/uhttpd
+//! docker pull alpine
 //! docker tag hello-world:linux localhost:5000/hello-world:linux
 //! docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+//! docker tag alpine localhost:5000/alpine
 //! docker push localhost:5000/hello-world:linux
 //! docker push localhost:5000/fnichol/uhttpd
+//! docker push localhost:5000/alpine
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test --test-threads 1
 //! ```
+#![deny(
+    missing_docs,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications
+)]
 
 #[macro_use]
 extern crate failure;
