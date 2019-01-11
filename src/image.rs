@@ -1301,7 +1301,7 @@ where
     ///
     ///  - Image name as a string slice.
     ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
@@ -1435,13 +1435,14 @@ where
     /// # Arguments
     ///
     ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
     ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
     ///
     /// # Returns
     ///
-    ///  - unit type `()`, wrapped in a Future.
+    ///  - [Build Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous
+    ///  Stream.
     ///
     /// # Examples
     ///
@@ -1990,13 +1991,14 @@ where
     /// # Arguments
     ///
     ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
     ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
     ///
     /// # Returns
     ///
-    ///  - unit type `()`, wrapped in a Future.
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Build
+    ///  Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous Stream.
     ///
     /// # Examples
     ///
