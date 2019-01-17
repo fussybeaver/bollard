@@ -757,7 +757,7 @@ where
     /// Squash the resulting images layers into a single layer.
     pub squash: bool,
     /// Arbitrary key/value labels to set on the image, as a JSON map of string pairs.
-    pub labels: T,
+    pub labels: HashMap<T, T>,
     /// Sets the networking mode for the run commands during build. Supported standard values are:
     /// `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's
     /// name to which this container should connect to.
@@ -791,7 +791,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
             ("cpusetcpus", self.cpusetcpus.to_string()),
             ("buildargs", serde_json::to_string(&self.buildargs)?),
             ("squash", self.squash.to_string()),
-            ("labels", self.labels.to_string()),
+            ("labels", serde_json::to_string(&self.labels)?),
             ("networkmode", self.networkmode.to_string()),
             ("platform", self.platform.to_string()),
         ];
@@ -804,7 +804,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
@@ -827,7 +828,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
             ("cpusetcpus", self.cpusetcpus.to_string()),
             ("buildargs", serde_json::to_string(&self.buildargs)?),
             ("squash", self.squash.to_string()),
-            ("labels", self.labels),
+            ("labels", serde_json::to_string(&self.labels)?),
             ("networkmode", self.networkmode),
             ("platform", self.platform),
         ];
@@ -840,7 +841,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
