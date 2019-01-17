@@ -865,6 +865,13 @@ pub struct BuildImageErrorDetail {
     message: String,
 }
 
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageProgressDetail {
+    current: u64,
+}
+
 /// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
@@ -880,6 +887,13 @@ pub enum BuildImageResults {
     BuildImageError {
         error_detail: BuildImageErrorDetail,
         error: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildImageStatus {
+        status: String,
+        progress_detail: Option<BuildImageProgressDetail>,
+        progress: Option<String>,
+        id: String,
     },
 }
 
