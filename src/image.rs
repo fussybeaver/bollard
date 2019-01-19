@@ -862,6 +862,7 @@ pub struct BuildImageAuxDetail {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildImageErrorDetail {
+    code: Option<u64>,
     message: String,
 }
 
@@ -869,7 +870,8 @@ pub struct BuildImageErrorDetail {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildImageProgressDetail {
-    current: u64,
+    current: Option<u64>,
+    total: Option<u64>,
 }
 
 /// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
@@ -877,6 +879,7 @@ pub struct BuildImageProgressDetail {
 #[serde(untagged, deny_unknown_fields)]
 #[allow(missing_docs)]
 pub enum BuildImageResults {
+    BuildImageNone {},
     BuildImageStream {
         stream: String,
     },
@@ -893,7 +896,7 @@ pub enum BuildImageResults {
         status: String,
         progress_detail: Option<BuildImageProgressDetail>,
         progress: Option<String>,
-        id: String,
+        id: Option<String>,
     },
 }
 
