@@ -214,7 +214,7 @@ pub enum CreateImageResults {
 /// use std::default::Default;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("dangling", "true");
+/// filters.insert("dangling", vec!["true"]);
 ///
 /// ListImagesOptions{
 ///   all: true,
@@ -244,7 +244,7 @@ where
     ///  - `label`=`key` or `label`=`"key=value"` of an image label
     ///  - `reference`=(`<image-name>[:<tag>]`)
     ///  - `since`=(`<image-name>[:<tag>]`, `<image id>` or `<image@digest>`)
-    pub filters: HashMap<T, T>,
+    pub filters: HashMap<T, Vec<T>>,
     /// Show digest information as a RepoDigests field on each image.
     pub digests: bool,
 }
@@ -280,7 +280,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("until", "10m");
+/// filters.insert("until", vec!["10m"]);
 ///
 /// PruneImagesOptions{
 ///   filters: filters,
@@ -309,7 +309,7 @@ where
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
     ///  `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
     ///  specified labels.
-    pub filters: HashMap<T, T>,
+    pub filters: HashMap<T, Vec<T>>,
 }
 
 /// Trait providing implementations for [Prune Images Options](struct.PruneImagesOptions.html).
@@ -683,6 +683,223 @@ pub struct CommitContainerResults {
     pub id: String,
 }
 
+/// Parameters to the [Build Image API](../struct.Docker.html#method.build_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::image::BuildImageOptions;
+///
+/// BuildImageOptions {
+///     dockerfile: "Dockerfile",
+///     t: "my-image",
+///     ..Default::default()
+/// };
+/// ```
+///
+/// ```
+/// # use bollard::image::BuildImageOptions;
+/// # use std::default::Default;
+/// BuildImageOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct BuildImageOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Path within the build context to the `Dockerfile`. This is ignored if `remote` is specified and
+    /// points to an external `Dockerfile`.
+    pub dockerfile: T,
+    /// A name and optional tag to apply to the image in the `name:tag` format. If you omit the tag
+    /// the default `latest` value is assumed. You can provide several `t` parameters.
+    pub t: T,
+    /// Extra hosts to add to `/etc/hosts`.
+    pub extrahosts: Option<T>,
+    /// A Git repository URI or HTTP/HTTPS context URI. If the URI points to a single text file,
+    /// the file’s contents are placed into a file called `Dockerfile` and the image is built from
+    /// that file. If the URI points to a tarball, the file is downloaded by the daemon and the
+    /// contents therein used as the context for the build. If the URI points to a tarball and the
+    /// `dockerfile` parameter is also specified, there must be a file with the corresponding path
+    /// inside the tarball.
+    pub remote: T,
+    /// Suppress verbose build output.
+    pub q: bool,
+    /// Do not use the cache when building the image.
+    pub nocache: bool,
+    /// JSON array of images used for build cache resolution.
+    pub cachefrom: Vec<T>,
+    /// Attempt to pull the image even if an older image exists locally.
+    pub pull: bool,
+    /// Remove intermediate containers after a successful build.
+    pub rm: bool,
+    /// Always remove intermediate containers, even upon failure.
+    pub forcerm: bool,
+    /// Set memory limit for build.
+    pub memory: Option<u64>,
+    /// Total memory (memory + swap). Set as `-1` to disable swap.
+    pub memswap: Option<i64>,
+    /// CPU shares (relative weight).
+    pub cpushares: Option<u64>,
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`).
+    pub cpusetcpus: T,
+    /// The length of a CPU period in microseconds.
+    pub cpuperiod: Option<u64>,
+    /// Microseconds of CPU time that the container can get in a CPU period.
+    pub cpuquota: Option<u64>,
+    /// JSON map of string pairs for build-time variables. Users pass these values at build-time.
+    /// Docker uses the buildargs as the environment context for commands run via the `Dockerfile`
+    /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
+    pub buildargs: HashMap<T, T>,
+    /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
+    pub shmsize: Option<u64>,
+    /// Squash the resulting images layers into a single layer.
+    pub squash: bool,
+    /// Arbitrary key/value labels to set on the image, as a JSON map of string pairs.
+    pub labels: HashMap<T, T>,
+    /// Sets the networking mode for the run commands during build. Supported standard values are:
+    /// `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's
+    /// name to which this container should connect to.
+    pub networkmode: T,
+    /// Platform in the format `os[/arch[/variant]]`
+    pub platform: T,
+}
+
+/// Trait providing implementations for [Build Image Options](struct.BuildImageOptions.html)
+/// struct.
+#[allow(missing_docs)]
+pub trait BuildImageQueryParams<K>
+where
+    K: AsRef<str>,
+{
+    fn into_array(self) -> Result<Vec<(K, String)>, Error>;
+}
+
+impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut output = vec![
+            ("dockerfile", self.dockerfile.to_string()),
+            ("t", self.t.to_string()),
+            ("remote", self.remote.to_string()),
+            ("q", self.q.to_string()),
+            ("nocache", self.nocache.to_string()),
+            ("cachefrom", serde_json::to_string(&self.cachefrom)?),
+            ("pull", self.pull.to_string()),
+            ("rm", self.rm.to_string()),
+            ("forcerm", self.forcerm.to_string()),
+            ("cpusetcpus", self.cpusetcpus.to_string()),
+            ("buildargs", serde_json::to_string(&self.buildargs)?),
+            ("squash", self.squash.to_string()),
+            ("labels", serde_json::to_string(&self.labels)?),
+            ("networkmode", self.networkmode.to_string()),
+            ("platform", self.platform.to_string()),
+        ];
+
+        output.extend(
+            vec![
+                self.extrahosts.map(|v| ("extrahosts", v.to_string())),
+                self.memory.map(|v| ("memory", v.to_string())),
+                self.cpushares.map(|v| ("cpushares", v.to_string())),
+                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
+                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
+                self.shmsize.map(|v| ("shmsize", v.to_string())),
+            ]
+            .into_iter()
+            .flatten(),
+        );
+
+        Ok(output)
+    }
+}
+
+impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut output = vec![
+            ("dockerfile", self.dockerfile),
+            ("t", self.t),
+            ("remote", self.remote),
+            ("q", self.q.to_string()),
+            ("nocache", self.nocache.to_string()),
+            ("cachefrom", serde_json::to_string(&self.cachefrom)?),
+            ("pull", self.pull.to_string()),
+            ("rm", self.rm.to_string()),
+            ("forcerm", self.forcerm.to_string()),
+            ("cpusetcpus", self.cpusetcpus.to_string()),
+            ("buildargs", serde_json::to_string(&self.buildargs)?),
+            ("squash", self.squash.to_string()),
+            ("labels", serde_json::to_string(&self.labels)?),
+            ("networkmode", self.networkmode),
+            ("platform", self.platform),
+        ];
+
+        output.extend(
+            vec![
+                self.extrahosts.map(|v| ("extrahosts", v)),
+                self.memory.map(|v| ("memory", v.to_string())),
+                self.cpushares.map(|v| ("cpushares", v.to_string())),
+                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
+                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
+                self.shmsize.map(|v| ("shmsize", v.to_string())),
+            ]
+            .into_iter()
+            .flatten(),
+        );
+
+        Ok(output)
+    }
+}
+
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageAuxDetail {
+    #[serde(rename = "ID")]
+    id: String,
+}
+
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageErrorDetail {
+    code: Option<u64>,
+    message: String,
+}
+
+/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildImageProgressDetail {
+    current: Option<u64>,
+    total: Option<u64>,
+}
+
+/// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+#[allow(missing_docs)]
+pub enum BuildImageResults {
+    BuildImageNone {},
+    BuildImageStream {
+        stream: String,
+    },
+    BuildImageAux {
+        aux: BuildImageAuxDetail,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildImageError {
+        error_detail: BuildImageErrorDetail,
+        error: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildImageStatus {
+        status: String,
+        progress_detail: Option<BuildImageProgressDetail>,
+        progress: Option<String>,
+        id: Option<String>,
+    },
+}
+
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
@@ -704,7 +921,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ListImagesOptions;
@@ -713,7 +930,7 @@ where
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("dangling", "true");
+    /// filters.insert("dangling", vec!["true"]);
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
@@ -760,7 +977,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CreateImageOptions;
@@ -818,7 +1035,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -855,7 +1072,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::PruneImagesOptions;
@@ -863,7 +1080,7 @@ where
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneImagesOptions {
     ///   filters: filters
@@ -908,7 +1125,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -947,7 +1164,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::SearchImagesOptions;
@@ -1004,7 +1221,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::RemoveImageOptions;
@@ -1057,7 +1274,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::TagImageOptions;
@@ -1103,7 +1320,7 @@ where
     ///
     ///  - Image name as a string slice.
     ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
@@ -1111,7 +1328,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::auth::DockerCredentials;
@@ -1181,7 +1398,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CommitContainerOptions;
@@ -1223,6 +1440,85 @@ where
 
         self.process_into_value(req)
     }
+
+    /// ---
+    ///
+    /// # Build Image
+    ///
+    /// Build an image from a tar archive with a `Dockerfile` in it.
+    ///
+    /// The `Dockerfile` specifies how the image is built from the tar archive. It is typically in
+    /// the archive's root, but can be at a different path or have a different name by specifying
+    /// the `dockerfile` parameter.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
+    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous
+    ///  Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::BuildImageOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = BuildImageOptions{
+    ///     dockerfile: "Dockerfile",
+    ///     t: "my-image",
+    ///     rm: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.build_image(options, None, Some(contents.into()));
+    /// ```
+    pub fn build_image<T, K>(
+        &self,
+        options: T,
+        credentials: Option<DockerCredentials>,
+        tar: Option<Body>,
+    ) -> impl Stream<Item = BuildImageResults, Error = Error>
+    where
+        T: BuildImageQueryParams<K>,
+        K: AsRef<str>,
+    {
+        let url = "/build";
+
+        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        })) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    &url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/x-tar")
+                        .header("X-REGISTRY-AUTH", ser_cred),
+                    options.into_array().map(|v| Some(v)),
+                    Ok(tar.unwrap_or_else(|| Body::empty())),
+                );
+
+                EitherStream::A(self.process_into_stream(req))
+            }
+            Err(e) => EitherStream::B(future::err(e.into()).into_stream()),
+        }
+    }
 }
 
 impl<C> DockerChain<C>
@@ -1247,7 +1543,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CreateImageOptions;
@@ -1289,8 +1585,7 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+            }).map_err(|(err, _)| err)
     }
 
     /// ---
@@ -1311,7 +1606,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::TagImageOptions;
@@ -1358,7 +1653,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::auth::DockerCredentials;
@@ -1413,7 +1708,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::RemoveImageOptions;
@@ -1458,7 +1753,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     ///
     /// use bollard::image::SearchImagesOptions;
@@ -1507,7 +1802,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1542,7 +1837,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ListImagesOptions;
@@ -1551,7 +1846,7 @@ where
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("dangling", "true");
+    /// filters.insert("dangling", vec!["true"]);
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
@@ -1589,7 +1884,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -1620,7 +1915,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::PruneImagesOptions;
@@ -1628,7 +1923,7 @@ where
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneImagesOptions {
     ///   filters: filters
@@ -1666,7 +1961,7 @@ where
     ///
     /// # Examples
     ///
-    /// ```rust,norun
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::CommitContainerOptions;
@@ -1701,6 +1996,78 @@ where
             .commit_container(options, config)
             .map(|result| (self, result))
     }
+
+    /// ---
+    ///
+    /// # Build Image
+    ///
+    /// Build an image from a tar archive with a `Dockerfile` in it.
+    ///
+    /// The `Dockerfile` specifies how the image is built from the tar archive. It is typically in
+    /// the archive's root, but can be at a different path or have a different name by specifying
+    /// the `dockerfile` parameter.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
+    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Build
+    ///  Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::BuildImageOptions;
+    /// use bollard::container::Config;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = BuildImageOptions{
+    ///     dockerfile: "Dockerfile",
+    ///     t: "my-image",
+    ///     rm: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.build_image(options, None, Some(contents.into()));
+    /// ```
+    pub fn build_image<T, K>(
+        self,
+        options: T,
+        credentials: Option<DockerCredentials>,
+        tar: Option<Body>,
+    ) -> impl Future<
+        Item = (
+            DockerChain<C>,
+            impl Stream<Item = BuildImageResults, Error = Error>,
+        ),
+        Error = Error,
+    >
+    where
+        T: BuildImageQueryParams<K>,
+        K: AsRef<str>,
+    {
+        self.inner
+            .build_image(options, credentials, tar)
+            .into_future()
+            .map(|(first, rest)| match first {
+                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
+                None => (self, EitherStream::B(stream::empty())),
+            }).map_err(|(err, _)| err)
+    }
 }
 
 #[cfg(test)]
@@ -1722,7 +2089,8 @@ mod tests {
         let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
 
         let mut filters = HashMap::new();
-        filters.insert("dangling", "true");
+        filters.insert("dangling", vec!["true"]);
+        filters.insert("label", vec!["maintainer=some_maintainer"]);
 
         let options = Some(ListImagesOptions {
             all: true,
@@ -1738,8 +2106,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1770,8 +2137,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1795,8 +2161,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1820,8 +2185,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1840,19 +2204,19 @@ mod tests {
         let image_history_results = docker.image_history("hello-world");
 
         let future = image_history_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .take(1)
-                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                    == "hello-world:latest"))
+            assert!(
+                vec.into_iter()
+                    .take(1)
+                    .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                        == "hello-world:latest")
+            )
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1876,17 +2240,17 @@ mod tests {
         let search_results = docker.search_images(search_options);
 
         let future = search_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .any(|api_image| &api_image.name == "hello-world"))
+            assert!(
+                vec.into_iter()
+                    .any(|api_image| &api_image.name == "hello-world")
+            )
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1922,8 +2286,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1958,8 +2321,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -1988,8 +2350,7 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2023,8 +2384,52 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            })
-            .unwrap();
+            }).unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_build_image() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/x-tar\r\nContent-Length: 520\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e 3f53bb00af94\\n\"}\r\n{\"stream\":\"Step 2/2 : RUN touch bollard.txt\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e Running in 853fceb48e80\\n\"}\r\n{\"stream\":\"Removing intermediate container 853fceb48e80\\n\"}\r\n{\"stream\":\" ---\\u003e 5949ad5433c9\\n\"}\r\n{\"aux\":{\"ID\":\"sha256:5949ad5433c96bb38c6a60acc84653600ccb06f1bdd7216acdba752bc2da7460\"}}\r\n{\"stream\":\"Successfully built 5949ad5433c9\\n\"}\r\n{\"stream\":\"Successfully tagged integration_test_build_image:latest\\n\"}\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let build_image_options = BuildImageOptions {
+            t: "my-image",
+            rm: true,
+            ..Default::default()
+        };
+
+        let credentials = Some(DockerCredentials {
+            username: Some("Jack".to_string()),
+            password: Some("myverysecretpassword".to_string()),
+            email: Some("jack.smith@example.com".to_string()),
+            serveraddress: Some("localhost:5000".to_string()),
+        });
+
+        let results = docker.build_image(build_image_options, credentials, Some(Vec::new().into()));
+
+        let future = results.collect().map(|vec| {
+            assert!(vec.into_iter().any(|result| match result {
+                BuildImageResults::BuildImageStream { stream } => {
+                    stream == "Successfully tagged integration_test_build_image:latest\n"
+                }
+                _ => false,
+            }))
+        });
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            }).unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

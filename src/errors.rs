@@ -19,7 +19,10 @@ pub struct DockerResponseNotFoundError {
 
 /// Generic error emitted by the docker server.
 #[derive(Fail, Debug)]
-#[fail(display = "Docker responded with status code {}: {}", status_code, message)]
+#[fail(
+    display = "Docker responded with status code {}: {}",
+    status_code, message
+)]
 #[allow(missing_docs)]
 pub struct DockerResponseServerError {
     pub status_code: u16,
@@ -44,7 +47,10 @@ pub struct DockerResponseConflictError {
 
 /// Error emitted by the docker server, when it responds with a 304.
 #[derive(Fail, Debug)]
-#[fail(display = "API responded with a 304, resource was not modified: {}", message)]
+#[fail(
+    display = "API responded with a 304, resource was not modified: {}",
+    message
+)]
 #[allow(missing_docs)]
 pub struct DockerResponseNotModifiedError {
     pub message: String,
@@ -65,16 +71,12 @@ impl Display for JsonDataError {
         let peek_len: usize = 32;
         let description = "Failed to deserialize near ...";
         let from_start_length = self.column.checked_sub(backtrack_len).unwrap_or(0);
-        let spaces = ::std::iter::repeat(" ")
-            .take(description.len() + cmp::min(backtrack_len, self.column))
-            .collect::<String>();
         write!(
             f,
-            "{}{}...\n{}^---- {}",
+            "{}{}...\n{}",
             description,
             &self.contents
                 [from_start_length..cmp::min(self.contents.len(), self.column + peek_len)],
-            spaces,
             self.message
         )
     }

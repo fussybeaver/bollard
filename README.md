@@ -1,6 +1,6 @@
 [![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
 [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![circle-ci](https://circleci.com/gh/fussybeaver/bollard.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard)
+[![circle-ci](https://circleci.com/gh/fussybeaver/bollard/tree/master.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard/tree/master)
 [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 [![docs](https://docs.rs/bollard/badge.svg?version=0.1.0)](https://docs.rs/bollard/)
 
@@ -38,7 +38,7 @@ The client will connect to the standard unix socket location `/var/run/docker.so
 `Docker::connect_with_unix` method API to parameterise the
 interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(unix)]
 Docker::connect_with_unix_defaults();
@@ -50,7 +50,7 @@ The client will connect to the standard windows pipe location `\\.\pipe\docker_e
 `Docker::connect_with_name_pipe` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(windows)]
 Docker::connect_with_named_pipe_defaults();
@@ -63,7 +63,7 @@ The client will connect to the location pointed to by `DOCKER_HOST` environment 
 `Docker::connect_with_http` method API to
 parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
@@ -82,7 +82,7 @@ certificates - `key.pem` for the private key, `cert.pem` for the server certific
 Use the `Docker::connect_with_ssl` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 #[cfg(feature = "openssl")]
 Docker::connect_with_ssl_defaults();
@@ -102,7 +102,7 @@ authority chain.
 Use the `Docker::connect_with_ssl` method API
 to parameterise the interface.
 
-```rust,norun
+```rust
 use bollard::Docker;
 Docker::connect_with_tls_defaults();
 ```
@@ -209,7 +209,7 @@ docker.chain().create_image(Some(CreateImageOptions{
         None::<CreateContainerOptions<String>>,
         Config {
             image: Some("hello-world"),
-            cmd: vec!["/hello"],
+            cmd: Some(vec!["/hello"]),
             ..Default::default()
         }));
 ```

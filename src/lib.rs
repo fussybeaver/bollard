@@ -1,16 +1,6 @@
-#![deny(
-    missing_docs,
-    missing_debug_implementations,
-    missing_copy_implementations,
-    trivial_casts,
-    trivial_numeric_casts,
-    unstable_features,
-    unused_import_braces,
-    unused_qualifications
-)]
 //! [![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
 //! [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-//! [![circle-ci](https://circleci.com/gh/fussybeaver/bollard.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard)
+//! [![circle-ci](https://circleci.com/gh/fussybeaver/bollard/tree/master.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard/tree/master)
 //! [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 //! [![docs](https://docs.rs/bollard/badge.svg?version=0.1.0)](https://docs.rs/bollard/)
 //!
@@ -48,7 +38,7 @@
 //! `Docker::connect_with_unix` method API to parameterise the
 //! interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(unix)]
 //! Docker::connect_with_unix_defaults();
@@ -60,7 +50,7 @@
 //! `Docker::connect_with_name_pipe` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(windows)]
 //! Docker::connect_with_named_pipe_defaults();
@@ -73,7 +63,7 @@
 //! `Docker::connect_with_http` method API to
 //! parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! Docker::connect_with_http_defaults();
 //! ```
@@ -92,7 +82,7 @@
 //! Use the `Docker::connect_with_ssl` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! #[cfg(feature = "openssl")]
 //! Docker::connect_with_ssl_defaults();
@@ -112,7 +102,7 @@
 //! Use the `Docker::connect_with_ssl` method API
 //! to parameterise the interface.
 //!
-//! ```rust,norun
+//! ```rust
 //! use bollard::Docker;
 //! Docker::connect_with_tls_defaults();
 //! ```
@@ -364,12 +354,25 @@
 //! docker run -d --restart always --name registry -p 5000:5000 registry:2
 //! docker pull hello-world:linux
 //! docker pull fnichol/uhttpd
+//! docker pull alpine
 //! docker tag hello-world:linux localhost:5000/hello-world:linux
 //! docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+//! docker tag alpine localhost:5000/alpine
 //! docker push localhost:5000/hello-world:linux
 //! docker push localhost:5000/fnichol/uhttpd
+//! docker push localhost:5000/alpine
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test --test-threads 1
 //! ```
+#![deny(
+    missing_docs,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications
+)]
 
 #[macro_use]
 extern crate failure;
