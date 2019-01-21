@@ -804,8 +804,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
+            ].into_iter()
             .flatten(),
         );
 
@@ -841,8 +840,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
+            ].into_iter()
             .flatten(),
         );
 

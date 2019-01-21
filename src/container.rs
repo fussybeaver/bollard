@@ -5,10 +5,11 @@ use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
 use futures::{stream, Stream};
+use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::{Body, Method};
+use hyper::{Body, Chunk, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -1515,6 +1516,90 @@ pub struct PruneContainersResults {
     pub space_reclaimed: u64,
 }
 
+/// Parameters used in the [Upload To Container
+/// API](../struct.Docker.html#method.upload_to_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::UploadToContainerOptions;
+///
+/// use std::default::Default;
+///
+/// UploadToContainerOptions{
+///     path: "/opt",
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct UploadToContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    /// Path to a directory in the container to extract the archive’s contents into.
+    pub path: T,
+    /// If “1”, “true”, or “True” then it will be an error if unpacking the given content would
+    /// cause an existing directory to be replaced with a non-directory and vice versa.
+    pub no_overwrite_dir_non_dir: T,
+}
+
+/// Trait providing implementations for [Upload To Container Options](struct.UploadToContainerOptions.html).
+#[allow(missing_docs)]
+pub trait UploadToContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> UploadToContainerQueryParams<&'a str, T> for UploadToContainerOptions<T> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 2]>, Error> {
+        Ok(ArrayVec::from([
+            ("path", self.path),
+            ("noOverwriteDirNonDir", self.no_overwrite_dir_non_dir),
+        ]))
+    }
+}
+
+/// Parameters used in the [Download From Container
+/// API](../struct.Docker.html#method.download_from_container)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::DownloadFromContainerOptions;
+///
+/// DownloadFromContainerOptions{
+///     path: "/opt",
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct DownloadFromContainerOptions<T>
+where
+    T: AsRef<str>,
+{
+    /// Resource in the container’s filesystem to archive.
+    pub path: T,
+}
+
+/// Trait providing implementations for [Download From Container Options](struct.DownloadFromContainerOptions.html).
+#[allow(missing_docs)]
+pub trait DownloadFromContainerQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a, T: AsRef<str>> DownloadFromContainerQueryParams<&'a str, T>
+    for DownloadFromContainerOptions<T>
+{
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
+        Ok(ArrayVec::from([("path", self.path)]))
+    }
+}
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
@@ -2404,6 +2489,116 @@ where
 
         self.process_into_value(req)
     }
+
+    /// ---
+    ///
+    /// # Upload To Container
+    ///
+    /// Upload a tar archive to be extracted to a path in the filesystem of container id.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Upload To Container Options](container/struct.UploadToContainerOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - ???
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::UploadToContainerOptions;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = Some(UploadToContainerOptions{
+    ///     path: "/opt",
+    ///     ..Default::default()
+    /// });
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.upload_to_container("my-container", options, contents.into());
+    /// ```
+    pub fn upload_to_container<T, K, V>(
+        &self,
+        container_name: &str,
+        options: Option<T>,
+        tar: Body,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: UploadToContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let url = format!("/containers/{}/archive", container_name);
+
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::PUT)
+                .header(CONTENT_TYPE, "application/x-tar"),
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(tar),
+        );
+
+        self.process_into_unit(req)
+    }
+
+    /// ---
+    ///
+    /// # Download From Container
+    ///
+    /// Get a tar archive of a resource in the filesystem of container id.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Download From Container Options](container/struct.DownloadFromContainerOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - a Hyper Body
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::DownloadFromContainerOptions;
+    ///
+    /// let options = Some(DownloadFromContainerOptions{
+    ///     path: "/opt",
+    /// });
+    ///
+    /// docker.download_from_container("my-container", options);
+    /// ```
+    pub fn download_from_container<T, K, V>(
+        &self,
+        container_name: &str,
+        options: Option<T>,
+    ) -> impl Stream<Item = Chunk, Error = Error>
+    where
+        T: DownloadFromContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let url = format!("/containers/{}/archive", container_name);
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::GET),
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_body(req)
+    }
 }
 
 impl<C> DockerChain<C>
@@ -3205,6 +3400,107 @@ where
         self.inner
             .prune_containers(options)
             .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Upload To Container
+    ///
+    /// Upload a tar archive to be extracted to a path in the filesystem of container id. Consumes
+    /// the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Upload To Container Options](container/struct.UploadToContainerOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - ???
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::UploadToContainerOptions;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = Some(UploadToContainerOptions{
+    ///     path: "/opt",
+    ///     ..Default::default()
+    /// });
+    ///
+    /// let mut file = File::open("tarball.tar.gz").unwrap();
+    /// let mut contents = Vec::new();
+    /// file.read_to_end(&mut contents).unwrap();
+    ///
+    /// docker.chain().upload_to_container("my-container", options, contents.into());
+    /// ```
+    pub fn upload_to_container<T, K, V>(
+        self,
+        container_name: &str,
+        options: Option<T>,
+        tar: Body,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: UploadToContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        self.inner
+            .upload_to_container(container_name, options, tar)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Download From Container
+    ///
+    /// Get a tar archive of a resource in the filesystem of container id. Consumes the client
+    /// instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Download From Container Options](container/struct.DownloadFromContainerOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - a Hyper Body
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::DownloadFromContainerOptions;
+    ///
+    /// let options = Some(DownloadFromContainerOptions{
+    ///     path: "/opt",
+    /// });
+    ///
+    /// docker.chain().download_from_container("my-container", options);
+    /// ```
+    pub fn download_from_container<T, K, V>(
+        self,
+        container_name: &str,
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = Chunk, Error = Error>), Error = Error>
+    where
+        T: DownloadFromContainerQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        self.inner
+            .download_from_container(container_name, options)
+            .into_future()
+            .map(|(first, rest)| match first {
+                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
+                None => (self, EitherStream::B(stream::empty())),
+            })
+            .map_err(|(err, _)| err)
     }
 }
 
