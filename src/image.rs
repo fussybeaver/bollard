@@ -855,23 +855,23 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
 #[serde(deny_unknown_fields)]
 pub struct BuildImageAuxDetail {
     #[serde(rename = "ID")]
-    id: String,
+    pub id: String,
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildImageErrorDetail {
-    code: Option<u64>,
-    message: String,
+    pub code: Option<u64>,
+    pub message: String,
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildImageProgressDetail {
-    current: Option<u64>,
-    total: Option<u64>,
+    pub current: Option<u64>,
+    pub total: Option<u64>,
 }
 
 /// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
