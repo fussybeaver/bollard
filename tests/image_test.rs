@@ -344,23 +344,37 @@ RUN touch bollard.txt
     let compressed = c.finish().unwrap();
 
     let rt = Runtime::new().unwrap();
+
+    let mut creds = HashMap::new();
+    creds.insert(
+        "localhost:5000".to_string(),
+        bollard::auth::DockerCredentials {
+            username: Some("bollard".to_string()),
+            password: Some("Passw0rd!".to_string()),
+            ..Default::default()
+        },
+    );
+
     let future = docker
         .chain()
         .build_image(
             BuildImageOptions {
                 dockerfile: "Dockerfile".to_string(),
                 t: "integration_test_build_image".to_string(),
+                pull: true,
                 rm: true,
                 ..Default::default()
             },
-            None,
+            Some(creds),
             Some(compressed.into()),
-        ).and_then(move |(docker, stream)| {
+        )
+        .and_then(move |(docker, stream)| {
             stream.collect().map(|v| {
                 println!("{:?}", v);
                 (docker, v)
             })
-        }).and_then(|(docker, _)| {
+        })
+        .and_then(|(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: "integration_test_build_image",

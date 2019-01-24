@@ -396,6 +396,7 @@ extern crate hyper_openssl;
 extern crate hyperlocal;
 #[macro_use]
 extern crate log;
+extern crate base64;
 extern crate mio;
 #[cfg(windows)]
 extern crate mio_named_pipes;
