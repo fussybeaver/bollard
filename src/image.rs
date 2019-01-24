@@ -853,6 +853,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageAuxDetail {
     #[serde(rename = "ID")]
     pub id: String,
@@ -861,6 +862,7 @@ pub struct BuildImageAuxDetail {
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageErrorDetail {
     pub code: Option<u64>,
     pub message: String,
@@ -869,6 +871,7 @@ pub struct BuildImageErrorDetail {
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageProgressDetail {
     pub current: Option<u64>,
     pub total: Option<u64>,
