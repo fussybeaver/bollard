@@ -235,7 +235,7 @@
 //! docker.chain().create_image(Some(CreateImageOptions{
 //!     from_image: "hello-world",
 //!     ..Default::default()
-//! })).and_then(|(docker, _)|
+//! }), None).and_then(|(docker, _)|
 //!     docker.create_container(
 //!         None::<CreateContainerOptions<String>>,
 //!         Config {

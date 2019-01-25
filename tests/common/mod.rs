@@ -9,6 +9,7 @@ use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 
+use bollard::auth::DockerCredentials;
 use bollard::container::*;
 use bollard::image::*;
 use bollard::DockerChain;
@@ -75,6 +76,14 @@ macro_rules! connect_to_docker_and_run {
     }};
 }
 
+pub fn integration_test_registry_credentials() -> DockerCredentials {
+    DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    }
+}
+
 pub(crate) fn registry_http_addr() -> String {
     if ::std::env::var("DISABLE_REGISTRY").is_ok() {
         String::new()
@@ -127,10 +136,17 @@ where
     };
 
     chain
-        .create_image(Some(CreateImageOptions {
-            from_image: image(),
-            ..Default::default()
-        }))
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
         .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
@@ -201,10 +217,17 @@ where
     };
 
     chain
-        .create_image(Some(CreateImageOptions {
-            from_image: image(),
-            ..Default::default()
-        }))
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
         .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
@@ -297,10 +320,17 @@ where
     #[cfg(unix)]
     let chain = chain
         .and_then(move |docker| {
-            docker.create_image(Some(CreateImageOptions {
-                from_image: image(),
-                ..Default::default()
-            }))
+            docker.create_image(
+                Some(CreateImageOptions {
+                    from_image: image(),
+                    ..Default::default()
+                }),
+                if cfg!(windows) {
+                    None
+                } else {
+                    Some(integration_test_registry_credentials())
+                },
+            )
         })
         .map(|(docker, _)| docker);
 
@@ -370,10 +400,17 @@ where
     };
 
     chain
-        .create_image(Some(CreateImageOptions {
-            from_image: image(),
-            ..Default::default()
-        }))
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
         .map(|(docker, result)| {
             result
                 .take(1)

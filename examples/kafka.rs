@@ -107,10 +107,13 @@ fn main() {
 
     let stream = docker1
         .chain()
-        .create_image(Some(CreateImageOptions {
-            from_image: ZOOKEEPER_IMAGE,
-            ..Default::default()
-        }))
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: ZOOKEEPER_IMAGE,
+                ..Default::default()
+            }),
+            None,
+        )
         .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions { name: "zookeeper" }),
@@ -122,20 +125,26 @@ fn main() {
         })
         .map(|(docker, _)| {
             let stream1 = docker
-                .create_image(Some(CreateImageOptions {
-                    from_image: KAFKA_IMAGE,
-                    ..Default::default()
-                }))
+                .create_image(
+                    Some(CreateImageOptions {
+                        from_image: KAFKA_IMAGE,
+                        ..Default::default()
+                    }),
+                    None,
+                )
                 .map(move |(docker, _)| create_and_logs(docker, "kafka1", broker1_config))
                 .into_stream()
                 .flatten();
 
             let stream2 = docker2
                 .chain()
-                .create_image(Some(CreateImageOptions {
-                    from_image: KAFKA_IMAGE,
-                    ..Default::default()
-                }))
+                .create_image(
+                    Some(CreateImageOptions {
+                        from_image: KAFKA_IMAGE,
+                        ..Default::default()
+                    }),
+                    None,
+                )
                 .map(move |(docker, _)| create_and_logs(docker, "kafka2", broker2_config))
                 .into_stream()
                 .flatten();

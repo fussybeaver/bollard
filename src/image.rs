@@ -990,7 +990,7 @@ where
     ///   ..Default::default()
     /// });
     ///
-    /// docker.create_image(options);
+    /// docker.create_image(options, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```
@@ -1243,7 +1243,7 @@ where
     ///     ..Default::default()
     /// });
     ///
-    /// docker.remove_image("hello-world", remove_options);
+    /// docker.remove_image("hello-world", remove_options, None);
     /// ```
     pub fn remove_image<T, K, V>(
         &self,
@@ -1353,6 +1353,8 @@ where
     /// use bollard::auth::DockerCredentials;
     /// use bollard::image::PushImageOptions;
     ///
+    /// use std::default::Default;
+    ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
     ///     tag: "v1.0.1",
@@ -1361,8 +1363,7 @@ where
     /// let credentials = Some(DockerCredentials {
     ///     username: Some("Jack".to_string()),
     ///     password: Some("myverysecretpassword".to_string()),
-    ///     email: Some("jack.smith@example.com".to_string()),
-    ///     serveraddress: Some("localhost:5000".to_string())
+    ///     ..Default::default()
     /// });
     ///
     /// docker.push_image("hello-world", push_options, credentials);
@@ -1572,7 +1573,7 @@ where
     ///   ..Default::default()
     /// });
     ///
-    /// docker.chain().create_image(options);
+    /// docker.chain().create_image(options, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```
@@ -1678,6 +1679,8 @@ where
     /// use bollard::auth::DockerCredentials;
     /// use bollard::image::PushImageOptions;
     ///
+    /// use std::default::Default;
+    ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
     ///     tag: "v1.0.1",
@@ -1686,8 +1689,7 @@ where
     /// let credentials = Some(DockerCredentials {
     ///     username: Some("Jack".to_string()),
     ///     password: Some("myverysecretpassword".to_string()),
-    ///     email: Some("jack.smith@example.com".to_string()),
-    ///     serveraddress: Some("localhost:5000".to_string())
+    ///     ..Default::default()
     /// });
     ///
     /// docker.push_image("hello-world", push_options, credentials);
@@ -1738,7 +1740,7 @@ where
     ///     ..Default::default()
     /// });
     ///
-    /// docker.chain().remove_image("hello-world", remove_options);
+    /// docker.chain().remove_image("hello-world", remove_options, None);
     /// ```
     pub fn remove_image<T, K, V>(
         self,
@@ -2291,7 +2293,7 @@ mod tests {
             ..Default::default()
         };
 
-        let remove_results = docker.remove_image("hello-world", Some(remove_options));
+        let remove_results = docker.remove_image("hello-world", Some(remove_options), None);
 
         let future = remove_results.map(|vec| {
             assert!(vec.into_iter().any(|result| match result {

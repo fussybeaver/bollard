@@ -76,10 +76,18 @@ where
     let future = docker.chain();
 
     let future = future
-        .create_image(Some(CreateImageOptions {
-            from_image: image(),
-            ..Default::default()
-        })).and_then(move |(docker, _)| {
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .and_then(move |(docker, _)| {
             docker.tag_image(
                 &image(),
                 Some(TagImageOptions {
@@ -87,11 +95,16 @@ where
                     ..Default::default()
                 }),
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.push_image(
                 format!("{}my-hello-world", registry_http_addr()).as_ref(),
                 None::<PushImageOptions<String>>,
-                None,
+                if cfg!(windows) {
+                    None
+                } else {
+                    Some(integration_test_registry_credentials())
+                },
             )
         });
 
@@ -446,15 +459,28 @@ where
 
     let future = docker
         .chain()
-        .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_archive_container",
-            }),
-            Config {
-                image: Some(image()),
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
                 ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
             },
         )
+        .and_then(move |(docker, _)| {
+            docker.create_container(
+                Some(CreateContainerOptions {
+                    name: "integration_test_archive_container",
+                }),
+                Config {
+                    image: Some(image()),
+                    ..Default::default()
+                },
+            )
+        })
         .and_then(|(docker, _)| {
             docker.upload_to_container(
                 "integration_test_archive_container",
@@ -486,7 +512,6 @@ where
                     if path == std::path::Path::new("tmp/readme.txt") {
                         return true;
                     }
-                    println!("{:?}", file.header().path().unwrap());
                     false
                 })
                 .map(|mut r| {

@@ -47,6 +47,7 @@ dirs = "1.0.4"
 log = "0.4.6"
 env_logger = "0.6.0"
 tokio-timer = "0.2.8"
+base64 = "0.10.0"
 
 [dev-dependencies]
 yup-hyper-mock = "3.14.0"
