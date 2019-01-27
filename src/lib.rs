@@ -361,7 +361,7 @@
 //! docker push localhost:5000/hello-world:linux
 //! docker push localhost:5000/fnichol/uhttpd
 //! docker push localhost:5000/alpine
-//! REGISTRY_HTTP_ADDR=localhost:5000 cargo test --test-threads 1
+//! REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 //! ```
 #![deny(
     missing_docs,

@@ -2502,7 +2502,7 @@ where
     ///
     /// # Returns
     ///
-    ///  - ???
+    ///  - unit type `()`, wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -2563,7 +2563,8 @@ where
     ///
     /// # Returns
     ///
-    ///  - a Hyper Body
+    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
+    ///    gzip, bzip2, xz. [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
     ///
     /// # Examples
     ///
@@ -3415,7 +3416,8 @@ where
     ///
     /// # Returns
     ///
-    ///  - ???
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
+    ///  type `()`, wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -3468,7 +3470,10 @@ where
     ///
     /// # Returns
     ///
-    ///  - a Hyper Body
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a tar
+    ///  archive compressed with one of the following algorithms: identity (no compression), gzip,
+    ///  bzip2, xz, represented as a [Hyper
+    ///  Body](https://hyper.rs/hyper/master/hyper/struct.Body.html), wrapped in a Future.
     ///
     /// # Examples
     ///

@@ -204,7 +204,7 @@ use std::default::Default;
 docker.chain().create_image(Some(CreateImageOptions{
     from_image: "hello-world",
     ..Default::default()
-})).and_then(|(docker, _)|
+}), None).and_then(|(docker, _)|
     docker.create_container(
         None::<CreateContainerOptions<String>>,
         Config {
@@ -280,7 +280,7 @@ docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
 docker push localhost:5000/fnichol/uhttpd
 docker push localhost:5000/alpine
-REGISTRY_HTTP_ADDR=localhost:5000 cargo test --test-threads 1
+REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 ```
 
 License: Apache-2.0
