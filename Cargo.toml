@@ -22,43 +22,43 @@ test_http = []
 test_tls = []
 
 [dependencies]
-failure = "0.1.2"
-hyper = { version = "0.12.17" }
-hyper-tls = "0.3.0"
-openssl = { version = "0.10.11", optional = true }
-hyper-openssl = { version = "0.6.1", optional = true }
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-url = "1.2.2"
-http = "0.1.10"
-native-tls = "0.2.1"
-futures = "0.1.24"
-tokio = "0.1.11"
-tokio-reactor = "0.1.4"
-hex = "0.3.2"
-tokio-io = "0.1.8"
-bytes = "0.4.9"
-mio = "0.6.15"
-tokio-codec = "0.1.0"
-chrono = { version = "0.4.6", features = ["serde"] }
-arrayvec = "0.4.7"
-dirs = "1.0.4"
-log = "0.4.6"
-env_logger = "0.6.0"
-tokio-timer = "0.2.8"
+arrayvec = "0.4.10"
 base64 = "0.10.0"
+bytes = "0.4.11"
+chrono = { version = "0.4.6", features = ["serde"] }
+dirs = "1.0.4"
+env_logger = "0.6.0"
+failure = "0.1.5"
+futures = "0.1.25"
+hex = "0.3.2"
+http = "0.1.15"
+hyper = { version = "0.12.23" }
+hyper-openssl = { version = "0.7.0", optional = true }
+hyper-tls = "0.3.1"
+log = "0.4.6"
+mio = "0.6.16"
+native-tls = "0.2.2"
+openssl = { version = "0.10.16", optional = true }
+serde = "1.0.85"
+serde_derive = "1.0.85"
+serde_json = "1.0.37"
+tokio = "0.1.11"
+tokio-codec = "0.1.1"
+tokio-io = "0.1.11"
+tokio-reactor = "0.1.8"
+tokio-timer = "0.2.9"
+url = "1.7.2"
 
 [dev-dependencies]
-yup-hyper-mock = "3.14.0"
-tokio-threadpool = "0.1.7"
-tokio-executor = "0.1.5"
-tar = "0.4.20"
+tokio-executor = "0.1.6"
+tokio-threadpool = "0.1.11"
 flate2 = "1.0"
+tar = "0.4.20"
+yup-hyper-mock = "3.14.0"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal = "0.6.0"
 
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"
-winapi = "0.3.5"
+winapi = "0.3.6"
