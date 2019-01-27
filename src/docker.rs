@@ -15,7 +15,7 @@ use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
-use hyper::{self, Body, Client, Request, Response, StatusCode};
+use hyper::{self, Body, Chunk, Client, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 use hyper_tls;
@@ -760,6 +760,16 @@ where
         self.process_request(req).and_then(|_| Ok(()))
     }
 
+    pub(crate) fn process_into_body(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Stream<Item = Chunk, Error = Error> {
+        self.process_request(req)
+            .into_stream()
+            .map(|response| response.into_body().map_err(|e| e.into()))
+            .flatten()
+    }
+
     pub(crate) fn transpose_option<T>(
         option: Option<Result<T, Error>>,
     ) -> Result<Option<T>, Error> {
@@ -779,12 +789,12 @@ where
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }.map_err(|e| e.into())
-            .map(|payload| {
-                debug!("{}", payload.clone().unwrap_or_else(String::new));
-                payload
-                    .map(|content| content.into())
-                    .unwrap_or(Body::empty())
-            })
+        .map(|payload| {
+            debug!("{}", payload.clone().unwrap_or_else(String::new));
+            payload
+                .map(|content| content.into())
+                .unwrap_or(Body::empty())
+        })
     }
 
     fn process_request(

@@ -183,8 +183,14 @@ where
                     noprune: true,
                     ..Default::default()
                 }),
+                if cfg!(windows) {
+                    None
+                } else {
+                    Some(integration_test_registry_credentials())
+                },
             )
-        }).map(move |(docker, result)| {
+        })
+        .map(move |(docker, result)| {
             assert!(result.into_iter().any(|s| match s {
                 RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
                 _ => false,
@@ -290,22 +296,31 @@ where
                     }
                     assert_eq!(first.status_code, 0);
                     docker
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
                 })
-        }).flatten()
+        })
+        .flatten()
         .and_then(move |docker| {
             docker.remove_container(
                 "integration_test_commit_container_next",
                 None::<RemoveContainerOptions>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.remove_image(
                 "integration_test_commit_container_next",
                 None::<RemoveImageOptions>,
+                if cfg!(windows) {
+                    None
+                } else {
+                    Some(integration_test_registry_credentials())
+                },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.remove_container(
                 "integration_test_commit_container",
                 None::<RemoveContainerOptions>,
@@ -319,16 +334,20 @@ fn build_image_test<C>(docker: Docker<C>)
 where
     C: Connect + Sync + 'static,
 {
-    let dockerfile = {
-        if cfg!(windows) {
-            r#"FROM microsoft/nanoserver
+    let dockerfile = if cfg!(windows) {
+        format!(
+            "FROM {}microsoft/nanoserver
 RUN cmd.exe /C copy nul bollard.txt
-"#.as_bytes()
-        } else {
-            r#"FROM alpine
+",
+            registry_http_addr()
+        )
+    } else {
+        format!(
+            "FROM {}alpine
 RUN touch bollard.txt
-"#.as_bytes()
-        }
+",
+            registry_http_addr()
+        )
     };
     let mut header = tar::Header::new_gnu();
     header.set_path("Dockerfile").unwrap();
@@ -336,7 +355,7 @@ RUN touch bollard.txt
     header.set_mode(0o755);
     header.set_cksum();
     let mut tar = tar::Builder::new(Vec::new());
-    tar.append(&header, dockerfile).unwrap();
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
 
     let uncompressed = tar.into_inner().unwrap();
     let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -344,23 +363,33 @@ RUN touch bollard.txt
     let compressed = c.finish().unwrap();
 
     let rt = Runtime::new().unwrap();
+
+    let mut creds = HashMap::new();
+    creds.insert(
+        "localhost:5000".to_string(),
+        integration_test_registry_credentials(),
+    );
+
     let future = docker
         .chain()
         .build_image(
             BuildImageOptions {
                 dockerfile: "Dockerfile".to_string(),
                 t: "integration_test_build_image".to_string(),
+                pull: true,
                 rm: true,
                 ..Default::default()
             },
-            None,
+            if cfg!(windows) { None } else { Some(creds) },
             Some(compressed.into()),
-        ).and_then(move |(docker, stream)| {
+        )
+        .and_then(move |(docker, stream)| {
             stream.collect().map(|v| {
                 println!("{:?}", v);
                 (docker, v)
             })
-        }).and_then(|(docker, _)| {
+        })
+        .and_then(|(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: "integration_test_build_image",
@@ -396,18 +425,29 @@ RUN touch bollard.txt
                     }
                     assert_eq!(first.status_code, 0);
                     docker
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
                 })
-        }).flatten()
+        })
+        .flatten()
         .and_then(move |docker| {
             docker.remove_container(
                 "integration_test_build_image",
                 None::<RemoveContainerOptions>,
             )
-        }).and_then(move |(docker, _)| {
-            docker.remove_image("integration_test_build_image", None::<RemoveImageOptions>)
+        })
+        .and_then(move |(docker, _)| {
+            docker.remove_image(
+                "integration_test_build_image",
+                None::<RemoveImageOptions>,
+                if cfg!(windows) {
+                    None
+                } else {
+                    Some(integration_test_registry_credentials())
+                },
+            )
         });
 
     run_runtime(rt, future);

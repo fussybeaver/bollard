@@ -13,6 +13,7 @@ use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
+use base64;
 
 use super::{Docker, DockerChain};
 use auth::DockerCredentials;
@@ -804,8 +805,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
+            ].into_iter()
             .flatten(),
         );
 
@@ -841,8 +841,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
+            ].into_iter()
             .flatten(),
         );
 
@@ -853,25 +852,28 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageAuxDetail {
     #[serde(rename = "ID")]
-    id: String,
+    pub id: String,
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageErrorDetail {
-    code: Option<u64>,
-    message: String,
+    pub code: Option<u64>,
+    pub message: String,
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
 pub struct BuildImageProgressDetail {
-    current: Option<u64>,
-    total: Option<u64>,
+    pub current: Option<u64>,
+    pub total: Option<u64>,
 }
 
 /// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
@@ -989,7 +991,7 @@ where
     ///   ..Default::default()
     /// });
     ///
-    /// docker.create_image(options);
+    /// docker.create_image(options, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```
@@ -1001,6 +1003,7 @@ where
     pub fn create_image<T, K, V>(
         &self,
         options: Option<T>,
+        credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = CreateImageResults, Error = Error>
     where
         T: CreateImageQueryParams<K, V>,
@@ -1009,14 +1012,22 @@ where
     {
         let url = "/images/create";
 
-        let req = self.build_request(
-            url,
-            Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
-            Ok(Body::empty()),
-        );
-
-        self.process_into_stream(req)
+        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        })) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Ok(Body::empty()),
+                );
+                EitherStream::A(self.process_into_stream(req))
+            }
+            Err(e) => EitherStream::B(future::err(e.into()).into_stream()),
+        }
     }
 
     /// ---
@@ -1233,12 +1244,13 @@ where
     ///     ..Default::default()
     /// });
     ///
-    /// docker.remove_image("hello-world", remove_options);
+    /// docker.remove_image("hello-world", remove_options, None);
     /// ```
     pub fn remove_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
+        credentials: Option<DockerCredentials>,
     ) -> impl Future<Item = Vec<RemoveImageResults>, Error = Error>
     where
         T: RemoveImageQueryParams<K, V>,
@@ -1247,14 +1259,22 @@ where
     {
         let url = format!("/images/{}", image_name);
 
-        let req = self.build_request(
-            &url,
-            Builder::new().method(Method::DELETE),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
-            Ok(Body::empty()),
-        );
-
-        self.process_into_value(req)
+        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        })) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    &url,
+                    Builder::new()
+                        .method(Method::DELETE)
+                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Ok(Body::empty()),
+                );
+                Either::A(self.process_into_value(req))
+            }
+            Err(e) => Either::B(future::err(e.into())),
+        }
     }
 
     /// ---
@@ -1334,6 +1354,8 @@ where
     /// use bollard::auth::DockerCredentials;
     /// use bollard::image::PushImageOptions;
     ///
+    /// use std::default::Default;
+    ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
     ///     tag: "v1.0.1",
@@ -1342,8 +1364,7 @@ where
     /// let credentials = Some(DockerCredentials {
     ///     username: Some("Jack".to_string()),
     ///     password: Some("myverysecretpassword".to_string()),
-    ///     email: Some("jack.smith@example.com".to_string()),
-    ///     serveraddress: Some("localhost:5000".to_string())
+    ///     ..Default::default()
     /// });
     ///
     /// docker.push_image("hello-world", push_options, credentials);
@@ -1370,7 +1391,7 @@ where
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
-                        .header("X-REGISTRY-AUTH", ser_cred),
+                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
                     Docker::<C>::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
@@ -1491,7 +1512,7 @@ where
     pub fn build_image<T, K>(
         &self,
         options: T,
-        credentials: Option<DockerCredentials>,
+        credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
     ) -> impl Stream<Item = BuildImageResults, Error = Error>
     where
@@ -1500,16 +1521,14 @@ where
     {
         let url = "/build";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
+        match serde_json::to_string(&credentials.unwrap_or_else(|| HashMap::new())) {
             Ok(ser_cred) => {
                 let req = self.build_request(
                     &url,
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar")
-                        .header("X-REGISTRY-AUTH", ser_cred),
+                        .header("X-Registry-Config", base64::encode(&ser_cred)),
                     options.into_array().map(|v| Some(v)),
                     Ok(tar.unwrap_or_else(|| Body::empty())),
                 );
@@ -1555,7 +1574,7 @@ where
     ///   ..Default::default()
     /// });
     ///
-    /// docker.chain().create_image(options);
+    /// docker.chain().create_image(options, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```
@@ -1567,6 +1586,7 @@ where
     pub fn create_image<T, K, V>(
         self,
         options: Option<T>,
+        credentials: Option<DockerCredentials>,
     ) -> impl Future<
         Item = (
             DockerChain<C>,
@@ -1580,12 +1600,13 @@ where
         V: AsRef<str>,
     {
         self.inner
-            .create_image(options)
+            .create_image(options, credentials)
             .into_future()
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -1659,6 +1680,8 @@ where
     /// use bollard::auth::DockerCredentials;
     /// use bollard::image::PushImageOptions;
     ///
+    /// use std::default::Default;
+    ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let push_options = Some(PushImageOptions {
     ///     tag: "v1.0.1",
@@ -1667,8 +1690,7 @@ where
     /// let credentials = Some(DockerCredentials {
     ///     username: Some("Jack".to_string()),
     ///     password: Some("myverysecretpassword".to_string()),
-    ///     email: Some("jack.smith@example.com".to_string()),
-    ///     serveraddress: Some("localhost:5000".to_string())
+    ///     ..Default::default()
     /// });
     ///
     /// docker.push_image("hello-world", push_options, credentials);
@@ -1719,12 +1741,13 @@ where
     ///     ..Default::default()
     /// });
     ///
-    /// docker.chain().remove_image("hello-world", remove_options);
+    /// docker.chain().remove_image("hello-world", remove_options, None);
     /// ```
     pub fn remove_image<T, K, V>(
         self,
         image_name: &str,
         options: Option<T>,
+        credentials: Option<DockerCredentials>,
     ) -> impl Future<Item = (DockerChain<C>, Vec<RemoveImageResults>), Error = Error>
     where
         T: RemoveImageQueryParams<K, V>,
@@ -1732,7 +1755,7 @@ where
         V: AsRef<str>,
     {
         self.inner
-            .remove_image(image_name, options)
+            .remove_image(image_name, options, credentials)
             .map(|result| (self, result))
     }
 
@@ -2047,7 +2070,7 @@ where
     pub fn build_image<T, K>(
         self,
         options: T,
-        credentials: Option<DockerCredentials>,
+        credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
     ) -> impl Future<
         Item = (
@@ -2127,7 +2150,7 @@ mod tests {
             ..Default::default()
         });
 
-        let stream = docker.create_image(options);
+        let stream = docker.create_image(options, None);
 
         let future = stream
             .into_future()
@@ -2271,7 +2294,7 @@ mod tests {
             ..Default::default()
         };
 
-        let remove_results = docker.remove_image("hello-world", Some(remove_options));
+        let remove_results = docker.remove_image("hello-world", Some(remove_options), None);
 
         let future = remove_results.map(|vec| {
             assert!(vec.into_iter().any(|result| match result {
@@ -2309,8 +2332,7 @@ mod tests {
         let credentials = DockerCredentials {
             username: Some("Jack".to_string()),
             password: Some("myverysecretpassword".to_string()),
-            email: Some("jack.smith@example.com".to_string()),
-            serveraddress: Some("localhost:5000".to_string()),
+            ..Default::default()
         };
 
         let results = docker.push_image("hello-world", Some(push_options), Some(credentials));
@@ -2407,14 +2429,21 @@ mod tests {
             ..Default::default()
         };
 
-        let credentials = Some(DockerCredentials {
-            username: Some("Jack".to_string()),
-            password: Some("myverysecretpassword".to_string()),
-            email: Some("jack.smith@example.com".to_string()),
-            serveraddress: Some("localhost:5000".to_string()),
-        });
+        let mut credentials = HashMap::new();
+        credentials.insert(
+            "quay.io".to_string(),
+            DockerCredentials {
+                username: Some("Jack".to_string()),
+                password: Some("myverysecretpassword".to_string()),
+                ..Default::default()
+            },
+        );
 
-        let results = docker.build_image(build_image_options, credentials, Some(Vec::new().into()));
+        let results = docker.build_image(
+            build_image_options,
+            Some(credentials),
+            Some(Vec::new().into()),
+        );
 
         let future = results.collect().map(|vec| {
             assert!(vec.into_iter().any(|result| match result {
