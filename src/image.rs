@@ -13,6 +13,7 @@ use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
+use base64;
 
 use super::{Docker, DockerChain};
 use auth::DockerCredentials;

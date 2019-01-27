@@ -6,6 +6,8 @@ extern crate hyper;
 #[cfg(unix)]
 extern crate hyperlocal;
 extern crate tokio;
+extern crate flate2;
+extern crate tar;
 
 use bollard::container::*;
 use bollard::image::*;

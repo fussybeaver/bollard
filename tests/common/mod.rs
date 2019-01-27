@@ -7,6 +7,7 @@ use hyper::client::connect::Connect;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
+use std;
 use std::collections::HashMap;
 
 use bollard::auth::DockerCredentials;
