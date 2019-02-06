@@ -1004,6 +1004,7 @@ pub enum LogOutput {
     StdErr { message: String },
     StdOut { message: String },
     StdIn { message: String },
+    Console { message: String },
 }
 
 impl fmt::Display for LogOutput {
@@ -1012,6 +1013,7 @@ impl fmt::Display for LogOutput {
             LogOutput::StdErr { message } => write!(f, "{}", message),
             LogOutput::StdOut { message } => write!(f, "{}", message),
             LogOutput::StdIn { message } => write!(f, "{}", message),
+            LogOutput::Console { message } => write!(f, "{}", message),
         }
     }
 }

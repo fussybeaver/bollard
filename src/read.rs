@@ -8,22 +8,24 @@ use std::{
     cmp,
     io::{self, Read},
     marker::PhantomData,
+    str::from_utf8,
 };
 use tokio_codec::Decoder;
 use tokio_io::AsyncRead;
 
+use container::LogOutput;
+
 use errors::JsonDataError;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct LineDecoder {}
-impl LineDecoder {
-    pub(crate) fn new() -> LineDecoder {
-        LineDecoder {}
+pub(crate) struct NewlineLogOutputDecoder {}
+impl NewlineLogOutputDecoder {
+    pub(crate) fn new() -> NewlineLogOutputDecoder {
+        NewlineLogOutputDecoder {}
     }
 }
-use container::LogOutput;
 
-impl Decoder for LineDecoder {
+impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
     type Error = Error;
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -33,43 +35,81 @@ impl Decoder for LineDecoder {
             let slice = src.split_to(pos + 1);
             let slice = &slice[..slice.len() - 1];
 
-            match &slice[0..1] {
-                &[0] if slice.len() <= 8 => Ok(Some(LogOutput::StdIn {
+            if slice.len() == 0 {
+                Ok(Some(LogOutput::Console {
                     message: String::new(),
-                })),
-                &[0] => ::std::str::from_utf8(&slice[8..]).map(|s| {
-                    Some(LogOutput::StdIn {
-                        message: s.to_string(),
-                    })
-                }),
-                &[1] if slice.len() <= 8 => Ok(Some(LogOutput::StdOut {
-                    message: String::new(),
-                })),
-                &[1] => ::std::str::from_utf8(&slice[8..]).map(|s| {
-                    Some(LogOutput::StdOut {
-                        message: s.to_string(),
-                    })
-                }),
-                &[2] if slice.len() <= 8 => Ok(Some(LogOutput::StdErr {
-                    message: String::new(),
-                })),
-                &[2] => ::std::str::from_utf8(&slice[8..]).map(|s| {
-                    Some(LogOutput::StdErr {
-                        message: s.to_string(),
-                    })
-                }),
-                _ => {
-                    debug!("LineDecoder returning due to unknown first byte");
-                    Ok(None)
+                }))
+            } else {
+                match &slice[0] {
+                    0 if slice.len() <= 8 => Ok(Some(LogOutput::StdIn {
+                        message: String::new(),
+                    })),
+                    0 => from_utf8(&slice[8..]).map(|s| {
+                        Some(LogOutput::StdIn {
+                            message: s.to_string(),
+                        })
+                    }),
+                    1 if slice.len() <= 8 => Ok(Some(LogOutput::StdOut {
+                        message: String::new(),
+                    })),
+                    1 => from_utf8(&slice[8..]).map(|s| {
+                        println!("{}", s);
+                        Some(LogOutput::StdOut {
+                            message: s.to_string(),
+                        })
+                    }),
+                    2 if slice.len() <= 8 => Ok(Some(LogOutput::StdErr {
+                        message: String::new(),
+                    })),
+                    2 => from_utf8(&slice[8..]).map(|s| {
+                        Some(LogOutput::StdErr {
+                            message: s.to_string(),
+                        })
+                    }),
+                    _ =>
+                    // `start_exec` API on unix socket will emit values without a header
+                    {
+                        println!("{}", from_utf8(&slice)?);
+                        Ok(Some(LogOutput::Console {
+                            message: from_utf8(&slice)?.to_string(),
+                        }))
+                    }
                 }
+                .map_err(|e| e.into())
             }
-            .map_err(|e| e.into())
         } else {
-            debug!("LineDecoder returning due to an empty line");
+            debug!("NewlineLogOutputDecoder returning due to an empty line");
             Ok(None)
         }
     }
 }
+
+/*
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct NewlineStringDecoder {}
+impl NewlineStringDecoder {
+    pub(crate) fn new() -> NewlineStringDecoder {
+        NewlineStringDecoder {}
+    }
+}
+
+impl Decoder for NewlineStringDecoder {
+    type Item = String;
+    type Error = Error;
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let nl_index = src.iter().position(|b| *b == b'\n');
+
+        if let Some(pos) = nl_index {
+            let slice = src.split_to(pos + 1);
+            let slice = &slice[..slice.len() - 1];
+            Ok(Some(std::str::from_utf8(slice)?.to_owned()))
+        } else {
+            debug!("NewlineStringDecoder returning due to an empty line");
+            Ok(None)
+        }
+    }
+}
+*/
 
 #[derive(Debug)]
 pub(crate) struct JsonLineDecoder<T> {

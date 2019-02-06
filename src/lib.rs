@@ -418,6 +418,7 @@ pub mod container;
 mod docker;
 mod either;
 pub mod errors;
+pub mod exec;
 pub mod image;
 mod named_pipe;
 mod options;
