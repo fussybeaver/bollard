@@ -304,7 +304,11 @@ where
 
     let cmd = || {
         if cfg!(windows) {
-            Some(vec![])
+            Some(vec![
+                "net".to_string(),
+                "start".to_string(),
+                "w3svc".to_string(),
+            ])
         } else {
             Some(vec![
                 "/usr/sbin/run_uhttpd".to_string(),
