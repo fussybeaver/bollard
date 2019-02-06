@@ -1,7 +1,7 @@
 [![crates.io](https://img.shields.io/crates/v/bollard.svg)](https://crates.io/crates/bollard)
 [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![circle-ci](https://circleci.com/gh/fussybeaver/bollard/tree/master.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard/tree/master)
-[![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
+[![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv/branch/master?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 [![docs](https://docs.rs/bollard/badge.svg?version=0.1.0)](https://docs.rs/bollard/)
 
 ## Bollard: an asynchronous rust client library for the docker API
@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.1"
+bollard = "0.2"
 ```
 
 ## API documentation
