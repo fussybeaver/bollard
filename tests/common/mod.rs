@@ -360,10 +360,6 @@ where
         .and_then(move |docker| {
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
         })
-        .and_then(move |(docker, _)| {
-            // note: windows workaround for non-starting container ?
-            docker.restart_container(container_name, None::<RestartContainerOptions>)
-        })
         .map(|(docker, _)| docker)
 }
 
