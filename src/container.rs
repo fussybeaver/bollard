@@ -1126,7 +1126,8 @@ pub struct MemoryStats {
     pub commit: Option<u64>,
     pub commit_peak: Option<u64>,
     pub commitbytes: Option<u64>,
-    pub private_working_set: Option<u64>,
+    pub commitpeakbytes: Option<u64>,
+    pub privateworkingset: Option<u64>,
 }
 
 /// Process ID statistics for the container.
