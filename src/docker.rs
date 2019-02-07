@@ -37,7 +37,7 @@ use errors::{
 };
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
-use read::{JsonLineDecoder, LineDecoder, StreamReader};
+use read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
 use uri::Uri;
 
 use serde::de::DeserializeOwned;
@@ -60,6 +60,9 @@ const DEFAULT_NUM_THREADS: usize = 1;
 
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
+
+/// Docker API version
+pub(crate) const API_VERSION: &'static str = "v1.39";
 
 pub(crate) const TRUE_STR: &'static str = "true";
 pub(crate) const FALSE_STR: &'static str = "false";
@@ -766,7 +769,17 @@ where
     ) -> impl Stream<Item = Chunk, Error = Error> {
         self.process_request(req)
             .into_stream()
-            .map(|response| response.into_body().map_err(|e| e.into()))
+            .map(|response| response.into_body().from_err())
+            .flatten()
+    }
+
+    pub(crate) fn process_upgraded_stream_string(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Stream<Item = LogOutput, Error = Error> {
+        self.process_request(req)
+            .into_stream()
+            .map(Docker::<C>::decode_into_upgraded_stream_string)
             .flatten()
     }
 
@@ -811,6 +824,8 @@ where
                 match status {
                     // Status code 200 - 299
                     s if s.is_success() => EitherResponse::A(future::ok(response)),
+
+                    StatusCode::SWITCHING_PROTOCOLS => EitherResponse::G(future::ok(response)),
 
                     // Status code 304: Not Modified
                     StatusCode::NOT_MODIFIED => {
@@ -885,8 +900,7 @@ where
     ) -> impl Future<Item = Response<Body>, Error = Error> {
         let now = Instant::now();
 
-        Timeout::new_at(client.request(request), now + Duration::from_secs(timeout))
-            .map_err(|e| e.into())
+        Timeout::new_at(client.request(request), now + Duration::from_secs(timeout)).from_err()
     }
 
     fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = T, Error = Error>
@@ -904,15 +918,27 @@ where
     ) -> impl Stream<Item = LogOutput, Error = Error> {
         FramedRead::new(
             StreamReader::new(res.into_body().from_err()),
-            LineDecoder::new(),
-        ).map_err(|e| e)
+            NewlineLogOutputDecoder::new(),
+        )
+        .from_err()
+    }
+
+    fn decode_into_upgraded_stream_string(
+        res: Response<Body>,
+    ) -> impl Stream<Item = LogOutput, Error = Error> {
+        res.into_body()
+            .on_upgrade()
+            .into_stream()
+            .map(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
+            .map_err::<Error, _>(|e: hyper::Error| e.into())
+            .flatten()
     }
 
     fn decode_into_string(response: Response<Body>) -> impl Future<Item = String, Error = Error> {
         response
             .into_body()
             .concat2()
-            .map_err(|e| e.into())
+            .from_err()
             .and_then(|body| from_utf8(&body).map(|x| x.to_owned()).map_err(|e| e.into()))
     }
 

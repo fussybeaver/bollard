@@ -822,7 +822,7 @@ pub struct WaitContainerResultsError {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct WaitContainerResults {
-    pub status_code: u16,
+    pub status_code: u64,
     pub error: Option<WaitContainerResultsError>,
 }
 
@@ -1004,6 +1004,7 @@ pub enum LogOutput {
     StdErr { message: String },
     StdOut { message: String },
     StdIn { message: String },
+    Console { message: String },
 }
 
 impl fmt::Display for LogOutput {
@@ -1012,6 +1013,7 @@ impl fmt::Display for LogOutput {
             LogOutput::StdErr { message } => write!(f, "{}", message),
             LogOutput::StdOut { message } => write!(f, "{}", message),
             LogOutput::StdIn { message } => write!(f, "{}", message),
+            LogOutput::Console { message } => write!(f, "{}", message),
         }
     }
 }
@@ -1124,7 +1126,8 @@ pub struct MemoryStats {
     pub commit: Option<u64>,
     pub commit_peak: Option<u64>,
     pub commitbytes: Option<u64>,
-    pub private_working_set: Option<u64>,
+    pub commitpeakbytes: Option<u64>,
+    pub privateworkingset: Option<u64>,
 }
 
 /// Process ID statistics for the container.

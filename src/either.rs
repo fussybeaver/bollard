@@ -27,22 +27,24 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) enum EitherResponse<B, C, D, E, F> {
+pub(crate) enum EitherResponse<B, C, D, E, F, G> {
     A(future::FutureResult<Response<Body>, Error>),
     B(B),
     C(C),
     D(D),
     E(E),
     F(F),
+    G(G),
 }
 
-impl<B, C, D, E, F> Future for EitherResponse<B, C, D, E, F>
+impl<B, C, D, E, F, G> Future for EitherResponse<B, C, D, E, F, G>
 where
     B: Future<Item = Response<Body>, Error = Error>,
     C: Future<Item = Response<Body>, Error = Error>,
     D: Future<Item = Response<Body>, Error = Error>,
     E: Future<Item = Response<Body>, Error = Error>,
     F: Future<Item = Response<Body>, Error = Error>,
+    G: Future<Item = Response<Body>, Error = Error>,
 {
     type Item = Response<Body>;
     type Error = Error;
@@ -55,6 +57,7 @@ where
             EitherResponse::D(ref mut d) => d.poll(),
             EitherResponse::E(ref mut e) => e.poll(),
             EitherResponse::F(ref mut f) => f.poll(),
+            EitherResponse::G(ref mut g) => g.poll(),
         }
     }
 }
