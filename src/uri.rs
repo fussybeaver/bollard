@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 
 use docker::ClientType;
+use docker::API_VERSION;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -38,7 +39,13 @@ impl<'a> Uri<'a> where {
     {
         let host: String = Uri::socket_host(socket, client_type)?;
 
-        let host_str = format!("{}://{}{}", Uri::socket_scheme(client_type), host, path);
+        let host_str = format!(
+            "{}://{}/{}{}",
+            Uri::socket_scheme(client_type),
+            host,
+            API_VERSION,
+            path
+        );
         let mut url = Url::parse(host_str.as_ref()).unwrap();
         url = url.join(path).unwrap();
 

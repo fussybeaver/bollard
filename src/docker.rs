@@ -61,6 +61,9 @@ const DEFAULT_NUM_THREADS: usize = 1;
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
 
+/// Docker API version
+pub(crate) const API_VERSION: &'static str = "v1.39";
+
 pub(crate) const TRUE_STR: &'static str = "true";
 pub(crate) const FALSE_STR: &'static str = "false";
 

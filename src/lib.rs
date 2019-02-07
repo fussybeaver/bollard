@@ -22,9 +22,14 @@
 //! bollard = "0.2"
 //! ```
 //!
-//! # API documentation
+//! # API
+//! ## Documentation
 //!
 //! [API docs](https://docs.rs/bollard/)
+//!
+//! ## Version
+//!
+//! The [Docker API](https://docs.docker.com/engine/api/v1.39/) is pegged at version `1.39`
 //!
 //! # Usage
 //!
