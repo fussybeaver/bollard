@@ -89,8 +89,8 @@ where
     fn into_array(self) -> Result<ArrayVec<[(K, V); 4]>, Error>;
 }
 
-impl<'a, T: AsRef<str> + ::std::cmp::Eq + ::std::hash::Hash>
-    ListContainersQueryParams<&'a str, String> for ListContainersOptions<T>
+impl<'a, T: AsRef<str> + Eq + Hash> ListContainersQueryParams<&'a str, String>
+    for ListContainersOptions<T>
 where
     T: ::serde::Serialize,
 {

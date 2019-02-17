@@ -93,10 +93,7 @@ pub struct CreateNetworkResults {
 /// Network configuration used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct InspectNetworkOptions<T>
-where
-    T: AsRef<str>,
-{
+pub struct InspectNetworkOptions<T> {
     /// Detailed inspect output for troubleshooting.
     pub verbose: bool,
     /// Filter the network by scope (swarm, global, or local)
@@ -169,6 +166,67 @@ pub struct InspectNetworkResultsContainers {
     pub ipv4_address: String,
     #[serde(rename = "IPv6Address")]
     pub ipv6_address: String,
+}
+
+/// Result type for the [List Network API](../struct.Docker.html#method.list_network)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct ListNetworksResults {
+    pub name: String,
+    pub id: String,
+    pub created: String,
+    pub scope: String,
+    pub driver: String,
+    #[serde(rename = "EnableIPv6")]
+    pub enable_ipv6: bool,
+    pub internal: bool,
+    pub attachable: bool,
+    pub ingress: bool,
+    #[serde(rename = "IPAM")]
+    pub ipam: IPAM<String>,
+    pub options: HashMap<String, String>,
+    pub config_from: HashMap<String, String>,
+    pub config_only: bool,
+    pub containers: HashMap<String, InspectNetworkResultsContainers>,
+    pub labels: HashMap<String, String>,
+}
+
+/// Network configuration used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct ListNetworksOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// JSON encoded value of the filters (a `map[string][]string`) to process on the networks list. Available filters:
+    ///  - `driver=<driver-name>` Matches a network's driver.
+    ///  - `id=<network-id>` Matches all or part of a network ID.
+    ///  - `label=<key>` or `label=<key>=<value>` of a network label.
+    ///  - `name=<network-name>` Matches all or part of a network name.
+    ///  - `scope=["swarm"|"global"|"local"]` Filters networks by scope (`swarm`, `global`, or `local`).
+    ///  - `type=["custom"|"builtin"]` Filters networks by type. The `custom` keyword returns all user-defined networks.
+    pub filters: HashMap<T, Vec<T>>,
+}
+
+#[allow(missing_docs)]
+/// Trait providing implementations for [List Network Options](struct.ListNetworkOptions.html)
+/// struct.
+pub trait ListNetworksQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a str> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "filters",
+            serde_json::to_string(&self.filters)?,
+        )]))
+    }
 }
 
 impl<C> Docker<C>
@@ -312,6 +370,60 @@ where
 
         self.process_into_value(req)
     }
+
+    /// ---
+    ///
+    /// # List Networks
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [List Network Options](container/struct.ListNetworksOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A vector of [List Networks Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::ListNetworksOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut list_networks_filters = HashMap::new();
+    /// list_networks_filters.insert("label", vec!["maintainer=some_maintainer"]);
+    ///
+    /// let config = ListNetworksOptions {
+    ///     filters: list_networks_filters,
+    /// };
+    ///
+    /// docker.list_networks(Some(config));
+    /// ```
+    pub fn list_networks<T, K, V>(
+        &self,
+        options: Option<T>,
+    ) -> impl Future<Item = Vec<ListNetworksResults>, Error = Error>
+    where
+        T: ListNetworksQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let url = "/networks";
+
+        use hyper::Body;
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::GET),
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value(req)
+    }
 }
 
 impl<C> DockerChain<C>
@@ -438,6 +550,54 @@ where
     {
         self.inner
             .inspect_network(network_name, options)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # List Networks
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [List Network Options](container/struct.ListNetworksOptions.html) struct.
+    ///  Consumes the client instance.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a vector
+    ///  of [List Networks Results](container/struct.CreateNetworkResults.html) struct, wrapped in
+    ///  a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::ListNetworksOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut list_networks_filters = HashMap::new();
+    /// list_networks_filters.insert("label", vec!["maintainer=some_maintainer"]);
+    ///
+    /// let config = ListNetworksOptions {
+    ///     filters: list_networks_filters,
+    /// };
+    ///
+    /// docker.chain().list_networks(Some(config));
+    /// ```
+    pub fn list_networks<T, K, V>(
+        self,
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, Vec<ListNetworksResults>), Error = Error>
+    where
+        T: ListNetworksQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        self.inner
+            .list_networks(options)
             .map(|result| (self, result))
     }
 }
