@@ -5,11 +5,12 @@ use failure::Error;
 use http::request::Builder;
 use hyper::client::connect::Connect;
 use hyper::rt::Future;
-use hyper::Method;
+use hyper::{Body, Method};
 use serde::ser::Serialize;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash::Hash;
 
 use super::{Docker, DockerChain};
@@ -168,7 +169,7 @@ pub struct InspectNetworkResultsContainers {
     pub ipv6_address: String,
 }
 
-/// Result type for the [List Network API](../struct.Docker.html#method.list_network)
+/// Result type for the [List Networks API](../struct.Docker.html#method.list_networks)
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[allow(missing_docs)]
@@ -192,7 +193,7 @@ pub struct ListNetworksResults {
     pub labels: HashMap<String, String>,
 }
 
-/// Network configuration used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
+/// Network configuration used in the [List Networks API](../struct.Docker.html#method.list_networks)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ListNetworksOptions<T>
@@ -210,7 +211,7 @@ where
 }
 
 #[allow(missing_docs)]
-/// Trait providing implementations for [List Network Options](struct.ListNetworkOptions.html)
+/// Trait providing implementations for [List Networks Options](struct.ListNetworksOptions.html)
 /// struct.
 pub trait ListNetworksQueryParams<K, V>
 where
@@ -229,6 +230,91 @@ impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a st
     }
 }
 
+/// Network configuration used in the [Connect Network API](../struct.Docker.html#method.connect_network)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct ConnectNetworkOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// The ID or name of the container to connect to the network.
+    pub container: T,
+    /// Configuration for a network endpoint.
+    pub endpoint_config: EndpointSettings<T>,
+}
+
+/// Configuration for a network endpoint.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct EndpointSettings<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// EndpointIPAMConfig represents an endpoint's IPAM configuration.
+    #[serde(rename = "IPAMConfig")]
+    pub ipam_config: EndpointIPAMConfig<T>,
+    #[allow(missing_docs)]
+    pub links: Vec<T>,
+    #[allow(missing_docs)]
+    pub aliases: Vec<T>,
+    /// Unique ID of the network.
+    #[serde(rename = "NetworkID")]
+    pub network_id: T,
+    /// Unique ID for the service endpoint in a Sandbox.
+    #[serde(rename = "EndpointID")]
+    pub endpoint_id: T,
+    /// Gateway address for this network.
+    pub gateway: T,
+    /// IPv4 address.
+    #[serde(rename = "IPAddress")]
+    pub ip_address: T,
+    /// Mask length of the IPv4 address.
+    #[serde(rename = "IPPrefixLen")]
+    pub ip_prefix_len: isize,
+    /// IPv6 gateway address.
+    #[serde(rename = "IPv6Gateway")]
+    pub ipv6_gateway: T,
+    /// Global IPv6 address.
+    #[serde(rename = "GlobalIPv6Address")]
+    pub global_ipv6_address: T,
+    /// Mask length of the global IPv6 address.
+    #[serde(rename = "GlobalIPv6Address")]
+    pub global_ipv6_prefix_len: i64,
+    /// MAC address for the endpoint on this network.
+    pub mac_address: T,
+    /// DriverOpts is a mapping of driver options and values. These options are passed directly to
+    /// the driver and are driver specific.
+    pub driver_opts: Option<HashMap<T, T>>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct EndpointIPAMConfig<T>
+where
+    T: AsRef<str>,
+{
+    #[serde(rename = "IPv4Address")]
+    pub ipv4_address: T,
+    #[serde(rename = "IPv6Address")]
+    pub ipv6_address: T,
+    #[serde(rename = "LinkLocalIPs")]
+    pub link_local_ips: Vec<T>,
+}
+
+/// Network configuration used in the [Disconnect Network API](../struct.Docker.html#method.disconnect_network)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct DisconnectNetworkOptions<T>
+where
+    T: AsRef<str>,
+{
+    /// The ID or name of the container to disconnect from the network.
+    pub container: T,
+    /// Force the container to disconnect from the network.
+    pub force: bool,
+}
+
 impl<C> Docker<C>
 where
     C: Connect + Sync + 'static,
@@ -241,11 +327,11 @@ where
     ///
     /// # Arguments
     ///
-    ///  - [Create Network Options](container/struct.CreateNetworkOptions.html) struct.
+    ///  - [Create Network Options](network/struct.CreateNetworkOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Create Network Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A [Create Network Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -307,7 +393,6 @@ where
     pub fn remove_network(&self, network_name: &str) -> impl Future<Item = (), Error = Error> {
         let url = format!("/networks/{}", network_name);
 
-        use hyper::Body;
         let req = self.build_request::<_, String, String>(
             &url,
             Builder::new().method(Method::DELETE),
@@ -328,7 +413,7 @@ where
     ///
     /// # Returns
     ///
-    ///  - A [Inspect Network Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A [Inspect Network Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -360,7 +445,6 @@ where
     {
         let url = format!("/networks/{}", network_name);
 
-        use hyper::Body;
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
@@ -377,11 +461,11 @@ where
     ///
     /// # Arguments
     ///
-    ///  - Optional [List Network Options](container/struct.ListNetworksOptions.html) struct.
+    ///  - Optional [List Network Options](network/struct.ListNetworksOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - A vector of [List Networks Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A vector of [List Networks Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -414,7 +498,6 @@ where
     {
         let url = "/networks";
 
-        use hyper::Body;
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
@@ -423,6 +506,111 @@ where
         );
 
         self.process_into_value(req)
+    }
+
+    /// ---
+    ///
+    /// # Connect Network
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Connect Network Options](network/struct.ConnectNetworkOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::{EndpointSettings, EndpointIPAMConfig, ConnectNetworkOptions};
+    ///
+    /// use std::default::Default;
+    ///
+    /// let config = ConnectNetworkOptions {
+    ///     container: "3613f73ba0e4",
+    ///     endpoint_config: EndpointSettings {
+    ///         ipam_config: EndpointIPAMConfig {
+    ///             ipv4_address: "172.24.56.89",
+    ///             ipv6_address: "2001:db8::5689",
+    ///             ..Default::default()
+    ///         },
+    ///         ..Default::default()
+    ///     }
+    /// };
+    ///
+    /// docker.connect_network("my_network_name", config);
+    /// ```
+    pub fn connect_network<T>(
+        &self,
+        network_name: &str,
+        config: ConnectNetworkOptions<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: AsRef<str> + Eq + Hash + Serialize,
+    {
+        let url = format!("/networks/{}/connect", network_name);
+
+        let req = self.build_request::<_, String, String>(
+            &url,
+            Builder::new().method(Method::POST),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Docker::<C>::serialize_payload(Some(config)),
+        );
+
+        self.process_into_unit(req)
+    }
+
+    /// ---
+    ///
+    /// # Disconnect Network
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Disconnect Network Options](network/struct.DisconnectNetworkOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::DisconnectNetworkOptions;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let config = DisconnectNetworkOptions {
+    ///     container: "3613f73ba0e4",
+    ///     force: true
+    /// };
+    ///
+    /// docker.disconnect_network("my_network_name", config);
+    /// ```
+    pub fn disconnect_network<T>(
+        &self,
+        network_name: &str,
+        config: DisconnectNetworkOptions<T>,
+    ) -> impl Future<Item = (), Error = Error>
+    where
+        T: AsRef<str> + Serialize,
+    {
+        let url = format!("/networks/{}/disconnect", network_name);
+
+        let req = self.build_request::<_, String, String>(
+            &url,
+            Builder::new().method(Method::POST),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Docker::<C>::serialize_payload(Some(config)),
+        );
+
+        self.process_into_unit(req)
     }
 }
 
