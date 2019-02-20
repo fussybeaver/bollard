@@ -20,6 +20,7 @@ use std::hash::Hash;
 use super::{Docker, DockerChain};
 use docker::{FALSE_STR, TRUE_STR};
 use either::EitherStream;
+use network::EndpointIPAMConfig;
 
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
 ///
@@ -373,24 +374,13 @@ pub struct NetworkingConfig {
     pub endpoints_config: HashMap<String, ContainerNetwork>,
 }
 
-/// EndpointIPAMConfig represents an endpoint's IPAM configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(missing_docs)]
-pub struct EndpointIPAMConfig {
-    #[serde(rename = "IPV4Address")]
-    pub ipv4_address: String,
-    #[serde(rename = "IPV6Address")]
-    pub ipv6_address: String,
-}
-
 /// Configuration for a network endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct ContainerNetwork {
     #[serde(rename = "IPAMConfig")]
-    pub ipam_config: Option<EndpointIPAMConfig>,
+    pub ipam_config: Option<EndpointIPAMConfig<String>>,
     pub links: Option<Vec<String>>,
     pub aliases: Option<Vec<String>>,
     pub mac_address: String,

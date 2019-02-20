@@ -10,7 +10,6 @@ use serde::ser::Serialize;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::hash::Hash;
 
 use super::{Docker, DockerChain};
@@ -278,7 +277,7 @@ where
     #[serde(rename = "GlobalIPv6Address")]
     pub global_ipv6_address: T,
     /// Mask length of the global IPv6 address.
-    #[serde(rename = "GlobalIPv6Address")]
+    #[serde(rename = "GlobalIPv6PrefixLen")]
     pub global_ipv6_prefix_len: i64,
     /// MAC address for the endpoint on this network.
     pub mac_address: T,
@@ -786,6 +785,101 @@ where
     {
         self.inner
             .list_networks(options)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Connect Network
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Connect Network Options](network/struct.ConnectNetworkOptions.html) struct. Consumes
+    ///  the client instance.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a unit
+    ///  type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::{EndpointSettings, EndpointIPAMConfig, ConnectNetworkOptions};
+    ///
+    /// use std::default::Default;
+    ///
+    /// let config = ConnectNetworkOptions {
+    ///     container: "3613f73ba0e4",
+    ///     endpoint_config: EndpointSettings {
+    ///         ipam_config: EndpointIPAMConfig {
+    ///             ipv4_address: "172.24.56.89",
+    ///             ipv6_address: "2001:db8::5689",
+    ///             ..Default::default()
+    ///         },
+    ///         ..Default::default()
+    ///     }
+    /// };
+    ///
+    /// docker.chain().connect_network("my_network_name", config);
+    /// ```
+    pub fn connect_network<T>(
+        self,
+        network_name: &str,
+        config: ConnectNetworkOptions<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: AsRef<str> + Eq + Hash + Serialize,
+    {
+        self.inner
+            .connect_network(network_name, config)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Disconnect Network
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Disconnect Network Options](network/struct.DisconnectNetworkOptions.html) struct.
+    ///  Consumes the client instance.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a unit
+    ///  type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::DisconnectNetworkOptions;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let config = DisconnectNetworkOptions {
+    ///     container: "3613f73ba0e4",
+    ///     force: true
+    /// };
+    ///
+    /// docker.chain().disconnect_network("my_network_name", config);
+    /// ```
+    pub fn disconnect_network<T>(
+        self,
+        network_name: &str,
+        config: DisconnectNetworkOptions<T>,
+    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    where
+        T: AsRef<str> + Serialize,
+    {
+        self.inner
+            .disconnect_network(network_name, config)
             .map(|result| (self, result))
     }
 }

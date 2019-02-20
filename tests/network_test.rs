@@ -2,6 +2,7 @@ extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
+use bollard::container::*;
 use bollard::network::*;
 use bollard::Docker;
 
@@ -25,6 +26,7 @@ where
         subnet: Some("10.10.10.10/24"),
         ..Default::default()
     };
+
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_create_network",
         check_duplicate: true,
@@ -40,7 +42,7 @@ where
         .create_network(create_network_options)
         .map(|(docker, result)| (docker, result.id))
         .and_then(move |(docker, id)| {
-            docker.inspect_network::<_, _, String>(
+            docker.inspect_network::<_, &str, String>(
                 &id,
                 Some(InspectNetworkOptions {
                     verbose: true,
@@ -112,6 +114,91 @@ where
     run_runtime(rt, future);
 }
 
+fn connect_network_test<C>(docker: Docker<C>)
+where
+    C: Connect + Sync + 'static,
+{
+    let rt = Runtime::new().unwrap();
+
+    let ipam_config = IPAMConfig {
+        subnet: Some("10.10.10.10/24"),
+        ..Default::default()
+    };
+
+    let create_network_options = CreateNetworkOptions {
+        name: "integration_test_connect_network",
+        check_duplicate: true,
+        ipam: IPAM {
+            config: vec![ipam_config],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let connect_network_options = ConnectNetworkOptions {
+        container: "integration_test_connect_network_test",
+        endpoint_config: EndpointSettings {
+            ipam_config: EndpointIPAMConfig {
+                ipv4_address: "10.10.10.101",
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    };
+
+    let future = chain_create_daemon(docker.chain(), "integration_test_connect_network_test")
+        .and_then(|docker| docker.create_network(create_network_options))
+        .and_then(|(docker, result)| {
+            docker
+                .connect_network(&result.id, connect_network_options)
+                .map(|(docker, _)| (docker, result.id))
+        })
+        .and_then(|(docker, id)| {
+            docker
+                .inspect_network::<_, &str, String>(
+                    &id,
+                    Some(InspectNetworkOptions {
+                        verbose: true,
+                        ..Default::default()
+                    }),
+                )
+                .map(|(docker, result)| (docker, id, result))
+        })
+        .map(|(docker, id, result)| {
+            assert!(result
+                .containers
+                .into_iter()
+                .any(|(_, container)| container.ipv4_address == "10.10.10.101/24"));
+            (docker, id)
+        })
+        .and_then(|(docker, id)| {
+            docker
+                .disconnect_network(
+                    &id,
+                    DisconnectNetworkOptions {
+                        container: "integration_test_connect_network_test",
+                        force: true,
+                    },
+                )
+                .map(|(docker, _)| (docker, id))
+        })
+        .and_then(|(docker, id)| docker.remove_network(&id))
+        .and_then(|(docker, _)| {
+            docker.kill_container(
+                "integration_test_connect_network_test",
+                None::<KillContainerOptions<String>>,
+            )
+        })
+        .and_then(|(docker, _)| {
+            docker.remove_container(
+                "integration_test_connect_network_test",
+                None::<RemoveContainerOptions>,
+            )
+        });
+
+    run_runtime(rt, future);
+}
+
 #[test]
 #[cfg(unix)]
 // Appveyor Windows error: "HNS failed with error : Unspecified error"
@@ -124,4 +211,11 @@ fn integration_test_create_network() {
 // Appveyor Windows error: "HNS failed with error : Unspecified error"
 fn integration_test_list_networks() {
     connect_to_docker_and_run!(list_networks_test);
+}
+
+#[test]
+#[cfg(unix)]
+// Appveyor Windows error: "HNS failed with error : Unspecified error"
+fn integration_test_connect_network() {
+    connect_to_docker_and_run!(connect_network_test);
 }
