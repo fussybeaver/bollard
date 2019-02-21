@@ -90,7 +90,26 @@ pub struct CreateNetworkResults {
     pub warning: String,
 }
 
-/// Network configuration used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
+/// Parameters used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::network::InspectNetworkOptions;
+///
+/// InspectNetworkOptions{
+///     verbose: true,
+///     scope: "global",
+/// };
+/// ```
+///
+/// ```rust
+/// # use bollard::network::InspectNetworkOptions;
+/// # use std::default::Default;
+/// InspectNetworkOptions::<String>{
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct InspectNetworkOptions<T> {
@@ -192,7 +211,31 @@ pub struct ListNetworksResults {
     pub labels: HashMap<String, String>,
 }
 
-/// Network configuration used in the [List Networks API](../struct.Docker.html#method.list_networks)
+/// Parameters used in the [List Networks API](../struct.Docker.html#method.list_networks)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::network::ListNetworksOptions;
+///
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("label", vec!("maintainer=some_maintainer"));
+///
+/// ListNetworksOptions{
+///     filters: filters
+/// };
+/// ```
+///
+/// ```rust
+/// # use bollard::network::ListNetworksOptions;
+/// # use std::default::Default;
+///
+/// ListNetworksOptions::<String> {
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ListNetworksOptions<T>
@@ -312,6 +355,73 @@ where
     pub container: T,
     /// Force the container to disconnect from the network.
     pub force: bool,
+}
+
+/// Parameters used in the [Prune Networks API](../struct.Docker.html#method.prune_networks)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::network::PruneNetworksOptions;
+///
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("label!", vec!("maintainer=some_maintainer"));
+///
+/// PruneNetworksOptions{
+///     filters: filters
+/// };
+/// ```
+///
+/// ```rust
+/// # use bollard::network::PruneNetworksOptions;
+/// # use std::default::Default;
+///
+/// PruneNetworksOptions::<String>{
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct PruneNetworksOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Filters to process on the prune list, encoded as JSON.
+    ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
+    ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///  computed relative to the daemon machine’s time.  
+    ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`)
+    ///  Prune networks with (or without, in case `label!=...` is used) the specified labels.
+    pub filters: HashMap<T, Vec<T>>,
+}
+
+/// Trait providing implementations for [Prune Networks Options](struct.PruneNetworksOptions.html)
+/// struct.
+#[allow(missing_docs)]
+pub trait PruneNetworksQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
+}
+
+impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a str> {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "filters",
+            serde_json::to_string(&self.filters)?,
+        )]))
+    }
+}
+
+/// Result type for the [Prune Networks API](../struct.Docker.html#method.prune_networks)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct PruneNetworksResults {
+    pub networks_deleted: Vec<String>,
 }
 
 impl<C> Docker<C>
@@ -610,6 +720,60 @@ where
         );
 
         self.process_into_unit(req)
+    }
+
+    /// ---
+    ///
+    /// # Prune Networks
+    ///
+    /// Deletes networks which are unused.
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Prune Networks Options](network/struct.PruneNetworksOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A [Prune Networks Results](network/struct.PruneNetworksResults.html) struct.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::PruneNetworksOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("label", vec!("maintainer=some_maintainer"));
+    ///
+    /// let options = PruneNetworksOptions {
+    ///     filters: filters,
+    /// };
+    ///
+    /// docker.prune_networks(Some(options));
+    /// ```
+    pub fn prune_networks<T, K, V>(
+        &self,
+        options: Option<T>,
+    ) -> impl Future<Item = PruneNetworksResults, Error = Error>
+    where
+        T: PruneNetworksQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let url = "/networks/prune";
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::POST),
+            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value(req)
     }
 }
 
