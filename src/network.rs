@@ -63,7 +63,7 @@ where
     /// List of IPAM configuration options, specified as a map: {"Subnet": <CIDR>, "IPRange": <CIDR>, "Gateway": <IP address>, "AuxAddress": <device_name:IP address>}
     pub config: Vec<IPAMConfig<T>>,
     /// Driver-specific options, specified as a map.
-    pub options: HashMap<T, T>,
+    pub options: Option<HashMap<T, T>>,
 }
 
 /// IPAMConfig represents IPAM configurations
@@ -106,7 +106,7 @@ pub struct CreateNetworkResults {
 /// ```rust
 /// # use bollard::network::InspectNetworkOptions;
 /// # use std::default::Default;
-/// InspectNetworkOptions::<String>{
+/// InspectNetworkOptions::<&str>{
 ///     ..Default::default()
 /// };
 /// ```
@@ -232,7 +232,7 @@ pub struct ListNetworksResults {
 /// # use bollard::network::ListNetworksOptions;
 /// # use std::default::Default;
 ///
-/// ListNetworksOptions::<String> {
+/// ListNetworksOptions::<&str> {
 ///     ..Default::default()
 /// };
 /// ```
@@ -378,7 +378,7 @@ where
 /// # use bollard::network::PruneNetworksOptions;
 /// # use std::default::Default;
 ///
-/// PruneNetworksOptions::<String>{
+/// PruneNetworksOptions::<&str>{
 ///     ..Default::default()
 /// };
 /// ```
@@ -1044,6 +1044,54 @@ where
     {
         self.inner
             .disconnect_network(network_name, config)
+            .map(|result| (self, result))
+    }
+
+    /// ---
+    ///
+    /// # Prune Networks
+    ///
+    /// Deletes networks which are unused. Consumes the client instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - A [Prune Networks Options](network/struct.PruneNetworksOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Prune
+    ///  Networks Results](network/struct.PruneNetworksResults.html) struct.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::network::PruneNetworksOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("label", vec!("maintainer=some_maintainer"));
+    ///
+    /// let options = PruneNetworksOptions {
+    ///     filters: filters,
+    /// };
+    ///
+    /// docker.chain().prune_networks(Some(options));
+    /// ```
+    pub fn prune_networks<T, K, V>(
+        self,
+        options: Option<T>,
+    ) -> impl Future<Item = (DockerChain<C>, PruneNetworksResults), Error = Error>
+    where
+        T: PruneNetworksQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        self.inner
+            .prune_networks(options)
             .map(|result| (self, result))
     }
 }

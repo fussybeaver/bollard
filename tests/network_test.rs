@@ -199,6 +199,36 @@ where
     run_runtime(rt, future);
 }
 
+fn prune_networks_test<C>(docker: Docker<C>)
+where
+    C: Connect + Sync + 'static,
+{
+    let rt = Runtime::new().unwrap();
+
+    let create_network_options = CreateNetworkOptions {
+        name: "integration_test_prune_networks",
+        attachable: true,
+        check_duplicate: true,
+        ..Default::default()
+    };
+
+    let mut list_networks_filters = HashMap::new();
+    list_networks_filters.insert("scope", vec!["global"]);
+
+    let future = docker
+        .chain()
+        .create_network(create_network_options)
+        .and_then(|(docker, _)| docker.prune_networks(None::<PruneNetworksOptions<&str>>))
+        .and_then(move |(docker, _)| {
+            docker.list_networks(Some(ListNetworksOptions {
+                filters: list_networks_filters,
+            }))
+        })
+        .map(|(_, results)| assert_eq!(0, results.len()));
+
+    run_runtime(rt, future);
+}
+
 #[test]
 #[cfg(unix)]
 // Appveyor Windows error: "HNS failed with error : Unspecified error"
@@ -218,4 +248,11 @@ fn integration_test_list_networks() {
 // Appveyor Windows error: "HNS failed with error : Unspecified error"
 fn integration_test_connect_network() {
     connect_to_docker_and_run!(connect_network_test);
+}
+
+#[test]
+#[cfg(unix)]
+// Appveyor Windows error: "HNS failed with error : Unspecified error"
+fn integration_test_prune_networks() {
+    connect_to_docker_and_run!(prune_networks_test);
 }
