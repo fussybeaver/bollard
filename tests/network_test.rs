@@ -42,9 +42,9 @@ where
         .create_network(create_network_options)
         .map(|(docker, result)| (docker, result.id))
         .and_then(move |(docker, id)| {
-            docker.inspect_network::<_, &str, String>(
+            docker.inspect_network(
                 &id,
-                Some(InspectNetworkOptions {
+                Some(InspectNetworkOptions::<&str> {
                     verbose: true,
                     ..Default::default()
                 }),
@@ -155,9 +155,9 @@ where
         })
         .and_then(|(docker, id)| {
             docker
-                .inspect_network::<_, &str, String>(
+                .inspect_network(
                     &id,
-                    Some(InspectNetworkOptions {
+                    Some(InspectNetworkOptions::<&str> {
                         verbose: true,
                         ..Default::default()
                     }),
@@ -219,7 +219,14 @@ where
         .chain()
         .create_network(create_network_options)
         .and_then(|(docker, _)| docker.prune_networks(None::<PruneNetworksOptions<&str>>))
-        .and_then(move |(docker, _)| {
+        .map(|(docker, result)| {
+            assert_eq!(
+                "integration_test_prune_networks",
+                result.networks_deleted[0]
+            );
+            docker
+        })
+        .and_then(move |docker| {
             docker.list_networks(Some(ListNetworksOptions {
                 filters: list_networks_filters,
             }))

@@ -122,15 +122,14 @@ pub struct InspectNetworkOptions<T> {
 #[allow(missing_docs)]
 /// Trait providing implementations for [Inspect Network Options](struct.InspectNetworkOptions.html)
 /// struct.
-pub trait InspectNetworkQueryParams<K, V>
+pub trait InspectNetworkQueryParams<'a, V>
 where
-    K: AsRef<str>,
     V: AsRef<str>,
 {
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, V); 2]>, Error>;
 }
 
-impl<'a> InspectNetworkQueryParams<&'a str, &'a str> for InspectNetworkOptions<&'a str> {
+impl<'a> InspectNetworkQueryParams<'a, &'a str> for InspectNetworkOptions<&'a str> {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 2]>, Error> {
         Ok(ArrayVec::from([
             ("verbose", if self.verbose { TRUE_STR } else { FALSE_STR }),
@@ -139,7 +138,7 @@ impl<'a> InspectNetworkQueryParams<&'a str, &'a str> for InspectNetworkOptions<&
     }
 }
 
-impl<'a> InspectNetworkQueryParams<&'a str, String> for InspectNetworkOptions<String> {
+impl<'a> InspectNetworkQueryParams<'a, String> for InspectNetworkOptions<String> {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 2]>, Error> {
         Ok(ArrayVec::from([
             ("verbose", self.verbose.to_string()),
@@ -542,14 +541,13 @@ where
     ///
     /// docker.inspect_network("my_network_name", Some(config));
     /// ```
-    pub fn inspect_network<T, K, V>(
+    pub fn inspect_network<'a, T, V>(
         &self,
         network_name: &str,
         options: Option<T>,
     ) -> impl Future<Item = InspectNetworkResults, Error = Error>
     where
-        T: InspectNetworkQueryParams<K, V>,
-        K: AsRef<str>,
+        T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
     {
         let url = format!("/networks/{}", network_name);
@@ -889,14 +887,13 @@ where
     ///
     /// docker.chain().inspect_network("my_network_name", Some(config));
     /// ```
-    pub fn inspect_network<T, K, V>(
+    pub fn inspect_network<'a, T, V>(
         self,
         network_name: &str,
         options: Option<T>,
     ) -> impl Future<Item = (DockerChain<C>, InspectNetworkResults), Error = Error>
     where
-        T: InspectNetworkQueryParams<K, V>,
-        K: AsRef<str>,
+        T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
     {
         self.inner
@@ -1093,5 +1090,259 @@ where
         self.inner
             .prune_networks(options)
             .map(|result| (self, result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper_mock::HostToReplyConnector;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_create_network() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 86\r\n\r\n{\"Id\":\"d1022f34e396473dd2a1e39abe0816b6e3465cdb44b78d094606f122933d8da3\",\"Warning\":\"\"}\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let ipam_config = IPAMConfig {
+            subnet: Some("10.10.10.10/24"),
+            ..Default::default()
+        };
+
+        let create_network_options = CreateNetworkOptions {
+            name: "integration_test_create_network",
+            check_duplicate: true,
+            ipam: IPAM {
+                config: vec![ipam_config],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let results = docker.create_network(create_network_options);
+
+        let future = results.map(|result| {
+            assert_eq!(
+                "d1022f34e396473dd2a1e39abe0816b6e3465cdb44b78d094606f122933d8da3".to_string(),
+                result.id
+            )
+        });
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_inspect_network() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 428\r\n\r\n{\"Name\":\"integration_test_create_network\",\"Id\":\"c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43\",\"Created\":\"2019-02-23T09:23:10.60267Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{}}\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let results = docker.inspect_network(
+            "c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43",
+            Some(InspectNetworkOptions {
+                verbose: true,
+                scope: "global",
+            }),
+        );
+
+        let future = results.map(|result| {
+            assert!(result
+                .ipam
+                .config
+                .into_iter()
+                .take(1)
+                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"));
+        });
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_remove_network() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let results = docker.remove_network("my_network_name");
+
+        let future = results.map(|_| assert!(true));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_list_networks() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 463\r\n\r\n[{\"Name\":\"integration_test_list_network\",\"Id\":\"594423d1fbc3d894f8dc5a5b6565fffe4b4b5c379ceb23e1daf6ead4e3397fe3\",\"Created\":\"2019-02-23T09:54:21.8154268Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{\"maintainer\":\"bollard-maintainer\"}}]\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let mut list_networks_filters = HashMap::new();
+        list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
+
+        let results = docker.list_networks(Some(ListNetworksOptions {
+            filters: list_networks_filters,
+        }));
+
+        let future = results.map(|result| {
+            assert!(result
+                .into_iter()
+                .take(1)
+                .map(|v| v.ipam.config)
+                .flatten()
+                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"))
+        });
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_connect_network() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let connect_network_options = ConnectNetworkOptions {
+            container: "my_running_container",
+            endpoint_config: EndpointSettings {
+                ipam_config: EndpointIPAMConfig {
+                    ipv4_address: "10.10.10.101",
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+
+        let results = docker.connect_network(
+            "f3f9ef4375ca3ada374b9ecd6d8a1ebd501a59f0b2eedd0b93cd0502d7a009dc",
+            connect_network_options,
+        );
+
+        let future = results.map(|_| assert!(true));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_disconnect_network() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let results = docker.disconnect_network(
+            "f3f9ef4375ca3ada374b9ecd6d8a1ebd501a59f0b2eedd0b93cd0502d7a009dc",
+            DisconnectNetworkOptions {
+                container: "my_running_container",
+                force: true,
+            },
+        );
+
+        let future = results.map(|_| assert!(true));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
+    }
+
+    #[test]
+    fn test_prune_networks() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"NetworksDeleted\":[\"my_running_container\"]}\r\n".to_string()
+        );
+
+        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+
+        let results = docker.prune_networks(None::<PruneNetworksOptions<&str>>);
+
+        let future = results.map(|v| assert_eq!("my_running_container", v.networks_deleted[0]));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 }
