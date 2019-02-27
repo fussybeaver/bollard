@@ -1,5 +1,6 @@
 //! Image API: creating, manipulating and pushing docker images
 use arrayvec::ArrayVec;
+use base64;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
@@ -13,7 +14,6 @@ use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
-use base64;
 
 use super::{Docker, DockerChain};
 use auth::DockerCredentials;
@@ -805,7 +805,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
@@ -841,7 +842,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
@@ -2089,7 +2091,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 }
 
@@ -2129,7 +2132,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2160,7 +2164,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2184,7 +2189,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2208,7 +2214,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2227,19 +2234,19 @@ mod tests {
         let image_history_results = docker.image_history("hello-world");
 
         let future = image_history_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .take(1)
-                    .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                        == "hello-world:latest")
-            )
+            assert!(vec
+                .into_iter()
+                .take(1)
+                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                    == "hello-world:latest"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2263,17 +2270,17 @@ mod tests {
         let search_results = docker.search_images(search_options);
 
         let future = search_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .any(|api_image| &api_image.name == "hello-world")
-            )
+            assert!(vec
+                .into_iter()
+                .any(|api_image| &api_image.name == "hello-world"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2309,7 +2316,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2343,7 +2351,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2372,7 +2381,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2406,7 +2416,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2458,7 +2469,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

@@ -48,12 +48,11 @@ where
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
-        }).map(|(docker, result)| {
-            assert!(
-                result
-                    .into_iter()
-                    .any(|api_image| &api_image.name == "hello-world")
-            );
+        })
+        .map(|(docker, result)| {
+            assert!(result
+                .into_iter()
+                .any(|api_image| &api_image.name == "hello-world"));
             docker
         });
 
@@ -76,12 +75,10 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.inspect_image(&image()))
         .map(move |(docker, result)| {
-            assert!(
-                result
-                    .repo_tags
-                    .into_iter()
-                    .any(|repo_tag| repo_tag == image().to_string())
-            );
+            assert!(result
+                .repo_tags
+                .into_iter()
+                .any(|repo_tag| repo_tag == image().to_string()));
             docker
         });
 
@@ -107,14 +104,13 @@ where
                 all: true,
                 ..Default::default()
             }))
-        }).map(move |(docker, result)| {
-            assert!(result.into_iter().any(|api_image| {
-                api_image
-                    .repo_tags
-                    .unwrap_or(vec![String::new()])
-                    .into_iter()
-                    .any(|repo_tag| repo_tag == image().to_string())
-            }));
+        })
+        .map(move |(docker, result)| {
+            assert!(result.into_iter().any(|api_image| api_image
+                .repo_tags
+                .unwrap_or(vec![String::new()])
+                .into_iter()
+                .any(|repo_tag| repo_tag == image().to_string())));
             docker
         });
 
@@ -137,13 +133,11 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.image_history(&image()))
         .map(move |(docker, result)| {
-            assert!(result.into_iter().take(1).any(|history| {
-                history
-                    .tags
-                    .unwrap_or(vec![String::new()])
-                    .into_iter()
-                    .any(|tag| tag == image().to_string())
-            }));
+            assert!(result.into_iter().take(1).any(|history| history
+                .tags
+                .unwrap_or(vec![String::new()])
+                .into_iter()
+                .any(|tag| tag == image().to_string())));
             docker
         });
 
@@ -238,17 +232,20 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container",
                 None::<WaitContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.commit_container(
                 CommitContainerOptions {
                     container: "integration_test_commit_container",
@@ -260,7 +257,8 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: "integration_test_commit_container_next",
@@ -275,17 +273,20 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container_next",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container_next",
                 None::<WaitContainerOptions<String>>,
             )
-        }).map(move |(docker, stream)| {
+        })
+        .map(move |(docker, stream)| {
             stream
                 .take(1)
                 .into_future()
@@ -404,17 +405,20 @@ RUN touch bollard.txt
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_build_image",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_build_image",
                 None::<WaitContainerOptions<String>>,
             )
-        }).map(move |(docker, stream)| {
+        })
+        .map(move |(docker, stream)| {
             stream
                 .take(1)
                 .into_future()

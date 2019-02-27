@@ -2942,7 +2942,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -3125,7 +3126,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -3206,7 +3208,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -3552,7 +3555,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3576,7 +3580,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3602,7 +3607,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3631,7 +3637,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3661,7 +3668,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3687,7 +3695,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3713,7 +3722,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3743,7 +3753,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3779,7 +3790,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3804,7 +3816,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3831,7 +3844,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3859,7 +3873,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3889,7 +3904,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3917,7 +3933,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3941,7 +3958,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3965,7 +3983,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -3989,7 +4008,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

@@ -510,7 +510,7 @@ impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
     /// # }
     /// ```
     pub fn connect_with_tls_defaults(
-) -> Result<Docker<hyper_tls::HttpsConnector<HttpConnector>>, Error> {
+    ) -> Result<Docker<hyper_tls::HttpsConnector<HttpConnector>>, Error> {
         let cert_path = default_cert_path()?;
         if let Ok(ref host) = env::var("DOCKER_HOST") {
             Docker::connect_with_tls(
@@ -801,7 +801,8 @@ where
             Some(Ok(res)) => Ok(Some(res)),
             Some(Err(e)) => Err(e),
             None => Ok(None),
-        }.map_err(|e| e.into())
+        }
+        .map_err(|e| e.into())
         .map(|payload| {
             debug!("{}", payload.clone().unwrap_or_else(String::new));
             payload
@@ -861,7 +862,8 @@ where
                             Err(DockerResponseServerError {
                                 status_code: status.as_u16(),
                                 message,
-                            }.into())
+                            }
+                            .into())
                         },
                     )),
                 }
@@ -954,7 +956,8 @@ where
                         message: e.to_string(),
                         column: e.column(),
                         contents: contents.to_owned(),
-                    }.into()
+                    }
+                    .into()
                 } else {
                     e.into()
                 }
