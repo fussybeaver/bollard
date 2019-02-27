@@ -10,7 +10,6 @@ extern crate tar;
 extern crate tokio;
 
 use futures::Stream;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
@@ -29,19 +28,13 @@ use std::io::Write;
 pub mod common;
 use common::*;
 
-fn create_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn create_image_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain());
     run_runtime(rt, future);
 }
 
-fn search_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn search_images_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = docker
         .chain()
@@ -59,10 +52,7 @@ where
     run_runtime(rt, future);
 }
 
-fn inspect_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn inspect_image_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -85,10 +75,7 @@ where
     run_runtime(rt, future);
 }
 
-fn list_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn list_images_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -117,10 +104,7 @@ where
     run_runtime(rt, future);
 }
 
-fn image_history_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn image_history_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -144,10 +128,7 @@ where
     run_runtime(rt, future);
 }
 
-fn prune_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn prune_images_test(docker: Docker) {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
     rt_exec!(
@@ -156,10 +137,7 @@ where
     );
 }
 
-fn remove_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn remove_image_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -195,10 +173,7 @@ where
     run_runtime(rt, future);
 }
 
-fn commit_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn commit_container_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}microsoft/nanoserver", registry_http_addr())
@@ -331,10 +306,7 @@ where
     run_runtime(rt, future);
 }
 
-fn build_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn build_image_test(docker: Docker) {
     let dockerfile = if cfg!(windows) {
         format!(
             "FROM {}microsoft/nanoserver

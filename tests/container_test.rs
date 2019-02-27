@@ -23,10 +23,7 @@ use std::io::Write;
 pub mod common;
 use common::*;
 
-fn list_containers_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn list_containers_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -61,10 +58,7 @@ where
     run_runtime(rt, future);
 }
 
-fn image_push_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn image_push_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -113,10 +107,7 @@ where
     run_runtime(rt, future);
 }
 
-fn container_restart_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn container_restart_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_restart_container");
 
@@ -154,10 +145,7 @@ where
     run_runtime(rt, future);
 }
 
-fn top_processes_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn top_processes_test(docker: Docker) {
     let top_options = if cfg!(windows) {
         None
     } else {
@@ -188,10 +176,7 @@ where
     run_runtime(rt, future);
 }
 
-fn logs_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn logs_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let docker2 = docker.clone();
     let future = chain_create_container_hello_world(docker.chain(), "integration_test_logs")
@@ -230,10 +215,7 @@ where
     run_runtime(rt, future);
 }
 
-fn container_changes_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn container_changes_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future =
         chain_create_container_hello_world(docker.chain(), "integration_test_container_changes")
@@ -257,10 +239,7 @@ where
     run_runtime(rt, future);
 }
 
-fn stats_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn stats_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_stats")
         .and_then(|docker| {
@@ -288,10 +267,7 @@ where
     run_runtime(rt, future);
 }
 
-fn kill_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn kill_container_test(docker: Docker) {
     let kill_options = Some(KillContainerOptions { signal: "SIGKILL" });
 
     let rt = Runtime::new().unwrap();
@@ -307,10 +283,7 @@ where
     run_runtime(rt, future);
 }
 
-fn update_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn update_container_test(docker: Docker) {
     let update_options = UpdateContainerOptions {
         memory: Some(314572800),
         memory_swap: Some(314572800),
@@ -364,10 +337,7 @@ where
     run_runtime(rt, future);
 }
 
-fn rename_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn rename_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future =
         chain_create_container_hello_world(docker.chain(), "integration_test_rename_container")
@@ -389,10 +359,7 @@ where
     run_runtime(rt, future);
 }
 
-fn pause_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn pause_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_pause_container")
         .and_then(|docker| docker.pause_container("integration_test_pause_container"))
@@ -422,10 +389,7 @@ where
     run_runtime(rt, future);
 }
 
-fn prune_containers_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn prune_containers_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = docker
         .chain()
@@ -456,10 +420,7 @@ where
     run_runtime(rt, future);
 }
 
-fn archive_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn archive_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let image = move || {
