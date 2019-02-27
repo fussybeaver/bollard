@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
@@ -12,7 +13,6 @@ use futures::future::{self, result};
 use futures::Stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
 use hyper::{self, Body, Chunk, Client, Request, Response, StatusCode};
@@ -43,6 +43,9 @@ use uri::Uri;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json;
+
+#[cfg(test)]
+use hyper_mock::HostToReplyConnector;
 
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
@@ -91,6 +94,49 @@ pub(crate) enum ClientType {
     NamedPipe,
 }
 
+/// Transport is the type representing the means of communication
+/// with the Docker daemon.
+///
+/// Each transport usually encapsulate a hyper client
+/// with various Connect traits fulfilled.
+pub(crate) enum Transport {
+    Http {
+        client: Client<HttpConnector>,
+    },
+    #[cfg(feature = "openssl")]
+    Https {
+        client: Client<HttpsConnector<HttpConnector>>,
+    },
+    Tls {
+        client: Client<hyper_tls::HttpsConnector<HttpConnector>>,
+    },
+    #[cfg(unix)]
+    Unix {
+        client: Client<UnixConnector>,
+    },
+    #[cfg(test)]
+    HostToReply {
+        client: Client<HostToReplyConnector>,
+    },
+}
+
+impl fmt::Debug for Transport {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Transport::Http { .. } => write!(f, "HTTP"),
+            #[cfg(feature = "openssl")]
+            Transport::Https { .. } => write!(f, "HTTPS(openssl)"),
+            Transport::Tls { .. } => write!(f, "HTTPS(native)"),
+            #[cfg(unix)]
+            Transport::Unix { .. } => write!(f, "Unix"),
+            #[cfg(windows)]
+            Tranport::NamedPipe { .. } => write!(f, "NamedPipe"),
+            #[cfg(test)]
+            Transport::HostToReply { .. } => write!(f, "HostToReply"),
+        }
+    }
+}
+
 /// ---
 ///
 /// # Docker
@@ -103,17 +149,17 @@ pub(crate) enum ClientType {
 ///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
 ///  - [`Docker::connect_with_tls_defaults`](struct.Docker.html#method.connect_with_tls_defaults)
 #[derive(Debug)]
-pub struct Docker<C> {
-    pub(crate) client: Arc<Client<C>>,
+pub struct Docker {
+    pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
     pub(crate) client_addr: String,
     pub(crate) client_timeout: u64,
 }
 
-impl<C> Clone for Docker<C> {
-    fn clone(&self) -> Docker<C> {
+impl Clone for Docker {
+    fn clone(&self) -> Docker {
         Docker {
-            client: self.client.clone(),
+            transport: self.transport.clone(),
             client_type: self.client_type.clone(),
             client_addr: self.client_addr.clone(),
             client_timeout: self.client_timeout,
@@ -124,7 +170,7 @@ impl<C> Clone for Docker<C> {
 #[cfg(feature = "openssl")]
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `openssl`
 /// library.
-impl Docker<HttpsConnector<HttpConnector>> {
+impl Docker {
     /// Connect using secure HTTPS using defaults that are signalled by environment variables.
     ///
     /// # Defaults
@@ -151,7 +197,7 @@ impl Docker<HttpsConnector<HttpConnector>> {
     ///   .and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_ssl_defaults() -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
+    pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
         let cert_path = default_cert_path()?;
         if let Ok(ref host) = env::var("DOCKER_HOST") {
             Docker::connect_with_ssl(
@@ -215,7 +261,7 @@ impl Docker<HttpsConnector<HttpConnector>> {
         ssl_ca: &Path,
         num_threads: usize,
         timeout: u64,
-    ) -> Result<Docker<HttpsConnector<HttpConnector>>, Error> {
+    ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
 
@@ -233,8 +279,9 @@ impl Docker<HttpsConnector<HttpConnector>> {
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);
+        let transport = Transport::Https { client };
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: ClientType::SSL,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
@@ -245,7 +292,7 @@ impl Docker<HttpsConnector<HttpConnector>> {
 }
 
 /// A Docker implementation typed to connect to an unsecure Http connection.
-impl Docker<HttpConnector> {
+impl Docker {
     /// Connect using unsecured HTTP using defaults that are signalled by environment variables.
     ///
     /// # Defaults
@@ -270,7 +317,7 @@ impl Docker<HttpConnector> {
     ///   .and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_http_defaults() -> Result<Docker<impl Connect>, Error> {
+    pub fn connect_with_http_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
         Docker::connect_with_http(&host, DEFAULT_NUM_THREADS, DEFAULT_TIMEOUT)
     }
@@ -304,7 +351,7 @@ impl Docker<HttpConnector> {
         addr: &str,
         num_threads: usize,
         timeout: u64,
-    ) -> Result<Docker<impl Connect>, Error> {
+    ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
 
@@ -312,8 +359,9 @@ impl Docker<HttpConnector> {
 
         let client_builder = Client::builder();
         let client = client_builder.build(http_connector);
+        let transport = Transport::Http { client };
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: ClientType::Http,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
@@ -325,7 +373,7 @@ impl Docker<HttpConnector> {
 
 #[cfg(unix)]
 /// A Docker implementation typed to connect to a Unix socket.
-impl Docker<UnixConnector> {
+impl Docker {
     /// Connect using a Unix socket using defaults that are signalled by environment variables.
     ///
     /// # Defaults
@@ -347,7 +395,7 @@ impl Docker<UnixConnector> {
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_unix_defaults() -> Result<Docker<impl Connect>, Error> {
+    pub fn connect_with_unix_defaults() -> Result<Docker, Error> {
         Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT)
     }
 
@@ -372,7 +420,7 @@ impl Docker<UnixConnector> {
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_unix(addr: &str, timeout: u64) -> Result<Docker<impl Connect>, Error> {
+    pub fn connect_with_unix(addr: &str, timeout: u64) -> Result<Docker, Error> {
         let client_addr = addr.replacen("unix://", "", 1);
 
         let unix_connector = UnixConnector::new();
@@ -381,8 +429,9 @@ impl Docker<UnixConnector> {
         client_builder.keep_alive(false);
 
         let client = client_builder.build(unix_connector);
+        let transport = Transport::Unix { client };
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: ClientType::Unix,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
@@ -395,7 +444,7 @@ impl Docker<UnixConnector> {
 #[cfg(windows)]
 /// A Docker implementation typed to connect to a Windows Named Pipe, exclusive to the windows
 /// target.
-impl Docker<NamedPipeConnector> {
+impl Docker {
     /// Connect using a Windows Named Pipe using defaults that are signalled by environment
     /// variables.
     ///
@@ -419,7 +468,7 @@ impl Docker<NamedPipeConnector> {
     ///
     /// # }
     /// ```
-    pub fn connect_with_named_pipe_defaults() -> Result<Docker<NamedPipeConnector>, Error> {
+    pub fn connect_with_named_pipe_defaults() -> Result<Docker, Error> {
         Docker::connect_with_named_pipe(DEFAULT_NAMED_PIPE, DEFAULT_TIMEOUT)
     }
 
@@ -447,10 +496,7 @@ impl Docker<NamedPipeConnector> {
     ///
     /// # }
     /// ```
-    pub fn connect_with_named_pipe(
-        addr: &str,
-        timeout: u64,
-    ) -> Result<Docker<NamedPipeConnector>, Error> {
+    pub fn connect_with_named_pipe(addr: &str, timeout: u64) -> Result<Docker, Error> {
         let client_addr = addr.replacen("npipe://", "", 1);
 
         let named_pipe_connector = NamedPipeConnector::new();
@@ -459,8 +505,9 @@ impl Docker<NamedPipeConnector> {
         client_builder.keep_alive(false);
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
+        let transport = Transport::NamedPipe { client };
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
@@ -472,7 +519,7 @@ impl Docker<NamedPipeConnector> {
 
 /// A Docker implementation typed to connect to a secure HTTPS connection, using the native rust
 /// TLS library.
-impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
+impl Docker {
     /// Connect using secure HTTPS using native TLS and defaults that are signalled by environment
     /// variables.
     ///
@@ -509,8 +556,7 @@ impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
     ///   .and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_tls_defaults(
-    ) -> Result<Docker<hyper_tls::HttpsConnector<HttpConnector>>, Error> {
+    pub fn connect_with_tls_defaults() -> Result<Docker, Error> {
         let cert_path = default_cert_path()?;
         if let Ok(ref host) = env::var("DOCKER_HOST") {
             Docker::connect_with_tls(
@@ -584,7 +630,7 @@ impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
         pkcs12_password: &str,
         num_thread: usize,
         timeout: u64,
-    ) -> Result<Docker<hyper_tls::HttpsConnector<HttpConnector>>, Error> {
+    ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("tcp://", "", 1);
 
         let mut tls_connector_builder = TlsConnector::builder();
@@ -610,8 +656,9 @@ impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);
+        let transport = Transport::Tls { client };
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: ClientType::SSL,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
@@ -621,15 +668,15 @@ impl Docker<hyper_tls::HttpsConnector<HttpConnector>> {
     }
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
-    /// Connect using a type that implements `hyper::Connect`.
+#[cfg(test)]
+impl Docker {
+    /// Connect using the `HostToReplyConnector`.
+    ///
+    /// This connector is used to test the Docker client api.
     ///
     /// # Arguments
     ///
-    ///  - `connector`: type that implements `hyper::Connect`.
+    ///  - `connector`: theHostToReplyConnector
     ///  - `client_addr`: location to connect to.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///
@@ -638,14 +685,14 @@ where
     /// ```rust,no_run
     /// # extern crate bollard;
     /// # extern crate futures;
-    /// # extern crate yup_hyper_mock;
+    /// # extern crate hyper_mock;
     /// # fn main () {
     /// use bollard::Docker;
     ///
     /// use futures::future::Future;
     ///
-    /// # use yup_hyper_mock::SequentialConnector;
-    /// let mut connector = SequentialConnector::default();
+    /// # use hyper_mock::SequentialConnector;
+    /// let mut connector = HostToReplyConnector::default();
     /// connector.content.push(
     ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
     /// );
@@ -654,11 +701,11 @@ where
     ///   .and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with(
-        connector: C,
+    pub(crate) fn connect_with_host_to_reply(
+        connector: HostToReplyConnector,
         client_addr: String,
         timeout: u64,
-    ) -> Result<Docker<C>, Error> {
+    ) -> Result<Docker, Error> {
         let client_builder = Client::builder();
         let client = client_builder.build(connector);
 
@@ -666,9 +713,10 @@ where
         let client_type = ClientType::Unix;
         #[cfg(windows)]
         let client_type = ClientType::NamedPipe;
+        let transport = Transport::HostToReply { client };
 
         let docker = Docker {
-            client: Arc::new(client),
+            transport: Arc::new(transport),
             client_type: client_type,
             client_addr,
             client_timeout: timeout,
@@ -693,22 +741,20 @@ where
 /// docker.chain();
 /// ```
 #[derive(Debug)]
-pub struct DockerChain<C> {
-    pub(super) inner: Docker<C>,
+pub struct DockerChain {
+    pub(super) inner: Docker,
 }
 
-impl<C> Clone for DockerChain<C> {
-    fn clone(&self) -> DockerChain<C> {
+impl Clone for DockerChain {
+    fn clone(&self) -> DockerChain {
         DockerChain {
             inner: self.inner.clone(),
         }
     }
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+// The implementation block for Docker requests
+impl Docker {
     /// Create a chain of docker commands, useful to calling the API in a sequential manner.
     ///
     /// # Examples
@@ -718,7 +764,7 @@ where
     /// let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.chain();
     /// ```
-    pub fn chain(self) -> DockerChain<C> {
+    pub fn chain(self) -> DockerChain {
         DockerChain { inner: self }
     }
 
@@ -729,8 +775,7 @@ where
     where
         T: DeserializeOwned,
     {
-        self.process_request(req)
-            .and_then(Docker::<C>::decode_response)
+        self.process_request(req).and_then(Docker::decode_response)
     }
 
     pub(crate) fn process_into_stream<T>(
@@ -742,7 +787,7 @@ where
     {
         self.process_request(req)
             .into_stream()
-            .map(Docker::<C>::decode_into_stream::<T>)
+            .map(Docker::decode_into_stream::<T>)
             .flatten()
     }
 
@@ -752,7 +797,7 @@ where
     ) -> impl Stream<Item = LogOutput, Error = Error> {
         self.process_request(req)
             .into_stream()
-            .map(Docker::<C>::decode_into_stream_string)
+            .map(Docker::decode_into_stream_string)
             .flatten()
     }
 
@@ -779,7 +824,7 @@ where
     ) -> impl Stream<Item = LogOutput, Error = Error> {
         self.process_request(req)
             .into_stream()
-            .map(Docker::<C>::decode_into_upgraded_stream_string)
+            .map(Docker::decode_into_upgraded_stream_string)
             .flatten()
     }
 
@@ -815,11 +860,11 @@ where
         &self,
         req: Result<Request<Body>, Error>,
     ) -> impl Future<Item = Response<Body>, Error = Error> {
-        let client = self.client.clone();
+        let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
         result(req)
-            .and_then(move |request| Docker::execute_request(client, request, timeout))
+            .and_then(move |request| Docker::execute_request(transport, request, timeout))
             .and_then(|response| {
                 let status = response.status();
                 match status {
@@ -830,34 +875,34 @@ where
 
                     // Status code 304: Not Modified
                     StatusCode::NOT_MODIFIED => {
-                        EitherResponse::F(Docker::<C>::decode_into_string(response).and_then(
+                        EitherResponse::F(Docker::decode_into_string(response).and_then(
                             |message| Err(DockerResponseNotModifiedError { message }.into()),
                         ))
                     }
 
                     // Status code 409: Conflict
                     StatusCode::CONFLICT => {
-                        EitherResponse::E(Docker::<C>::decode_into_string(response).and_then(
+                        EitherResponse::E(Docker::decode_into_string(response).and_then(
                             |message| Err(DockerResponseConflictError { message }.into()),
                         ))
                     }
 
                     // Status code 400: Bad request
                     StatusCode::BAD_REQUEST => {
-                        EitherResponse::D(Docker::<C>::decode_into_string(response).and_then(
+                        EitherResponse::D(Docker::decode_into_string(response).and_then(
                             |message| Err(DockerResponseBadParameterError { message }.into()),
                         ))
                     }
 
                     // Status code 404: Not Found
                     StatusCode::NOT_FOUND => {
-                        EitherResponse::C(Docker::<C>::decode_into_string(response).and_then(
+                        EitherResponse::C(Docker::decode_into_string(response).and_then(
                             |message| Err(DockerResponseNotFoundError { message }.into()),
                         ))
                     }
 
                     // All other status codes
-                    _ => EitherResponse::B(Docker::<C>::decode_into_string(response).and_then(
+                    _ => EitherResponse::B(Docker::decode_into_string(response).and_then(
                         move |message| {
                             Err(DockerResponseServerError {
                                 status_code: status.as_u16(),
@@ -896,13 +941,26 @@ where
     }
 
     fn execute_request(
-        client: Arc<Client<C>>,
+        transport: Arc<Transport>,
         request: Request<Body>,
         timeout: u64,
     ) -> impl Future<Item = Response<Body>, Error = Error> {
         let now = Instant::now();
 
-        Timeout::new_at(client.request(request), now + Duration::from_secs(timeout)).from_err()
+        // This is where we determine to which transport we issue the request.
+        let request = match *transport {
+            Transport::Http { ref client } => client.request(request),
+            #[cfg(feature = "openssl")]
+            Transport::Https { ref client } => client.request(request),
+            Transport::Tls { ref client } => client.request(request),
+            #[cfg(unix)]
+            Transport::Unix { ref client } => client.request(request),
+            #[cfg(windows)]
+            Transport::NamedPipe { ref client } => client.request(request),
+            #[cfg(test)]
+            Transport::HostToReply { ref client } => client.request(request),
+        };
+        Timeout::new_at(request, now + Duration::from_secs(timeout)).from_err()
     }
 
     fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = T, Error = Error>
@@ -948,7 +1006,7 @@ where
     where
         T: DeserializeOwned,
     {
-        Docker::<C>::decode_into_string(response).and_then(|contents| {
+        Docker::decode_into_string(response).and_then(|contents| {
             debug!("Decoded into string: {}", &contents);
             serde_json::from_str::<T>(&contents).map_err(|e| {
                 if e.is_data() {

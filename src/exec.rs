@@ -5,7 +5,6 @@ use failure::Error;
 use futures::{stream, Stream};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use hyper::Body;
 use hyper::Method;
@@ -100,10 +99,7 @@ pub struct ExecInspect {
     pub pid: u64,
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl Docker {
     /// ---
     ///
     /// # Create Exec
@@ -152,7 +148,7 @@ where
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_value(req)
@@ -196,7 +192,7 @@ where
                     &url,
                     Builder::new().method(Method::POST),
                     Ok(None::<ArrayVec<[(_, _); 0]>>),
-                    Docker::<C>::serialize_payload(config),
+                    Docker::serialize_payload(config),
                 );
 
                 EitherStream::A(
@@ -213,7 +209,7 @@ where
                         .header(CONNECTION, "Upgrade")
                         .header(UPGRADE, "tcp"),
                     Ok(None::<ArrayVec<[(_, _); 0]>>),
-                    Docker::<C>::serialize_payload(config.or_else(|| {
+                    Docker::serialize_payload(config.or_else(|| {
                         Some(StartExecOptions {
                             ..Default::default()
                         })
@@ -267,10 +263,7 @@ where
     }
 }
 
-impl<C> DockerChain<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl DockerChain {
     /// ---
     ///
     /// # Create Exec
@@ -310,7 +303,7 @@ where
         self,
         container_name: &str,
         config: CreateExecOptions<T>,
-    ) -> impl Future<Item = (DockerChain<C>, CreateExecResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CreateExecResults), Error = Error>
     where
         T: AsRef<str> + Serialize,
     {
@@ -351,7 +344,7 @@ where
         config: Option<StartExecOptions>,
     ) -> impl Future<
         Item = (
-            DockerChain<C>,
+            DockerChain,
             impl Stream<Item = StartExecResults, Error = Error>,
         ),
         Error = Error,
@@ -392,7 +385,7 @@ where
     pub fn inspect_exec(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, ExecInspect), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ExecInspect), Error = Error> {
         self.inner
             .inspect_exec(container_name)
             .map(|result| (self, result))
@@ -415,7 +408,7 @@ mod tests {
             "HTTP/1.1 101 UPGRADED\r\nServer: mock1\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n# Server configuration\nconfig uhttpd main".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(StartExecOptions { detach: false });
 
@@ -450,7 +443,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 393\r\n\r\n{\"ID\":\"6b8cf3d95b64cf32d140836f4a3b8f03c1b895398f6fdbd33b69db06fa04d897\",\"Running\":true,\"ExitCode\":null,\"ProcessConfig\":{\"tty\":false,\"entrypoint\":\"/bin/cat\",\"arguments\":[\"/etc/config/uhttpd\"],\"privileged\":false},\"OpenStdin\":false,\"OpenStderr\":false,\"OpenStdout\":true,\"CanRemove\":false,\"ContainerID\":\"a181d0e0bf4bbf0e37d8eb1d68677e0abef838f1aa4d8757c43c1216cfdaa965\",\"DetachKeys\":\"\",\"Pid\":7169}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.inspect_exec("68099c450e6a");
 

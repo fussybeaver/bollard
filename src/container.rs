@@ -7,7 +7,6 @@ use failure::Error;
 use futures::{stream, Stream};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use hyper::{Body, Chunk, Method};
 use serde::Serialize;
@@ -1603,10 +1602,7 @@ impl<'a, T: AsRef<str>> DownloadFromContainerQueryParams<&'a str, T>
         Ok(ArrayVec::from([("path", self.path)]))
     }
 }
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl Docker {
     /// ---
     ///
     /// # List Containers
@@ -1655,7 +1651,7 @@ where
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1714,8 +1710,8 @@ where
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::transpose_option(options.map(|o| o.into_array())),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_value(req)
@@ -1761,7 +1757,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1810,7 +1806,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1864,7 +1860,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1917,7 +1913,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1967,7 +1963,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2017,7 +2013,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2067,7 +2063,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2121,7 +2117,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2212,7 +2208,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2263,7 +2259,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2313,7 +2309,7 @@ where
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_unit(req)
@@ -2363,7 +2359,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(Some(options.into_array())),
+            Docker::transpose_option(Some(options.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2486,7 +2482,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2547,7 +2543,7 @@ where
             Builder::new()
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(tar),
         );
 
@@ -2597,7 +2593,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -2605,10 +2601,7 @@ where
     }
 }
 
-impl<C> DockerChain<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl DockerChain {
     /// ---
     ///
     /// # Kill Container
@@ -2643,7 +2636,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: KillContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2691,7 +2684,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: RemoveContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2744,7 +2737,7 @@ where
         self,
         options: Option<T>,
         config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain<C>, CreateContainerResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CreateContainerResults), Error = Error>
     where
         T: CreateContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2786,7 +2779,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: StartContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2830,7 +2823,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: StopContainerQueryParams<K>,
         K: AsRef<str>,
@@ -2879,7 +2872,7 @@ where
     pub fn list_containers<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIContainers>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<APIContainers>), Error = Error>
     where
         T: ListContainersQueryParams<K, String>,
         K: AsRef<str>,
@@ -2926,7 +2919,7 @@ where
         options: Option<T>,
     ) -> impl Future<
         Item = (
-            DockerChain<C>,
+            DockerChain,
             impl Stream<Item = WaitContainerResults, Error = Error>,
         ),
         Error = Error,
@@ -2979,7 +2972,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, Container), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Container), Error = Error>
     where
         T: InspectContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -3024,7 +3017,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: RestartContainerQueryParams<K>,
         K: AsRef<str>,
@@ -3067,7 +3060,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, TopResult), Error = Error>
+    ) -> impl Future<Item = (DockerChain, TopResult), Error = Error>
     where
         T: TopQueryParams<K, V>,
         K: AsRef<str>,
@@ -3115,7 +3108,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = LogOutput, Error = Error>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, impl Stream<Item = LogOutput, Error = Error>), Error = Error>
     where
         T: LogsQueryParams<K>,
         K: AsRef<str>,
@@ -3156,7 +3149,7 @@ where
     pub fn container_changes(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, Option<Vec<Change>>), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, Option<Vec<Change>>), Error = Error> {
         self.inner
             .container_changes(container_name)
             .map(|result| (self, result))
@@ -3196,7 +3189,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = Stats, Error = Error>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Stats, Error = Error>), Error = Error>
     where
         T: StatsQueryParams<K, V>,
         K: AsRef<str>,
@@ -3249,7 +3242,7 @@ where
         self,
         container_name: &str,
         config: UpdateContainerOptions,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
         self.inner
             .update_container(container_name, config)
             .map(|result| (self, result))
@@ -3289,7 +3282,7 @@ where
         self,
         container_name: &str,
         options: T,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: RenameContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -3327,7 +3320,7 @@ where
     pub fn pause_container(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
         self.inner
             .pause_container(container_name)
             .map(|result| (self, result))
@@ -3355,7 +3348,7 @@ where
     pub fn unpause_container(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
         self.inner
             .unpause_container(container_name)
             .map(|result| (self, result))
@@ -3399,7 +3392,7 @@ where
     pub fn prune_containers<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, PruneContainersResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, PruneContainersResults), Error = Error>
     where
         T: PruneContainersQueryParams<K>,
         K: AsRef<str> + Eq + Hash,
@@ -3452,7 +3445,7 @@ where
         container_name: &str,
         options: Option<T>,
         tar: Body,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: UploadToContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -3498,7 +3491,7 @@ where
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, impl Stream<Item = Chunk, Error = Error>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Chunk, Error = Error>), Error = Error>
     where
         T: DownloadFromContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -3531,7 +3524,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 89\r\n\r\n{\"Id\":\"696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc\",\"Warnings\":null}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(CreateContainerOptions {
             name: "unit-test".to_string(),
@@ -3570,7 +3563,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.start_container("hello-world", None::<StartContainerOptions<String>>);
 
@@ -3595,7 +3588,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.stop_container("hello-world", None::<StopContainerOptions>);
 
@@ -3622,7 +3615,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(RemoveContainerOptions {
             force: true,
@@ -3652,7 +3645,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 33\r\n\r\n{\"Error\":null,\"StatusCode\":0}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(WaitContainerOptions {
             condition: String::from("not-running"),
@@ -3683,7 +3676,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(RestartContainerOptions { t: 30 });
 
@@ -3711,7 +3704,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2596\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\"},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":null,\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.inspect_container("uhttpd", None::<InspectContainerOptions>);
 
@@ -3738,7 +3731,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 243\r\n\r\n{\"Processes\":[[\"root\",\"3773\",\"0.0\",\"0.0\",\"11056\",\"348\",\"?\",\"Ss\",\"19:42\",\"0:00\",\"/usr/sbin/uhttpd -f -p 80 -h /www /usr/sbin/run_uhttpd -f -p 80 -h /www\"]],\"Titles\":[\"USER\",\"PID\",\"%CPU\",\"%MEM\",\"VSZ\",\"RSS\",\"TTY\",\"STAT\",\"START\",\"TIME\",\"COMMAND\"]}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.top_processes(
             "uhttpd",
@@ -3769,7 +3762,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\n\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let stream = docker.logs(
             "hello-world",
@@ -3806,7 +3799,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nnull\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let result = docker.container_changes("hello-world");
 
@@ -3832,7 +3825,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1879\r\n\r\n{\"read\":\"2018-10-19T06:11:22.220728356Z\",\"preread\":\"2018-10-19T06:11:21.218466258Z\",\"pids_stats\":{\"current\":1,\"limit\":1000},\"blkio_stats\":{\"io_service_bytes_recursive\":[],\"io_serviced_recursive\":[],\"io_queue_recursive\":[],\"io_service_time_recursive\":[],\"io_wait_time_recursive\":[],\"io_merged_recursive\":[],\"io_time_recursive\":[],\"sectors_recursive\":[]},\"num_procs\":0,\"storage_stats\":{},\"cpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447677200000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"precpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447673150000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"memory_stats\":{\"usage\":962560,\"max_usage\":5406720,\"stats\":{\"active_anon\":86016,\"active_file\":0,\"cache\":0,\"dirty\":0,\"hierarchical_memory_limit\":9223372036854771712,\"hierarchical_memsw_limit\":0,\"inactive_anon\":0,\"inactive_file\":0,\"mapped_file\":0,\"pgfault\":1485,\"pgmajfault\":0,\"pgpgin\":1089,\"pgpgout\":1084,\"rss\":0,\"rss_huge\":0,\"total_active_anon\":86016,\"total_active_file\":0,\"total_cache\":0,\"total_dirty\":0,\"total_inactive_anon\":0,\"total_inactive_file\":0,\"total_mapped_file\":0,\"total_pgfault\":1485,\"total_pgmajfault\":0,\"total_pgpgin\":1089,\"total_pgpgout\":1084,\"total_rss\":0,\"total_rss_huge\":0,\"total_unevictable\":0,\"total_writeback\":0,\"unevictable\":0,\"writeback\":0},\"limit\":16750219264},\"name\":\"/integration_test_stats\",\"id\":\"66667eab5737dda2da2f578e9496e45c074d1bc5badc0484314f1c3afccfaeb0\",\"networks\":{\"eth0\":{\"rx_bytes\":1635,\"rx_packets\":14,\"rx_errors\":0,\"rx_dropped\":0,\"tx_bytes\":0,\"tx_packets\":0,\"tx_errors\":0,\"tx_dropped\":0}}}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let stream = docker.stats("hello-world", Some(StatsOptions { stream: false }));
 
@@ -3859,7 +3852,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(KillContainerOptions {
             signal: "SIGKILL".to_string(),
@@ -3888,7 +3881,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let config = UpdateContainerOptions {
             memory: Some(314572800),
@@ -3919,7 +3912,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = RenameContainerOptions {
             name: "my_new_container_name".to_string(),
@@ -3948,7 +3941,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.pause_container("postgres");
 
@@ -3973,7 +3966,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.unpause_container("postgres");
 
@@ -3998,7 +3991,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 45\r\n\r\n{\"ContainersDeleted\":null,\"SpaceReclaimed\":0}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.prune_containers(None::<PruneContainersOptions<String>>);
 
