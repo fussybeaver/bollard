@@ -117,7 +117,7 @@ pub(crate) enum Transport {
     #[cfg(windows)]
     NamedPipe {
         client: Client<NamedPipeConnector>,
-    }
+    },
     #[cfg(test)]
     HostToReply {
         client: Client<HostToReplyConnector>,
