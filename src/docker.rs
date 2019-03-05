@@ -130,7 +130,7 @@ impl fmt::Debug for Transport {
             #[cfg(unix)]
             Transport::Unix { .. } => write!(f, "Unix"),
             #[cfg(windows)]
-            Tranport::NamedPipe { .. } => write!(f, "NamedPipe"),
+            Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
             #[cfg(test)]
             Transport::HostToReply { .. } => write!(f, "HostToReply"),
         }
