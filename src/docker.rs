@@ -676,7 +676,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - `connector`: theHostToReplyConnector
+    ///  - `connector`: the HostToReplyConnector.
     ///  - `client_addr`: location to connect to.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///
@@ -691,7 +691,7 @@ impl Docker {
     ///
     /// use futures::future::Future;
     ///
-    /// # use hyper_mock::SequentialConnector;
+    /// # use hyper_mock::HostToReplyConnector;
     /// let mut connector = HostToReplyConnector::default();
     /// connector.content.push(
     ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
