@@ -61,6 +61,17 @@
 //! Docker::connect_with_named_pipe_defaults();
 //! ```
 //!
+//! ### Local
+//!
+//! The client will connect to the OS specific handler it is compiled for.
+//! This is a convenience for localhost environment that should run on multiple
+//! operating systems.
+//! Use the `Docker::connect_with_local` method API to parameterise the interface.
+//! ```rust
+//! use bollard::Docker;
+//! Docker::connect_with_local_defaults();
+//! ```
+//!
 //! ### HTTP
 //!
 //! The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or

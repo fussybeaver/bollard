@@ -152,6 +152,7 @@ impl fmt::Debug for Transport {
 ///  - [`Docker::connect_with_ssl_defaults`](struct.Docker.html#method.connect_with_ssl_defaults)
 ///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
 ///  - [`Docker::connect_with_tls_defaults`](struct.Docker.html#method.connect_with_tls_defaults)
+///  - [`Docker::connect_with_local_defaults`](struct.Docker.html#method.connect_with_local_defaults)
 #[derive(Debug)]
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
@@ -518,6 +519,40 @@ impl Docker {
         };
 
         Ok(docker)
+    }
+}
+
+/// A Docker implementation that wraps away which local implementation we are calling.
+#[cfg(any(unix, windows))]
+impl Docker {
+    /// Connect using the local machine connection method with default arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix_defaults`]
+    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
+    ///
+    /// [`Docker::connect_with_unix_defaults`]: struct.Docker.html#method.connect_with_unix_defaults
+    /// [`Docker::connect_with_named_pipe_defaults`]: struct.Docker.html#method.connect_with_named_pipe_defaults
+    pub fn connect_with_local_defaults() -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix_defaults();
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe_defaults();
+    }
+
+    /// Connect using the local machine connection method with supplied arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix`]
+    ///  * Windows: [`Docker::connect_with_named_pipe`]
+    ///
+    /// [`Docker::connect_with_unix`]: struct.Docker.html#method.connect_with_unix
+    /// [`Docker::connect_with_named_pipe`]: struct.Docker.html#method.connect_with_named_pipe
+    pub fn connect_with_local(addr: &str, timeout: u64) -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix(addr, timeout);
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe(addr, timeout);
     }
 }
 
