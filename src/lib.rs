@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.2"
+//! bollard = "0.3"
 //! ```
 //!
 //! # API
