@@ -10,7 +10,6 @@ extern crate tar;
 extern crate tokio;
 
 use futures::Stream;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
@@ -29,41 +28,31 @@ use std::io::Write;
 pub mod common;
 use common::*;
 
-fn create_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn create_image_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_image_hello_world(docker.chain());
     run_runtime(rt, future);
 }
 
-fn search_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn search_images_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = docker
         .chain()
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
-        }).map(|(docker, result)| {
-            assert!(
-                result
-                    .into_iter()
-                    .any(|api_image| &api_image.name == "hello-world")
-            );
+        })
+        .map(|(docker, result)| {
+            assert!(result
+                .into_iter()
+                .any(|api_image| &api_image.name == "hello-world"));
             docker
         });
 
     run_runtime(rt, future);
 }
 
-fn inspect_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn inspect_image_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -76,22 +65,17 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.inspect_image(&image()))
         .map(move |(docker, result)| {
-            assert!(
-                result
-                    .repo_tags
-                    .into_iter()
-                    .any(|repo_tag| repo_tag == image().to_string())
-            );
+            assert!(result
+                .repo_tags
+                .into_iter()
+                .any(|repo_tag| repo_tag == image().to_string()));
             docker
         });
 
     run_runtime(rt, future);
 }
 
-fn list_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn list_images_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -107,24 +91,20 @@ where
                 all: true,
                 ..Default::default()
             }))
-        }).map(move |(docker, result)| {
-            assert!(result.into_iter().any(|api_image| {
-                api_image
-                    .repo_tags
-                    .unwrap_or(vec![String::new()])
-                    .into_iter()
-                    .any(|repo_tag| repo_tag == image().to_string())
-            }));
+        })
+        .map(move |(docker, result)| {
+            assert!(result.into_iter().any(|api_image| api_image
+                .repo_tags
+                .unwrap_or(vec![String::new()])
+                .into_iter()
+                .any(|repo_tag| repo_tag == image().to_string())));
             docker
         });
 
     run_runtime(rt, future);
 }
 
-fn image_history_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn image_history_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -137,23 +117,18 @@ where
     let future = chain_create_image_hello_world(docker.chain())
         .and_then(move |docker| docker.image_history(&image()))
         .map(move |(docker, result)| {
-            assert!(result.into_iter().take(1).any(|history| {
-                history
-                    .tags
-                    .unwrap_or(vec![String::new()])
-                    .into_iter()
-                    .any(|tag| tag == image().to_string())
-            }));
+            assert!(result.into_iter().take(1).any(|history| history
+                .tags
+                .unwrap_or(vec![String::new()])
+                .into_iter()
+                .any(|tag| tag == image().to_string())));
             docker
         });
 
     run_runtime(rt, future);
 }
 
-fn prune_images_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn prune_images_test(docker: Docker) {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
     rt_exec!(
@@ -162,10 +137,7 @@ where
     );
 }
 
-fn remove_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn remove_image_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -201,10 +173,7 @@ where
     run_runtime(rt, future);
 }
 
-fn commit_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn commit_container_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}microsoft/nanoserver", registry_http_addr())
@@ -238,17 +207,20 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container",
                 None::<WaitContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.commit_container(
                 CommitContainerOptions {
                     container: "integration_test_commit_container",
@@ -260,7 +232,8 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.create_container(
                 Some(CreateContainerOptions {
                     name: "integration_test_commit_container_next",
@@ -275,17 +248,20 @@ where
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_commit_container_next",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_commit_container_next",
                 None::<WaitContainerOptions<String>>,
             )
-        }).map(move |(docker, stream)| {
+        })
+        .map(move |(docker, stream)| {
             stream
                 .take(1)
                 .into_future()
@@ -330,10 +306,7 @@ where
     run_runtime(rt, future);
 }
 
-fn build_image_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn build_image_test(docker: Docker) {
     let dockerfile = if cfg!(windows) {
         format!(
             "FROM {}microsoft/nanoserver
@@ -404,17 +377,20 @@ RUN touch bollard.txt
                     ..Default::default()
                 },
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.start_container(
                 "integration_test_build_image",
                 None::<StartContainerOptions<String>>,
             )
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             docker.wait_container(
                 "integration_test_build_image",
                 None::<WaitContainerOptions<String>>,
             )
-        }).map(move |(docker, stream)| {
+        })
+        .map(move |(docker, stream)| {
             stream
                 .take(1)
                 .into_future()

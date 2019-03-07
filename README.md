@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.2"
+bollard = "0.3"
 ```
 
 ## API
@@ -59,6 +59,17 @@ to parameterise the interface.
 use bollard::Docker;
 #[cfg(windows)]
 Docker::connect_with_named_pipe_defaults();
+```
+
+#### Local
+
+The client will connect to the OS specific handler it is compiled for.
+This is a convenience for localhost environment that should run on multiple
+operating systems.
+Use the `Docker::connect_with_local` method API to parameterise the interface.
+```rust
+use bollard::Docker;
+Docker::connect_with_local_defaults();
 ```
 
 #### HTTP
@@ -122,25 +133,30 @@ Tokio is below.
 
 First, check that the API is working with your server:
 
-```rust
+```rust, no_run
+## extern crate bollard;
+## extern crate futures;
+## fn main () {
 use futures::Future;
 
 use bollard::Docker;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
+## let docker = Docker::connect_with_local_defaults().unwrap();
 
 docker.version()
     .map(|version| {
         println!("{:?}", version);
     });
-```
+## }
+```rust
 
-#### Listing images
+### Listing images
 
 To list docker images available on the Docker server:
 
-```rust
+```rust,no_run
 use futures::Future;
 
 use bollard::Docker;
@@ -206,6 +222,7 @@ use std::default::Default;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
+
 docker.chain().create_image(Some(CreateImageOptions{
     from_image: "hello-world",
     ..Default::default()

@@ -1,5 +1,6 @@
 //! Image API: creating, manipulating and pushing docker images
 use arrayvec::ArrayVec;
+use base64;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use failure::Error;
@@ -8,12 +9,10 @@ use futures::future::Either;
 use futures::{stream, Stream};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
-use base64;
 
 use super::{Docker, DockerChain};
 use auth::DockerCredentials;
@@ -805,7 +804,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
@@ -841,7 +841,8 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
                 self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
                 self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
                 self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ].into_iter()
+            ]
+            .into_iter()
             .flatten(),
         );
 
@@ -902,10 +903,7 @@ pub enum BuildImageResults {
     },
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl Docker {
     /// ---
     ///
     /// # List Images
@@ -955,7 +953,7 @@ where
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1021,7 +1019,7 @@ where
                     Builder::new()
                         .method(Method::POST)
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
                 EitherStream::A(self.process_into_stream(req))
@@ -1112,7 +1110,7 @@ where
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1207,7 +1205,7 @@ where
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(Some(options.into_array())),
+            Docker::transpose_option(Some(options.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1268,7 +1266,7 @@ where
                     Builder::new()
                         .method(Method::DELETE)
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
                 Either::A(self.process_into_value(req))
@@ -1323,7 +1321,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -1392,7 +1390,7 @@ where
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+                    Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
 
@@ -1456,7 +1454,7 @@ where
             url,
             Builder::new().method(Method::POST),
             options.into_array().map(|v| Some(v)),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_value(req)
@@ -1540,10 +1538,7 @@ where
     }
 }
 
-impl<C> DockerChain<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl DockerChain {
     /// ---
     ///
     /// # Create Image
@@ -1589,7 +1584,7 @@ where
         credentials: Option<DockerCredentials>,
     ) -> impl Future<
         Item = (
-            DockerChain<C>,
+            DockerChain,
             impl Stream<Item = CreateImageResults, Error = Error>,
         ),
         Error = Error,
@@ -1644,7 +1639,7 @@ where
         self,
         image_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: TagImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1700,7 +1695,7 @@ where
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: PushImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1748,7 +1743,7 @@ where
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<RemoveImageResults>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<RemoveImageResults>), Error = Error>
     where
         T: RemoveImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1798,7 +1793,7 @@ where
     pub fn search_images<T, K>(
         self,
         options: T,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImageSearch>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<APIImageSearch>), Error = Error>
     where
         T: SearchImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1836,7 +1831,7 @@ where
     pub fn inspect_image(
         self,
         image_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, Image), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, Image), Error = Error> {
         self.inner
             .inspect_image(image_name)
             .map(|result| (self, result))
@@ -1882,7 +1877,7 @@ where
     pub fn list_images<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<APIImages>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<APIImages>), Error = Error>
     where
         T: ListImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1916,7 +1911,7 @@ where
     pub fn image_history(
         self,
         image_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<ImageHistory>), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, Vec<ImageHistory>), Error = Error> {
         self.inner
             .image_history(image_name)
             .map(|result| (self, result))
@@ -1957,7 +1952,7 @@ where
     pub fn prune_images<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, PruneImagesResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, PruneImagesResults), Error = Error>
     where
         T: PruneImagesQueryParams<K>,
         K: AsRef<str>,
@@ -2008,7 +2003,7 @@ where
         self,
         options: T,
         config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain<C>, CommitContainerResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CommitContainerResults), Error = Error>
     where
         T: CommitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2074,7 +2069,7 @@ where
         tar: Option<Body>,
     ) -> impl Future<
         Item = (
-            DockerChain<C>,
+            DockerChain,
             impl Stream<Item = BuildImageResults, Error = Error>,
         ),
         Error = Error,
@@ -2089,7 +2084,8 @@ where
             .map(|(first, rest)| match first {
                 Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
                 None => (self, EitherStream::B(stream::empty())),
-            }).map_err(|(err, _)| err)
+            })
+            .map_err(|(err, _)| err)
     }
 }
 
@@ -2109,7 +2105,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 310\r\n\r\n[{\"Containers\":-1,\"Created\":1484347856,\"Id\":\"sha256:48b5124b2768d2b917edcb640435044a97967015485e812545546cbed5cf0233\",\"Labels\":{},\"ParentId\":\"\",\"RepoDigests\":[\"hello-world@sha256:c5515758d4c5e1e838e9cd307f6c6a0d620b5e07e6f927b07d05f6d12a1ac8d7\"],\"RepoTags\":null,\"SharedSize\":-1,\"Size\":1840,\"VirtualSize\":1840}]\r\n\r\n".to_string()
      );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let mut filters = HashMap::new();
         filters.insert("dangling", vec!["true"]);
@@ -2129,7 +2125,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2143,7 +2140,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 542\r\n\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"latest\"}\r\n{\"status\":\"Digest: sha256:0add3ace90ecb4adbf7777e9aacf18357296e799f81cabc9fde470971e499788\"}\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"linux\"}\r\n{\"status\":\"Digest: sha256:d5c7d767f5ba807f9b363aa4db87d75ab030404a670880e16aedff16f605484b\"}\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"nanoserver-1709\"}\r\n{\"errorDetail\":{\"message\":\"no matching manifest for unknown in the manifest list entries\"},\"error\":\"no matching manifest for unknown in the manifest list entries\"}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let options = Some(CreateImageOptions {
             from_image: String::from("hello-world"),
@@ -2160,7 +2157,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e.0);
                 Err(e.0)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2174,7 +2172,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1744\r\n\r\n{\"Id\":\"sha256:4ab4c602aa5eed5528a6620ff18a1dc4faef0e1ab3a5eddeddb410714478c67f\",\"RepoTags\":[\"hello-world:latest\",\"hello-world:linux\"],\"RepoDigests\":[\"hello-world@sha256:0add3ace90ecb4adbf7777e9aacf18357296e799f81cabc9fde470971e499788\",\"hello-world@sha256:d5c7d767f5ba807f9b363aa4db87d75ab030404a670880e16aedff16f605484b\"],\"Parent\":\"\",\"Comment\":\"\",\"Created\":\"2018-09-07T19:25:39.809797627Z\",\"Container\":\"15c5544a385127276a51553acb81ed24a9429f9f61d6844db1fa34f46348e420\",\"ContainerConfig\":{\"Hostname\":\"15c5544a3851\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"],\"Cmd\":[\"/bin/sh\",\"-c\",\"#(nop) \",\"CMD [\\\"/hello\\\"]\"],\"ArgsEscaped\":true,\"Image\":\"sha256:9a5813f1116c2426ead0a44bbec252bfc5c3d445402cc1442ce9194fc1397027\",\"Volumes\":null,\"WorkingDir\":\"\",\"Entrypoint\":null,\"OnBuild\":null,\"Labels\":{}},\"DockerVersion\":\"17.06.2-ce\",\"Author\":\"\",\"Config\":{\"Hostname\":\"\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"],\"Cmd\":[\"/hello\"],\"ArgsEscaped\":true,\"Image\":\"sha256:9a5813f1116c2426ead0a44bbec252bfc5c3d445402cc1442ce9194fc1397027\",\"Volumes\":null,\"WorkingDir\":\"\",\"Entrypoint\":null,\"OnBuild\":null,\"Labels\":null},\"Architecture\":\"amd64\",\"Os\":\"linux\",\"Size\":1840,\"VirtualSize\":1840,\"GraphDriver\":{\"Data\":{\"MergedDir\":\"\",\"UpperDir\":\"\",\"WorkDir\":\"\"},\"Name\":\"overlay2\"},\"RootFS\":{\"Type\":\"layers\",\"Layers\":[\"sha256:428c97da766c4c13b19088a471de6b622b038f3ae8efa10ec5a37d6d31a2df0b\"]},\"Metadata\":{\"LastTagTime\":\"0001-01-01T00:00:00Z\"}}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let image = docker.inspect_image("hello-world");
 
@@ -2184,7 +2182,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2198,7 +2197,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"ImagesDeleted\":null,\"SpaceReclaimed\":40}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let prune_images_results = docker.prune_images(None::<PruneImagesOptions<String>>);
 
@@ -2208,7 +2207,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2222,24 +2222,24 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 415\r\n\r\n[{\"Comment\":\"\",\"Created\":1536348339,\"CreatedBy\":\"/bin/sh -c #(nop)  CMD [\\\"/hello\\\"]\",\"Id\":\"sha256:4ab4c602aa5eed5528a6620ff18a1dc4faef0e1ab3a5eddeddb410714478c67f\",\"Size\":0,\"Tags\":[\"hello-world:latest\",\"hello-world:linux\"]},{\"Comment\":\"\",\"Created\":1536348339,\"CreatedBy\":\"/bin/sh -c #(nop) COPY file:9824c33ef192ac944822908370af9f04ab049bfa5c10724e4f727206f5167094 in / \",\"Id\":\"<missing>\",\"Size\":1840,\"Tags\":null}]\r\n\r\n".to_string()
       );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let image_history_results = docker.image_history("hello-world");
 
         let future = image_history_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .take(1)
-                    .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                        == "hello-world:latest")
-            )
+            assert!(vec
+                .into_iter()
+                .take(1)
+                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
+                    == "hello-world:latest"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2253,7 +2253,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 148\r\n\r\n[{\"star_count\":660,\"is_official\":true,\"name\":\"hello-world\",\"is_automated\":false,\"description\":\"Hello World! (an example of minimal Dockerization)\"}]\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let search_options = SearchImagesOptions {
             term: "hello-world".to_string(),
@@ -2263,17 +2263,17 @@ mod tests {
         let search_results = docker.search_images(search_options);
 
         let future = search_results.map(|vec| {
-            assert!(
-                vec.into_iter()
-                    .any(|api_image| &api_image.name == "hello-world")
-            )
+            assert!(vec
+                .into_iter()
+                .any(|api_image| &api_image.name == "hello-world"))
         });
 
         rt.block_on(future)
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2287,7 +2287,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 35\r\n\r\n[{\"Untagged\":\"hello-world:latest\"}]\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let remove_options = RemoveImageOptions {
             noprune: true,
@@ -2309,7 +2309,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2323,7 +2324,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let push_options = PushImageOptions {
             tag: "v1.0.1".to_string(),
@@ -2343,7 +2344,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2357,7 +2359,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let tag_options = TagImageOptions {
             tag: "v1.0.1".to_string(),
@@ -2372,7 +2374,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2386,7 +2389,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 80\r\n\r\n{\"Id\":\"sha256:c69d56ed58eb9b519bb3de569de7e83f5c3eff57858eaa7883a9e206cf7ca5eb\"}\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let commit_container_options = CommitContainerOptions {
             container: "my-running-container",
@@ -2406,7 +2409,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }
@@ -2421,7 +2425,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/x-tar\r\nContent-Length: 520\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e 3f53bb00af94\\n\"}\r\n{\"stream\":\"Step 2/2 : RUN touch bollard.txt\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e Running in 853fceb48e80\\n\"}\r\n{\"stream\":\"Removing intermediate container 853fceb48e80\\n\"}\r\n{\"stream\":\" ---\\u003e 5949ad5433c9\\n\"}\r\n{\"aux\":{\"ID\":\"sha256:5949ad5433c96bb38c6a60acc84653600ccb06f1bdd7216acdba752bc2da7460\"}}\r\n{\"stream\":\"Successfully built 5949ad5433c9\\n\"}\r\n{\"stream\":\"Successfully tagged integration_test_build_image:latest\\n\"}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let build_image_options = BuildImageOptions {
             t: "my-image",
@@ -2458,7 +2462,8 @@ mod tests {
             .or_else(|e| {
                 println!("{:?}", e);
                 Err(e)
-            }).unwrap();
+            })
+            .unwrap();
 
         rt.shutdown_now().wait().unwrap();
     }

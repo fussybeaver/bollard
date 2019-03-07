@@ -3,7 +3,6 @@ extern crate futures;
 
 use self::failure::Error;
 use self::futures::future;
-use hyper::client::connect::Connect;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
@@ -111,13 +110,10 @@ where
 }
 
 #[allow(dead_code)]
-pub fn chain_create_container_hello_world<C>(
-    chain: DockerChain<C>,
+pub fn chain_create_container_hello_world(
+    chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+) -> impl Future<Item = DockerChain, Error = Error> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -187,13 +183,10 @@ where
 }
 
 #[allow(dead_code)]
-pub fn chain_create_registry<C>(
-    chain: DockerChain<C>,
+pub fn chain_create_registry(
+    chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+) -> impl Future<Item = DockerChain, Error = Error> {
     let image = || {
         if cfg!(windows) {
             String::from("stefanscherer/registry-windows")
@@ -277,23 +270,15 @@ where
 }
 
 #[allow(dead_code)]
-pub fn chain_create_noop<C>(
-    chain: DockerChain<C>,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+pub fn chain_create_noop(chain: DockerChain) -> impl Future<Item = DockerChain, Error = Error> {
     future::ok(chain)
 }
 
 #[allow(dead_code)]
-pub fn chain_create_daemon<C>(
-    chain: DockerChain<C>,
+pub fn chain_create_daemon(
+    chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+) -> impl Future<Item = DockerChain, Error = Error> {
     let image = move || {
         if cfg!(windows) {
             format!("{}nanoserver/iis", registry_http_addr())
@@ -364,13 +349,10 @@ where
 }
 
 #[allow(dead_code)]
-pub fn chain_kill_container<C>(
-    chain: DockerChain<C>,
+pub fn chain_kill_container(
+    chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+) -> impl Future<Item = DockerChain, Error = Error> {
     let cloned = chain.clone();
     chain
         .kill_container(container_name, None::<KillContainerOptions<String>>)
@@ -386,12 +368,9 @@ where
 }
 
 #[allow(dead_code)]
-pub fn chain_create_image_hello_world<C>(
-    chain: DockerChain<C>,
-) -> impl Future<Item = DockerChain<C>, Error = Error>
-where
-    C: Connect + Sync + 'static,
-{
+pub fn chain_create_image_hello_world(
+    chain: DockerChain,
+) -> impl Future<Item = DockerChain, Error = Error> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())

@@ -2,7 +2,6 @@
 use arrayvec::ArrayVec;
 use failure::Error;
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use hyper::{Body, Method};
 
@@ -24,10 +23,7 @@ pub struct Version {
     pub Experimental: Option<bool>,
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl Docker {
     /// ---
     ///
     /// # Version
@@ -89,10 +85,7 @@ where
     }
 }
 
-impl<C> DockerChain<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl DockerChain {
     /// ---
     ///
     /// # Version
@@ -112,7 +105,7 @@ where
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.chain().version();
     /// ```
-    pub fn version(self) -> impl Future<Item = (DockerChain<C>, Version), Error = Error> {
+    pub fn version(self) -> impl Future<Item = (DockerChain, Version), Error = Error> {
         self.inner.version().map(|result| (self, result))
     }
 
@@ -136,7 +129,7 @@ where
     ///
     /// docker.chain().ping();
     /// ```
-    pub fn ping(self) -> impl Future<Item = (DockerChain<C>, String), Error = Error> {
+    pub fn ping(self) -> impl Future<Item = (DockerChain, String), Error = Error> {
         self.inner.ping().map(|result| (self, result))
     }
 }

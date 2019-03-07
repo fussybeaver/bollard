@@ -14,7 +14,6 @@ use bollard::image::CreateImageOptions;
 use bollard::{Docker, DockerChain};
 
 use failure::Error;
-use hyper::client::connect::Connect;
 use serde::ser::Serialize;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
@@ -25,13 +24,12 @@ use std::hash::Hash;
 const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
 const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
-fn create_and_logs<C, T>(
-    docker: DockerChain<C>,
+fn create_and_logs<T>(
+    docker: DockerChain,
     name: &'static str,
     config: Config<T>,
 ) -> impl Stream<Item = LogOutput, Error = Error>
 where
-    C: Connect + 'static + Sync,
     T: AsRef<str> + Eq + Hash + Serialize,
 {
     docker

@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.2"
+//! bollard = "0.3"
 //! ```
 //!
 //! # API
@@ -59,6 +59,17 @@
 //! use bollard::Docker;
 //! #[cfg(windows)]
 //! Docker::connect_with_named_pipe_defaults();
+//! ```
+//!
+//! ### Local
+//!
+//! The client will connect to the OS specific handler it is compiled for.
+//! This is a convenience for localhost environment that should run on multiple
+//! operating systems.
+//! Use the `Docker::connect_with_local` method API to parameterise the interface.
+//! ```rust
+//! use bollard::Docker;
+//! Docker::connect_with_local_defaults();
 //! ```
 //!
 //! ### HTTP
@@ -122,10 +133,9 @@
 //!
 //! First, check that the API is working with your server:
 //!
-//! ```rust
+//! ```rust, no_run
 //! # extern crate bollard;
 //! # extern crate futures;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! use futures::Future;
 //!
@@ -133,9 +143,7 @@
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
-//! # use yup_hyper_mock::SequentialConnector;
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! docker.version()
 //!     .map(|version| {
@@ -148,10 +156,9 @@
 //!
 //! To list docker images available on the Docker server:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
 //! # extern crate futures;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! use futures::Future;
 //!
@@ -162,9 +169,7 @@
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
-//! # use yup_hyper_mock::SequentialConnector;
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! docker.list_images(Some(ListImagesOptions::<String> {
 //!    all: true,
@@ -182,10 +187,9 @@
 //!
 //! To receive a stream of stats for a running container.
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
 //! # extern crate futures;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! use futures::stream::Stream;
 //!
@@ -196,9 +200,7 @@
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
-//! # use yup_hyper_mock::SequentialConnector;
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! docker.stats("postgres", Some(StatsOptions {
 //!    stream: true,
@@ -218,10 +220,9 @@
 //! It's sometimes more convenient to chain a string of Docker API calls. The `DockerChain` API
 //! will return an instance of itself in the return call.
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
 //! # extern crate tokio;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! use bollard::Docker;
 //! use bollard::image::CreateImageOptions;
@@ -234,9 +235,8 @@
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
-//! # use yup_hyper_mock::SequentialConnector;
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
+//!
 //! docker.chain().create_image(Some(CreateImageOptions{
 //!     from_image: "hello-world",
 //!     ..Default::default()
@@ -273,36 +273,30 @@
 //!
 //! Subsequently, use the docker API:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
-//! # use yup_hyper_mock::SequentialConnector;
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //! let future = docker.list_images(None::<ListImagesOptions<String>>);
 //! # }
 //! ```
 //!
 //! Execute the future aynchronously:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
 //! # extern crate tokio;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
-//! # use yup_hyper_mock::SequentialConnector;
 //! # let mut rt = Runtime::new().unwrap();
-//! # let mut connector = SequentialConnector::default();
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
 //! rt.spawn(future);
 //! # }
@@ -310,22 +304,16 @@
 //!
 //! Or, to execute and receive the result:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate bollard;
 //! # extern crate tokio;
-//! # extern crate yup_hyper_mock;
 //! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
-//! # use yup_hyper_mock::SequentialConnector;
 //! # let mut rt = Runtime::new().unwrap();
-//! # let mut connector = SequentialConnector::default();
-//! # connector.content.push(
-//! #   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-//! # );
-//! # let docker = Docker::connect_with(connector, "localhost".to_string(), 5).unwrap();
+//! # let docker = Docker::connect_with_local_defaults().unwrap();
 //! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
 //! let result = rt.block_on(future);
 //! # }
@@ -333,7 +321,7 @@
 //!
 //! Finally, to shut down the executor:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # extern crate tokio;
 //! # fn main () {
 //! # use tokio::runtime::Runtime;

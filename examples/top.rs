@@ -14,7 +14,6 @@ use std::default::Default;
 use futures::stream::futures_ordered;
 use futures::stream::futures_unordered;
 use futures::{future, Future, Stream};
-use hyper::client::connect::Connect;
 use tokio::runtime::Runtime;
 
 /// flatten exists on an iterator in nightly
@@ -28,13 +27,10 @@ fn flatten<T>(lst: Vec<Option<T>>) -> Vec<T> {
     o
 }
 
-fn top_processes<C>(
-    client: DockerChain<C>,
+fn top_processes(
+    client: DockerChain,
     container: &APIContainers,
-) -> impl Future<Item = Option<(String, (DockerChain<C>, TopResult))>, Error = failure::Error>
-where
-    C: Connect + Sync + 'static,
-{
+) -> impl Future<Item = Option<(String, (DockerChain, TopResult))>, Error = failure::Error> {
     let name = container.id.to_owned();
     client
         .top_processes(&container.id, Some(TopOptions { ps_args: "ef" }))

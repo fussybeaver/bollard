@@ -1,19 +1,18 @@
 #![type_length_limit = "2097152"]
 extern crate bollard;
 extern crate failure;
+extern crate flate2;
 extern crate futures;
 extern crate hyper;
 #[cfg(unix)]
 extern crate hyperlocal;
-extern crate tokio;
-extern crate flate2;
 extern crate tar;
+extern crate tokio;
 
 use bollard::container::*;
 use bollard::image::*;
 use bollard::Docker;
 
-use hyper::client::connect::Connect;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
@@ -23,10 +22,7 @@ use std::io::Write;
 pub mod common;
 use common::*;
 
-fn list_containers_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn list_containers_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -43,15 +39,15 @@ where
                     all: true,
                     ..Default::default()
                 }))
-            }).map(move |(docker, result)| {
+            })
+            .map(move |(docker, result)| {
                 assert_ne!(0, result.len());
-                assert!(
-                    result
-                        .into_iter()
-                        .any(|container| container.image == image())
-                );
+                assert!(result
+                    .into_iter()
+                    .any(|container| container.image == image()));
                 docker
-            }).and_then(move |docker| {
+            })
+            .and_then(move |docker| {
                 docker.remove_container(
                     "integration_test_list_containers",
                     None::<RemoveContainerOptions>,
@@ -61,10 +57,7 @@ where
     run_runtime(rt, future);
 }
 
-fn image_push_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn image_push_test(docker: Docker) {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -113,10 +106,7 @@ where
     run_runtime(rt, future);
 }
 
-fn container_restart_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn container_restart_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_restart_container");
 
@@ -126,33 +116,35 @@ where
                 "integration_test_restart_container",
                 None::<InspectContainerOptions>,
             )
-        }).map(|(docker, result)| (docker, result.state.started_at))
+        })
+        .map(|(docker, result)| (docker, result.state.started_at))
         .and_then(|(docker, started_at)| {
             docker
                 .restart_container(
                     "integration_test_restart_container",
                     None::<RestartContainerOptions>,
-                ).map(move |(docker, _)| (docker, started_at))
-        }).and_then(|(docker, started_at)| {
+                )
+                .map(move |(docker, _)| (docker, started_at))
+        })
+        .and_then(|(docker, started_at)| {
             docker
                 .inspect_container(
                     "integration_test_restart_container",
                     None::<InspectContainerOptions>,
-                ).map(move |(docker, result)| {
+                )
+                .map(move |(docker, result)| {
                     assert_ne!(started_at, result.state.started_at);
                     (docker, result)
                 })
-        }).and_then(move |(docker, _)| {
+        })
+        .and_then(move |(docker, _)| {
             chain_kill_container(docker, "integration_test_restart_container")
         });
 
     run_runtime(rt, future);
 }
 
-fn top_processes_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn top_processes_test(docker: Docker) {
     let top_options = if cfg!(windows) {
         None
     } else {
@@ -177,15 +169,13 @@ where
         .map(move |(docker, result)| {
             assert_eq!(result.titles[0], expected);
             docker
-        }).and_then(|docker| chain_kill_container(docker, "integration_test_top_processes"));
+        })
+        .and_then(|docker| chain_kill_container(docker, "integration_test_top_processes"));
 
     run_runtime(rt, future);
 }
 
-fn logs_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn logs_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let docker2 = docker.clone();
     let future = chain_create_container_hello_world(docker.chain(), "integration_test_logs")
@@ -200,7 +190,8 @@ where
                     ..Default::default()
                 }),
             )
-        }).map(|(_, stream)| {
+        })
+        .map(|(_, stream)| {
             stream
                 .skip(1)
                 .into_future()
@@ -209,11 +200,13 @@ where
                         format!("{}", value.unwrap()),
                         "Hello from Docker!".to_string()
                     );
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
                 })
-        }).flatten()
+        })
+        .flatten()
         .and_then(move |_| {
             docker2.remove_container("integration_test_logs", None::<RemoveContainerOptions>)
         });
@@ -221,10 +214,7 @@ where
     run_runtime(rt, future);
 }
 
-fn container_changes_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn container_changes_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future =
         chain_create_container_hello_world(docker.chain(), "integration_test_container_changes")
@@ -237,7 +227,8 @@ where
                 };
 
                 docker
-            }).and_then(|docker| {
+            })
+            .and_then(|docker| {
                 docker.remove_container(
                     "integration_test_container_changes",
                     None::<RemoveContainerOptions>,
@@ -247,10 +238,7 @@ where
     run_runtime(rt, future);
 }
 
-fn stats_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn stats_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_stats")
         .and_then(|docker| {
@@ -258,26 +246,27 @@ where
                 "integration_test_stats",
                 Some(StatsOptions { stream: false }),
             )
-        }).map(|(docker, stream)| {
+        })
+        .map(|(docker, stream)| {
             stream
                 .into_future()
                 .map(|(value, _)| {
                     assert_eq!(value.unwrap().name, "/integration_test_stats".to_string())
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("{}", e.0);
                     Err(e.0)
-                }).wait()
+                })
+                .wait()
                 .unwrap();
             docker
-        }).and_then(|docker| chain_kill_container(docker, "integration_test_stats"));
+        })
+        .and_then(|docker| chain_kill_container(docker, "integration_test_stats"));
 
     run_runtime(rt, future);
 }
 
-fn kill_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn kill_container_test(docker: Docker) {
     let kill_options = Some(KillContainerOptions { signal: "SIGKILL" });
 
     let rt = Runtime::new().unwrap();
@@ -293,10 +282,7 @@ where
     run_runtime(rt, future);
 }
 
-fn update_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn update_container_test(docker: Docker) {
     let update_options = UpdateContainerOptions {
         memory: Some(314572800),
         memory_swap: Some(314572800),
@@ -307,33 +293,40 @@ where
     let future = chain_create_daemon(docker.chain(), "integration_test_update_container")
         .and_then(|docker| {
             docker.update_container("integration_test_update_container", update_options)
-        }).and_then(|(docker, _)| {
+        })
+        .and_then(|(docker, _)| {
             docker.inspect_container(
                 "integration_test_update_container",
                 None::<InspectContainerOptions>,
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_eq!(314572800, result.host_config.memory.unwrap());
             docker
-        }).and_then(|docker| {
+        })
+        .and_then(|docker| {
             docker.kill_container(
                 "integration_test_update_container",
                 None::<KillContainerOptions<String>>,
             )
-        }).and_then(|(docker, _)| {
+        })
+        .and_then(|(docker, _)| {
             docker.wait_container(
                 "integration_test_update_container",
                 None::<WaitContainerOptions<String>>,
             )
-        }).and_then(|(docker, _)| {
+        })
+        .and_then(|(docker, _)| {
             docker.inspect_container(
                 "integration_test_update_container",
                 None::<InspectContainerOptions>,
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_eq!("exited", result.state.status);
             docker
-        }).and_then(|docker| {
+        })
+        .and_then(|docker| {
             docker.remove_container(
                 "integration_test_update_container",
                 None::<RemoveContainerOptions>,
@@ -343,10 +336,7 @@ where
     run_runtime(rt, future);
 }
 
-fn rename_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn rename_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future =
         chain_create_container_hello_world(docker.chain(), "integration_test_rename_container")
@@ -357,7 +347,8 @@ where
                         name: "integration_test_rename_container_renamed".to_string(),
                     },
                 )
-            }).and_then(|(docker, _)| {
+            })
+            .and_then(|(docker, _)| {
                 docker.remove_container(
                     "integration_test_rename_container_renamed",
                     None::<RemoveContainerOptions>,
@@ -367,10 +358,7 @@ where
     run_runtime(rt, future);
 }
 
-fn pause_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn pause_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_pause_container")
         .and_then(|docker| docker.pause_container("integration_test_pause_container"))
@@ -379,27 +367,28 @@ where
                 "integration_test_pause_container",
                 None::<InspectContainerOptions>,
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_eq!("paused".to_string(), result.state.status);
             docker
-        }).and_then(|docker| docker.unpause_container("integration_test_pause_container"))
+        })
+        .and_then(|docker| docker.unpause_container("integration_test_pause_container"))
         .and_then(|(docker, _)| {
             docker.inspect_container(
                 "integration_test_pause_container",
                 None::<InspectContainerOptions>,
             )
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             assert_eq!("running".to_string(), result.state.status);
             docker
-        }).and_then(|docker| chain_kill_container(docker, "integration_test_pause_container"));
+        })
+        .and_then(|docker| chain_kill_container(docker, "integration_test_pause_container"));
 
     run_runtime(rt, future);
 }
 
-fn prune_containers_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn prune_containers_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = docker
         .chain()
@@ -409,7 +398,8 @@ where
                 all: true,
                 ..Default::default()
             }))
-        }).map(|(docker, result)| {
+        })
+        .map(|(docker, result)| {
             println!("{:?}", result.iter().map(|c| c.clone().names));
             assert_eq!(
                 0,
@@ -419,7 +409,8 @@ where
                         |r| vec!["bollard", "registry:2", "stefanscherer/registry-windows"]
                             .into_iter()
                             .all(|v| v.to_string() != r.image)
-                    ).collect::<Vec<_>>()
+                    )
+                    .collect::<Vec<_>>()
                     .len()
             );
             docker
@@ -428,10 +419,7 @@ where
     run_runtime(rt, future);
 }
 
-fn archive_container_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn archive_container_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let image = move || {

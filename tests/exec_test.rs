@@ -7,7 +7,6 @@ use bollard::container::*;
 use bollard::exec::*;
 use bollard::Docker;
 
-use hyper::client::connect::Connect;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
@@ -15,10 +14,7 @@ use tokio::runtime::Runtime;
 pub mod common;
 use common::*;
 
-fn start_exec_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn start_exec_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_start_exec_test")
         .and_then(move |docker| {
@@ -81,10 +77,7 @@ where
     run_runtime(rt, future);
 }
 
-fn inspect_exec_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn inspect_exec_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
     let future = chain_create_daemon(docker.chain(), "integration_test_inspect_exec_test")
         .and_then(move |docker| {
