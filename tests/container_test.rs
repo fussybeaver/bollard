@@ -13,7 +13,6 @@ use bollard::container::*;
 use bollard::image::*;
 use bollard::Docker;
 
-use hyper::client::connect::Connect;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 

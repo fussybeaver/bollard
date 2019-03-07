@@ -14,7 +14,6 @@ use std::default::Default;
 use futures::stream::futures_ordered;
 use futures::stream::futures_unordered;
 use futures::{future, Future, Stream};
-use hyper::client::connect::Connect;
 use tokio::runtime::Runtime;
 
 /// flatten exists on an iterator in nightly
