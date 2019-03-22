@@ -10,6 +10,10 @@ install:
   - cargo -V
 
 build_script:
+  - ps: Get-VMNetworkAdapter -VMName *
+  - ps: Get-VMNetworkAdapter -All
+  - ps: Get-VMNetworkAdapter -VMName MobyLinuxVM | Set-VMNetworkAdapter -MacAddressSpoofing On
+  - ps: Get-NetAdapter
   - ps: |
         $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
         Set-Item -path env:HOST_IP -value $ipv4
@@ -35,4 +39,4 @@ test_script:
   - ps: Set-Item -path env:RUST_BACKTRACE -value 1
   - ps: Set-Item -path env:RUST_LOG -value "hyper=trace,bollard=debug"
   - ps: Set-Item -path env:REGISTRY_HTTP_ADDR -value localhost:5000
-  - cargo test --verbose -- --nocapture --test-threads 1 --test integration_test_create_network
+  - cargo test --verbose -- --nocapture --test-threads 1 --test integration_test_connect_network
