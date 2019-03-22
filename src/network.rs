@@ -6,6 +6,7 @@ use http::request::Builder;
 use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
+use serde_json;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -419,7 +420,7 @@ impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a 
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct PruneNetworksResults {
-    pub networks_deleted: Vec<String>,
+    pub networks_deleted: Option<Vec<String>>,
 }
 
 impl Docker {
@@ -1327,7 +1328,7 @@ mod tests {
 
         let results = docker.prune_networks(None::<PruneNetworksOptions<&str>>);
 
-        let future = results.map(|v| assert_eq!("my_running_container", v.networks_deleted[0]));
+        let future = results.map(|v| assert_eq!("my_running_container", v.networks_deleted.unwrap()[0]));
 
         rt.block_on(future)
             .or_else(|e| {
