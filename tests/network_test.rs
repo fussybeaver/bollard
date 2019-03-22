@@ -26,6 +26,11 @@ fn create_network_test(docker: Docker) {
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_create_network",
         check_duplicate: true,
+        driver: if cfg!(windows) {
+            "transparent"
+        } else {
+            "bridge"
+        },
         ipam: IPAM {
             config: vec![ipam_config],
             ..Default::default()
@@ -74,6 +79,11 @@ fn list_networks_test(docker: Docker) {
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_list_network",
         check_duplicate: true,
+        driver: if cfg!(windows) {
+            "transparent"
+        } else {
+            "bridge"
+        },
         ipam: IPAM {
             config: vec![ipam_config],
             ..Default::default()
@@ -195,6 +205,11 @@ fn prune_networks_test(docker: Docker) {
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_prune_networks",
         attachable: true,
+        driver: if cfg!(windows) {
+            "transparent"
+        } else {
+            "bridge"
+        },
         check_duplicate: true,
         ..Default::default()
     };
@@ -209,7 +224,7 @@ fn prune_networks_test(docker: Docker) {
         .map(|(docker, result)| {
             assert_eq!(
                 "integration_test_prune_networks",
-                result.networks_deleted[0]
+                result.networks_deleted.unwrap()[0]
             );
             docker
         })
@@ -224,29 +239,23 @@ fn prune_networks_test(docker: Docker) {
 }
 
 #[test]
-#[cfg(unix)]
-// Appveyor Windows error: "HNS failed with error : Unspecified error"
 fn integration_test_create_network() {
     connect_to_docker_and_run!(create_network_test);
 }
 
 #[test]
-#[cfg(unix)]
-// Appveyor Windows error: "HNS failed with error : Unspecified error"
 fn integration_test_list_networks() {
     connect_to_docker_and_run!(list_networks_test);
 }
 
 #[test]
 #[cfg(unix)]
-// Appveyor Windows error: "HNS failed with error : Unspecified error"
+// Not possible to test this on Appveyor...
 fn integration_test_connect_network() {
     connect_to_docker_and_run!(connect_network_test);
 }
 
 #[test]
-#[cfg(unix)]
-// Appveyor Windows error: "HNS failed with error : Unspecified error"
 fn integration_test_prune_networks() {
     connect_to_docker_and_run!(prune_networks_test);
 }

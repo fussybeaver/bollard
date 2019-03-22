@@ -10,6 +10,10 @@ install:
   - cargo -V
 
 build_script:
+  - ps: Get-VMNetworkAdapter -VMName *
+  - ps: Get-VMNetworkAdapter -All
+  - ps: Get-VMNetworkAdapter -VMName MobyLinuxVM | Set-VMNetworkAdapter -MacAddressSpoofing On
+  - ps: Get-NetAdapter
   - ps: |
         $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
         Set-Item -path env:HOST_IP -value $ipv4
