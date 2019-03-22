@@ -6,7 +6,6 @@ use bollard::container::*;
 use bollard::network::*;
 use bollard::Docker;
 
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
@@ -16,10 +15,7 @@ use std::collections::HashMap;
 pub mod common;
 use common::*;
 
-fn create_network_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn create_network_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let ipam_config = IPAMConfig {
@@ -64,10 +60,7 @@ where
     run_runtime(rt, future);
 }
 
-fn list_networks_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn list_networks_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let ipam_config = IPAMConfig {
@@ -114,10 +107,7 @@ where
     run_runtime(rt, future);
 }
 
-fn connect_network_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn connect_network_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let ipam_config = IPAMConfig {
@@ -199,10 +189,7 @@ where
     run_runtime(rt, future);
 }
 
-fn prune_networks_test<C>(docker: Docker<C>)
-where
-    C: Connect + Sync + 'static,
-{
+fn prune_networks_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
 
     let create_network_options = CreateNetworkOptions {

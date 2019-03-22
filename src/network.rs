@@ -3,7 +3,6 @@
 use arrayvec::ArrayVec;
 use failure::Error;
 use http::request::Builder;
-use hyper::client::connect::Connect;
 use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
@@ -423,10 +422,7 @@ pub struct PruneNetworksResults {
     pub networks_deleted: Vec<String>,
 }
 
-impl<C> Docker<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl Docker {
     /// ---
     ///
     /// # Create Network
@@ -472,7 +468,7 @@ where
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_value(req)
@@ -555,7 +551,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -608,7 +604,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -665,7 +661,7 @@ where
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_unit(req)
@@ -714,7 +710,7 @@ where
             &url,
             Builder::new().method(Method::POST),
             Ok(None::<ArrayVec<[(_, _); 0]>>),
-            Docker::<C>::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_unit(req)
@@ -767,7 +763,7 @@ where
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::<C>::transpose_option(options.map(|o| o.into_array())),
+            Docker::transpose_option(options.map(|o| o.into_array())),
             Ok(Body::empty()),
         );
 
@@ -775,10 +771,7 @@ where
     }
 }
 
-impl<C> DockerChain<C>
-where
-    C: Connect + Sync + 'static,
-{
+impl DockerChain {
     /// ---
     ///
     /// # Create Network
@@ -815,7 +808,7 @@ where
     pub fn create_network<T>(
         self,
         config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain<C>, CreateNetworkResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CreateNetworkResults), Error = Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -850,7 +843,7 @@ where
     pub fn remove_network(
         self,
         network_name: &str,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
         self.inner
             .remove_network(network_name)
             .map(|result| (self, result))
@@ -891,7 +884,7 @@ where
         self,
         network_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, InspectNetworkResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, InspectNetworkResults), Error = Error>
     where
         T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
@@ -938,7 +931,7 @@ where
     pub fn list_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, Vec<ListNetworksResults>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<ListNetworksResults>), Error = Error>
     where
         T: ListNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -991,7 +984,7 @@ where
         self,
         network_name: &str,
         config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -1035,7 +1028,7 @@ where
         self,
         network_name: &str,
         config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain<C>, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
     where
         T: AsRef<str> + Serialize,
     {
@@ -1081,7 +1074,7 @@ where
     pub fn prune_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain<C>, PruneNetworksResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, PruneNetworksResults), Error = Error>
     where
         T: PruneNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -1109,7 +1102,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 86\r\n\r\n{\"Id\":\"d1022f34e396473dd2a1e39abe0816b6e3465cdb44b78d094606f122933d8da3\",\"Warning\":\"\"}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let ipam_config = IPAMConfig {
             subnet: Some("10.10.10.10/24"),
@@ -1155,7 +1148,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 428\r\n\r\n{\"Name\":\"integration_test_create_network\",\"Id\":\"c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43\",\"Created\":\"2019-02-23T09:23:10.60267Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{}}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.inspect_network(
             "c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43",
@@ -1194,7 +1187,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.remove_network("my_network_name");
 
@@ -1220,7 +1213,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 463\r\n\r\n[{\"Name\":\"integration_test_list_network\",\"Id\":\"594423d1fbc3d894f8dc5a5b6565fffe4b4b5c379ceb23e1daf6ead4e3397fe3\",\"Created\":\"2019-02-23T09:54:21.8154268Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{\"maintainer\":\"bollard-maintainer\"}}]\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let mut list_networks_filters = HashMap::new();
         list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
@@ -1258,7 +1251,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let connect_network_options = ConnectNetworkOptions {
             container: "my_running_container",
@@ -1298,7 +1291,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.disconnect_network(
             "f3f9ef4375ca3ada374b9ecd6d8a1ebd501a59f0b2eedd0b93cd0502d7a009dc",
@@ -1330,7 +1323,7 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"NetworksDeleted\":[\"my_running_container\"]}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with(connector, "_".to_string(), 5).unwrap();
+        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
 
         let results = docker.prune_networks(None::<PruneNetworksOptions<&str>>);
 
