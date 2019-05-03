@@ -315,6 +315,7 @@ where
     pub io_maximum_bandwidth: Option<u64>,
     pub masked_paths: Option<Vec<T>>,
     pub readonly_paths: Option<Vec<T>>,
+    pub sysctls: Option<HashMap<T, T>>,
 }
 
 /// Storage driver name and configuration.
@@ -455,6 +456,27 @@ pub struct Mount {
     pub propagation: String,
 }
 
+/// Log of the health of a running container.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct LogStateHealth {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub exit_code: u16,
+    pub output: String,
+}
+
+/// Health of a running container.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct StateHealth {
+    pub status: String,
+    pub failing_streak: u64,
+    pub log: Vec<LogStateHealth>,
+}
+
 /// Runtime status of the container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
@@ -472,6 +494,7 @@ pub struct State {
     pub error: String,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
+    pub health: Option<StateHealth>,
 }
 
 /// Maps internal container port to external host port.
@@ -3691,7 +3714,7 @@ mod tests {
 
         connector.m.insert(
             format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2596\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\"},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":null,\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2759\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\",\"Health\":{\"Status\":\"healthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2019-05-03T15:19:37.238626547Z\",\"End\":\"2019-05-03T15:19:37.362289957Z\",\"ExitCode\":0,\"Output\":\"\"}]}},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":null,\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
         );
 
         let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
