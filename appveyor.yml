@@ -26,10 +26,10 @@ build_script:
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
   - docker pull hello-world:nanoserver
   - docker pull nanoserver/iis
-  - docker pull microsoft/nanoserver
+  - docker pull microsoft/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
   - docker tag hello-world:nanoserver localhost:5000/hello-world:nanoserver
   - docker tag nanoserver/iis localhost:5000/nanoserver/iis
-  - docker tag microsoft/nanoserver localhost:5000/microsoft/nanoserver
+  - docker tag microsoft/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2 localhost:5000/microsoft/nanoserver
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
   - docker push localhost:5000/microsoft/nanoserver
