@@ -1,0 +1,96 @@
+jobs:
+- job: windows_build
+  displayName: Windows Build
+  pool:
+    vmImage: 'windows-2019'
+  variables:
+    dockerId: fussybeaver
+  steps:
+
+  - task: DockerInstaller@0
+    inputs:
+      dockerVersion: '17.09.0-ce'
+
+  # - task: Docker@2
+  #   displayName: build registry
+  #   inputs:
+  #     command: build
+  #     repository: stefanscherer/registry-windows
+  #     arguments: -f dockerfiles/windows/registry/dockerfile
+
+  - script: |
+      docker version
+      docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
+
+  - task: Docker@2
+    displayName: pull hello-world
+    inputs:
+      command: pull
+      arguments: hello-world:nanoserver
+
+  - task: Docker@2
+    displayName: pull iis
+    inputs:
+      command: pull
+      arguments: nanoserver/iis
+
+  - task: Docker@2
+    displayName: pull nanoserver
+    inputs:
+      command: pull
+      arguments: mcr.microsoft.com/windows/nanoserver:1809-amd64
+
+  - task: Docker@2
+    displayName: tag hello-world
+    inputs:
+      command: tag
+      arguments: hello-world:nanoserver localhost:5000/hello-world:nanoserver
+
+  - task: Docker@2
+    displayName: tag iis
+    inputs:
+      command: tag
+      arguments: nanoserver/iis localhost:5000/nanoserver/iis
+
+  - task: Docker@2
+    displayName: tag nanoserver
+    inputs:
+      command: tag
+      arguments: mcr.microsoft.com/windows/nanoserver:1809-amd64 localhost:5000/microsoft/nanoserver
+
+  - task: Docker@2
+    displayName: push hello-world
+    inputs:
+      command: push
+      arguments: localhost:5000/hello-world:nanoserver
+
+  - task: Docker@2
+    displayName: push iis
+    inputs:
+      command: push
+      arguments: localhost:5000/nanoserver/iis
+
+  - task: Docker@2
+    displayName: push hello-world
+    inputs:
+      command: push
+      arguments: localhost:5000/microsoft/nanoserver
+
+  - script: |
+      choco install wget visualstudio2017-workload-vctools -y --no-progress
+    displayName: Install VC 2017 Build Tools
+
+  - script: |
+      curl -sSf -o rustup-init.exe https://win.rustup.rs
+      rustup-init.exe -y --default-toolchain stable
+      set PATH=%PATH%;%USERPROFILE%\.cargo\bin
+      echo "##vso[task.setvariable variable=PATH]%PATH%"
+    displayName: Install Rust Toolchain
+
+  - script: cargo build
+    displayName: 'Build'
+
+  - script: cargo test -- --test-threads=1
+    displayName: 'Test'
+    env:
+      RUST_BACKTRACE: 1

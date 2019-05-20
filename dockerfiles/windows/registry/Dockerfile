@@ -1,4 +1,4 @@
-FROM stefanscherer/golang-windows:1.9 as build
+FROM golang:1.12.5-windowsservercore as build
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
@@ -17,7 +17,7 @@ RUN mkdir src\github.com\docker ; \
 FROM microsoft/nanoserver:10.0.14393.2068
 
 COPY --from=build /gopath/src/github.com/docker/distribution/registry.exe /registry.exe
-COPY config.yml /config/config.yml
+COPY dockerfiles/windows/registry/config.yml /config/config.yml
 
 VOLUME C:\\registry
 EXPOSE 5000
