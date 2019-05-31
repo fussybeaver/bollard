@@ -414,6 +414,7 @@ pub mod errors;
 pub mod exec;
 pub mod image;
 mod named_pipe;
+pub mod network;
 mod options;
 mod read;
 pub mod system;

@@ -448,7 +448,6 @@ mod tests {
         let results = docker.inspect_exec("68099c450e6a");
 
         let future = results.map(|result| {
-            println!(":::{:?}", result);
             assert_eq!(
                 "/etc/config/uhttpd".to_string(),
                 result.process_config.arguments[0]
