@@ -24,6 +24,7 @@ use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
 use hyper::{self, Body, Chunk, Client, Method, Request, Response, StatusCode};
+use hyper_mock::HostToReplyConnector;
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
@@ -55,9 +56,6 @@ use uri::Uri;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json;
-
-#[cfg(test)]
-use hyper_mock::HostToReplyConnector;
 
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
@@ -136,7 +134,6 @@ pub(crate) enum Transport {
     NamedPipe {
         client: Client<NamedPipeConnector>,
     },
-    #[cfg(test)]
     HostToReply {
         client: Client<HostToReplyConnector>,
     },
@@ -154,7 +151,6 @@ impl fmt::Debug for Transport {
             Transport::Unix { .. } => write!(f, "Unix"),
             #[cfg(windows)]
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
-            #[cfg(test)]
             Transport::HostToReply { .. } => write!(f, "HostToReply"),
         }
     }
@@ -838,70 +834,6 @@ impl Docker {
     }
 }
 
-#[cfg(test)]
-impl Docker {
-    /// Connect using the `HostToReplyConnector`.
-    ///
-    /// This connector is used to test the Docker client api.
-    ///
-    /// # Arguments
-    ///
-    ///  - `connector`: the HostToReplyConnector.
-    ///  - `client_addr`: location to connect to.
-    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # extern crate hyper_mock;
-    /// # fn main () {
-    /// use bollard::Docker;
-    ///
-    /// use futures::future::Future;
-    ///
-    /// # use hyper_mock::HostToReplyConnector;
-    /// let mut connector = HostToReplyConnector::default();
-    /// connector.content.push(
-    ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-    /// );
-    /// let connection = Docker::connect_with(connector, String::new(), 5).unwrap();
-    /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
-    /// ```
-    pub(crate) fn connect_with_host_to_reply(
-        connector: HostToReplyConnector,
-        client_addr: String,
-        timeout: u64,
-        client_version: &ClientVersion,
-    ) -> Result<Docker, Error> {
-        let client_builder = Client::builder();
-        let client = client_builder.build(connector);
-
-        #[cfg(unix)]
-        let client_type = ClientType::Unix;
-        #[cfg(windows)]
-        let client_type = ClientType::NamedPipe;
-        let transport = Transport::HostToReply { client };
-
-        let docker = Docker {
-            transport: Arc::new(transport),
-            client_type: client_type,
-            client_addr,
-            client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
-        };
-
-        Ok(docker)
-    }
-}
-
 #[derive(Debug)]
 /// ---
 /// # DockerChain
@@ -1196,7 +1128,6 @@ impl Docker {
             Transport::Unix { ref client } => client.request(request),
             #[cfg(windows)]
             Transport::NamedPipe { ref client } => client.request(request),
-            #[cfg(test)]
             Transport::HostToReply { ref client } => client.request(request),
         };
         Timeout::new_at(request, now + Duration::from_secs(timeout)).from_err()
@@ -1260,5 +1191,67 @@ impl Docker {
                 }
             })
         })
+    }
+
+    /// Connect using the `HostToReplyConnector`.
+    ///
+    /// This connector is used to test the Docker client api.
+    ///
+    /// # Arguments
+    ///
+    ///  - `connector`: the HostToReplyConnector.
+    ///  - `client_addr`: location to connect to.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # extern crate bollard;
+    /// # extern crate futures;
+    /// # extern crate yup_hyper_mock;
+    /// # fn main () {
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures::future::Future;
+    ///
+    /// # use yup_hyper_mock::HostToReplyConnector;
+    /// let mut connector = HostToReplyConnector::default();
+    /// connector.m.insert(
+    ///   format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+    ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+    /// );
+    /// let connection = Docker::connect_with_host_to_reply(connector, String::new(), 5, API_DEFAULT_VERSION).unwrap();
+    /// connection.ping()
+    ///   .and_then(|_| Ok(println!("Connected!")));
+    /// # }
+    /// ```
+    pub fn connect_with_host_to_reply(
+        connector: HostToReplyConnector,
+        client_addr: String,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        let client_builder = Client::builder();
+        let client = client_builder.build(connector);
+
+        #[cfg(unix)]
+        let client_type = ClientType::Unix;
+        #[cfg(windows)]
+        let client_type = ClientType::NamedPipe;
+        let transport = Transport::HostToReply { client };
+
+        let docker = Docker {
+            transport: Arc::new(transport),
+            client_type: client_type,
+            client_addr,
+            client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
+        };
+
+        Ok(docker)
     }
 }
