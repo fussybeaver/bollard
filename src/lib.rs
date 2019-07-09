@@ -120,6 +120,7 @@
 //!
 //! ```rust
 //! use bollard::Docker;
+//! #[cfg(feature = "tls")]
 //! Docker::connect_with_tls_defaults();
 //! ```
 //!
@@ -372,7 +373,9 @@ extern crate failure;
 extern crate futures;
 extern crate http;
 extern crate hyper;
+#[cfg(feature = "tls")]
 extern crate hyper_tls;
+#[cfg(feature = "tls")]
 extern crate native_tls;
 #[cfg(feature = "openssl")]
 extern crate openssl;
