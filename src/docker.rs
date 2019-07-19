@@ -1,12 +1,16 @@
 use std::env;
 use std::fmt;
+#[cfg(any(feature = "ssl", feature = "tls"))]
 use std::fs::File;
+#[cfg(any(feature = "ssl", feature = "tls"))]
 use std::io::prelude::*;
+#[cfg(any(feature = "ssl", feature = "tls"))]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
 use failure::Error;
 use futures::future::{self, result};
@@ -18,9 +22,11 @@ use hyper::rt::Future;
 use hyper::{self, Body, Chunk, Client, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
+#[cfg(feature = "tls")]
 use hyper_tls;
 #[cfg(unix)]
 use hyperlocal::UnixConnector;
+#[cfg(feature = "tls")]
 use native_tls::{Certificate, Identity, TlsConnector};
 #[cfg(feature = "openssl")]
 use openssl::ssl::SslConnector;
@@ -72,6 +78,7 @@ pub(crate) const FALSE_STR: &'static str = "false";
 
 /// The default directory in which to look for our Docker certificate
 /// files.
+#[cfg(any(feature = "ssl", feature = "tls"))]
 pub fn default_cert_path() -> Result<PathBuf, Error> {
     use errors::NoCertPathError;
 
@@ -89,6 +96,7 @@ pub(crate) enum ClientType {
     #[cfg(unix)]
     Unix,
     Http,
+    #[cfg(any(feature = "ssl", feature = "tls"))]
     SSL,
     #[cfg(windows)]
     NamedPipe,
@@ -107,6 +115,7 @@ pub(crate) enum Transport {
     Https {
         client: Client<HttpsConnector<HttpConnector>>,
     },
+    #[cfg(feature = "tls")]
     Tls {
         client: Client<hyper_tls::HttpsConnector<HttpConnector>>,
     },
@@ -130,6 +139,7 @@ impl fmt::Debug for Transport {
             Transport::Http { .. } => write!(f, "HTTP"),
             #[cfg(feature = "openssl")]
             Transport::Https { .. } => write!(f, "HTTPS(openssl)"),
+            #[cfg(feature = "tls")]
             Transport::Tls { .. } => write!(f, "HTTPS(native)"),
             #[cfg(unix)]
             Transport::Unix { .. } => write!(f, "Unix"),
@@ -558,6 +568,7 @@ impl Docker {
 
 /// A Docker implementation typed to connect to a secure HTTPS connection, using the native rust
 /// TLS library.
+#[cfg(feature = "tls")]
 impl Docker {
     /// Connect using secure HTTPS using native TLS and defaults that are signalled by environment
     /// variables.
@@ -991,6 +1002,7 @@ impl Docker {
             Transport::Http { ref client } => client.request(request),
             #[cfg(feature = "openssl")]
             Transport::Https { ref client } => client.request(request),
+            #[cfg(feature = "tls")]
             Transport::Tls { ref client } => client.request(request),
             #[cfg(unix)]
             Transport::Unix { ref client } => client.request(request),

@@ -69,7 +69,11 @@ impl<'a> Uri<'a> where {
         P: AsRef<OsStr>,
     {
         match client_type {
-            ClientType::Http | ClientType::SSL => {
+            ClientType::Http => {
+                Ok(socket.as_ref().to_string_lossy().into_owned())
+            }
+            #[cfg(any(feature = "ssl", feature = "tls"))]
+            ClientType::SSL => {
                 Ok(socket.as_ref().to_string_lossy().into_owned())
             }
             #[cfg(unix)]
@@ -98,6 +102,7 @@ impl<'a> Uri<'a> where {
     fn socket_scheme(client_type: &ClientType) -> &'a str {
         match client_type {
             ClientType::Http => "http",
+            #[cfg(any(feature = "ssl", feature = "tls"))]
             ClientType::SSL => "https",
             #[cfg(unix)]
             ClientType::Unix => "unix",

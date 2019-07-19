@@ -14,8 +14,10 @@ readme = "README.md"
 keywords = ["docker"]
 
 [features]
-# Enable OpenSSL both directly and for Hyper.
+# Enable OpenSSL both directly and for Hyper
 ssl = ["openssl", "hyper-openssl"]
+# Enable native-tls both directly for Hyper
+tls = ["native-tls", "hyper-tls"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for the tls connector
@@ -34,10 +36,10 @@ hex = "0.3.2"
 http = "0.1.17"
 hyper = { version = "0.12.28" }
 hyper-openssl = { version = "0.7.1", optional = true }
-hyper-tls = "0.3.2"
+hyper-tls = { version = "0.3.2", optional = true }
 log = "0.4.6"
 mio = "0.6.16"
-native-tls = "0.2.3"
+native-tls = { version = "0.2.3", optional = true }
 openssl = { version = "0.10.22", optional = true }
 serde = "1.0.91"
 serde_derive = "1.0.91"

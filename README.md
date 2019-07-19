@@ -84,9 +84,9 @@ use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
 
-#### SSL via openssl
+#### SSL via OpenSSL
 
-Openssl is switched off by default, and can be enabled through the `ssl` cargo feature.
+OpenSSL is switched off by default, and can be enabled through the `ssl` cargo feature.
 
 The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
 `localhost:2375` if missing.
@@ -106,7 +106,8 @@ Docker::connect_with_ssl_defaults();
 
 #### TLS
 
-Native TLS allows you to avoid the SSL bindings.
+Native TLS allows you to abstract away from platform-specific TLS implementations and
+can be enabled through the `tls` cargo feature.
 
 The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
 `localhost:2375` if missing.
@@ -115,7 +116,7 @@ The location pointed to by the `DOCKER_CERT_PATH` environment variable is search
 certificates - `identity.pfx` for the PKCS #12 archive and `ca.pem` for the certificate
 authority chain.
 
-Use the `Docker::connect_with_ssl` method API
+Use the `Docker::connect_with_tls` method API
 to parameterise the interface.
 
 ```rust
