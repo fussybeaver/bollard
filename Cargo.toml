@@ -1,12 +1,13 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Graham Lee <ghmlee@ghmlee.com>",
            "Toby Lawrence <toby@nuclearfurnace.com>",
            "Eric Kidd <git@randomhacks.net>",
 	   "Niel Drummond <niel@drummond.lu>"]
 license = "Apache-2.0"
+license-file = "LICENSE"
 homepage = "https://github.com/fussybeaver/bollard"
 repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard"
