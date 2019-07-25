@@ -19,7 +19,7 @@ use container::LogOutput;
 
 /// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct CreateExecOptions<T>
 where
     T: AsRef<str> + Serialize,
@@ -48,7 +48,7 @@ where
 
 /// Result type for the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateExecResults {
     pub id: String,
@@ -56,7 +56,7 @@ pub struct CreateExecResults {
 
 /// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct StartExecOptions {
     /// Detach from the command.
     pub detach: bool,
@@ -71,7 +71,6 @@ pub enum StartExecResults {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct ExecProcessConfig {
     pub user: Option<String>,
@@ -83,7 +82,7 @@ pub struct ExecProcessConfig {
 
 /// Result type for the [Inspect Exec API](../struct.Docker.html#method.inspect_exec)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ExecInspect {
     pub can_remove: bool,
