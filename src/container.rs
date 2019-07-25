@@ -149,7 +149,7 @@ impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContain
 
 /// Container configuration that depends on the host we are running on
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct HostConfig<T>
 where
@@ -320,7 +320,7 @@ where
 
 /// Storage driver name and configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct GraphDriver {
     pub name: String,
@@ -332,7 +332,7 @@ pub struct GraphDriver {
 /// container's port is mapped for multiple protocols, separate entries are added to the mapping
 /// table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PortBinding<T>
 where
@@ -347,7 +347,7 @@ where
 /// increasing delay (double the previous delay, starting at 100ms) is added before each restart to
 /// prevent flooding the server.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct RestartPolicy<T>
 where
@@ -359,7 +359,7 @@ where
 
 /// The logging configuration for this container.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct LogConfig {
     #[serde(rename = "Type")]
@@ -369,7 +369,6 @@ pub struct LogConfig {
 
 /// This container's networking configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct NetworkingConfig {
     pub endpoints_config: HashMap<String, ContainerNetwork>,
@@ -377,7 +376,7 @@ pub struct NetworkingConfig {
 
 /// Configuration for a network endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ContainerNetwork {
     #[serde(rename = "IPAMConfig")]
@@ -405,7 +404,7 @@ pub struct ContainerNetwork {
 
 /// Network Settings for a container.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkSettings {
     pub networks: HashMap<String, ContainerNetwork>,
@@ -441,7 +440,7 @@ pub struct NetworkSettings {
 
 /// Specification for mounts to be added to the container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Mount {
     pub name: Option<String>,
@@ -458,7 +457,7 @@ pub struct Mount {
 
 /// Log of the health of a running container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct LogStateHealth {
     pub start: DateTime<Utc>,
@@ -469,7 +468,7 @@ pub struct LogStateHealth {
 
 /// Health of a running container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct StateHealth {
     pub status: String,
@@ -479,7 +478,7 @@ pub struct StateHealth {
 
 /// Runtime status of the container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct State {
     pub status: String,
@@ -499,7 +498,7 @@ pub struct State {
 
 /// Maps internal container port to external host port.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct APIPort {
     #[serde(rename = "IP")]
@@ -512,7 +511,7 @@ pub struct APIPort {
 
 /// A mapping of network name to endpoint configuration for that network.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkList {
     pub networks: HashMap<String, ContainerNetwork>,
@@ -520,7 +519,7 @@ pub struct NetworkList {
 
 /// Result type for the [List Containers API](../struct.Docker.html#method.list_containers)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct APIContainers {
     pub id: String,
@@ -544,7 +543,7 @@ pub struct APIContainers {
 
 /// Result type for the [Inspect Container API](../struct.Docker.html#method.inspect_container)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Container {
     pub id: String,
@@ -575,7 +574,7 @@ pub struct Container {
 
 /// A test to perform to check that the container is healthy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct HealthConfig {
     /// The test to perform. Possible values are:
     ///  - `[]` inherit healthcheck from image or parent image
@@ -599,7 +598,7 @@ pub struct HealthConfig {
 
 /// Container to create.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct Config<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -666,7 +665,7 @@ where
 
 /// Result type for the [Create Container API](../struct.Docker.html#method.create_container)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateContainerResults {
     pub id: String,
@@ -823,7 +822,7 @@ impl<'a, T: AsRef<str>> WaitContainerQueryParams<&'a str, T> for WaitContainerOp
 
 /// Error messages returned in the [Wait Container API](../struct.Docker.html#method.wait_container)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct WaitContainerResultsError {
     pub message: String,
@@ -831,7 +830,7 @@ pub struct WaitContainerResultsError {
 
 /// Result type for the [Wait Container API](../struct.Docker.html#method.wait_container)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct WaitContainerResults {
     pub status_code: u64,
@@ -946,7 +945,7 @@ impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
 
 /// Result type for the [Top Processes API](../struct.Docker.html#method.top_processes)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct TopResult {
     pub titles: Vec<String>,
@@ -1032,7 +1031,7 @@ impl fmt::Display for LogOutput {
 
 /// Result type for the [Container Changes API](../struct.Docker.html#method.container_changes)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Change {
     pub path: String,
@@ -1088,7 +1087,6 @@ impl<'a> StatsQueryParams<&'a str, &'a str> for StatsOptions {
 
 /// Granular memory statistics for the container.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct MemoryStatsStats {
     pub cache: u64,
@@ -1127,7 +1125,6 @@ pub struct MemoryStatsStats {
 
 /// General memory statistics for the container.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct MemoryStats {
     pub stats: Option<MemoryStatsStats>,
@@ -1144,7 +1141,6 @@ pub struct MemoryStats {
 
 /// Process ID statistics for the container.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct PidsStats {
     pub current: Option<u64>,
@@ -1153,7 +1149,6 @@ pub struct PidsStats {
 
 /// I/O statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
@@ -1168,7 +1163,6 @@ pub struct BlkioStats {
 
 /// File I/O statistics for the container.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct StorageStats {
     pub read_count_normalized: Option<u64>,
@@ -1179,7 +1173,6 @@ pub struct StorageStats {
 
 /// Statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct Stats {
     pub read: DateTime<Utc>,
@@ -1199,7 +1192,6 @@ pub struct Stats {
 
 /// Network statistics for the container.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct NetworkStats {
     pub rx_dropped: u64,
@@ -1214,7 +1206,6 @@ pub struct NetworkStats {
 
 /// CPU usage statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct CPUUsage {
     pub percpu_usage: Option<Vec<u64>>,
@@ -1225,7 +1216,6 @@ pub struct CPUUsage {
 
 /// CPU throttling statistics.
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct ThrottlingData {
     pub periods: u64,
@@ -1235,7 +1225,6 @@ pub struct ThrottlingData {
 
 /// General CPU statistics for the container.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct CPUStats {
     pub cpu_usage: CPUUsage,
@@ -1245,7 +1234,6 @@ pub struct CPUStats {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct BlkioStatsEntry {
     pub major: u64,
@@ -1292,7 +1280,7 @@ impl<'a, T: AsRef<str>> KillContainerQueryParams<&'a str, T> for KillContainerOp
 
 /// Block IO weight (relative device weight).
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioWeight {
     pub path: String,
@@ -1301,7 +1289,7 @@ pub struct UpdateContainerOptionsBlkioWeight {
 
 /// Limit read/write rate (IO/bytes per second) from/to a device.
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioDeviceRate {
     pub path: String,
@@ -1310,7 +1298,7 @@ pub struct UpdateContainerOptionsBlkioDeviceRate {
 
 /// A list of devices to add to the container.
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsDevices {
     pub path_on_host: String,
@@ -1320,7 +1308,7 @@ pub struct UpdateContainerOptionsDevices {
 
 /// A list of resource limits to set in the container.
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsUlimits {
     pub name: String,
@@ -1333,7 +1321,7 @@ pub struct UpdateContainerOptionsUlimits {
 /// An ever increasing delay (double the previous delay, starting at 100ms) is added before each
 /// restart to prevent flooding the server.
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsRestartPolicy {
     pub name: String,
@@ -1355,7 +1343,7 @@ pub struct UpdateContainerOptionsRestartPolicy {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct UpdateContainerOptions {
     /// An integer value representing this container's relative CPU weight versus other containers.
     pub cpu_shares: Option<isize>,
@@ -1524,7 +1512,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a s
 
 /// Result type for the [Prune Containers API](../struct.Docker.html#method.prune_containers)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneContainersResults {
     pub containers_deleted: Option<Vec<String>>,
