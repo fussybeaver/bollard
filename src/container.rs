@@ -151,7 +151,7 @@ impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContain
 
 /// A request for devices to be sent to device drivers
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct DeviceRequest<T>
 where
@@ -169,7 +169,7 @@ where
 
 /// Bind options for mounts.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MountPointBindOptions<T>
 where
     T: AsRef<str>,
@@ -182,7 +182,7 @@ where
 
 /// Driver config for volume options
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct VolumeOptionsDriverConfig<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -195,7 +195,7 @@ where
 
 /// Volume options for mounts.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MountPointVolumeOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -210,7 +210,7 @@ where
 
 /// Tmpfs options for mounts.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MountPointTmpfsOptions {
     /// The size for the tmpfs mount in bytes.
     pub size_bytes: u64,
@@ -220,7 +220,7 @@ pub struct MountPointTmpfsOptions {
 
 /// Specification for mounts to be added to the container.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct MountPoint<T>
 where
