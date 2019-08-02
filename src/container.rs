@@ -149,6 +149,106 @@ impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContain
     }
 }
 
+/// A request for devices to be sent to device drivers
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct DeviceRequest<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    pub driver: T,
+    pub count: i64,
+    #[serde(rename = "DeviceIDs")]
+    pub device_ids: Vec<T>,
+    /// A list of capabilities; an OR list of AND lists of capabilities.
+    pub capabilities: Vec<T>,
+    /// Driver-specific options, specified as a key/value pairs. These options are passed directly to the driver.
+    pub options: Option<HashMap<T, T>>,
+}
+
+/// Bind options for mounts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct MountPointBindOptions<T>
+where
+    T: AsRef<str>,
+{
+    /// A propagation mode with the value `[r]private`, `[r]shared`, or `[r]slave`.
+    pub propagation: T,
+    /// Disable recursive bind mount.
+    pub non_recursive: bool,
+}
+
+/// Driver config for volume options
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct VolumeOptionsDriverConfig<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Name of the driver to use to create the volume.
+    pub name: T,
+    /// key/value map of driver specific options.
+    pub options: HashMap<T, T>,
+}
+
+/// Volume options for mounts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct MountPointVolumeOptions<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Populate volume with data from the target.
+    pub no_copy: bool,
+    /// User-defined key/value metadata.
+    pub labels: HashMap<T, T>,
+    /// Map of driver specific options
+    pub driver_config: VolumeOptionsDriverConfig<T>,
+}
+
+/// Tmpfs options for mounts.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct MountPointTmpfsOptions {
+    /// The size for the tmpfs mount in bytes.
+    pub size_bytes: u64,
+    /// The permission mode for the tmpfs mount in an integer.
+    pub mode: usize,
+}
+
+/// Specification for mounts to be added to the container.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[allow(missing_docs)]
+pub struct MountPoint<T>
+where
+    T: AsRef<str> + Eq + Hash,
+{
+    /// Container path.
+    pub target: T,
+    /// Mount source (e.g. a volume name, a host path).
+    pub source: T,
+    /// The mount type. Available types:
+    ///   - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container.
+    ///   - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed.
+    ///   - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs.
+    ///   - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container.
+    #[serde(rename = "Type")]
+    pub type_: T,
+    /// Whether the mount should be read-only.
+    pub read_only: Option<bool>,
+    /// The consistency requirement for the mount: `default`, `consistent`, `cached`, or `delegated`.
+    pub consistency: T,
+    /// Optional configuration for the `bind` type.
+    pub bind_options: Option<MountPointBindOptions<T>>,
+    /// Optional configuration for the `volume` type.
+    pub volume_options: Option<MountPointVolumeOptions<T>>,
+    /// Optional configuration for the `tmpfs` type.
+    pub tmpfs_options: Option<MountPointTmpfsOptions>,
+}
+
 /// Container configuration that depends on the host we are running on
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -173,6 +273,9 @@ where
     pub memory_reservation: Option<u64>,
     /// Kernel memory limit in bytes.
     pub kernel_memory: Option<u64>,
+    /// Hard limit for kernel TCP buffer memory (in bytes).
+    #[serde(rename = "KernelMemoryTCP")]
+    pub kernel_memory_tcp: Option<i64>,
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
     pub nano_cpus: Option<u64>,
     pub cpu_percent: Option<u64>,
@@ -241,9 +344,13 @@ where
     /// A list of volumes to inherit from another container, specified in the form `<container
     /// name>[:<ro|rw>]`.
     pub volumes_from: Option<Vec<T>>,
-    /// A list of kernel capabilities to add to the container.
+    /// Specification for mounts to be added to the container.
+    pub mounts: Option<Vec<MountPoint<T>>>,
+    /// A list of kernel capabilities to be available for container (this overrides the default set).  Conflicts with options 'CapAdd' and 'CapDrop'
+    pub capabilities: Option<Vec<T>>,
+    /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'
     pub cap_add: Option<Vec<T>>,
-    /// A list of kernel capabilities to drop from the container.
+    /// A list of kernel capabilities to drop from the container. Conflicts with option 'Capabilities'
     pub cap_drop: Option<Vec<T>>,
     pub group_add: Option<Vec<T>>,
     /// The behavior to apply when the container exits. The default is not to restart.
@@ -305,6 +412,10 @@ where
     pub device_cgroup_rules: Option<Vec<T>>,
     /// Disk limit (in bytes).
     pub disk_quota: Option<u64>,
+    /// A list of requests for devices to be sent to device drivers
+    pub device_requests: Option<DeviceRequest<T>>,
+    /// Hard limit for kernel TCP buffer memory (in bytes).
+    pub kernet_memory_tcp: Option<i64>,
     /// The usable percentage of the available CPUs (Windows only).
     /// On Windows Server containers, the processor resource controls are mutually exclusive. The
     /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
@@ -1295,7 +1406,7 @@ pub struct UpdateContainerOptionsBlkioWeight {
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioDeviceRate {
     pub path: String,
-    pub rate: isize,
+    pub rate: u64,
 }
 
 /// A list of devices to add to the container.
@@ -1385,8 +1496,13 @@ pub struct UpdateContainerOptions {
     pub device_cgroup_rules: Option<Vec<String>>,
     /// Disk limit (in bytes).
     pub disk_quota: Option<u64>,
+    /// A list of requests for devices to be sent to device drivers
+    pub device_requests: Option<DeviceRequest<String>>,
     /// Kernel memory limit in bytes.
     pub kernel_memory: Option<u64>,
+    /// Hard limit for kernel TCP buffer memory (in bytes).
+    #[serde(rename = "KernelMemoryTCP")]
+    pub kernel_memory_tcp: Option<i64>,
     /// Memory soft limit in bytes.
     pub memory_reservation: Option<u64>,
     /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
@@ -1400,7 +1516,7 @@ pub struct UpdateContainerOptions {
     /// Run an init inside the container that forwards signals and reaps processes. This field is
     /// omitted if empty, and the default (as configured on the daemon) is used.
     pub init: Option<bool>,
-    /// Tune a container's pids limit. Set -1 for unlimited.
+    /// Tune a container's PIDs limit. Set `0` or `-1` for unlimited, or `null` to not change.
     pub pids_limit: Option<u64>,
     /// A list of resource limits to set in the container.
     pub ulimits: Vec<UpdateContainerOptionsUlimits>,

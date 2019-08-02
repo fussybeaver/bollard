@@ -525,6 +525,94 @@ fn archive_container_test(docker: Docker) {
     run_runtime(rt, future);
 }
 
+fn inspect_container_test(docker: Docker) {
+    let rt = Runtime::new().unwrap();
+    let future = chain_create_daemon(docker.chain(), "integration_test_inspect_container")
+        .and_then(|docker| {
+            docker.inspect_container(
+                "integration_test_inspect_container",
+                None::<InspectContainerOptions>,
+            )
+        })
+        .map(|(docker, result)| {
+            assert_eq!(None, result.host_config.capabilities);
+            docker
+        })
+        .and_then(|docker| chain_kill_container(docker, "integration_test_inspect_container"));
+
+    run_runtime(rt, future);
+}
+
+fn mount_volume_container_test(docker: Docker) {
+    let rt = Runtime::new().unwrap();
+
+    let image = move || {
+        if cfg!(windows) {
+            format!("{}microsoft/nanoserver", registry_http_addr())
+        } else {
+            format!("{}alpine", registry_http_addr())
+        }
+    };
+
+    let host_config = HostConfig {
+        mounts: Some(vec![MountPoint {
+            target: "/tmp".to_string(),
+            source: "/tmp".to_string(),
+            type_: "bind".to_string(),
+            consistency: "default".to_string(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+
+    let future = docker
+        .chain()
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: image(),
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .and_then(move |(docker, _)| {
+            docker.create_container(
+                Some(CreateContainerOptions {
+                    name: "integration_test_mount_volume_container",
+                }),
+                Config {
+                    image: Some(image()),
+                    host_config: Some(host_config),
+                    ..Default::default()
+                },
+            )
+        })
+        .and_then(|(docker, _)| {
+            docker.inspect_container(
+                "integration_test_mount_volume_container",
+                None::<InspectContainerOptions>,
+            )
+        })
+        .map(|(docker, result)| {
+            assert_eq!(
+                "/tmp".to_string(),
+                result.host_config.mounts.unwrap().first().unwrap().target
+            );
+            docker
+        })
+        .and_then(move |docker| {
+            docker.remove_container(
+                "integration_test_mount_volume_container",
+                None::<RemoveContainerOptions>,
+            )
+        });
+
+    run_runtime(rt, future);
+}
+
 #[test]
 fn integration_test_list_containers() {
     connect_to_docker_and_run!(list_containers_test);
@@ -594,4 +682,14 @@ fn integration_test_prune_containers() {
 #[test]
 fn integration_test_archive_containers() {
     connect_to_docker_and_run!(archive_container_test);
+}
+
+#[test]
+fn integration_test_inspect_containers() {
+    connect_to_docker_and_run!(inspect_container_test);
+}
+
+#[test]
+fn integration_test_mount_volume_containers() {
+    connect_to_docker_and_run!(mount_volume_container_test);
 }
