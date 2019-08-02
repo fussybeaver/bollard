@@ -556,8 +556,16 @@ fn mount_volume_container_test(docker: Docker) {
 
     let host_config = HostConfig {
         mounts: Some(vec![MountPoint {
-            target: "/tmp".to_string(),
-            source: "/tmp".to_string(),
+            target: if cfg!(windows) {
+                "C:\\Windows\\Temp".to_string()
+            } else {
+                "/tmp".to_string()
+            },
+            source: if cfg!(windows) {
+                "C:\\Windows\\Temp".to_string()
+            } else {
+                "/tmp".to_string()
+            },
             type_: "bind".to_string(),
             consistency: "default".to_string(),
             ..Default::default()
@@ -598,7 +606,11 @@ fn mount_volume_container_test(docker: Docker) {
         })
         .map(|(docker, result)| {
             assert_eq!(
-                "/tmp".to_string(),
+                if cfg!(windows) {
+                    "C:\\Windows\\Temp".to_string()
+                } else {
+                    "/tmp".to_string()
+                },
                 result.host_config.mounts.unwrap().first().unwrap().target
             );
             docker
