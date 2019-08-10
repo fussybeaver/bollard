@@ -11,6 +11,8 @@ use hyper::Method;
 use serde::ser::Serialize;
 
 use super::{Docker, DockerChain};
+#[cfg(test)]
+use docker::API_DEFAULT_VERSION;
 use either::EitherStream;
 
 use container::LogOutput;
@@ -408,7 +410,9 @@ mod tests {
             "HTTP/1.1 101 UPGRADED\r\nServer: mock1\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n# Server configuration\nconfig uhttpd main".to_string()
         );
 
-        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
+        let docker =
+            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
 
         let options = Some(StartExecOptions { detach: false });
 
@@ -443,7 +447,9 @@ mod tests {
             "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 393\r\n\r\n{\"ID\":\"6b8cf3d95b64cf32d140836f4a3b8f03c1b895398f6fdbd33b69db06fa04d897\",\"Running\":true,\"ExitCode\":null,\"ProcessConfig\":{\"tty\":false,\"entrypoint\":\"/bin/cat\",\"arguments\":[\"/etc/config/uhttpd\"],\"privileged\":false},\"OpenStdin\":false,\"OpenStderr\":false,\"OpenStdout\":true,\"CanRemove\":false,\"ContainerID\":\"a181d0e0bf4bbf0e37d8eb1d68677e0abef838f1aa4d8757c43c1216cfdaa965\",\"DetachKeys\":\"\",\"Pid\":7169}\r\n".to_string()
         );
 
-        let docker = Docker::connect_with_host_to_reply(connector, "_".to_string(), 5).unwrap();
+        let docker =
+            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
 
         let results = docker.inspect_exec("68099c450e6a");
 

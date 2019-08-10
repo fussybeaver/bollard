@@ -7,7 +7,7 @@ extern crate tokio_threadpool;
 extern crate tokio_timer;
 
 use bollard::system::Version;
-use bollard::Docker;
+use bollard::{ClientVersion, Docker, API_DEFAULT_VERSION};
 use futures::Async;
 use hyper::rt::Future;
 use tokio::executor::thread_pool;
@@ -28,7 +28,7 @@ fn test_version_named_pipe() {
         Docker::connect_with_named_pipe_defaults()
             .unwrap()
             .version(),
-        |version: Version| assert_eq!(version.Os, "windows")
+        |version: Version| assert_eq!(version.os, "windows")
     )
 }
 
@@ -37,7 +37,7 @@ fn test_version_named_pipe() {
 fn test_version_unix() {
     rt_exec!(
         Docker::connect_with_unix_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.Os, "linux")
+        |version: Version| assert_eq!(version.os, "linux")
     )
 }
 
@@ -46,7 +46,7 @@ fn test_version_unix() {
 fn test_version_ssl() {
     rt_exec!(
         Docker::connect_with_ssl_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.Os, "linux")
+        |version: Version| assert_eq!(version.os, "linux")
     )
 }
 
@@ -56,12 +56,12 @@ fn test_version_http() {
     #[cfg(unix)]
     rt_exec!(
         Docker::connect_with_http_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.Os, "linux")
+        |version: Version| assert_eq!(version.os, "linux")
     );
     #[cfg(windows)]
     rt_exec!(
         Docker::connect_with_http_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.Os, "windows")
+        |version: Version| assert_eq!(version.os, "windows")
     )
 }
 
@@ -70,7 +70,7 @@ fn test_version_http() {
 fn test_version_tls() {
     rt_exec!(
         Docker::connect_with_tls_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.Os, "linux")
+        |version: Version| assert_eq!(version.os, "linux")
     )
 }
 
@@ -141,4 +141,34 @@ fn test_threadpool() {
     let _bg = reactor.background();
 
     pool.shutdown_on_idle().wait().unwrap();
+}
+
+#[cfg(all(unix))]
+#[test]
+fn test_downversioning() {
+    let mut rt = Runtime::new().unwrap();
+
+    env_logger::init();
+
+    let docker = Docker::connect_with_unix(
+        "unix:///var/run/docker.sock",
+        120,
+        &ClientVersion {
+            major_version: 1,
+            minor_version: 24,
+        },
+    )
+    .unwrap();
+
+    let future = docker.negotiate_version().map(|docker| {
+        docker.version();
+        docker
+    });
+
+    let docker = rt.block_on(future).unwrap();
+    assert_eq!(
+        format!("{}", docker.client_version()),
+        format!("{}", "1.24")
+    );
+    rt.shutdown_now().wait().unwrap();
 }

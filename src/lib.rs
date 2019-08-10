@@ -427,4 +427,4 @@ mod uri;
 extern crate yup_hyper_mock as hyper_mock;
 
 // publicly re-export
-pub use docker::{Docker, DockerChain};
+pub use docker::{ClientVersion, Docker, DockerChain, API_DEFAULT_VERSION};
