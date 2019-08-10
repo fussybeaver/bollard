@@ -143,7 +143,7 @@ fn test_threadpool() {
     pool.shutdown_on_idle().wait().unwrap();
 }
 
-#[cfg(all(unix))]
+#[cfg(unix)]
 #[test]
 fn test_downversioning() {
     let mut rt = Runtime::new().unwrap();

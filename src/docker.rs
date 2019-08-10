@@ -423,12 +423,12 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
     /// let connection = Docker::connect_with_http(
-    ///                    "http://my-custom-docker-server:2735", 4, 20)
+    ///                    "http://my-custom-docker-server:2735", 4, 20, API_DEFAULT_VERSION)
     ///                    .unwrap();
     /// connection.ping()
     ///   .and_then(|_| Ok(println!("Connected!")));
@@ -505,11 +505,11 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
-    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120).unwrap();
+    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
@@ -587,13 +587,13 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
     ///
     /// let connection = Docker::connect_with_named_pipe(
-    ///     "//./pipe/docker_engine", 120).unwrap();
+    ///     "//./pipe/docker_engine", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     ///
     /// # }
@@ -1030,10 +1030,18 @@ impl Docker {
     /// # Examples:
     ///
     /// ```rust,norun
-    /// let docker = Docker::connect_with_unix_defaults().unwrap();
-    /// let future = docker.negotiate_version().map(|docker| {
-    ///     docker.version()
-    /// });
+    /// # extern crate bollard;
+    /// # extern crate futures;
+    /// # fn main () {
+    ///     use bollard::Docker;
+    ///
+    ///     use futures::future::Future;
+    ///
+    ///     let docker = Docker::connect_with_http_defaults().unwrap();
+    ///     docker.negotiate_version().map(|docker| {
+    ///         docker.version()
+    ///     });
+    /// # }
     /// ```
     pub fn negotiate_version(self) -> impl Future<Item = Self, Error = Error> {
         let req = self.build_request::<_, String, String>(
