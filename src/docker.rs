@@ -42,8 +42,9 @@ use tokio_codec::FramedRead;
 use container::LogOutput;
 use either::EitherResponse;
 use errors::{
-    DockerResponseBadParameterError, DockerResponseConflictError, DockerResponseNotFoundError,
-    DockerResponseNotModifiedError, DockerResponseServerError, JsonDataError,
+    APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
+    DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
+    JsonDataError,
 };
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
@@ -173,12 +174,24 @@ pub struct ClientVersion {
     pub minor_version: usize,
 }
 
-impl From<String> for ClientVersion {
-    fn from(s: String) -> ClientVersion {
-        let a: Vec<&str> = s.split(".").collect();
-        ClientVersion {
-            major_version: a[0].parse::<usize>().unwrap(),
-            minor_version: a[1].parse::<usize>().unwrap(),
+pub(crate) enum MaybeClientVersion {
+    Some(ClientVersion),
+    None,
+}
+
+impl From<String> for MaybeClientVersion {
+    fn from(s: String) -> MaybeClientVersion {
+        match s
+            .split(".")
+            .map(|v| v.parse::<usize>())
+            .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
+            .as_slice()
+        {
+            [Ok(first), Ok(second)] => MaybeClientVersion::Some(ClientVersion {
+                major_version: first.to_owned(),
+                minor_version: second.to_owned(),
+            }),
+            _ => MaybeClientVersion::None,
         }
     }
 }
@@ -1051,18 +1064,28 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value::<Version>(req).map(move |res| {
-            let server_version: ClientVersion = res.api_version.into();
-            if server_version < self.client_version() {
-                self.version
-                    .0
-                    .store(server_version.major_version, Ordering::Relaxed);
-                self.version
-                    .1
-                    .store(server_version.minor_version, Ordering::Relaxed);
-            }
-            self
-        })
+        self.process_into_value::<Version>(req)
+            .and_then(move |res| {
+                let err_api_version = res.api_version.clone();
+                let server_version: ClientVersion = match res.api_version.into() {
+                    MaybeClientVersion::Some(client_version) => client_version,
+                    MaybeClientVersion::None => {
+                        return Err(APIVersionParseError {
+                            api_version: err_api_version,
+                        }
+                        .into())
+                    }
+                };
+                if server_version < self.client_version() {
+                    self.version
+                        .0
+                        .store(server_version.major_version, Ordering::Relaxed);
+                    self.version
+                        .1
+                        .store(server_version.minor_version, Ordering::Relaxed);
+                }
+                Ok(self)
+            })
     }
 
     fn process_request(
