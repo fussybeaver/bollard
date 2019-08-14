@@ -1,3 +1,4 @@
+use std::cmp;
 use std::env;
 use std::fmt;
 #[cfg(any(feature = "ssl", feature = "tls"))]
@@ -7,9 +8,12 @@ use std::io::prelude::*;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
 use failure::Error;
@@ -19,7 +23,7 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
-use hyper::{self, Body, Chunk, Client, Request, Response, StatusCode};
+use hyper::{self, Body, Chunk, Client, Method, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
@@ -38,12 +42,14 @@ use tokio_codec::FramedRead;
 use container::LogOutput;
 use either::EitherResponse;
 use errors::{
-    DockerResponseBadParameterError, DockerResponseConflictError, DockerResponseNotFoundError,
-    DockerResponseNotModifiedError, DockerResponseServerError, JsonDataError,
+    APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
+    DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
+    JsonDataError,
 };
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
 use read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
+use system::Version;
 use uri::Uri;
 
 use serde::de::DeserializeOwned;
@@ -70,8 +76,11 @@ const DEFAULT_NUM_THREADS: usize = 1;
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
 
-/// Docker API version
-pub(crate) const API_VERSION: &'static str = "v1.39";
+/// Default Client Version to communicate with the server.
+pub const API_DEFAULT_VERSION: &'static ClientVersion = &ClientVersion {
+    major_version: 1,
+    minor_version: 39,
+};
 
 pub(crate) const TRUE_STR: &'static str = "true";
 pub(crate) const FALSE_STR: &'static str = "false";
@@ -151,6 +160,67 @@ impl fmt::Debug for Transport {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+/// Advisory version stub to use for communicating with the Server. The docker server will error if
+/// a higher client version is used than is compatible with the server. Beware also, that the
+/// docker server will return stubs for a higher version than the version set when communicating.
+///
+/// See also [negotiate_version](struct.Docker.html#method.negotiate_version), and the `client_version` argument when instantiating the
+/// [Docker](struct.Docker.html) client instance.
+pub struct ClientVersion {
+    /// The major version number.
+    pub major_version: usize,
+    /// The minor version number.
+    pub minor_version: usize,
+}
+
+pub(crate) enum MaybeClientVersion {
+    Some(ClientVersion),
+    None,
+}
+
+impl From<String> for MaybeClientVersion {
+    fn from(s: String) -> MaybeClientVersion {
+        match s
+            .split(".")
+            .map(|v| v.parse::<usize>())
+            .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
+            .as_slice()
+        {
+            [Ok(first), Ok(second)] => MaybeClientVersion::Some(ClientVersion {
+                major_version: first.to_owned(),
+                minor_version: second.to_owned(),
+            }),
+            _ => MaybeClientVersion::None,
+        }
+    }
+}
+
+impl fmt::Display for ClientVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.major_version, self.minor_version)
+    }
+}
+
+impl PartialOrd for ClientVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        match self.major_version.partial_cmp(&other.major_version) {
+            Some(cmp::Ordering::Equal) => self.minor_version.partial_cmp(&other.minor_version),
+            res => res,
+        }
+    }
+}
+
+impl From<&(AtomicUsize, AtomicUsize)> for ClientVersion {
+    fn from(tpl: &(AtomicUsize, AtomicUsize)) -> ClientVersion {
+        ClientVersion {
+            major_version: tpl.0.load(Ordering::Relaxed),
+            minor_version: tpl.1.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug)]
 /// ---
 ///
 /// # Docker
@@ -163,12 +233,12 @@ impl fmt::Debug for Transport {
 ///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
 ///  - [`Docker::connect_with_tls_defaults`](struct.Docker.html#method.connect_with_tls_defaults)
 ///  - [`Docker::connect_with_local_defaults`](struct.Docker.html#method.connect_with_local_defaults)
-#[derive(Debug)]
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
     pub(crate) client_addr: String,
     pub(crate) client_timeout: u64,
+    pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
 }
 
 impl Clone for Docker {
@@ -178,6 +248,7 @@ impl Clone for Docker {
             client_type: self.client_type.clone(),
             client_addr: self.client_addr.clone(),
             client_timeout: self.client_timeout,
+            version: self.version.clone(),
         }
     }
 }
@@ -222,6 +293,7 @@ impl Docker {
                 &cert_path.join("ca.pem"),
                 DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
+                API_DEFAULT_VERSION,
             )
         } else {
             Docker::connect_with_ssl(
@@ -231,6 +303,7 @@ impl Docker {
                 &cert_path.join("ca.pem"),
                 DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
+                API_DEFAULT_VERSION,
             )
         }
     }
@@ -245,6 +318,7 @@ impl Docker {
     ///  - `ssl_ca`: the certificate chain path.
     ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     /// # Examples
     ///
@@ -276,6 +350,7 @@ impl Docker {
         ssl_ca: &Path,
         num_threads: usize,
         timeout: u64,
+        client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
@@ -300,6 +375,10 @@ impl Docker {
             client_type: ClientType::SSL,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
         };
 
         Ok(docker)
@@ -334,7 +413,12 @@ impl Docker {
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        Docker::connect_with_http(&host, DEFAULT_NUM_THREADS, DEFAULT_TIMEOUT)
+        Docker::connect_with_http(
+            &host,
+            DEFAULT_NUM_THREADS,
+            DEFAULT_TIMEOUT,
+            API_DEFAULT_VERSION,
+        )
     }
 
     /// Connect using unsecured HTTP.  
@@ -344,6 +428,7 @@ impl Docker {
     ///  - `addr`: connection url including scheme and port.
     ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     /// # Examples
     ///
@@ -351,12 +436,12 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
     /// let connection = Docker::connect_with_http(
-    ///                    "http://my-custom-docker-server:2735", 4, 20)
+    ///                    "http://my-custom-docker-server:2735", 4, 20, API_DEFAULT_VERSION)
     ///                    .unwrap();
     /// connection.ping()
     ///   .and_then(|_| Ok(println!("Connected!")));
@@ -366,6 +451,7 @@ impl Docker {
         addr: &str,
         num_threads: usize,
         timeout: u64,
+        client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
@@ -380,6 +466,10 @@ impl Docker {
             client_type: ClientType::Http,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
         };
 
         Ok(docker)
@@ -411,7 +501,7 @@ impl Docker {
     /// # }
     /// ```
     pub fn connect_with_unix_defaults() -> Result<Docker, Error> {
-        Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT)
+        Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using a Unix socket.
@@ -420,6 +510,7 @@ impl Docker {
     ///
     ///  - `addr`: connection socket path.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     /// # Examples
     ///
@@ -427,15 +518,19 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
-    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120).unwrap();
+    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     /// # }
     /// ```
-    pub fn connect_with_unix(addr: &str, timeout: u64) -> Result<Docker, Error> {
+    pub fn connect_with_unix(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("unix://", "", 1);
 
         let unix_connector = UnixConnector::new();
@@ -450,6 +545,10 @@ impl Docker {
             client_type: ClientType::Unix,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
         };
 
         Ok(docker)
@@ -484,7 +583,7 @@ impl Docker {
     /// # }
     /// ```
     pub fn connect_with_named_pipe_defaults() -> Result<Docker, Error> {
-        Docker::connect_with_named_pipe(DEFAULT_NAMED_PIPE, DEFAULT_TIMEOUT)
+        Docker::connect_with_named_pipe(DEFAULT_NAMED_PIPE, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using a Windows Named Pipe.
@@ -493,6 +592,7 @@ impl Docker {
     ///
     ///  - `addr`: socket location.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     /// # Examples
     ///
@@ -500,18 +600,22 @@ impl Docker {
     /// # extern crate bollard;
     /// # extern crate futures;
     /// # fn main () {
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use futures::future::Future;
     ///
     ///
     /// let connection = Docker::connect_with_named_pipe(
-    ///     "//./pipe/docker_engine", 120).unwrap();
+    ///     "//./pipe/docker_engine", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().and_then(|_| Ok(println!("Connected!")));
     ///
     /// # }
     /// ```
-    pub fn connect_with_named_pipe(addr: &str, timeout: u64) -> Result<Docker, Error> {
+    pub fn connect_with_named_pipe(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("npipe://", "", 1);
 
         let named_pipe_connector = NamedPipeConnector::new();
@@ -526,6 +630,10 @@ impl Docker {
             client_type: ClientType::NamedPipe,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(API_DEFAULT_VERSION.major_version),
+                AtomicUsize::new(API_DEFAULT_VERSION.minor_version),
+            )),
         };
 
         Ok(docker)
@@ -558,11 +666,15 @@ impl Docker {
     ///
     /// [`Docker::connect_with_unix`]: struct.Docker.html#method.connect_with_unix
     /// [`Docker::connect_with_named_pipe`]: struct.Docker.html#method.connect_with_named_pipe
-    pub fn connect_with_local(addr: &str, timeout: u64) -> Result<Docker, Error> {
+    pub fn connect_with_local(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
         #[cfg(unix)]
-        return Docker::connect_with_unix(addr, timeout);
+        return Docker::connect_with_unix(addr, timeout, client_version);
         #[cfg(windows)]
-        return Docker::connect_with_named_pipe(addr, timeout);
+        return Docker::connect_with_named_pipe(addr, timeout, client_version);
     }
 }
 
@@ -616,6 +728,7 @@ impl Docker {
                 "",
                 DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
+                API_DEFAULT_VERSION,
             )
         } else {
             Docker::connect_with_tls(
@@ -625,6 +738,7 @@ impl Docker {
                 "",
                 DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
+                API_DEFAULT_VERSION,
             )
         }
     }
@@ -639,6 +753,7 @@ impl Docker {
     ///  - `pkcs12_password`: the password to the PKCS #12 archive.
     ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     ///  # PKCS12
     ///
@@ -680,6 +795,7 @@ impl Docker {
         pkcs12_password: &str,
         num_thread: usize,
         timeout: u64,
+        client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("tcp://", "", 1);
 
@@ -712,6 +828,10 @@ impl Docker {
             client_type: ClientType::SSL,
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
         };
 
         Ok(docker)
@@ -729,6 +849,7 @@ impl Docker {
     ///  - `connector`: the HostToReplyConnector.
     ///  - `client_addr`: location to connect to.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
     /// # Examples
     ///
@@ -755,6 +876,7 @@ impl Docker {
         connector: HostToReplyConnector,
         client_addr: String,
         timeout: u64,
+        client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         let client_builder = Client::builder();
         let client = client_builder.build(connector);
@@ -770,12 +892,17 @@ impl Docker {
             client_type: client_type,
             client_addr,
             client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
         };
 
         Ok(docker)
     }
 }
 
+#[derive(Debug)]
 /// ---
 /// # DockerChain
 ///
@@ -790,7 +917,6 @@ impl Docker {
 /// let docker = Docker::connect_with_http_defaults().unwrap();
 /// docker.chain();
 /// ```
-#[derive(Debug)]
 pub struct DockerChain {
     pub(super) inner: Docker,
 }
@@ -906,6 +1032,62 @@ impl Docker {
         })
     }
 
+    /// Return the currently set client version.
+    pub fn client_version(&self) -> ClientVersion {
+        self.version.as_ref().into()
+    }
+
+    /// Check with the server for a supported version, and downgrade the client version if
+    /// appropriate.
+    ///
+    /// # Examples:
+    ///
+    /// ```rust,norun
+    /// # extern crate bollard;
+    /// # extern crate futures;
+    /// # fn main () {
+    ///     use bollard::Docker;
+    ///
+    ///     use futures::future::Future;
+    ///
+    ///     let docker = Docker::connect_with_http_defaults().unwrap();
+    ///     docker.negotiate_version().map(|docker| {
+    ///         docker.version()
+    ///     });
+    /// # }
+    /// ```
+    pub fn negotiate_version(self) -> impl Future<Item = Self, Error = Error> {
+        let req = self.build_request::<_, String, String>(
+            "/version",
+            Builder::new().method(Method::GET),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value::<Version>(req)
+            .and_then(move |res| {
+                let err_api_version = res.api_version.clone();
+                let server_version: ClientVersion = match res.api_version.into() {
+                    MaybeClientVersion::Some(client_version) => client_version,
+                    MaybeClientVersion::None => {
+                        return Err(APIVersionParseError {
+                            api_version: err_api_version,
+                        }
+                        .into())
+                    }
+                };
+                if server_version < self.client_version() {
+                    self.version
+                        .0
+                        .store(server_version.major_version, Ordering::Relaxed);
+                    self.version
+                        .1
+                        .store(server_version.minor_version, Ordering::Relaxed);
+                }
+                Ok(self)
+            })
+    }
+
     fn process_request(
         &self,
         req: Result<Request<Body>, Error>,
@@ -981,7 +1163,13 @@ impl Docker {
         query
             .and_then(|q| payload.map(|body| (q, body)))
             .and_then(|(q, body)| {
-                let uri = Uri::parse(&self.client_addr, &self.client_type, path, q)?;
+                let uri = Uri::parse(
+                    &self.client_addr,
+                    &self.client_type,
+                    path,
+                    q,
+                    &self.client_version(),
+                )?;
                 let request_uri: hyper::Uri = uri.into();
                 Ok(builder
                     .uri(request_uri)

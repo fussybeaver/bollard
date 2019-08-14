@@ -81,3 +81,11 @@ impl Display for JsonDataError {
         )
     }
 }
+
+/// Error emitted when the server version cannot be parsed when negotiating a version
+#[derive(Fail, Debug)]
+#[fail(display = "Failed to parse API version: {}", api_version)]
+#[allow(missing_docs)]
+pub struct APIVersionParseError {
+    pub api_version: String,
+}

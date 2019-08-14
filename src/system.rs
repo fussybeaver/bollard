@@ -6,21 +6,23 @@ use hyper::rt::Future;
 use hyper::{Body, Method};
 
 use super::{Docker, DockerChain};
+#[cfg(test)]
+use docker::API_DEFAULT_VERSION;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Version {
-    pub Version: String,
-    pub ApiVersion: String,
-    pub GitCommit: String,
-    pub GoVersion: String,
-    pub Os: String,
-    pub Arch: String,
-    pub KernelVersion: String,
-    pub BuildTime: Option<String>,
-    pub Experimental: Option<bool>,
+    pub version: String,
+    pub api_version: String,
+    pub git_commit: String,
+    pub go_version: String,
+    pub os: String,
+    pub arch: String,
+    pub kernel_version: String,
+    pub build_time: Option<String>,
+    pub experimental: Option<bool>,
 }
 
 impl Docker {
@@ -131,5 +133,43 @@ impl DockerChain {
     /// ```
     pub fn ping(self) -> impl Future<Item = (DockerChain, String), Error = Error> {
         self.inner.ping().map(|result| (self, result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use hyper_mock::HostToReplyConnector;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_downversion() {
+        let mut rt = Runtime::new().unwrap();
+        let mut connector = HostToReplyConnector::default();
+
+        connector.m.insert(
+            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
+            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 875\r\n\r\n{\"Platform\":{\"Name\":\"Docker Engine - Community\"},\"Components\":[{\"Name\":\"Engine\",\"Version\":\"19.03.0-rc2\",\"Details\":{\"ApiVersion\":\"1.40\",\"Arch\":\"amd64\",\"BuildTime\":\"2019-06-05T01:42:10.000000000+00:00\",\"Experimental\":\"true\",\"GitCommit\":\"f97efcc\",\"GoVersion\":\"go1.12.5\",\"KernelVersion\":\"4.9.125-linuxkit\",\"MinAPIVersion\":\"1.12\",\"Os\":\"linux\"}},{\"Name\":\"containerd\",\"Version\":\"v1.2.6\",\"Details\":{\"GitCommit\":\"894b81a4b802e4eb2a91d1ce216b8817763c29fb\"}},{\"Name\":\"runc\",\"Version\":\"1.0.0-rc8\",\"Details\":{\"GitCommit\":\"425e105d5a03fabd737a126ad93d62a9eeede87f\"}},{\"Name\":\"docker-init\",\"Version\":\"0.18.0\",\"Details\":{\"GitCommit\":\"fec3683\"}}],\"Version\":\"19.03.0-rc2\",\"ApiVersion\":\"1.24\",\"MinAPIVersion\":\"1.12\",\"GitCommit\":\"f97efcc\",\"GoVersion\":\"go1.12.5\",\"Os\":\"linux\",\"Arch\":\"amd64\",\"KernelVersion\":\"4.9.125-linuxkit\",\"Experimental\":true,\"BuildTime\":\"2019-06-05T01:42:10.000000000+00:00\"}\r\n\r\n".to_string()
+        );
+
+        let docker =
+            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let results = docker
+            .negotiate_version()
+            .and_then(|docker| docker.version());
+
+        let future = results.map(|result| assert_eq!(result.api_version, "1.24".to_string()));
+
+        rt.block_on(future)
+            .or_else(|e| {
+                println!("{:?}", e);
+                Err(e)
+            })
+            .unwrap();
+
+        rt.shutdown_now().wait().unwrap();
     }
 }

@@ -10,8 +10,7 @@ use url::Url;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 
-use docker::ClientType;
-use docker::API_VERSION;
+use docker::{ClientType, ClientVersion};
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -30,6 +29,7 @@ impl<'a> Uri<'a> where {
         client_type: &ClientType,
         path: &'a str,
         query: Option<O>,
+        client_version: &ClientVersion,
     ) -> Result<Self, Error>
     where
         O: IntoIterator,
@@ -40,10 +40,11 @@ impl<'a> Uri<'a> where {
         let host: String = Uri::socket_host(socket, client_type)?;
 
         let host_str = format!(
-            "{}://{}/{}{}",
+            "{}://{}/v{}.{}{}",
             Uri::socket_scheme(client_type),
             host,
-            API_VERSION,
+            client_version.major_version,
+            client_version.minor_version,
             path
         );
         let mut url = Url::parse(host_str.as_ref()).unwrap();
@@ -69,13 +70,9 @@ impl<'a> Uri<'a> where {
         P: AsRef<OsStr>,
     {
         match client_type {
-            ClientType::Http => {
-                Ok(socket.as_ref().to_string_lossy().into_owned())
-            }
+            ClientType::Http => Ok(socket.as_ref().to_string_lossy().into_owned()),
             #[cfg(any(feature = "ssl", feature = "tls"))]
-            ClientType::SSL => {
-                Ok(socket.as_ref().to_string_lossy().into_owned())
-            }
+            ClientType::SSL => Ok(socket.as_ref().to_string_lossy().into_owned()),
             #[cfg(unix)]
             ClientType::Unix => {
                 let mut host: String = String::new();
