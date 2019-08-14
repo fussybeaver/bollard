@@ -19,7 +19,7 @@ use docker::{FALSE_STR, TRUE_STR};
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -54,7 +54,7 @@ where
 
 /// IPAM represents IP Address Management
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct IPAM<T>
 where
@@ -70,7 +70,7 @@ where
 
 /// IPAMConfig represents IPAM configurations
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct IPAMConfig<T>
 where
@@ -85,7 +85,7 @@ where
 
 /// Result type for the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateNetworkResults {
     pub id: String,
@@ -113,7 +113,7 @@ pub struct CreateNetworkResults {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct InspectNetworkOptions<T> {
     /// Detailed inspect output for troubleshooting.
     pub verbose: bool,
@@ -151,7 +151,7 @@ impl<'a> InspectNetworkQueryParams<'a, String> for InspectNetworkOptions<String>
 
 /// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct InspectNetworkResults {
     pub name: String,
@@ -175,7 +175,7 @@ pub struct InspectNetworkResults {
 
 /// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct InspectNetworkResultsContainers {
     pub name: String,
@@ -190,7 +190,7 @@ pub struct InspectNetworkResultsContainers {
 
 /// Result type for the [List Networks API](../struct.Docker.html#method.list_networks)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ListNetworksResults {
     pub name: String,
@@ -238,7 +238,7 @@ pub struct ListNetworksResults {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct ListNetworksOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -275,7 +275,7 @@ impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a st
 
 /// Network configuration used in the [Connect Network API](../struct.Docker.html#method.connect_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -288,7 +288,7 @@ where
 
 /// Configuration for a network endpoint.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct EndpointSettings<T>
 where
     T: AsRef<str> + Eq + Hash,
@@ -331,7 +331,6 @@ where
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
 pub struct EndpointIPAMConfig<T>
 where
@@ -347,7 +346,7 @@ where
 
 /// Network configuration used in the [Disconnect Network API](../struct.Docker.html#method.disconnect_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
     T: AsRef<str>,
@@ -419,7 +418,7 @@ impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a 
 
 /// Result type for the [Prune Networks API](../struct.Docker.html#method.prune_networks)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneNetworksResults {
     pub networks_deleted: Option<Vec<String>>,
