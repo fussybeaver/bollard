@@ -112,7 +112,12 @@ fn main() {
             }),
             None,
         )
-        .and_then(move |(docker, _)| {
+        .and_then(move |(docker, stream)| 
+            stream.and_then(|l| {
+                println!("{:?}", l);
+                Ok(l)
+            }).collect().map(|_| docker)
+        ).and_then(|docker| {
             docker.create_container(
                 Some(CreateContainerOptions { name: "zookeeper" }),
                 zookeeper_config,
