@@ -95,7 +95,11 @@ impl<'a> Uri<'a> where {
                     .as_ref()
                     .to_string_lossy()
                     .as_bytes()
-                    .write_hex(&mut host)?;
+                    .write_hex(&mut host)
+                    .map_err(|e| StrFmtError {
+                        content: socket.as_ref().to_string_lossy().into_owned(),
+                        err: e,
+                    })?;
                 Ok(host)
             }
         }
