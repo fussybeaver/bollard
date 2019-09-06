@@ -2,10 +2,6 @@ use std::cmp;
 use std::env;
 use std::fmt;
 #[cfg(any(feature = "ssl", feature = "tls"))]
-use std::fs::File;
-#[cfg(any(feature = "ssl", feature = "tls"))]
-use std::io::prelude::*;
-#[cfg(any(feature = "ssl", feature = "tls"))]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::atomic::AtomicUsize;
@@ -16,7 +12,6 @@ use std::time::{Duration, Instant};
 use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
-//use failure::Error;
 use futures::future::{self, result};
 use futures::Stream;
 use http::header::CONTENT_TYPE;
@@ -43,14 +38,14 @@ use tokio_codec::FramedRead;
 use container::LogOutput;
 use either::EitherResponse;
 use errors::Error;
-#[cfg(feature = "openssl")]
-use errors::ErrorKind::NoCertPathError;
 use errors::ErrorKind::{
     APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
     DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
     HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
     RequestTimeoutError, StrParseError,
 };
+#[cfg(feature = "openssl")]
+use errors::ErrorKind::{NoCertPathError, SSLError};
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
 use read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
@@ -353,17 +348,25 @@ impl Docker {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
 
-        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
+        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
-        ssl_connector_builder.set_ca_file(ssl_ca)?;
-        ssl_connector_builder.set_certificate_file(ssl_cert, SslFiletype::PEM)?;
-        ssl_connector_builder.set_private_key_file(ssl_key, SslFiletype::PEM)?;
+        ssl_connector_builder
+            .set_ca_file(ssl_ca)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        ssl_connector_builder
+            .set_certificate_file(ssl_cert, SslFiletype::PEM)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        ssl_connector_builder
+            .set_private_key_file(ssl_key, SslFiletype::PEM)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
         let mut http_connector = HttpConnector::new(num_threads);
         http_connector.enforce_http(false);
 
         let https_connector: HttpsConnector<HttpConnector> =
-            HttpsConnector::with_connector(http_connector, ssl_connector_builder)?;
+            HttpsConnector::with_connector(http_connector, ssl_connector_builder)
+                .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);

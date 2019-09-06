@@ -127,6 +127,13 @@ pub enum ErrorKind {
         /// The original error emitted.
         err: tokio_timer::timeout::Error<hyper::Error>,
     },
+    /// Error emitted when an SSL context fails to configure.
+    #[cfg(feature = "openssl")]
+    #[fail(display = "SSL error: {:?}", err)]
+    SSLError {
+        /// The original error emitted.
+        err: openssl::error::ErrorStack,
+    },
 }
 
 impl Display for Error {
