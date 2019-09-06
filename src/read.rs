@@ -53,7 +53,6 @@ impl Decoder for NewlineLogOutputDecoder {
                         message: String::new(),
                     })),
                     1 => from_utf8(&slice[8..]).map(|s| {
-                        println!("{}", s);
                         Some(LogOutput::StdOut {
                             message: s.to_string(),
                         })
@@ -69,7 +68,6 @@ impl Decoder for NewlineLogOutputDecoder {
                     _ =>
                     // `start_exec` API on unix socket will emit values without a header
                     {
-                        println!("{}", from_utf8(&slice)?);
                         Ok(Some(LogOutput::Console {
                             message: from_utf8(&slice)?.to_string(),
                         }))
