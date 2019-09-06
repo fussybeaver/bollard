@@ -1,7 +1,8 @@
-use failure::Error;
 use futures::Poll;
 use futures::{future, Future, Stream};
 use hyper::{Body, Response};
+
+use errors::Error;
 
 // https://github.com/rust-lang-nursery/futures-rs/pull/756
 #[derive(Debug)]

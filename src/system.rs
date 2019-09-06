@@ -1,6 +1,5 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 use arrayvec::ArrayVec;
-use failure::Error;
 use http::request::Builder;
 use hyper::rt::Future;
 use hyper::{Body, Method};
@@ -8,6 +7,7 @@ use hyper::{Body, Method};
 use super::{Docker, DockerChain};
 #[cfg(test)]
 use docker::API_DEFAULT_VERSION;
+use errors::Error;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]

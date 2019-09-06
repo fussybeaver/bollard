@@ -1,4 +1,3 @@
-use failure::Error;
 #[cfg(windows)]
 use hex::FromHex;
 use hex::ToHex;
@@ -11,6 +10,8 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 
 use docker::{ClientType, ClientVersion};
+use errors::Error;
+use errors::ErrorKind::StrFmtError;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -80,7 +81,11 @@ impl<'a> Uri<'a> where {
                     .as_ref()
                     .to_string_lossy()
                     .as_bytes()
-                    .write_hex(&mut host)?;
+                    .write_hex(&mut host)
+                    .map_err(|e| StrFmtError {
+                        content: socket.as_ref().to_string_lossy().into_owned(),
+                        err: e,
+                    })?;
                 Ok(host)
             }
             #[cfg(windows)]

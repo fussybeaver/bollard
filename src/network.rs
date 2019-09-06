@@ -1,7 +1,6 @@
 //! Network API: Networks are user-defined networks that containers can be attached to.
 
 use arrayvec::ArrayVec;
-use failure::Error;
 use http::request::Builder;
 use hyper::rt::Future;
 use hyper::{Body, Method};
@@ -16,6 +15,8 @@ use super::{Docker, DockerChain};
 #[cfg(test)]
 use docker::API_DEFAULT_VERSION;
 use docker::{FALSE_STR, TRUE_STR};
+use errors::Error;
+use errors::ErrorKind::JsonSerializeError;
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -268,7 +269,8 @@ impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a st
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)?,
+            serde_json::to_string(&self.filters)
+                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
         )]))
     }
 }
@@ -411,7 +413,8 @@ impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a 
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)?,
+            serde_json::to_string(&self.filters)
+                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
         )]))
     }
 }
