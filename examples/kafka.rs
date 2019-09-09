@@ -1,7 +1,6 @@
 //! This example will spin up Zookeeper and two Kafka brokers asynchronously.
 
 extern crate bollard;
-extern crate failure;
 extern crate futures;
 extern crate hyper;
 extern crate serde;
@@ -10,10 +9,10 @@ extern crate tokio;
 use bollard::container::{
     Config, CreateContainerOptions, HostConfig, LogOutput, LogsOptions, StartContainerOptions,
 };
+use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
 use bollard::{Docker, DockerChain};
 
-use failure::Error;
 use serde::ser::Serialize;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;

@@ -3,7 +3,6 @@
 use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use futures::{stream, Stream};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
@@ -22,6 +21,8 @@ use super::{Docker, DockerChain};
 use docker::API_DEFAULT_VERSION;
 use docker::{FALSE_STR, TRUE_STR};
 use either::EitherStream;
+use errors::Error;
+use errors::ErrorKind::JsonSerializeError;
 use network::EndpointIPAMConfig;
 
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
@@ -107,7 +108,10 @@ where
                     .unwrap_or_else(|| String::new()),
             ),
             ("size", self.size.to_string()),
-            ("filters", serde_json::to_string(&self.filters)?),
+            (
+                "filters",
+                serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
+            ),
         ]))
     }
 }
@@ -1623,7 +1627,8 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a s
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)?,
+            serde_json::to_string(&self.filters)
+                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
         )]))
     }
 }

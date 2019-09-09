@@ -1,7 +1,6 @@
 //! Exec API: Run new commands inside running containers
 
 use arrayvec::ArrayVec;
-use failure::Error;
 use futures::{stream, Stream};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
@@ -16,6 +15,7 @@ use docker::API_DEFAULT_VERSION;
 use either::EitherStream;
 
 use container::LogOutput;
+use errors::Error;
 
 /// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

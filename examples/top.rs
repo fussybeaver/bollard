@@ -1,11 +1,11 @@
 //! Run top asynchronously across several docker containers in parallel
 extern crate bollard;
-extern crate failure;
 extern crate futures;
 extern crate hyper;
 extern crate tokio;
 
 use bollard::container::{APIContainers, ListContainersOptions, TopOptions, TopResult};
+use bollard::errors::Error;
 use bollard::{Docker, DockerChain};
 
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ fn flatten<T>(lst: Vec<Option<T>>) -> Vec<T> {
 fn top_processes(
     client: DockerChain,
     container: &APIContainers,
-) -> impl Future<Item = Option<(String, (DockerChain, TopResult))>, Error = failure::Error> {
+) -> impl Future<Item = Option<(String, (DockerChain, TopResult))>, Error = Error> {
     let name = container.id.to_owned();
     client
         .top_processes(&container.id, Some(TopOptions { ps_args: "ef" }))
@@ -78,13 +78,13 @@ fn main() {
                     if let Some((name, (_, result))) = opt {
                         hashmap.insert(name, result.processes.get(0).unwrap().to_vec());
                     }
-                    future::ok::<_, failure::Error>(hashmap)
+                    future::ok::<_, Error>(hashmap)
                 })
             })).fold(HashMap::new(), |mut hashmap, hsh| {
                 for (name, result) in hsh {
                     hashmap.insert(name, result);
                 }
-                future::ok::<_, failure::Error>(hashmap)
+                future::ok::<_, Error>(hashmap)
             })
         })
         .flatten()

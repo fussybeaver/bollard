@@ -1,5 +1,4 @@
 use bytes::BytesMut;
-use failure::Error;
 use futures::{Async, Stream};
 use hyper::Chunk;
 use serde::de::DeserializeOwned;
@@ -15,7 +14,8 @@ use tokio_io::AsyncRead;
 
 use container::LogOutput;
 
-use errors::JsonDataError;
+use errors::Error;
+use errors::ErrorKind::{JsonDataError, JsonDeserializeError, StrParseError};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {}
@@ -69,11 +69,25 @@ impl Decoder for NewlineLogOutputDecoder {
                     // `start_exec` API on unix socket will emit values without a header
                     {
                         Ok(Some(LogOutput::Console {
-                            message: from_utf8(&slice)?.to_string(),
+                            message: from_utf8(&slice)
+                                .map_err::<Error, _>(|e| {
+                                    StrParseError {
+                                        content: hex::encode(slice.to_owned()),
+                                        err: e,
+                                    }
+                                    .into()
+                                })?
+                                .to_string(),
                         }))
                     }
                 }
-                .map_err(|e| e.into())
+                .map_err(|e| {
+                    StrParseError {
+                        content: hex::encode(slice.to_owned()),
+                        err: e,
+                    }
+                    .into()
+                })
             }
         } else {
             debug!("NewlineLogOutputDecoder returning due to an empty line");
@@ -81,33 +95,6 @@ impl Decoder for NewlineLogOutputDecoder {
         }
     }
 }
-
-/*
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct NewlineStringDecoder {}
-impl NewlineStringDecoder {
-    pub(crate) fn new() -> NewlineStringDecoder {
-        NewlineStringDecoder {}
-    }
-}
-
-impl Decoder for NewlineStringDecoder {
-    type Item = String;
-    type Error = Error;
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let nl_index = src.iter().position(|b| *b == b'\n');
-
-        if let Some(pos) = nl_index {
-            let slice = src.split_to(pos + 1);
-            let slice = &slice[..slice.len() - 1];
-            Ok(Some(std::str::from_utf8(slice)?.to_owned()))
-        } else {
-            debug!("NewlineStringDecoder returning due to an empty line");
-            Ok(None)
-        }
-    }
-}
-*/
 
 #[derive(Debug)]
 pub(crate) struct JsonLineDecoder<T> {
@@ -136,13 +123,19 @@ where
 
             debug!(
                 "Decoding JSON line from stream: {}",
-                ::std::str::from_utf8(&slice).unwrap()
+                from_utf8(&slice).unwrap()
             );
 
             match serde_json::from_slice(slice) {
                 Ok(json) => Ok(json),
-                Err(ref e) if e.is_data() => ::std::str::from_utf8(&slice)
-                    .map_err(|e| e.into())
+                Err(ref e) if e.is_data() => from_utf8(&slice)
+                    .map_err(|e| {
+                        StrParseError {
+                            content: hex::encode(slice.to_owned()),
+                            err: e,
+                        }
+                        .into()
+                    })
                     .and_then(|content| {
                         Err(JsonDataError {
                             message: e.to_string(),
@@ -151,7 +144,13 @@ where
                         }
                         .into())
                     }),
-                Err(e) => Err(e.into()),
+                Err(e) => Err(JsonDeserializeError {
+                    content: from_utf8(slice)
+                        .map(|s| s.to_owned())
+                        .unwrap_or_else(|e| format!("{:?}", e)),
+                    err: e,
+                }
+                .into()),
             }
         } else {
             Ok(None)

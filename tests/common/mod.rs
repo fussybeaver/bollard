@@ -1,7 +1,6 @@
 extern crate failure;
 extern crate futures;
 
-use self::failure::Error;
 use self::futures::future;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
@@ -11,6 +10,7 @@ use std::collections::HashMap;
 
 use bollard::auth::DockerCredentials;
 use bollard::container::*;
+use bollard::errors::Error;
 use bollard::image::*;
 use bollard::DockerChain;
 

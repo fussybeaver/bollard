@@ -2,10 +2,6 @@ use std::cmp;
 use std::env;
 use std::fmt;
 #[cfg(any(feature = "ssl", feature = "tls"))]
-use std::fs::File;
-#[cfg(any(feature = "ssl", feature = "tls"))]
-use std::io::prelude::*;
-#[cfg(any(feature = "ssl", feature = "tls"))]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::atomic::AtomicUsize;
@@ -16,7 +12,6 @@ use std::time::{Duration, Instant};
 use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
-use failure::Error;
 use futures::future::{self, result};
 use futures::Stream;
 use http::header::CONTENT_TYPE;
@@ -42,11 +37,15 @@ use tokio_codec::FramedRead;
 
 use container::LogOutput;
 use either::EitherResponse;
-use errors::{
+use errors::Error;
+use errors::ErrorKind::{
     APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
     DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
-    JsonDataError,
+    HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
+    RequestTimeoutError, StrParseError,
 };
+#[cfg(feature = "openssl")]
+use errors::ErrorKind::{NoCertPathError, SSLError};
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
 use read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
@@ -87,13 +86,11 @@ pub(crate) const FALSE_STR: &'static str = "false";
 /// files.
 #[cfg(any(feature = "ssl", feature = "tls"))]
 pub fn default_cert_path() -> Result<PathBuf, Error> {
-    use errors::NoCertPathError;
-
     let from_env = env::var("DOCKER_CERT_PATH").or_else(|_| env::var("DOCKER_CONFIG"));
     if let Ok(ref path) = from_env {
         Ok(Path::new(path).to_owned())
     } else {
-        let home = dirs::home_dir().ok_or_else(|| NoCertPathError {})?;
+        let home = dirs::home_dir().ok_or_else(|| NoCertPathError)?;
         Ok(home.join(".docker"))
     }
 }
@@ -351,17 +348,25 @@ impl Docker {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
 
-        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
+        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
-        ssl_connector_builder.set_ca_file(ssl_ca)?;
-        ssl_connector_builder.set_certificate_file(ssl_cert, SslFiletype::PEM)?;
-        ssl_connector_builder.set_private_key_file(ssl_key, SslFiletype::PEM)?;
+        ssl_connector_builder
+            .set_ca_file(ssl_ca)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        ssl_connector_builder
+            .set_certificate_file(ssl_cert, SslFiletype::PEM)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        ssl_connector_builder
+            .set_private_key_file(ssl_key, SslFiletype::PEM)
+            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
         let mut http_connector = HttpConnector::new(num_threads);
         http_connector.enforce_http(false);
 
         let https_connector: HttpsConnector<HttpConnector> =
-            HttpsConnector::with_connector(http_connector, ssl_connector_builder)?;
+            HttpsConnector::with_connector(http_connector, ssl_connector_builder)
+                .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);
@@ -922,7 +927,11 @@ impl Docker {
     ) -> impl Stream<Item = Chunk, Error = Error> {
         self.process_request(req)
             .into_stream()
-            .map(|response| response.into_body().from_err())
+            .map(|response| {
+                response
+                    .into_body()
+                    .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into())
+            })
             .flatten()
     }
 
@@ -955,7 +964,7 @@ impl Docker {
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }
-        .map_err(|e| e.into())
+        .map_err(|e| JsonSerializeError { err: e }.into())
         .map(|payload| {
             debug!("{}", payload.clone().unwrap_or_else(String::new));
             payload
@@ -1106,31 +1115,39 @@ impl Docker {
                 Ok(builder
                     .uri(request_uri)
                     .header(CONTENT_TYPE, "application/json")
-                    .body(body)?)
+                    .body(body)
+                    .map_err::<Error, _>(|e| {
+                        HttpClientError {
+                            builder: format!("{:?}", builder),
+                            err: e,
+                        }
+                        .into()
+                    })?)
             })
     }
 
     fn execute_request(
         transport: Arc<Transport>,
-        request: Request<Body>,
+        req: Request<Body>,
         timeout: u64,
     ) -> impl Future<Item = Response<Body>, Error = Error> {
         let now = Instant::now();
 
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
-            Transport::Http { ref client } => client.request(request),
+            Transport::Http { ref client } => client.request(req),
             #[cfg(feature = "openssl")]
-            Transport::Https { ref client } => client.request(request),
+            Transport::Https { ref client } => client.request(req),
             #[cfg(feature = "tls")]
-            Transport::Tls { ref client } => client.request(request),
+            Transport::Tls { ref client } => client.request(req),
             #[cfg(unix)]
-            Transport::Unix { ref client } => client.request(request),
+            Transport::Unix { ref client } => client.request(req),
             #[cfg(windows)]
-            Transport::NamedPipe { ref client } => client.request(request),
-            Transport::HostToReply { ref client } => client.request(request),
+            Transport::NamedPipe { ref client } => client.request(req),
+            Transport::HostToReply { ref client } => client.request(req),
         };
-        Timeout::new_at(request, now + Duration::from_secs(timeout)).from_err()
+        Timeout::new_at(request, now + Duration::from_secs(timeout))
+            .map_err(|e| RequestTimeoutError { err: e }.into())
     }
 
     fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = T, Error = Error>
@@ -1138,7 +1155,10 @@ impl Docker {
         T: DeserializeOwned,
     {
         FramedRead::new(
-            StreamReader::new(res.into_body().from_err()),
+            StreamReader::new(
+                res.into_body()
+                    .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into()),
+            ),
             JsonLineDecoder::new(),
         )
     }
@@ -1147,7 +1167,10 @@ impl Docker {
         res: Response<Body>,
     ) -> impl Stream<Item = LogOutput, Error = Error> {
         FramedRead::new(
-            StreamReader::new(res.into_body().from_err()),
+            StreamReader::new(
+                res.into_body()
+                    .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into()),
+            ),
             NewlineLogOutputDecoder::new(),
         )
         .from_err()
@@ -1160,7 +1183,7 @@ impl Docker {
             .on_upgrade()
             .into_stream()
             .map(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
-            .map_err::<Error, _>(|e: hyper::Error| e.into())
+            .map_err::<Error, _>(|e| HyperResponseError { err: e }.into())
             .flatten()
     }
 
@@ -1168,8 +1191,16 @@ impl Docker {
         response
             .into_body()
             .concat2()
-            .from_err()
-            .and_then(|body| from_utf8(&body).map(|x| x.to_owned()).map_err(|e| e.into()))
+            .map_err(|e| HyperResponseError { err: e }.into())
+            .and_then(|body| {
+                from_utf8(&body).map(|x| x.to_owned()).map_err(|e| {
+                    StrParseError {
+                        content: hex::encode(body.to_owned()),
+                        err: e,
+                    }
+                    .into()
+                })
+            })
     }
 
     fn decode_response<T>(response: Response<Body>) -> impl Future<Item = T, Error = Error>
@@ -1187,7 +1218,11 @@ impl Docker {
                     }
                     .into()
                 } else {
-                    e.into()
+                    JsonDeserializeError {
+                        content: contents.to_owned(),
+                        err: e,
+                    }
+                    .into()
                 }
             })
         })
