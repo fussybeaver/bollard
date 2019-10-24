@@ -7,13 +7,12 @@ extern crate tokio_threadpool;
 extern crate tokio_timer;
 
 use bollard::system::Version;
-use bollard::{ClientVersion, Docker, API_DEFAULT_VERSION};
+use bollard::{ClientVersion, Docker};
 use futures::Async;
 use hyper::rt::Future;
 use tokio::executor::thread_pool;
 use tokio::reactor;
 use tokio::runtime::Runtime;
-use tokio_threadpool::ThreadPool;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

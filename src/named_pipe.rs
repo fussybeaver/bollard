@@ -296,7 +296,9 @@ impl Future for ConnectorConnectFuture {
                 }
 
                 ConnectorConnectFuture::Connect(f) => match f.poll() {
-                    Ok(Async::Ready(stream)) => return Ok(Async::Ready((stream, Connected::new()))),
+                    Ok(Async::Ready(stream)) => {
+                        return Ok(Async::Ready((stream, Connected::new())))
+                    }
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Err(err) => return Err(err),
                 },

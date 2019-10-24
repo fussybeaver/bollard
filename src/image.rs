@@ -14,14 +14,14 @@ use serde::Serialize;
 use serde_json;
 
 use super::{Docker, DockerChain};
-use auth::DockerCredentials;
-use container::{Config, GraphDriver};
+use crate::auth::DockerCredentials;
+use crate::container::{Config, GraphDriver};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use either::EitherStream;
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::either::EitherStream;
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -2137,7 +2137,7 @@ impl DockerChain {
 mod tests {
 
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

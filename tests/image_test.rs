@@ -26,7 +26,7 @@ use std::io::Write;
 
 #[macro_use]
 pub mod common;
-use common::*;
+use crate::common::*;
 
 fn create_image_test(docker: Docker) {
     let rt = Runtime::new().unwrap();

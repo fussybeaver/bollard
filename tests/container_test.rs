@@ -20,7 +20,7 @@ use std::io::Write;
 
 #[macro_use]
 pub mod common;
-use common::*;
+use crate::common::*;
 
 fn list_containers_test(docker: Docker) {
     let image = move || {

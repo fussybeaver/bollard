@@ -12,6 +12,7 @@ repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard"
 readme = "README.md"
 keywords = ["docker"]
+edition = "2018"
 
 [features]
 # Enable OpenSSL both directly and for Hyper

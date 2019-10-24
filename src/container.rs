@@ -18,12 +18,12 @@ use std::hash::Hash;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use either::EitherStream;
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
-use network::EndpointIPAMConfig;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::either::EitherStream;
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
+use crate::network::EndpointIPAMConfig;
 
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
 ///
@@ -1136,7 +1136,7 @@ pub enum LogOutput {
 }
 
 impl fmt::Display for LogOutput {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             LogOutput::StdErr { message } => write!(f, "{}", message),
             LogOutput::StdOut { message } => write!(f, "{}", message),
@@ -1156,7 +1156,7 @@ pub struct Change {
 }
 
 impl fmt::Display for Change {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             0 => write!(f, "C {}", self.path),
             1 => write!(f, "A {}", self.path),
@@ -3636,7 +3636,7 @@ impl DockerChain {
 mod tests {
 
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

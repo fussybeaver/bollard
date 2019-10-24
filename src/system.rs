@@ -6,8 +6,8 @@ use hyper::{Body, Method};
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use errors::Error;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::errors::Error;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]
@@ -140,7 +140,7 @@ impl DockerChain {
 mod tests {
 
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

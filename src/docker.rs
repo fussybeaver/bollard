@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::hyper_mock::HostToReplyConnector;
 use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
@@ -19,7 +20,6 @@ use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::rt::Future;
 use hyper::{self, Body, Chunk, Client, Method, Request, Response, StatusCode};
-use hyper_mock::HostToReplyConnector;
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
@@ -35,22 +35,22 @@ use openssl::ssl::{SslFiletype, SslMethod};
 use tokio::timer::Timeout;
 use tokio_codec::FramedRead;
 
-use container::LogOutput;
-use either::EitherResponse;
-use errors::Error;
-use errors::ErrorKind::{
+use crate::container::LogOutput;
+use crate::either::EitherResponse;
+use crate::errors::Error;
+use crate::errors::ErrorKind::{
     APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
     DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
     HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
     RequestTimeoutError, StrParseError,
 };
+use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
+use crate::system::Version;
+use crate::uri::Uri;
 #[cfg(feature = "openssl")]
 use errors::ErrorKind::{NoCertPathError, SSLError};
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
-use read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
-use system::Version;
-use uri::Uri;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -137,7 +137,7 @@ pub(crate) enum Transport {
 }
 
 impl fmt::Debug for Transport {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Transport::Http { .. } => write!(f, "HTTP"),
             #[cfg(feature = "openssl")]

@@ -12,7 +12,7 @@ use tokio::runtime::Runtime;
 
 #[macro_use]
 pub mod common;
-use common::*;
+use crate::common::*;
 
 fn start_exec_test(docker: Docker) {
     let rt = Runtime::new().unwrap();

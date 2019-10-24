@@ -12,10 +12,10 @@ use std::{
 use tokio_codec::Decoder;
 use tokio_io::AsyncRead;
 
-use container::LogOutput;
+use crate::container::LogOutput;
 
-use errors::Error;
-use errors::ErrorKind::{JsonDataError, JsonDeserializeError, StrParseError};
+use crate::errors::Error;
+use crate::errors::ErrorKind::{JsonDataError, JsonDeserializeError, StrParseError};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {}

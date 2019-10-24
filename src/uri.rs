@@ -9,9 +9,9 @@ use url::Url;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 
-use docker::{ClientType, ClientVersion};
-use errors::Error;
-use errors::ErrorKind::StrFmtError;
+use crate::docker::{ClientType, ClientVersion};
+use crate::errors::Error;
+use crate::errors::ErrorKind::StrFmtError;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -24,7 +24,7 @@ impl<'a> Into<HyperUri> for Uri<'a> {
     }
 }
 
-impl<'a> Uri<'a> where {
+impl<'a> Uri<'a> {
     pub(crate) fn parse<O, K, V>(
         socket: &'a str,
         client_type: &ClientType,
