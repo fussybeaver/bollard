@@ -122,11 +122,8 @@ pub enum ErrorKind {
         err: hyper::Error,
     },
     /// Error emitted when a request times out.
-    #[fail(display = "Timeout error: {:?}", err)]
-    RequestTimeoutError {
-        /// The original error emitted.
-        err: tokio_timer::timeout::Error<hyper::Error>,
-    },
+    #[fail(display = "Timeout error")]
+    RequestTimeoutError,
     /// Error emitted when an SSL context fails to configure.
     #[cfg(feature = "openssl")]
     #[fail(display = "SSL error: {:?}", err)]

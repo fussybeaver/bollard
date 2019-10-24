@@ -1,5 +1,4 @@
-use futures::Poll;
-use futures::{future, Future, Stream};
+use futures_core::Stream;
 use hyper::{Body, Response};
 
 use crate::errors::Error;

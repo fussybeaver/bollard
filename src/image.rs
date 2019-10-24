@@ -3,12 +3,10 @@ use arrayvec::ArrayVec;
 use base64;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use futures::future;
-use futures::future::Either;
-use futures::{stream, Stream};
+use futures_core::Stream;
+use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
@@ -19,12 +17,12 @@ use crate::container::{Config, GraphDriver};
 #[cfg(test)]
 use crate::docker::API_DEFAULT_VERSION;
 use crate::docker::{FALSE_STR, TRUE_STR};
-use crate::either::EitherStream;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::Hash;
 
 /// Image type returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
@@ -980,10 +978,7 @@ impl Docker {
     ///
     /// docker.list_images(options);
     /// ```
-    pub fn list_images<T, K>(
-        &self,
-        options: Option<T>,
-    ) -> impl Future<Item = Vec<APIImages>, Error = Error>
+    pub async fn list_images<T, K>(&self, options: Option<T>) -> Result<Vec<APIImages>, Error>
     where
         T: ListImagesQueryParams<K>,
         K: AsRef<str>,
@@ -997,7 +992,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1042,7 +1037,7 @@ impl Docker {
         &self,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = CreateImageResults, Error = Error>
+    ) -> impl Stream<Item = Result<CreateImageResults, Error>>
     where
         T: CreateImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1062,10 +1057,10 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
-                EitherStream::A(self.process_into_stream(req))
+                self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                EitherStream::B(future::err(JsonSerializeError { err: e }.into()).into_stream())
+                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
             }
         }
     }
@@ -1094,7 +1089,7 @@ impl Docker {
     ///
     /// docker.inspect_image("hello-world");
     /// ```
-    pub fn inspect_image(&self, image_name: &str) -> impl Future<Item = Image, Error = Error> {
+    pub async fn inspect_image(&self, image_name: &str) -> Result<Image, Error> {
         let url = format!("/images/{}/json", image_name);
 
         let req = self.build_request::<_, String, String>(
@@ -1104,7 +1099,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1139,10 +1134,7 @@ impl Docker {
     ///
     /// docker.prune_images(options);
     /// ```
-    pub fn prune_images<T, K>(
-        &self,
-        options: Option<T>,
-    ) -> impl Future<Item = PruneImagesResults, Error = Error>
+    pub async fn prune_images<T, K>(&self, options: Option<T>) -> Result<PruneImagesResults, Error>
     where
         T: PruneImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1156,7 +1148,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1182,10 +1174,7 @@ impl Docker {
     ///
     /// docker.image_history("hello-world");
     /// ```
-    pub fn image_history(
-        &self,
-        image_name: &str,
-    ) -> impl Future<Item = Vec<ImageHistory>, Error = Error> {
+    pub async fn image_history(&self, image_name: &str) -> Result<Vec<ImageHistory>, Error> {
         let url = format!("/images/{}/history", image_name);
 
         let req = self.build_request::<_, String, String>(
@@ -1195,7 +1184,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1234,10 +1223,7 @@ impl Docker {
     ///
     /// docker.search_images(search_options);
     /// ```
-    pub fn search_images<T, K>(
-        &self,
-        options: T,
-    ) -> impl Future<Item = Vec<APIImageSearch>, Error = Error>
+    pub async fn search_images<T, K>(&self, options: T) -> Result<Vec<APIImageSearch>, Error>
     where
         T: SearchImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1251,7 +1237,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1286,12 +1272,12 @@ impl Docker {
     ///
     /// docker.remove_image("hello-world", remove_options, None);
     /// ```
-    pub fn remove_image<T, K, V>(
+    pub async fn remove_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = Vec<RemoveImageResults>, Error = Error>
+    ) -> Result<Vec<RemoveImageResults>, Error>
     where
         T: RemoveImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1311,9 +1297,9 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
-                Either::A(self.process_into_value(req))
+                self.process_into_value(req).await
             }
-            Err(e) => Either::B(future::err(JsonSerializeError { err: e }.into())),
+            Err(e) => Err(JsonSerializeError { err: e }.into()),
         }
     }
 
@@ -1348,11 +1334,11 @@ impl Docker {
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
-    pub fn tag_image<T, K, V>(
+    pub async fn tag_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: TagImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1367,7 +1353,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1409,12 +1395,12 @@ impl Docker {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image<T, K, V>(
+    pub async fn push_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: PushImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1436,9 +1422,9 @@ impl Docker {
                     Ok(Body::empty()),
                 );
 
-                Either::A(self.process_into_unit(req))
+                self.process_into_unit(req).await
             }
-            Err(e) => Either::B(future::err(JsonSerializeError { err: e }.into())),
+            Err(e) => Err(JsonSerializeError { err: e }.into()),
         }
     }
 
@@ -1479,11 +1465,11 @@ impl Docker {
     ///
     /// docker.commit_container(options, config);
     /// ```
-    pub fn commit_container<T, K, V, Z>(
+    pub async fn commit_container<T, K, V, Z>(
         &self,
         options: T,
         config: Config<Z>,
-    ) -> impl Future<Item = CommitContainerResults, Error = Error>
+    ) -> Result<CommitContainerResults, Error>
     where
         T: CommitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1499,7 +1485,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1554,7 +1540,7 @@ impl Docker {
         options: T,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
-    ) -> impl Stream<Item = BuildImageResults, Error = Error>
+    ) -> impl Stream<Item = Result<BuildImageResults, Error>>
     where
         T: BuildImageQueryParams<K>,
         K: AsRef<str>,
@@ -1573,10 +1559,10 @@ impl Docker {
                     Ok(tar.unwrap_or_else(|| Body::empty())),
                 );
 
-                EitherStream::A(self.process_into_stream(req))
+                self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                EitherStream::B(future::err(JsonSerializeError { err: e }.into()).into_stream())
+                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
             }
         }
     }
@@ -1622,30 +1608,25 @@ impl DockerChain {
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image<T, K, V>(
+    pub fn create_image<'a, T: 'a, K: 'a, V: 'a>(
         self,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
     ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = CreateImageResults, Error = Error>,
-        ),
-        Error = Error,
-    >
+        Output = Result<
+            (
+                DockerChain,
+                impl Stream<Item = Result<CreateImageResults, Error>> + 'a,
+            ),
+            Error,
+        >,
+    > + 'a
     where
         T: CreateImageQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .create_image(options, credentials)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.create_image(options, credentials))
     }
 
     /// ---
@@ -1679,19 +1660,18 @@ impl DockerChain {
     ///
     /// docker.chain().tag_image("hello-world", tag_options);
     /// ```
-    pub fn tag_image<T, K, V>(
+    pub async fn tag_image<T, K, V>(
         self,
         image_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: TagImageQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .tag_image(image_name, options)
-            .map(|result| (self, result))
+        let r = self.inner.tag_image(image_name, options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1734,20 +1714,22 @@ impl DockerChain {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image<T, K, V>(
+    pub async fn push_image<T, K, V>(
         self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: PushImageQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
+        let r = self
+            .inner
             .push_image(image_name, options, credentials)
-            .map(|result| (self, result))
+            .await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1782,20 +1764,22 @@ impl DockerChain {
     ///
     /// docker.chain().remove_image("hello-world", remove_options, None);
     /// ```
-    pub fn remove_image<T, K, V>(
+    pub async fn remove_image<T, K, V>(
         self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain, Vec<RemoveImageResults>), Error = Error>
+    ) -> Result<(DockerChain, Vec<RemoveImageResults>), Error>
     where
         T: RemoveImageQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
+        let r = self
+            .inner
             .remove_image(image_name, options, credentials)
-            .map(|result| (self, result))
+            .await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1834,17 +1818,16 @@ impl DockerChain {
     ///
     /// docker.chain().search_images(search_options);
     /// ```
-    pub fn search_images<T, K>(
+    pub async fn search_images<T, K>(
         self,
         options: T,
-    ) -> impl Future<Item = (DockerChain, Vec<APIImageSearch>), Error = Error>
+    ) -> Result<(DockerChain, Vec<APIImageSearch>), Error>
     where
         T: SearchImagesQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
-            .search_images(options)
-            .map(|result| (self, result))
+        let r = self.inner.search_images(options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1872,13 +1855,9 @@ impl DockerChain {
     ///
     /// docker.chain().inspect_image("hello-world");
     /// ```
-    pub fn inspect_image(
-        self,
-        image_name: &str,
-    ) -> impl Future<Item = (DockerChain, Image), Error = Error> {
-        self.inner
-            .inspect_image(image_name)
-            .map(|result| (self, result))
+    pub async fn inspect_image(self, image_name: &str) -> Result<(DockerChain, Image), Error> {
+        let r = self.inner.inspect_image(image_name).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1918,15 +1897,16 @@ impl DockerChain {
     ///
     /// docker.chain().list_images(options);
     /// ```
-    pub fn list_images<T, K>(
+    pub async fn list_images<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<APIImages>), Error = Error>
+    ) -> Result<(DockerChain, Vec<APIImages>), Error>
     where
         T: ListImagesQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner.list_images(options).map(|result| (self, result))
+        let r = self.inner.list_images(options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1952,13 +1932,12 @@ impl DockerChain {
     ///
     /// docker.chain().image_history("hello-world");
     /// ```
-    pub fn image_history(
+    pub async fn image_history(
         self,
         image_name: &str,
-    ) -> impl Future<Item = (DockerChain, Vec<ImageHistory>), Error = Error> {
-        self.inner
-            .image_history(image_name)
-            .map(|result| (self, result))
+    ) -> Result<(DockerChain, Vec<ImageHistory>), Error> {
+        let r = self.inner.image_history(image_name).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -1993,17 +1972,16 @@ impl DockerChain {
     ///
     /// docker.chain().prune_images(options);
     /// ```
-    pub fn prune_images<T, K>(
+    pub async fn prune_images<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneImagesResults), Error = Error>
+    ) -> Result<(DockerChain, PruneImagesResults), Error>
     where
         T: PruneImagesQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
-            .prune_images(options)
-            .map(|result| (self, result))
+        let r = self.inner.prune_images(options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -2043,20 +2021,19 @@ impl DockerChain {
     ///
     /// docker.chain().commit_container(options, config);
     /// ```
-    pub fn commit_container<T, K, V, Z>(
+    pub async fn commit_container<T, K, V, Z>(
         self,
         options: T,
         config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain, CommitContainerResults), Error = Error>
+    ) -> Result<(DockerChain, CommitContainerResults), Error>
     where
         T: CommitContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
         Z: AsRef<str> + Eq + Hash + Serialize,
     {
-        self.inner
-            .commit_container(options, config)
-            .map(|result| (self, result))
+        let r = self.inner.commit_container(options, config).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -2106,30 +2083,25 @@ impl DockerChain {
     ///
     /// docker.build_image(options, None, Some(contents.into()));
     /// ```
-    pub fn build_image<T, K>(
+    pub fn build_image<'a, T: 'a, K: 'a>(
         self,
         options: T,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
     ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = BuildImageResults, Error = Error>,
-        ),
-        Error = Error,
-    >
+        Output = Result<
+            (
+                DockerChain,
+                impl Stream<Item = Result<BuildImageResults, Error>> + 'a,
+            ),
+            Error,
+        >,
+    > + 'a
     where
         T: BuildImageQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
-            .build_image(options, credentials, tar)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.build_image(options, credentials, tar))
     }
 }
 

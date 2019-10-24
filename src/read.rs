@@ -1,11 +1,14 @@
 use bytes::BytesMut;
-use futures::{Async, Stream};
+use futures_core::Stream;
 use hyper::Chunk;
+use pin_project::pin_project;
 use serde::de::DeserializeOwned;
 use serde_json;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{
     cmp,
-    io::{self, Read},
+    io::{self},
     marker::PhantomData,
     str::from_utf8,
 };
@@ -19,6 +22,7 @@ use crate::errors::ErrorKind::{JsonDataError, JsonDeserializeError, StrParseErro
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {}
+
 impl NewlineLogOutputDecoder {
     pub(crate) fn new() -> NewlineLogOutputDecoder {
         NewlineLogOutputDecoder {}
@@ -96,6 +100,7 @@ impl Decoder for NewlineLogOutputDecoder {
     }
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub(crate) struct JsonLineDecoder<T> {
     ty: PhantomData<T>,
@@ -172,7 +177,7 @@ pub(crate) struct StreamReader<S> {
 
 impl<S> StreamReader<S>
 where
-    S: Stream<Item = Chunk, Error = Error>,
+    S: Stream<Item = Result<Chunk, Error>>,
 {
     #[inline]
     pub(crate) fn new(stream: S) -> StreamReader<S> {
@@ -183,11 +188,11 @@ where
     }
 }
 
-impl<S> Read for StreamReader<S>
+impl<S> AsyncRead for StreamReader<S>
 where
-    S: Stream<Item = Chunk, Error = Error>,
+    S: Stream<Item = Result<Chunk, Error>>,
 {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn poll_read(self: Pin<&mut Self>, cx: Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
         loop {
             let ret;
 
@@ -207,27 +212,28 @@ where
                     }
                 }
 
-                ReadState::NotReady => match self.stream.poll() {
-                    Ok(Async::Ready(Some(chunk))) => {
+                ReadState::NotReady => match self.stream.poll(cx) {
+                    Poll::Ready(Some(Ok(chunk))) => {
                         self.state = ReadState::Ready(chunk, 0);
 
                         continue;
                     }
-                    Ok(Async::Ready(None)) => return Ok(0),
-                    Ok(Async::NotReady) => {
-                        return Err(io::ErrorKind::WouldBlock.into());
+                    Poll::Ready(None) => return Ok(0),
+                    Poll::Pending => {
+                        return Poll::Ready(Err(io::ErrorKind::WouldBlock.into()));
                     }
-                    Err(e) => {
-                        return Err(io::Error::new(io::ErrorKind::Other, e.to_string()));
+                    Poll::Ready(Some(Err(e))) => {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            e.to_string(),
+                        )));
                     }
                 },
             }
 
             self.state = ReadState::NotReady;
 
-            return Ok(ret);
+            return Poll::Ready(Ok(ret));
         }
     }
 }
-
-impl<S> AsyncRead for StreamReader<S> where S: Stream<Item = Chunk, Error = Error> {}

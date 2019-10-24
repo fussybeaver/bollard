@@ -3,10 +3,11 @@
 use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use futures::{stream, Stream};
+use futures_core::Stream;
+use futures_util::stream::StreamExt;
+use futures_util::try_stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Chunk, Method};
 use serde::Serialize;
 use serde_json;
@@ -14,13 +15,13 @@ use serde_json;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::hash::Hash;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
 use crate::docker::API_DEFAULT_VERSION;
 use crate::docker::{FALSE_STR, TRUE_STR};
-use crate::either::EitherStream;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 use crate::network::EndpointIPAMConfig;
@@ -1762,10 +1763,10 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub fn list_containers<T, K>(
+    pub async fn list_containers<T, K>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = Vec<APIContainers>, Error = Error>
+    ) -> Result<Vec<APIContainers>, Error>
     where
         T: ListContainersQueryParams<K, String>,
         K: AsRef<str>,
@@ -1779,7 +1780,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1818,11 +1819,11 @@ impl Docker {
     ///
     /// docker.create_container(options, config);
     /// ```
-    pub fn create_container<T, K, V, Z>(
+    pub async fn create_container<T, K, V, Z>(
         &self,
         options: Option<T>,
         config: Config<Z>,
-    ) -> impl Future<Item = CreateContainerResults, Error = Error>
+    ) -> Result<CreateContainerResults, Error>
     where
         T: CreateContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1838,7 +1839,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1866,11 +1867,11 @@ impl Docker {
     ///
     /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub fn start_container<T, K, V>(
+    pub async fn start_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: StartContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1885,7 +1886,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1916,11 +1917,11 @@ impl Docker {
     ///
     /// docker.stop_container("hello-world", options);
     /// ```
-    pub fn stop_container<T, K>(
+    pub async fn stop_container<T, K>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: StopContainerQueryParams<K>,
         K: AsRef<str>,
@@ -1934,7 +1935,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1969,11 +1970,11 @@ impl Docker {
     ///
     /// docker.remove_container("hello-world", options);
     /// ```
-    pub fn remove_container<T, K, V>(
+    pub async fn remove_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RemoveContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1988,7 +1989,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2026,7 +2027,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = WaitContainerResults, Error = Error>
+    ) -> impl Stream<Item = Result<WaitContainerResults, Error>>
     where
         T: WaitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2073,11 +2074,11 @@ impl Docker {
     ///
     /// docker.restart_container("postgres", options);
     /// ```
-    pub fn restart_container<T, K>(
+    pub async fn restart_container<T, K>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RestartContainerQueryParams<K>,
         K: AsRef<str>,
@@ -2091,7 +2092,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2122,11 +2123,11 @@ impl Docker {
     ///
     /// docker.inspect_container("hello-world", options);
     /// ```
-    pub fn inspect_container<T, K, V>(
+    pub async fn inspect_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = Container, Error = Error>
+    ) -> Result<Container, Error>
     where
         T: InspectContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2141,7 +2142,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2172,11 +2173,11 @@ impl Docker {
     ///
     /// docker.top_processes("fnichol/uhttpd", options);
     /// ```
-    pub fn top_processes<T, K, V>(
+    pub async fn top_processes<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = TopResult, Error = Error>
+    ) -> Result<TopResult, Error>
     where
         T: TopQueryParams<K, V>,
         K: AsRef<str>,
@@ -2191,7 +2192,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2231,7 +2232,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = LogOutput, Error = Error>
+    ) -> impl Stream<Item = Result<LogOutput, Error>>
     where
         T: LogsQueryParams<K>,
         K: AsRef<str>,
@@ -2271,10 +2272,10 @@ impl Docker {
     ///
     /// docker.container_changes("hello-world");
     /// ```
-    pub fn container_changes(
+    pub async fn container_changes(
         &self,
         container_name: &str,
-    ) -> impl Future<Item = Option<Vec<Change>>, Error = Error> {
+    ) -> Result<Option<Vec<Change>>, Error> {
         let url = format!("/containers/{}/changes", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2284,7 +2285,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2321,7 +2322,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Stats, Error = Error>
+    ) -> impl Stream<Item = Result<Stats, Error>>
     where
         T: StatsQueryParams<K, V>,
         K: AsRef<str>,
@@ -2368,11 +2369,11 @@ impl Docker {
     ///
     /// docker.kill_container("postgres", options);
     /// ```
-    pub fn kill_container<T, K, V>(
+    pub async fn kill_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: KillContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2387,7 +2388,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2422,11 +2423,11 @@ impl Docker {
     ///
     /// docker.update_container("postgres", config);
     /// ```
-    pub fn update_container(
+    pub async fn update_container(
         &self,
         container_name: &str,
         config: UpdateContainerOptions,
-    ) -> impl Future<Item = (), Error = Error> {
+    ) -> Result<(), Error> {
         let url = format!("/containers/{}/update", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2436,7 +2437,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2468,11 +2469,11 @@ impl Docker {
     ///
     /// docker.rename_container("hello-world", required);
     /// ```
-    pub fn rename_container<T, K, V>(
+    pub async fn rename_container<T, K, V>(
         &self,
         container_name: &str,
         options: T,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RenameContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2487,7 +2488,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2512,7 +2513,7 @@ impl Docker {
     ///
     /// docker.pause_container("postgres");
     /// ```
-    pub fn pause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
         let url = format!("/containers/{}/pause", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2522,7 +2523,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2547,7 +2548,7 @@ impl Docker {
     ///
     /// docker.unpause_container("postgres");
     /// ```
-    pub fn unpause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
         let url = format!("/containers/{}/unpause", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2557,7 +2558,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2593,10 +2594,10 @@ impl Docker {
     ///
     /// docker.prune_containers(options);
     /// ```
-    pub fn prune_containers<T, K>(
+    pub async fn prune_containers<T, K>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = PruneContainersResults, Error = Error>
+    ) -> Result<PruneContainersResults, Error>
     where
         T: PruneContainersQueryParams<K>,
         K: AsRef<str> + Eq + Hash,
@@ -2610,7 +2611,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2649,12 +2650,12 @@ impl Docker {
     ///
     /// docker.upload_to_container("my-container", options, contents.into());
     /// ```
-    pub fn upload_to_container<T, K, V>(
+    pub async fn upload_to_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
         tar: Body,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: UploadToContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2671,7 +2672,7 @@ impl Docker {
             Ok(tar),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2706,7 +2707,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Chunk, Error = Error>
+    ) -> impl Stream<Item = Result<Chunk, Error>>
     where
         T: DownloadFromContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2756,19 +2757,18 @@ impl DockerChain {
     ///
     /// docker.chain().kill_container("postgres", options);
     /// ```
-    pub fn kill_container<T, K, V>(
+    pub async fn kill_container<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: KillContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .kill_container(container_name, options)
-            .map(|result| (self, result))
+        let result = self.inner.kill_container(container_name, options).await?;
+        Ok((self, result))
     }
 
     /// ---
@@ -2804,19 +2804,18 @@ impl DockerChain {
     ///
     /// docker.chain().remove_container("hello-world", options);
     /// ```
-    pub fn remove_container<T, K, V>(
+    pub async fn remove_container<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: RemoveContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .remove_container(container_name, options)
-            .map(|result| (self, result))
+        let result = self.inner.remove_container(container_name, options).await?;
+        Ok((self, result))
     }
 
     /// ---
@@ -2857,20 +2856,19 @@ impl DockerChain {
     ///
     /// docker.chain().create_container(options, config);
     /// ```
-    pub fn create_container<T, K, V, Z>(
+    pub async fn create_container<T, K, V, Z>(
         self,
         options: Option<T>,
         config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain, CreateContainerResults), Error = Error>
+    ) -> Result<(DockerChain, CreateContainerResults), Error>
     where
         T: CreateContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
         Z: AsRef<str> + Eq + Hash + Serialize,
     {
-        self.inner
-            .create_container(options, config)
-            .map(|result| (self, result))
+        let r = self.inner.create_container(options, config).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -2899,19 +2897,18 @@ impl DockerChain {
     ///
     /// docker.chain().start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub fn start_container<T, K, V>(
+    pub async fn start_container<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: StartContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .start_container(container_name, options)
-            .map(|result| (self, result))
+        let r = self.inner.start_container(container_name, options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -2943,18 +2940,17 @@ impl DockerChain {
     ///
     /// docker.chain().stop_container("hello-world", options);
     /// ```
-    pub fn stop_container<T, K>(
+    pub async fn stop_container<T, K>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: StopContainerQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
-            .stop_container(container_name, options)
-            .map(|result| (self, result))
+        let r = self.inner.stop_container(container_name, options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -2993,17 +2989,16 @@ impl DockerChain {
     ///
     /// docker.chain().list_containers(options);
     /// ```
-    pub fn list_containers<T, K>(
+    pub async fn list_containers<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<APIContainers>), Error = Error>
+    ) -> Result<(DockerChain, Vec<APIContainers>), Error>
     where
         T: ListContainersQueryParams<K, String>,
         K: AsRef<str>,
     {
-        self.inner
-            .list_containers(options)
-            .map(|result| (self, result))
+        let r = self.inner.list_containers(options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3037,30 +3032,25 @@ impl DockerChain {
     ///
     /// docker.chain().wait_container("hello-world", options);
     /// ```
-    pub fn wait_container<T, K, V>(
+    pub fn wait_container<'a, T: 'a, K: 'a, V: 'a>(
         self,
         container_name: &str,
         options: Option<T>,
     ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = WaitContainerResults, Error = Error>,
-        ),
-        Error = Error,
-    >
+        Output = Result<
+            (
+                DockerChain,
+                impl Stream<Item = Result<WaitContainerResults, Error>> + 'a,
+            ),
+            Error,
+        >,
+    > + 'a
     where
         T: WaitContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .wait_container(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.wait_container(container_name, options))
     }
 
     /// ---
@@ -3092,19 +3082,21 @@ impl DockerChain {
     ///
     /// docker.chain().inspect_container("hello-world", options);
     /// ```
-    pub fn inspect_container<T, K, V>(
+    pub async fn inspect_container<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Container), Error = Error>
+    ) -> Result<(DockerChain, Container), Error>
     where
         T: InspectContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
+        let r = self
+            .inner
             .inspect_container(container_name, options)
-            .map(|result| (self, result))
+            .await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3137,18 +3129,20 @@ impl DockerChain {
     ///
     /// docker.chain().restart_container("postgres", options);
     /// ```
-    pub fn restart_container<T, K>(
+    pub async fn restart_container<T, K>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: RestartContainerQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
+        let r = self
+            .inner
             .restart_container(container_name, options)
-            .map(|result| (self, result))
+            .await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3180,19 +3174,18 @@ impl DockerChain {
     ///
     /// docker.chain().top_processes("fnichol/uhttpd", options);
     /// ```
-    pub fn top_processes<T, K, V>(
+    pub async fn top_processes<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, TopResult), Error = Error>
+    ) -> Result<(DockerChain, TopResult), Error>
     where
         T: TopQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .top_processes(container_name, options)
-            .map(|result| (self, result))
+        let r = self.inner.top_processes(container_name, options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3228,23 +3221,24 @@ impl DockerChain {
     ///
     /// docker.chain().logs("hello-world", options);
     /// ```
-    pub fn logs<T, K>(
+    pub fn logs<'a, T: 'a, K: 'a>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = LogOutput, Error = Error>), Error = Error>
+    ) -> impl Future<
+        Output = Result<
+            (
+                DockerChain,
+                impl Stream<Item = Result<LogOutput, Error>> + 'a,
+            ),
+            Error,
+        >,
+    > + 'a
     where
         T: LogsQueryParams<K>,
         K: AsRef<str>,
     {
-        self.inner
-            .logs(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.logs(container_name, options))
     }
 
     /// ---
@@ -3270,13 +3264,12 @@ impl DockerChain {
     ///
     /// docker.chain().container_changes("hello-world");
     /// ```
-    pub fn container_changes(
+    pub async fn container_changes(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain, Option<Vec<Change>>), Error = Error> {
-        self.inner
-            .container_changes(container_name)
-            .map(|result| (self, result))
+    ) -> Result<(DockerChain, Option<Vec<Change>>), Error> {
+        let r = self.inner.container_changes(container_name).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3309,24 +3302,19 @@ impl DockerChain {
     ///
     /// docker.chain().stats("hello-world", options);
     /// ```
-    pub fn stats<T, K, V>(
+    pub fn stats<'a, T: 'a, K: 'a, V: 'a>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Stats, Error = Error>), Error = Error>
+    ) -> impl Future<
+        Output = Result<(DockerChain, impl Stream<Item = Result<Stats, Error>> + 'a), Error>,
+    > + 'a
     where
         T: StatsQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .stats(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.stats(container_name, options))
     }
 
     /// ---
@@ -3362,14 +3350,13 @@ impl DockerChain {
     ///
     /// docker.chain().update_container("postgres", config);
     /// ```
-    pub fn update_container(
+    pub async fn update_container(
         self,
         container_name: &str,
         config: UpdateContainerOptions,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .update_container(container_name, config)
-            .map(|result| (self, result))
+    ) -> Result<(DockerChain, ()), Error> {
+        let r = self.inner.update_container(container_name, config).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3402,19 +3389,18 @@ impl DockerChain {
     ///
     /// docker.chain().rename_container("hello-world", required);
     /// ```
-    pub fn rename_container<T, K, V>(
+    pub async fn rename_container<T, K, V>(
         self,
         container_name: &str,
         options: T,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: RenameContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .rename_container(container_name, options)
-            .map(|result| (self, result))
+        let r = self.inner.rename_container(container_name, options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3441,13 +3427,9 @@ impl DockerChain {
     ///
     /// docker.chain().pause_container("postgres");
     /// ```
-    pub fn pause_container(
-        self,
-        container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .pause_container(container_name)
-            .map(|result| (self, result))
+    pub async fn pause_container(self, container_name: &str) -> Result<(DockerChain, ()), Error> {
+        let r = self.inner.pause_container(container_name).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3469,13 +3451,9 @@ impl DockerChain {
     ///
     /// docker.chain().unpause_container("postgres");
     /// ```
-    pub fn unpause_container(
-        self,
-        container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .unpause_container(container_name)
-            .map(|result| (self, result))
+    pub async fn unpause_container(self, container_name: &str) -> Result<(DockerChain, ()), Error> {
+        let r = self.inner.unpause_container(container_name).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3513,17 +3491,16 @@ impl DockerChain {
     ///
     /// docker.chain().prune_containers(options);
     /// ```
-    pub fn prune_containers<T, K>(
+    pub async fn prune_containers<T, K>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneContainersResults), Error = Error>
+    ) -> Result<(DockerChain, PruneContainersResults), Error>
     where
         T: PruneContainersQueryParams<K>,
         K: AsRef<str> + Eq + Hash,
     {
-        self.inner
-            .prune_containers(options)
-            .map(|result| (self, result))
+        let r = self.inner.prune_containers(options).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3564,20 +3541,22 @@ impl DockerChain {
     ///
     /// docker.chain().upload_to_container("my-container", options, contents.into());
     /// ```
-    pub fn upload_to_container<T, K, V>(
+    pub async fn upload_to_container<T, K, V>(
         self,
         container_name: &str,
         options: Option<T>,
         tar: Body,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: UploadToContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
+        let r = self
+            .inner
             .upload_to_container(container_name, options, tar)
-            .map(|result| (self, result))
+            .await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -3611,24 +3590,22 @@ impl DockerChain {
     ///
     /// docker.chain().download_from_container("my-container", options);
     /// ```
-    pub fn download_from_container<T, K, V>(
+    pub fn download_from_container<'a, T: 'a, K: 'a, V: 'a>(
         self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Chunk, Error = Error>), Error = Error>
+    ) -> impl Future<
+        Output = Result<(DockerChain, impl Stream<Item = Result<Chunk, Error>> + 'a), Error>,
+    > + 'a
     where
         T: DownloadFromContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .download_from_container(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(
+            self,
+            self.inner.download_from_container(container_name, options)
+        )
     }
 }
 
