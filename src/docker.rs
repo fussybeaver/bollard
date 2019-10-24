@@ -1,6 +1,7 @@
 use std::cmp;
 use std::env;
 use std::fmt;
+use std::future::Future;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
@@ -13,12 +14,14 @@ use crate::hyper_mock::HostToReplyConnector;
 use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
-use futures::future::{self, result};
-use futures::Stream;
+use futures_core::Stream;
+use futures_util::future::FutureExt;
+use futures_util::try_future::TryFutureExt;
+use futures_util::try_stream::TryStreamExt;
+use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
-use hyper::rt::Future;
 use hyper::{self, Body, Chunk, Client, Method, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
@@ -36,7 +39,6 @@ use tokio::timer::Timeout;
 use tokio_codec::FramedRead;
 
 use crate::container::LogOutput;
-use crate::either::EitherResponse;
 use crate::errors::Error;
 use crate::errors::ErrorKind::{
     APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
@@ -884,75 +886,80 @@ impl Docker {
     pub(crate) fn process_into_value<T>(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Future<Item = T, Error = Error>
+    ) -> impl Future<Output = Result<T, Error>>
     where
         T: DeserializeOwned,
     {
-        self.process_request(req).and_then(Docker::decode_response)
+        let fut = self.process_request(req);
+        async move {
+            let response = fut.await?;
+            Docker::decode_response(response).await
+        }
     }
 
     pub(crate) fn process_into_stream<T>(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = T, Error = Error>
+    ) -> impl Stream<Item = Result<T, Error>> + Unpin
     where
         T: DeserializeOwned,
     {
-        self.process_request(req)
-            .into_stream()
-            .map(Docker::decode_into_stream::<T>)
-            .flatten()
+        Box::pin(
+            self.process_request(req)
+                .map_ok(Docker::decode_into_stream::<T>)
+                .into_stream()
+                .try_flatten(),
+        )
     }
 
     pub(crate) fn process_into_stream_string(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = LogOutput, Error = Error> {
+    ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin {
         self.process_request(req)
+            .map_ok(Docker::decode_into_stream_string)
             .into_stream()
-            .map(Docker::decode_into_stream_string)
-            .flatten()
+            .try_flatten()
     }
 
     pub(crate) fn process_into_unit(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Future<Item = (), Error = Error> {
-        self.process_request(req).and_then(|_| Ok(()))
+    ) -> impl Future<Output = Result<(), Error>> {
+        let fut = self.process_request(req);
+        async move {
+            fut.await?;
+            Ok(())
+        }
     }
 
     pub(crate) fn process_into_body(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = Chunk, Error = Error> {
+    ) -> impl Stream<Item = Result<Chunk, Error>> + Unpin {
         self.process_request(req)
-            .into_stream()
-            .map(|response| {
+            .map_ok(|response| {
                 response
                     .into_body()
                     .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into())
             })
-            .flatten()
+            .into_stream()
+            .try_flatten()
     }
 
-    pub(crate) fn process_upgraded_stream_string(
+    pub(crate) fn process_upgraded_stream_string<'a>(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = LogOutput, Error = Error> {
-        self.process_request(req)
-            .into_stream()
-            .map(Docker::decode_into_upgraded_stream_string)
-            .flatten()
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
+        let fut = self.process_request(req);
+        stream::once(async move { fut.await.map(Docker::decode_into_upgraded_stream_string) })
+            .try_flatten()
     }
 
     pub(crate) fn transpose_option<T>(
         option: Option<Result<T, Error>>,
     ) -> Result<Option<T>, Error> {
-        match option {
-            Some(Ok(x)) => Ok(Some(x)),
-            Some(Err(e)) => Err(e),
-            None => Ok(None),
-        }
+        option.transpose()
     }
 
     pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
@@ -997,7 +1004,7 @@ impl Docker {
     ///     });
     /// # }
     /// ```
-    pub fn negotiate_version(self) -> impl Future<Item = Self, Error = Error> {
+    pub async fn negotiate_version(self) -> Result<Self, Error> {
         let req = self.build_request::<_, String, String>(
             "/version",
             Builder::new().method(Method::GET),
@@ -1005,87 +1012,82 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value::<Version>(req)
-            .and_then(move |res| {
-                let err_api_version = res.api_version.clone();
-                let server_version: ClientVersion = match res.api_version.into() {
-                    MaybeClientVersion::Some(client_version) => client_version,
-                    MaybeClientVersion::None => {
-                        return Err(APIVersionParseError {
-                            api_version: err_api_version,
-                        }
-                        .into())
-                    }
-                };
-                if server_version < self.client_version() {
-                    self.version
-                        .0
-                        .store(server_version.major_version, Ordering::Relaxed);
-                    self.version
-                        .1
-                        .store(server_version.minor_version, Ordering::Relaxed);
+        let res = self.process_into_value::<Version>(req).await?;
+
+        let err_api_version = res.api_version.clone();
+        let server_version: ClientVersion = match res.api_version.into() {
+            MaybeClientVersion::Some(client_version) => client_version,
+            MaybeClientVersion::None => {
+                return Err(APIVersionParseError {
+                    api_version: err_api_version,
                 }
-                Ok(self)
-            })
+                .into())
+            }
+        };
+        if server_version < self.client_version() {
+            self.version
+                .0
+                .store(server_version.major_version, Ordering::Relaxed);
+            self.version
+                .1
+                .store(server_version.minor_version, Ordering::Relaxed);
+        }
+        Ok(self)
     }
 
     fn process_request(
         &self,
-        req: Result<Request<Body>, Error>,
-    ) -> impl Future<Item = Response<Body>, Error = Error> {
+        request: Result<Request<Body>, Error>,
+    ) -> impl Future<Output = Result<Response<Body>, Error>> {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
-        result(req)
-            .and_then(move |request| Docker::execute_request(transport, request, timeout))
-            .and_then(|response| {
-                let status = response.status();
-                match status {
-                    // Status code 200 - 299
-                    s if s.is_success() => EitherResponse::A(future::ok(response)),
+        async move {
+            let request = request?;
+            let response = Docker::execute_request(transport, request, timeout).await?;
 
-                    StatusCode::SWITCHING_PROTOCOLS => EitherResponse::G(future::ok(response)),
+            let status = response.status();
+            match status {
+                // Status code 200 - 299
+                s if s.is_success() => Ok(response),
 
-                    // Status code 304: Not Modified
-                    StatusCode::NOT_MODIFIED => {
-                        EitherResponse::F(Docker::decode_into_string(response).and_then(
-                            |message| Err(DockerResponseNotModifiedError { message }.into()),
-                        ))
-                    }
+                StatusCode::SWITCHING_PROTOCOLS => Ok(response),
 
-                    // Status code 409: Conflict
-                    StatusCode::CONFLICT => {
-                        EitherResponse::E(Docker::decode_into_string(response).and_then(
-                            |message| Err(DockerResponseConflictError { message }.into()),
-                        ))
-                    }
-
-                    // Status code 400: Bad request
-                    StatusCode::BAD_REQUEST => {
-                        EitherResponse::D(Docker::decode_into_string(response).and_then(
-                            |message| Err(DockerResponseBadParameterError { message }.into()),
-                        ))
-                    }
-
-                    // Status code 404: Not Found
-                    StatusCode::NOT_FOUND => {
-                        EitherResponse::C(Docker::decode_into_string(response).and_then(
-                            |message| Err(DockerResponseNotFoundError { message }.into()),
-                        ))
-                    }
-
-                    // All other status codes
-                    _ => EitherResponse::B(Docker::decode_into_string(response).and_then(
-                        move |message| {
-                            Err(DockerResponseServerError {
-                                status_code: status.as_u16(),
-                                message,
-                            }
-                            .into())
-                        },
-                    )),
+                // Status code 304: Not Modified
+                StatusCode::NOT_MODIFIED => {
+                    let message = Docker::decode_into_string(response).await?;
+                    Err(DockerResponseNotModifiedError { message }.into())
                 }
-            })
+
+                // Status code 409: Conflict
+                StatusCode::CONFLICT => {
+                    let message = Docker::decode_into_string(response).await?;
+                    Err(DockerResponseConflictError { message }.into())
+                }
+
+                // Status code 400: Bad request
+                StatusCode::BAD_REQUEST => {
+                    let message = Docker::decode_into_string(response).await?;
+                    Err(DockerResponseBadParameterError { message }.into())
+                }
+
+                // Status code 404: Not Found
+                StatusCode::NOT_FOUND => {
+                    let message = Docker::decode_into_string(response).await?;
+                    Err(DockerResponseNotFoundError { message }.into())
+                }
+
+                // All other status codes
+                _ => {
+                    let message = Docker::decode_into_string(response).await?;
+                    Err(DockerResponseServerError {
+                        status_code: status.as_u16(),
+                        message,
+                    }
+                    .into())
+                }
+            }
+        }
     }
 
     pub(crate) fn build_request<O, K, V>(
@@ -1126,11 +1128,11 @@ impl Docker {
             })
     }
 
-    fn execute_request(
+    async fn execute_request(
         transport: Arc<Transport>,
         req: Request<Body>,
         timeout: u64,
-    ) -> impl Future<Item = Response<Body>, Error = Error> {
+    ) -> Result<Response<Body>, Error> {
         let now = Instant::now();
 
         // This is where we determine to which transport we issue the request.
@@ -1146,11 +1148,14 @@ impl Docker {
             Transport::NamedPipe { ref client } => client.request(req),
             Transport::HostToReply { ref client } => client.request(req),
         };
-        Timeout::new_at(request, now + Duration::from_secs(timeout))
-            .map_err(|e| RequestTimeoutError { err: e }.into())
+
+        match Timeout::new_at(request, now + Duration::from_secs(timeout)).await {
+            Ok(v) => Ok(v),
+            Err(e) => Err(RequestTimeoutError.into()),
+        }
     }
 
-    fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = T, Error = Error>
+    fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = Result<T, Error>>
     where
         T: DeserializeOwned,
     {
@@ -1165,7 +1170,7 @@ impl Docker {
 
     fn decode_into_stream_string(
         res: Response<Body>,
-    ) -> impl Stream<Item = LogOutput, Error = Error> {
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
         FramedRead::new(
             StreamReader::new(
                 res.into_body()
@@ -1178,53 +1183,53 @@ impl Docker {
 
     fn decode_into_upgraded_stream_string(
         res: Response<Body>,
-    ) -> impl Stream<Item = LogOutput, Error = Error> {
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
         res.into_body()
             .on_upgrade()
             .into_stream()
-            .map(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
+            .map_ok(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
             .map_err::<Error, _>(|e| HyperResponseError { err: e }.into())
-            .flatten()
+            .try_flatten()
     }
 
-    fn decode_into_string(response: Response<Body>) -> impl Future<Item = String, Error = Error> {
-        response
+    async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {
+        let body = response
             .into_body()
-            .concat2()
-            .map_err(|e| HyperResponseError { err: e }.into())
-            .and_then(|body| {
-                from_utf8(&body).map(|x| x.to_owned()).map_err(|e| {
-                    StrParseError {
-                        content: hex::encode(body.to_owned()),
-                        err: e,
-                    }
-                    .into()
-                })
-            })
+            .try_concat()
+            .await
+            .map_err(|e| HyperResponseError { err: e })?;
+
+        from_utf8(&body).map(|x| x.to_owned()).map_err(|e| {
+            StrParseError {
+                content: hex::encode(body.to_owned()),
+                err: e,
+            }
+            .into()
+        })
     }
 
-    fn decode_response<T>(response: Response<Body>) -> impl Future<Item = T, Error = Error>
+    async fn decode_response<T>(response: Response<Body>) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        Docker::decode_into_string(response).and_then(|contents| {
-            debug!("Decoded into string: {}", &contents);
-            serde_json::from_str::<T>(&contents).map_err(|e| {
-                if e.is_data() {
-                    JsonDataError {
-                        message: e.to_string(),
-                        column: e.column(),
-                        contents: contents.to_owned(),
-                    }
-                    .into()
-                } else {
-                    JsonDeserializeError {
-                        content: contents.to_owned(),
-                        err: e,
-                    }
-                    .into()
+        let contents = Docker::decode_into_string(response).await?;
+
+        debug!("Decoded into string: {}", &contents);
+        serde_json::from_str::<T>(&contents).map_err(|e| {
+            if e.is_data() {
+                JsonDataError {
+                    message: e.to_string(),
+                    column: e.column(),
+                    contents: contents.to_owned(),
                 }
-            })
+                .into()
+            } else {
+                JsonDeserializeError {
+                    content: contents.to_owned(),
+                    err: e,
+                }
+                .into()
+            }
         })
     }
 

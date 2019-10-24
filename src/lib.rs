@@ -377,11 +377,35 @@ extern crate serde_derive;
 extern crate log;
 extern crate yup_hyper_mock as hyper_mock;
 
+macro_rules! chain_stream {
+    ($self:ident, $invoc:expr) => {{
+        use futures_util::stream;
+        use futures_util::stream::StreamExt;
+        use std::pin::Pin;
+
+        let rest = $invoc;
+        async move {
+            let first = rest.next().await.transpose()?;
+            #[allow(trivial_casts)]
+            match first {
+                Some(head) => Ok((
+                    $self,
+                    Pin::from(Box::new(stream::once(async move { Ok(head) }).chain(rest))
+                        as Box<dyn Stream<Item = _>>),
+                )),
+                None => Ok((
+                    $self,
+                    Pin::from(Box::new(stream::empty()) as Box<dyn Stream<Item = _>>),
+                )),
+            }
+        }
+    }};
+}
+
 // declare modules
 pub mod auth;
 pub mod container;
 mod docker;
-mod either;
 pub mod errors;
 pub mod exec;
 pub mod image;

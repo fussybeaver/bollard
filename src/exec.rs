@@ -1,18 +1,19 @@
 //! Exec API: Run new commands inside running containers
 
 use arrayvec::ArrayVec;
-use futures::{stream, Stream};
+use futures_core::Stream;
+use futures_util::try_stream::TryStreamExt;
+use futures_util::{stream, stream::StreamExt};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::Body;
 use hyper::Method;
 use serde::ser::Serialize;
+use std::future::Future;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
 use crate::docker::API_DEFAULT_VERSION;
-use crate::either::EitherStream;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
@@ -135,11 +136,11 @@ impl Docker {
     ///
     /// docker.create_exec("hello-world", config);
     /// ```
-    pub fn create_exec<T>(
+    pub async fn create_exec<T>(
         &self,
         container_name: &str,
         config: CreateExecOptions<T>,
-    ) -> impl Future<Item = CreateExecResults, Error = Error>
+    ) -> Result<CreateExecResults, Error>
     where
         T: AsRef<str> + Serialize,
     {
@@ -152,7 +153,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -184,7 +185,7 @@ impl Docker {
         &self,
         container_name: &str,
         config: Option<StartExecOptions>,
-    ) -> impl Stream<Item = StartExecResults, Error = Error> {
+    ) -> impl Stream<Item = Result<StartExecResults, Error>> {
         let url = format!("/exec/{}/start", container_name);
 
         match config {
@@ -196,11 +197,12 @@ impl Docker {
                     Docker::serialize_payload(config),
                 );
 
-                EitherStream::A(
-                    self.process_into_unit(req)
-                        .map(|_| StartExecResults::Detached)
-                        .into_stream(),
-                )
+                let fut = self.process_into_unit(req);
+                stream::once(async move {
+                    fut.await?;
+                    Ok(StartExecResults::Detached)
+                })
+                .boxed()
             }
             _ => {
                 let req = self.build_request::<_, String, String>(
@@ -217,10 +219,9 @@ impl Docker {
                     })),
                 );
 
-                EitherStream::B(
-                    self.process_upgraded_stream_string(req)
-                        .map(|s| StartExecResults::Attached { log: s }),
-                )
+                self.process_upgraded_stream_string(req)
+                    .map_ok(|s| StartExecResults::Attached { log: s })
+                    .boxed()
             }
         }
     }
@@ -247,10 +248,7 @@ impl Docker {
     ///
     /// docker.inspect_exec("hello-world");
     /// ```
-    pub fn inspect_exec(
-        &self,
-        container_name: &str,
-    ) -> impl Future<Item = ExecInspect, Error = Error> {
+    pub async fn inspect_exec(&self, container_name: &str) -> Result<ExecInspect, Error> {
         let url = format!("/exec/{}/json", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -260,7 +258,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 }
 
@@ -300,17 +298,16 @@ impl DockerChain {
     ///
     /// docker.chain().create_exec("hello-world", config);
     /// ```
-    pub fn create_exec<T>(
+    pub async fn create_exec<T>(
         self,
         container_name: &str,
         config: CreateExecOptions<T>,
-    ) -> impl Future<Item = (DockerChain, CreateExecResults), Error = Error>
+    ) -> Result<(DockerChain, CreateExecResults), Error>
     where
         T: AsRef<str> + Serialize,
     {
-        self.inner
-            .create_exec(container_name, config)
-            .map(|result| (self, result))
+        let r = self.inner.create_exec(container_name, config).await?;
+        Ok((self, r))
     }
 
     /// ---
@@ -344,20 +341,15 @@ impl DockerChain {
         container_name: &str,
         config: Option<StartExecOptions>,
     ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = StartExecResults, Error = Error>,
-        ),
-        Error = Error,
+        Output = Result<
+            (
+                DockerChain,
+                impl Stream<Item = Result<StartExecResults, Error>>,
+            ),
+            Error,
+        >,
     > {
-        self.inner
-            .start_exec(container_name, config)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
+        chain_stream!(self, self.inner.start_exec(container_name, config))
     }
 
     /// ---
@@ -383,13 +375,12 @@ impl DockerChain {
     ///
     /// docker.chain().inspect_exec("hello-world");
     /// ```
-    pub fn inspect_exec(
+    pub async fn inspect_exec(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ExecInspect), Error = Error> {
-        self.inner
-            .inspect_exec(container_name)
-            .map(|result| (self, result))
+    ) -> Result<(DockerChain, ExecInspect), Error> {
+        let r = self.inner.inspect_exec(container_name).await?;
+        Ok((self, r))
     }
 }
 
