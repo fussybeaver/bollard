@@ -11,11 +11,11 @@ use serde::ser::Serialize;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use either::EitherStream;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::either::EitherStream;
 
-use container::LogOutput;
-use errors::Error;
+use crate::container::LogOutput;
+use crate::errors::Error;
 
 /// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -396,7 +396,7 @@ impl DockerChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

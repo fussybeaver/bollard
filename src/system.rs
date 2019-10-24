@@ -13,10 +13,10 @@ use std::hash::Hash;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use either::EitherStream;
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::either::EitherStream;
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]
@@ -360,7 +360,7 @@ impl DockerChain {
 mod tests {
 
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

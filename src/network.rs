@@ -13,10 +13,10 @@ use std::hash::Hash;
 
 use super::{Docker, DockerChain};
 #[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
+use crate::docker::API_DEFAULT_VERSION;
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1094,7 +1094,7 @@ impl DockerChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper_mock::HostToReplyConnector;
+    use crate::hyper_mock::HostToReplyConnector;
     use tokio::runtime::Runtime;
 
     #[test]

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 #[macro_use]
 pub mod common;
-use common::*;
+use crate::common::*;
 
 fn create_network_test(docker: Docker) {
     let rt = Runtime::new().unwrap();

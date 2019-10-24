@@ -367,46 +367,14 @@
     unused_import_braces,
     unused_qualifications
 )]
+#![warn(rust_2018_idioms)]
 
 #[macro_use]
 extern crate failure;
-extern crate futures;
-extern crate http;
-extern crate hyper;
-#[cfg(feature = "tls")]
-extern crate hyper_tls;
-#[cfg(feature = "tls")]
-extern crate native_tls;
-#[cfg(feature = "openssl")]
-extern crate openssl;
 #[macro_use]
 extern crate serde_derive;
-extern crate arrayvec;
-extern crate bytes;
-extern crate chrono;
-extern crate dirs;
-extern crate hex;
-#[cfg(feature = "openssl")]
-extern crate hyper_openssl;
-#[cfg(unix)]
-extern crate hyperlocal;
 #[macro_use]
 extern crate log;
-extern crate base64;
-extern crate mio;
-#[cfg(windows)]
-extern crate mio_named_pipes;
-extern crate serde;
-extern crate serde_json;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_io;
-#[cfg(windows)]
-extern crate tokio_reactor;
-extern crate tokio_timer;
-extern crate url;
-#[cfg(windows)]
-extern crate winapi;
 extern crate yup_hyper_mock as hyper_mock;
 
 // declare modules
@@ -425,4 +393,4 @@ pub mod system;
 mod uri;
 
 // publicly re-export
-pub use docker::{ClientVersion, Docker, DockerChain, API_DEFAULT_VERSION};
+pub use crate::docker::{ClientVersion, Docker, DockerChain, API_DEFAULT_VERSION};
