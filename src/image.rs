@@ -646,7 +646,7 @@ pub struct CommitContainerOptions<T> {
     /// Whether to pause the container before committing.
     pub pause: bool,
     /// `Dockerfile` instructions to apply while committing
-    pub changes: T,
+    pub changes: Option<T>,
 }
 
 /// Trait providing implementations for [Commit Container Options](struct.CommitContainerOptions.html)
@@ -657,34 +657,40 @@ where
     K: AsRef<str>,
     V: AsRef<str>,
 {
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 7]>, Error>;
+    fn into_array(self) -> Result<Vec<(K, V)>, Error>;
 }
 
 impl<'a> CommitContainerQueryParams<&'a str, &'a str> for CommitContainerOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 7]>, Error> {
-        Ok(ArrayVec::from([
+    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
+        let mut res = vec![
             ("container", self.container),
             ("repo", self.repo),
             ("tag", self.tag),
             ("comment", self.comment),
             ("author", self.author),
             ("pause", if self.pause { TRUE_STR } else { FALSE_STR }),
-            ("changes", self.changes),
-        ]))
+        ];
+        if let Some(c) = self.changes {
+            res.push(("changes", c));
+        }
+        Ok(res)
     }
 }
 
 impl<'a> CommitContainerQueryParams<&'a str, String> for CommitContainerOptions<String> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 7]>, Error> {
-        Ok(ArrayVec::from([
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut res = vec![
             ("container", self.container),
             ("repo", self.repo),
             ("tag", self.tag),
             ("comment", self.comment),
             ("author", self.author),
             ("pause", self.pause.to_string()),
-            ("changes", self.changes),
-        ]))
+        ];
+        if let Some(c) = self.changes {
+            res.push(("changes", c));
+        }
+        Ok(res)
     }
 }
 
