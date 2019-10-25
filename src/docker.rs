@@ -46,11 +46,11 @@ use crate::errors::ErrorKind::{
     HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
     RequestTimeoutError, StrParseError,
 };
+#[cfg(feature = "openssl")]
+use crate::errors::ErrorKind::{NoCertPathError, SSLError};
 use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
 use crate::system::Version;
 use crate::uri::Uri;
-#[cfg(feature = "openssl")]
-use errors::ErrorKind::{NoCertPathError, SSLError};
 #[cfg(windows)]
 use named_pipe::NamedPipeConnector;
 
@@ -68,9 +68,6 @@ pub const DEFAULT_NAMED_PIPE: &'static str = "npipe:////./pipe/docker_engine";
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
 pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
-
-// Default number of threads for the connection pool, when using HTTP or HTTPS.
-const DEFAULT_NUM_THREADS: usize = 1;
 
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
@@ -282,7 +279,6 @@ impl Docker {
                 &cert_path.join("key.pem"),
                 &cert_path.join("cert.pem"),
                 &cert_path.join("ca.pem"),
-                DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
                 API_DEFAULT_VERSION,
             )
@@ -292,7 +288,6 @@ impl Docker {
                 &cert_path.join("key.pem"),
                 &cert_path.join("cert.pem"),
                 &cert_path.join("ca.pem"),
-                DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
                 API_DEFAULT_VERSION,
             )
@@ -307,7 +302,6 @@ impl Docker {
     ///  - `ssl_key`: the private key path.
     ///  - `ssl_cert`: the server certificate path.
     ///  - `ssl_ca`: the certificate chain path.
-    ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///  - `client_version`: the client version to communicate with the server.
     ///
@@ -339,7 +333,6 @@ impl Docker {
         ssl_key: &Path,
         ssl_cert: &Path,
         ssl_ca: &Path,
-        num_threads: usize,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
@@ -359,7 +352,7 @@ impl Docker {
             .set_private_key_file(ssl_key, SslFiletype::PEM)
             .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
 
-        let mut http_connector = HttpConnector::new(num_threads);
+        let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
 
         let https_connector: HttpsConnector<HttpConnector> =
@@ -412,12 +405,7 @@ impl Docker {
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
-        Docker::connect_with_http(
-            &host,
-            DEFAULT_NUM_THREADS,
-            DEFAULT_TIMEOUT,
-            API_DEFAULT_VERSION,
-        )
+        Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using unsecured HTTP.  
@@ -425,7 +413,6 @@ impl Docker {
     /// # Arguments
     ///
     ///  - `addr`: connection url including scheme and port.
-    ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///  - `client_version`: the client version to communicate with the server.
     ///
@@ -448,7 +435,6 @@ impl Docker {
     /// ```
     pub fn connect_with_http(
         addr: &str,
-        num_threads: usize,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
@@ -725,7 +711,6 @@ impl Docker {
                 &cert_path.join("identity.pfx"),
                 &cert_path.join("ca.pem"),
                 "",
-                DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
                 API_DEFAULT_VERSION,
             )
@@ -735,7 +720,6 @@ impl Docker {
                 &cert_path.join("identity.pfx"),
                 &cert_path.join("ca.pem"),
                 "",
-                DEFAULT_NUM_THREADS,
                 DEFAULT_TIMEOUT,
                 API_DEFAULT_VERSION,
             )
@@ -750,7 +734,6 @@ impl Docker {
     ///  - `pkcs12_file`: the PKCS #12 archive.
     ///  - `ca_file`: the certificate chain.
     ///  - `pkcs12_password`: the password to the PKCS #12 archive.
-    ///  - `num_threads`: the number of threads for the HTTP connection pool.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///  - `client_version`: the client version to communicate with the server.
     ///
@@ -792,7 +775,6 @@ impl Docker {
         pkcs12_file: &Path,
         ca_file: &Path,
         pkcs12_password: &str,
-        num_thread: usize,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
@@ -800,24 +782,31 @@ impl Docker {
 
         let mut tls_connector_builder = TlsConnector::builder();
 
+        use crate::errors::ErrorKind;
+        use std::fs::File;
+        use std::io::Read;
         let mut file = File::open(pkcs12_file)?;
         let mut buf = vec![];
         file.read_to_end(&mut buf)?;
-        let identity = Identity::from_pkcs12(&buf, pkcs12_password)?;
+        let identity = Identity::from_pkcs12(&buf, pkcs12_password)
+            .map_err(|err| ErrorKind::TLSError { err })?;
 
         let mut file = File::open(ca_file)?;
         let mut buf = vec![];
         file.read_to_end(&mut buf)?;
-        let ca = Certificate::from_pem(&buf)?;
+        let ca = Certificate::from_pem(&buf).map_err(|err| ErrorKind::TLSError { err })?;
 
         let tls_connector_builder = tls_connector_builder.identity(identity);
         tls_connector_builder.add_root_certificate(ca);
 
-        let mut http_connector = HttpConnector::new(num_thread);
+        let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
 
+        let tls_connector = tls_connector_builder
+            .build()
+            .map_err(|err| ErrorKind::TLSError { err })?;
         let https_connector: hyper_tls::HttpsConnector<HttpConnector> =
-            hyper_tls::HttpsConnector::from((http_connector, tls_connector_builder.build()?));
+            hyper_tls::HttpsConnector::from((http_connector, tls_connector.into()));
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);
@@ -912,9 +901,11 @@ impl Docker {
         &self,
         req: Result<Request<Body>, Error>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin {
-        self.process_request(req)
-            .map_ok(Docker::decode_into_stream_string)
-            .try_flatten_stream()
+        Box::pin(
+            self.process_request(req)
+                .map_ok(Docker::decode_into_stream_string)
+                .try_flatten_stream(),
+        )
     }
 
     pub(crate) fn process_into_unit(
@@ -932,14 +923,16 @@ impl Docker {
         &self,
         req: Result<Request<Body>, Error>,
     ) -> impl Stream<Item = Result<Chunk, Error>> + Unpin {
-        self.process_request(req)
-            .map_ok(|response| {
-                response
-                    .into_body()
-                    .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into())
-            })
-            .into_stream()
-            .try_flatten()
+        Box::pin(
+            self.process_request(req)
+                .map_ok(|response| {
+                    response
+                        .into_body()
+                        .map_err::<Error, _>(|e: hyper::Error| HyperResponseError { err: e }.into())
+                })
+                .into_stream()
+                .try_flatten(),
+        )
     }
 
     pub(crate) fn process_upgraded_stream_string<'a>(

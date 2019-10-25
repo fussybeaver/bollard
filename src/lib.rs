@@ -382,7 +382,7 @@ macro_rules! chain_stream {
         use futures_util::stream::StreamExt;
         use std::pin::Pin;
 
-        let rest = $invoc;
+        let mut rest = $invoc;
         async move {
             let first = rest.next().await.transpose()?;
             #[allow(trivial_casts)]
