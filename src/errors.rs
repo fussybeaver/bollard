@@ -131,6 +131,13 @@ pub enum ErrorKind {
         /// The original error emitted.
         err: openssl::error::ErrorStack,
     },
+    /// Error emitted when a TLS context fails to configure.
+    #[cfg(feature = "tls")]
+    #[fail(display = "TLS error: {:?}", err)]
+    TLSError {
+        /// The original error emitted.
+        err: native_tls::Error,
+    },
 }
 
 impl Display for Error {
