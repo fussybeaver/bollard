@@ -2,7 +2,6 @@
 
 use arrayvec::ArrayVec;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
 use serde_json;
@@ -460,10 +459,10 @@ impl Docker {
     ///
     /// docker.create_network(config);
     /// ```
-    pub fn create_network<T>(
+    pub async fn create_network<T>(
         &self,
         config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = CreateNetworkResults, Error = Error>
+    ) -> Result<CreateNetworkResults, Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -476,7 +475,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -499,7 +498,7 @@ impl Docker {
     ///
     /// docker.remove_network("my_network_name");
     /// ```
-    pub fn remove_network(&self, network_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
         let url = format!("/networks/{}", network_name);
 
         let req = self.build_request::<_, String, String>(
@@ -509,7 +508,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -542,11 +541,11 @@ impl Docker {
     ///
     /// docker.inspect_network("my_network_name", Some(config));
     /// ```
-    pub fn inspect_network<'a, T, V>(
+    pub async fn inspect_network<'a, T, V>(
         &self,
         network_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = InspectNetworkResults, Error = Error>
+    ) -> Result<InspectNetworkResults, Error>
     where
         T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
@@ -560,7 +559,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -595,10 +594,10 @@ impl Docker {
     ///
     /// docker.list_networks(Some(config));
     /// ```
-    pub fn list_networks<T, K, V>(
+    pub async fn list_networks<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = Vec<ListNetworksResults>, Error = Error>
+    ) -> Result<Vec<ListNetworksResults>, Error>
     where
         T: ListNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -613,7 +612,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -652,11 +651,11 @@ impl Docker {
     ///
     /// docker.connect_network("my_network_name", config);
     /// ```
-    pub fn connect_network<T>(
+    pub async fn connect_network<T>(
         &self,
         network_name: &str,
         config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -669,7 +668,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -701,11 +700,11 @@ impl Docker {
     ///
     /// docker.disconnect_network("my_network_name", config);
     /// ```
-    pub fn disconnect_network<T>(
+    pub async fn disconnect_network<T>(
         &self,
         network_name: &str,
         config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: AsRef<str> + Serialize,
     {
@@ -718,7 +717,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -754,10 +753,10 @@ impl Docker {
     ///
     /// docker.prune_networks(Some(options));
     /// ```
-    pub fn prune_networks<T, K, V>(
+    pub async fn prune_networks<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = PruneNetworksResults, Error = Error>
+    ) -> Result<PruneNetworksResults, Error>
     where
         T: PruneNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -772,7 +771,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 }
 
@@ -810,15 +809,16 @@ impl DockerChain {
     ///
     /// docker.chain().create_network(config);
     /// ```
-    pub fn create_network<T>(
+    pub async fn create_network<T>(
         self,
         config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, CreateNetworkResults), Error = Error>
+    ) -> Result<(DockerChain, CreateNetworkResults), Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
         self.inner
             .create_network(config)
+            .await
             .map(|result| (self, result))
     }
 
@@ -845,12 +845,10 @@ impl DockerChain {
     ///
     /// docker.chain().remove_network("my_network_name");
     /// ```
-    pub fn remove_network(
-        self,
-        network_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
+    pub async fn remove_network(self, network_name: &str) -> Result<(DockerChain, ()), Error> {
         self.inner
             .remove_network(network_name)
+            .await
             .map(|result| (self, result))
     }
 
@@ -885,17 +883,18 @@ impl DockerChain {
     ///
     /// docker.chain().inspect_network("my_network_name", Some(config));
     /// ```
-    pub fn inspect_network<'a, T, V>(
+    pub async fn inspect_network<'a, T, V>(
         self,
         network_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, InspectNetworkResults), Error = Error>
+    ) -> Result<(DockerChain, InspectNetworkResults), Error>
     where
         T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
     {
         self.inner
             .inspect_network(network_name, options)
+            .await
             .map(|result| (self, result))
     }
 
@@ -933,10 +932,10 @@ impl DockerChain {
     ///
     /// docker.chain().list_networks(Some(config));
     /// ```
-    pub fn list_networks<T, K, V>(
+    pub async fn list_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<ListNetworksResults>), Error = Error>
+    ) -> Result<(DockerChain, Vec<ListNetworksResults>), Error>
     where
         T: ListNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -944,6 +943,7 @@ impl DockerChain {
     {
         self.inner
             .list_networks(options)
+            .await
             .map(|result| (self, result))
     }
 
@@ -985,16 +985,17 @@ impl DockerChain {
     ///
     /// docker.chain().connect_network("my_network_name", config);
     /// ```
-    pub fn connect_network<T>(
+    pub async fn connect_network<T>(
         self,
         network_name: &str,
         config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
         self.inner
             .connect_network(network_name, config)
+            .await
             .map(|result| (self, result))
     }
 
@@ -1029,16 +1030,17 @@ impl DockerChain {
     ///
     /// docker.chain().disconnect_network("my_network_name", config);
     /// ```
-    pub fn disconnect_network<T>(
+    pub async fn disconnect_network<T>(
         self,
         network_name: &str,
         config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> Result<(DockerChain, ()), Error>
     where
         T: AsRef<str> + Serialize,
     {
         self.inner
             .disconnect_network(network_name, config)
+            .await
             .map(|result| (self, result))
     }
 
@@ -1076,10 +1078,10 @@ impl DockerChain {
     ///
     /// docker.chain().prune_networks(Some(options));
     /// ```
-    pub fn prune_networks<T, K, V>(
+    pub async fn prune_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneNetworksResults), Error = Error>
+    ) -> Result<(DockerChain, PruneNetworksResults), Error>
     where
         T: PruneNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -1087,6 +1089,7 @@ impl DockerChain {
     {
         self.inner
             .prune_networks(options)
+            .await
             .map(|result| (self, result))
     }
 }

@@ -4,8 +4,6 @@ use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
-use futures_util::stream::StreamExt;
-use futures_util::try_stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{Body, Chunk, Method};

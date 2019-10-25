@@ -375,7 +375,6 @@ extern crate failure;
 extern crate serde_derive;
 #[macro_use]
 extern crate log;
-extern crate yup_hyper_mock as hyper_mock;
 
 macro_rules! chain_stream {
     ($self:ident, $invoc:expr) => {{

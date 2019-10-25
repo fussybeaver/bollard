@@ -192,7 +192,11 @@ impl<S> AsyncRead for StreamReader<S>
 where
     S: Stream<Item = Result<Chunk, Error>>,
 {
-    fn poll_read(self: Pin<&mut Self>, cx: Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
         loop {
             let ret;
 
@@ -208,17 +212,17 @@ where
                     if *pos == chunk.len() {
                         ret = len;
                     } else {
-                        return Ok(len);
+                        return Poll::Ready(Ok(len));
                     }
                 }
 
-                ReadState::NotReady => match self.stream.poll(cx) {
+                ReadState::NotReady => match self.stream.poll_next(cx) {
                     Poll::Ready(Some(Ok(chunk))) => {
                         self.state = ReadState::Ready(chunk, 0);
 
                         continue;
                     }
-                    Poll::Ready(None) => return Ok(0),
+                    Poll::Ready(None) => return Poll::Ready(Ok(0)),
                     Poll::Pending => {
                         return Poll::Ready(Err(io::ErrorKind::WouldBlock.into()));
                     }

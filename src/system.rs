@@ -1,7 +1,6 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 use arrayvec::ArrayVec;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Method};
 
 use super::{Docker, DockerChain};
@@ -44,7 +43,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.version();
     /// ```
-    pub fn version(&self) -> impl Future<Item = Version, Error = Error> {
+    pub async fn version(&self) -> Result<Version, Error> {
         let req = self.build_request::<_, String, String>(
             "/version",
             Builder::new().method(Method::GET),
@@ -52,7 +51,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -73,7 +72,7 @@ impl Docker {
     ///
     /// docker.ping();
     /// ```
-    pub fn ping(&self) -> impl Future<Item = String, Error = Error> {
+    pub async fn ping(&self) -> Result<String, Error> {
         let url = "/_ping";
 
         let req = self.build_request::<_, String, String>(
@@ -83,7 +82,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 }
 
@@ -107,8 +106,8 @@ impl DockerChain {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.chain().version();
     /// ```
-    pub fn version(self) -> impl Future<Item = (DockerChain, Version), Error = Error> {
-        self.inner.version().map(|result| (self, result))
+    pub async fn version(self) -> Result<(DockerChain, Version), Error> {
+        self.inner.version().await.map(|result| (self, result))
     }
 
     /// ---
@@ -131,8 +130,8 @@ impl DockerChain {
     ///
     /// docker.chain().ping();
     /// ```
-    pub fn ping(self) -> impl Future<Item = (DockerChain, String), Error = Error> {
-        self.inner.ping().map(|result| (self, result))
+    pub async fn ping(self) -> Result<(DockerChain, String), Error> {
+        self.inner.ping().await.map(|result| (self, result))
     }
 }
 

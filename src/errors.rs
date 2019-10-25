@@ -168,7 +168,6 @@ impl std::error::Error for Error {
             ErrorKind::StrFmtError { err, .. } => Some(err),
             ErrorKind::HttpClientError { err, .. } => Some(err),
             ErrorKind::HyperResponseError { err, .. } => Some(err),
-            ErrorKind::RequestTimeoutError { err, .. } => Some(err),
             _ => None,
         }
     }
