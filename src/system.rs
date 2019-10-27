@@ -107,8 +107,13 @@ impl DockerChain {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.chain().version();
     /// ```
-    pub fn version(self) -> impl Future<Item = (DockerChain, Version), Error = Error> {
-        self.inner.version().map(|result| (self, result))
+    pub fn version(
+        self,
+    ) -> impl Future<Item = (DockerChain, Version), Error = (DockerChain, Error)> {
+        self.inner.version().then(|res| match res {
+            Err(e) => Err((self, e)),
+            Ok(res) => Ok((self, res)),
+        })
     }
 
     /// ---
@@ -131,8 +136,11 @@ impl DockerChain {
     ///
     /// docker.chain().ping();
     /// ```
-    pub fn ping(self) -> impl Future<Item = (DockerChain, String), Error = Error> {
-        self.inner.ping().map(|result| (self, result))
+    pub fn ping(self) -> impl Future<Item = (DockerChain, String), Error = (DockerChain, Error)> {
+        self.inner.ping().then(|res| match res {
+            Err(e) => Err((self, e)),
+            Ok(res) => Ok((self, res)),
+        })
     }
 }
 

@@ -1,6 +1,7 @@
 //! Errors for this module.
 use std::cmp;
 use std::fmt::{Display, Formatter, Result};
+use docker::DockerChain;
 
 use failure::Context;
 
@@ -8,6 +9,13 @@ use failure::Context;
 /// Generic Error type over all errors in the bollard library
 pub struct Error {
     inner: Context<ErrorKind>,
+}
+
+#[derive(Debug)]
+/// Error type with a reference to a chainable client instance
+pub struct ErrorChain {
+    inner: Context<ErrorKind>,
+    docker: DockerChain
 }
 
 /// The type of error embedded in an Error.

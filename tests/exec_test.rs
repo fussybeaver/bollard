@@ -37,7 +37,12 @@ fn start_exec_test(docker: Docker) {
             )
         })
         .and_then(|(docker, message)| docker.start_exec(&message.id, None::<StartExecOptions>))
-        .and_then(|(docker, stream)| stream.take(2).collect().map(|v| (docker, v)))
+        .and_then(|(docker, stream)| {
+            stream.take(2).collect().then(|res| match res {
+                Ok(v) => Ok((docker, v)),
+                Err(e) => Err((docker, e)),
+            })
+        })
         .map(|(docker, lst)| {
             assert!(lst.into_iter().any(|line| {
                 println!("{:?}", line);

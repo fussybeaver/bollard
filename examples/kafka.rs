@@ -47,6 +47,7 @@ where
                 }),
             )
         })
+        .map_err(|(_, e)| e)
         .map(|(_, stream)| stream)
         .into_stream()
         .flatten()
@@ -120,6 +121,7 @@ fn main() {
         .and_then(move |(docker, _)| {
             docker.start_container("zookeeper", None::<StartContainerOptions<String>>)
         })
+        .map_err(|(_, e)| e)
         .map(|(docker, _)| {
             let stream1 = docker
                 .create_image(
@@ -129,6 +131,7 @@ fn main() {
                     }),
                     None,
                 )
+                .map_err(|(_, e)| e)
                 .map(move |(docker, _)| create_and_logs(docker, "kafka1", broker1_config))
                 .into_stream()
                 .flatten();
@@ -142,6 +145,7 @@ fn main() {
                     }),
                     None,
                 )
+                .map_err(|(_, e)| e)
                 .map(move |(docker, _)| create_and_logs(docker, "kafka2", broker2_config))
                 .into_stream()
                 .flatten();

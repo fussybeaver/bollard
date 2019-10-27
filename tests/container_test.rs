@@ -177,7 +177,6 @@ fn top_processes_test(docker: Docker) {
 
 fn logs_test(docker: Docker) {
     let rt = Runtime::new().unwrap();
-    let docker2 = docker.clone();
     let future = chain_create_container_hello_world(docker.chain(), "integration_test_logs")
         .and_then(|docker| {
             docker.logs(
@@ -191,24 +190,29 @@ fn logs_test(docker: Docker) {
                 }),
             )
         })
-        .map(|(_, stream)| {
-            stream
-                .skip(1)
-                .into_future()
-                .map(|(value, _)| {
+        .map(|(docker, stream)| {
+            stream.skip(1).into_future().then(|res| match res {
+                Ok((value, _)) => {
                     assert_eq!(
                         format!("{}", value.unwrap()),
                         "Hello from Docker!".to_string()
                     );
-                })
-                .or_else(|e| {
+                    Ok(docker)
+                }
+                Err(e) => {
                     println!("{}", e.0);
-                    Err(e.0)
-                })
+                    Err((docker, e.0))
+                }
+            })
         })
         .flatten()
-        .and_then(move |_| {
-            docker2.remove_container("integration_test_logs", None::<RemoveContainerOptions>)
+        .then(move |res| match res {
+            Ok(docker) => {
+                docker.remove_container("integration_test_logs", None::<RemoveContainerOptions>)
+            }
+            Err((docker, _)) => {
+                docker.remove_container("integration_test_logs", None::<RemoveContainerOptions>)
+            }
         });
 
     run_runtime(rt, future);
@@ -445,8 +449,6 @@ fn archive_container_test(docker: Docker) {
     c.write_all(&uncompressed).unwrap();
     let payload = c.finish().unwrap();
 
-    let cleanup = docker.clone();
-
     let future = docker
         .chain()
         .create_image(
@@ -487,8 +489,13 @@ fn archive_container_test(docker: Docker) {
                 Some(DownloadFromContainerOptions { path: "/tmp" }),
             )
         })
-        .and_then(|(_, stream)| stream.concat2())
-        .map(|chunk| {
+        .and_then(|(docker, stream)| {
+            stream.concat2().then(|res| match res {
+                Ok(chunk) => Ok((docker, chunk)),
+                Err(e) => Err((docker, e)),
+            })
+        })
+        .map(|(docker, chunk)| {
             let bytes = &chunk.into_bytes()[..];
             let mut a: tar::Archive<&[u8]> = tar::Archive::new(bytes);
 
@@ -514,12 +521,18 @@ fn archive_container_test(docker: Docker) {
             assert_eq!(1, files.len());
 
             assert_eq!("Hello from Bollard!", files.first().unwrap());
+
+            docker
         })
-        .then(move |_| {
-            cleanup.remove_container(
+        .then(move |res| match res {
+            Ok(docker) => docker.remove_container(
                 "integration_test_archive_container",
                 None::<RemoveContainerOptions>,
-            )
+            ),
+            Err((docker, _)) => docker.remove_container(
+                "integration_test_archive_container",
+                None::<RemoveContainerOptions>,
+            ),
         });
 
     run_runtime(rt, future);

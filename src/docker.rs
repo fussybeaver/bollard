@@ -856,12 +856,14 @@ impl Docker {
 /// ```
 pub struct DockerChain {
     pub(super) inner: Docker,
+    pub(super) e_inner: Docker
 }
 
 impl Clone for DockerChain {
     fn clone(&self) -> DockerChain {
         DockerChain {
             inner: self.inner.clone(),
+            e_inner: self.e_inner.clone()
         }
     }
 }
@@ -878,7 +880,8 @@ impl Docker {
     /// docker.chain();
     /// ```
     pub fn chain(self) -> DockerChain {
-        DockerChain { inner: self }
+        let e_docker = self.clone();
+        DockerChain { inner: self, e_inner: e_docker }
     }
 
     pub(crate) fn process_into_value<T>(

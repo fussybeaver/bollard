@@ -38,7 +38,7 @@ fn main() {
                     filters: filter,
                     ..Default::default()
                 }))
-                .map_err(failure::Error::from)
+                .map_err(|(_, e)| failure::Error::from(e))
                 .and_then(move |(docker, containers)| {
                     if containers.is_empty() {
                         Err(bail!("no running containers"))

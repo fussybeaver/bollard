@@ -98,7 +98,7 @@ pub(crate) fn registry_http_addr() -> String {
 #[allow(dead_code)]
 pub(crate) fn run_runtime<T, Y>(rt: Runtime, future: T)
 where
-    T: Future<Item = Y, Error = Error> + Send + 'static,
+    T: Future<Item = Y, Error = (DockerChain, Error)> + Send + 'static,
     Y: Send + 'static,
 {
     rt.block_on_all(future)
@@ -113,7 +113,7 @@ where
 pub fn chain_create_container_hello_world(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Item = DockerChain, Error = (DockerChain, Error)> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -167,17 +167,16 @@ pub fn chain_create_container_hello_world(
             docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
         })
         .map(|(docker, stream)| {
-            stream
-                .take(1)
-                .into_future()
-                .map(|(head, _)| {
+            stream.take(1).into_future().then(|res| match res {
+                Ok((head, _)) => {
                     assert_eq!(head.unwrap().status_code, 0);
-                    docker
-                })
-                .or_else(|e| {
+                    Ok(docker)
+                }
+                Err(e) => {
                     println!("{}", e.0);
-                    Err(e.0)
-                })
+                    Err((docker, e.0))
+                }
+            })
         })
         .flatten()
 }
@@ -186,7 +185,7 @@ pub fn chain_create_container_hello_world(
 pub fn chain_create_registry(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Item = DockerChain, Error = (DockerChain, Error)> {
     let image = || {
         if cfg!(windows) {
             String::from("stefanscherer/registry-windows")
@@ -278,7 +277,7 @@ pub fn chain_create_noop(chain: DockerChain) -> impl Future<Item = DockerChain, 
 pub fn chain_create_daemon(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Item = DockerChain, Error = (DockerChain, Error)> {
     let image = move || {
         if cfg!(windows) {
             format!("{}nanoserver/iis", registry_http_addr())
@@ -346,18 +345,18 @@ pub fn chain_create_daemon(
             docker.start_container(container_name, None::<StartContainerOptions<String>>)
         })
         .map(|(docker, _)| docker)
+    //.map_err(|(_, e)| e)
 }
 
 #[allow(dead_code)]
 pub fn chain_kill_container(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
-    let cloned = chain.clone();
+) -> impl Future<Item = DockerChain, Error = (DockerChain, Error)> {
     chain
         .kill_container(container_name, None::<KillContainerOptions<String>>)
         .map(|(docker, _)| docker)
-        .or_else(move |_| future::ok(cloned))
+        .or_else(move |(docker, _)| future::ok(docker))
         .and_then(move |docker| {
             docker.wait_container(container_name, None::<WaitContainerOptions<String>>)
         })
@@ -370,7 +369,7 @@ pub fn chain_kill_container(
 #[allow(dead_code)]
 pub fn chain_create_image_hello_world(
     chain: DockerChain,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Item = DockerChain, Error = (DockerChain, Error)> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())

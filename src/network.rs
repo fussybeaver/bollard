@@ -813,13 +813,14 @@ impl DockerChain {
     pub fn create_network<T>(
         self,
         config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, CreateNetworkResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CreateNetworkResults), Error = (DockerChain, Error)>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
-        self.inner
-            .create_network(config)
-            .map(|result| (self, result))
+        self.inner.create_network(config).then(|res| match res {
+            Err(e) => Err((self, e)),
+            Ok(res) => Ok((self, res)),
+        })
     }
 
     /// ---
@@ -848,10 +849,13 @@ impl DockerChain {
     pub fn remove_network(
         self,
         network_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ()), Error = (DockerChain, Error)> {
         self.inner
             .remove_network(network_name)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 
     /// ---
@@ -889,14 +893,17 @@ impl DockerChain {
         self,
         network_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, InspectNetworkResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, InspectNetworkResults), Error = (DockerChain, Error)>
     where
         T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
     {
         self.inner
             .inspect_network(network_name, options)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 
     /// ---
@@ -936,15 +943,16 @@ impl DockerChain {
     pub fn list_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<ListNetworksResults>), Error = Error>
+    ) -> impl Future<Item = (DockerChain, Vec<ListNetworksResults>), Error = (DockerChain, Error)>
     where
         T: ListNetworksQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .list_networks(options)
-            .map(|result| (self, result))
+        self.inner.list_networks(options).then(|res| match res {
+            Err(e) => Err((self, e)),
+            Ok(res) => Ok((self, res)),
+        })
     }
 
     /// ---
@@ -989,13 +997,16 @@ impl DockerChain {
         self,
         network_name: &str,
         config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = (DockerChain, Error)>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
         self.inner
             .connect_network(network_name, config)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 
     /// ---
@@ -1033,13 +1044,16 @@ impl DockerChain {
         self,
         network_name: &str,
         config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
+    ) -> impl Future<Item = (DockerChain, ()), Error = (DockerChain, Error)>
     where
         T: AsRef<str> + Serialize,
     {
         self.inner
             .disconnect_network(network_name, config)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 
     /// ---
@@ -1079,15 +1093,16 @@ impl DockerChain {
     pub fn prune_networks<T, K, V>(
         self,
         options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneNetworksResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, PruneNetworksResults), Error = (DockerChain, Error)>
     where
         T: PruneNetworksQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        self.inner
-            .prune_networks(options)
-            .map(|result| (self, result))
+        self.inner.prune_networks(options).then(|res| match res {
+            Err(e) => Err((self, e)),
+            Ok(res) => Ok((self, res)),
+        })
     }
 }
 

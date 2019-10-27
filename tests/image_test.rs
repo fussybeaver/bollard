@@ -262,21 +262,20 @@ fn commit_container_test(docker: Docker) {
             )
         })
         .map(move |(docker, stream)| {
-            stream
-                .take(1)
-                .into_future()
-                .map(|(head, _)| {
+            stream.take(1).into_future().then(|res| match res {
+                Ok((head, _)) => {
                     let first = head.unwrap();
                     if let Some(error) = first.error {
                         println!("{}", error.message);
                     }
                     assert_eq!(first.status_code, 0);
-                    docker
-                })
-                .or_else(|e| {
+                    Ok(docker)
+                }
+                Err(e) => {
                     println!("{}", e.0);
-                    Err(e.0)
-                })
+                    Err((docker, e.0))
+                }
+            })
         })
         .flatten()
         .and_then(move |docker| {
@@ -357,9 +356,12 @@ RUN touch bollard.txt
             Some(compressed.into()),
         )
         .and_then(move |(docker, stream)| {
-            stream.collect().map(|v| {
-                println!("{:?}", v);
-                (docker, v)
+            stream.collect().then(|res| match res {
+                Ok(v) => {
+                    println!("{:?}", v);
+                    Ok((docker, v))
+                }
+                Err(e) => Err((docker, e)),
             })
         })
         .and_then(|(docker, _)| {
@@ -391,21 +393,20 @@ RUN touch bollard.txt
             )
         })
         .map(move |(docker, stream)| {
-            stream
-                .take(1)
-                .into_future()
-                .map(|(head, _)| {
+            stream.take(1).into_future().then(|res| match res {
+                Ok((head, _)) => {
                     let first = head.unwrap();
                     if let Some(error) = first.error {
                         println!("{}", error.message);
                     }
                     assert_eq!(first.status_code, 0);
-                    docker
-                })
-                .or_else(|e| {
+                    Ok(docker)
+                }
+                Err(e) => {
                     println!("{}", e.0);
-                    Err(e.0)
-                })
+                    Err((docker, e.0))
+                }
+            })
         })
         .flatten()
         .and_then(move |docker| {

@@ -304,13 +304,16 @@ impl DockerChain {
         self,
         container_name: &str,
         config: CreateExecOptions<T>,
-    ) -> impl Future<Item = (DockerChain, CreateExecResults), Error = Error>
+    ) -> impl Future<Item = (DockerChain, CreateExecResults), Error = (DockerChain, Error)>
     where
         T: AsRef<str> + Serialize,
     {
         self.inner
             .create_exec(container_name, config)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 
     /// ---
@@ -348,16 +351,18 @@ impl DockerChain {
             DockerChain,
             impl Stream<Item = StartExecResults, Error = Error>,
         ),
-        Error = Error,
+        Error = (DockerChain, Error),
     > {
         self.inner
             .start_exec(container_name, config)
             .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
+            .then(|res| match res {
+                Err((e, _)) => Err((self, e)),
+                Ok((first, rest)) => Ok(match first {
+                    Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
+                    None => (self, EitherStream::B(stream::empty())),
+                }),
             })
-            .map_err(|(err, _)| err)
     }
 
     /// ---
@@ -386,10 +391,13 @@ impl DockerChain {
     pub fn inspect_exec(
         self,
         container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ExecInspect), Error = Error> {
+    ) -> impl Future<Item = (DockerChain, ExecInspect), Error = (DockerChain, Error)> {
         self.inner
             .inspect_exec(container_name)
-            .map(|result| (self, result))
+            .then(|res| match res {
+                Err(e) => Err((self, e)),
+                Ok(res) => Ok((self, res)),
+            })
     }
 }
 

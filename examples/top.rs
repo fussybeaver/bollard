@@ -35,6 +35,7 @@ fn top_processes(
     client
         .top_processes(&container.id, Some(TopOptions { ps_args: "ef" }))
         .map(|result| Some((name, result)))
+        .map_err(|(_, e)| e)
 }
 
 fn main() {
@@ -87,6 +88,7 @@ fn main() {
                 future::ok::<_, Error>(hashmap)
             })
         })
+        .map_err(|(_, e)| e)
         .flatten()
         .map_err(|e| println!("{:?}", e))
         .map(|hsh| {
