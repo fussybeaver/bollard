@@ -1,7 +1,4 @@
 #![type_length_limit = "2097152"]
-extern crate bollard;
-extern crate hyper;
-extern crate tokio;
 
 use bollard::container::*;
 use bollard::exec::*;
