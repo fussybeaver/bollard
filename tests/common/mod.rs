@@ -98,7 +98,7 @@ pub(crate) fn registry_http_addr() -> String {
 #[allow(dead_code)]
 pub(crate) fn run_runtime<T, Y>(rt: Runtime, future: T)
 where
-    T: Future<Item = Y, Error = Error> + Send + 'static,
+    T: Future<Output = Result<Y, Error>> + Send + 'static,
     Y: Send + 'static,
 {
     rt.block_on_all(future)
@@ -113,7 +113,7 @@ where
 pub fn chain_create_container_hello_world(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Output = Result<DockerChain, Error>> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())
@@ -270,7 +270,7 @@ pub fn chain_create_registry(
 }
 
 #[allow(dead_code)]
-pub fn chain_create_noop(chain: DockerChain) -> impl Future<Item = DockerChain, Error = Error> {
+pub fn chain_create_noop(chain: DockerChain) -> impl Future<Output = Result<DockerChain, Error>> {
     future::ok(chain)
 }
 
@@ -278,7 +278,7 @@ pub fn chain_create_noop(chain: DockerChain) -> impl Future<Item = DockerChain, 
 pub fn chain_create_daemon(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Output = Result<DockerChain, Error>> {
     let image = move || {
         if cfg!(windows) {
             format!("{}nanoserver/iis", registry_http_addr())
@@ -352,7 +352,7 @@ pub fn chain_create_daemon(
 pub fn chain_kill_container(
     chain: DockerChain,
     container_name: &'static str,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Output = Result<DockerChain, Error>> {
     let cloned = chain.clone();
     chain
         .kill_container(container_name, None::<KillContainerOptions<String>>)
@@ -370,7 +370,7 @@ pub fn chain_kill_container(
 #[allow(dead_code)]
 pub fn chain_create_image_hello_world(
     chain: DockerChain,
-) -> impl Future<Item = DockerChain, Error = Error> {
+) -> impl Future<Output = Result<DockerChain, Error>> {
     let image = move || {
         if cfg!(windows) {
             format!("{}hello-world:nanoserver", registry_http_addr())

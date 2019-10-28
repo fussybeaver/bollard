@@ -1,78 +1,89 @@
 //! Stream stats for all running Docker containers asynchronously
 #![type_length_limit = "2097152"]
-extern crate bollard;
 #[macro_use]
 extern crate failure;
-extern crate env_logger;
-extern crate futures;
-extern crate hyper;
-extern crate serde;
-extern crate tokio;
 
 use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
+use failure::Error;
 
-use futures::future::{loop_fn, Loop};
+use futures_util::stream;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 
-fn main() {
-    env_logger::init();
+async fn loop_fn<'a>(
+    client: bollard::DockerChain,
+) -> Result<(bollard::DockerChain, HashMap<String, String>), Error> {
+    let mut filter = HashMap::new();
+    filter.insert(String::from("status"), vec![String::from("running")]);
+    let (docker, containers) = client
+        .list_containers(Some(ListContainersOptions {
+            all: true,
+            filters: filter,
+            ..Default::default()
+        }))
+        .await?;
 
-    let mut rt = Runtime::new().unwrap();
+    if containers.is_empty() {
+        Err(bail!("no running containers"))
+    } else {
+        stream::iter(containers.into_iter().map(|c| (c.id, c.names, c.image)))
+            .fold(
+                Ok::<_, failure::Error>((docker, HashMap::new())),
+                |xs, x| {
+                    async move {
+                        match xs {
+                            Ok((client, mut hsh)) => {
+                                let (client, stream) = client
+                                    .stats(&x.0, Some(StatsOptions { stream: false }))
+                                    .await?;
+
+                                match stream.into_future().await {
+                                    (Some(Ok(stats)), _) => {
+                                        hsh.insert(
+                                            String::from(&x.0),
+                                            format!("{:?}: {} {:?}", &x.1, &x.2, stats),
+                                        );
+                                    }
+                                    (Some(Err(e)), _) => return Err(e.into()),
+                                    _ => (),
+                                };
+
+                                Ok((client, hsh))
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                },
+            )
+            .await
+    }
+}
+
+async fn run<'a>() -> Result<HashMap<String, String>, Error> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
     let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
-    let future = loop_fn(
-        (docker.chain(), HashMap::new()),
-        move |(client, monitor)| {
-            let mut filter = HashMap::<&'static str, Vec<&'static str>>::new();
-            filter.insert("status", vec!["running"]);
-            client
-                .list_containers(Some(ListContainersOptions {
-                    all: true,
-                    filters: filter,
-                    ..Default::default()
-                }))
-                .map_err(failure::Error::from)
-                .and_then(move |(docker, containers)| {
-                    if containers.is_empty() {
-                        Err(bail!("no running containers"))
-                    } else {
-                        for c in containers
-                            .iter()
-                            .filter(|c| !monitor.contains_key(&c.id))
-                            .map(|c| (c.id.to_owned(), c.names.to_owned(), c.image.to_owned()))
-                        {
-                            println!("Starting tokio spawn for container {}", &c.0);
-                            tokio::executor::spawn(future::lazy(move || {
-                                #[cfg(unix)]
-                                let client = Docker::connect_with_unix_defaults().unwrap();
-                                #[cfg(windows)]
-                                let client = Docker::connect_with_named_pipe_defaults().unwrap();
-                                client
-                                    .stats(&c.0, Some(StatsOptions { stream: true }))
-                                    .for_each(move |s| Ok(println!("{:?}:{} {:?}", c.1, c.2, s)))
-                                    .map_err(|e| println!("{:?}", e))
-                            }));
-                        }
+    let mut chain = docker.chain();
+    loop {
+        match loop_fn(chain).await? {
+            (c, h) => {
+                println!("{:?}", &h);
+                chain = c;
+            }
+        }
+    }
+}
 
-                        let mut new_monitor = HashMap::new();
-                        for c in containers.iter().map(|c| c.id.to_owned()) {
-                            new_monitor.insert(c, ());
-                        }
-                        Ok(Loop::Continue((docker, new_monitor)))
-                    }
-                })
-                .map_err(|e| println!("{:?}", e))
-        },
-    );
+fn main() {
+    env_logger::init();
 
-    rt.spawn(future);
+    let rt = Runtime::new().unwrap();
+    rt.block_on(run()).unwrap();
 
-    rt.shutdown_on_idle().wait().unwrap();
+    rt.shutdown_on_idle();
 }

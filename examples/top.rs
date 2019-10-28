@@ -1,9 +1,4 @@
 //! Run top asynchronously across several docker containers in parallel
-extern crate bollard;
-extern crate futures;
-extern crate hyper;
-extern crate tokio;
-
 use bollard::container::{APIContainers, ListContainersOptions, TopOptions, TopResult};
 use bollard::errors::Error;
 use bollard::{Docker, DockerChain};
