@@ -1,11 +1,5 @@
 //! This example will spin up Zookeeper and two Kafka brokers asynchronously.
 
-extern crate bollard;
-extern crate futures;
-extern crate hyper;
-extern crate serde;
-extern crate tokio;
-
 use bollard::container::{
     Config, CreateContainerOptions, HostConfig, LogOutput, LogsOptions, StartContainerOptions,
 };
@@ -13,6 +7,8 @@ use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
 use bollard::{Docker, DockerChain};
 
+use futures_util::stream::select;
+use futures_util::try_stream::TryStreamExt;
 use serde::ser::Serialize;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
@@ -23,42 +19,21 @@ use std::hash::Hash;
 const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
 const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
-fn create_and_logs<T>(
-    docker: DockerChain,
-    name: &'static str,
-    config: Config<T>,
-) -> impl Stream<Item = LogOutput, Error = Error>
-where
-    T: AsRef<str> + Eq + Hash + Serialize,
-{
-    docker
-        .create_container(Some(CreateContainerOptions { name: name }), config)
-        .and_then(move |(docker, _)| {
-            docker.start_container(name, None::<StartContainerOptions<String>>)
-        })
-        .and_then(move |(docker, _)| {
-            docker.logs(
-                name,
-                Some(LogsOptions {
-                    follow: true,
-                    stdout: true,
-                    stderr: false,
-                    ..Default::default()
-                }),
-            )
-        })
-        .map(|(_, stream)| stream)
-        .into_stream()
-        .flatten()
-}
-
 fn main() {
     let mut rt = Runtime::new().unwrap();
+
+    rt.block_on(run()).unwrap();
+
+    rt.shutdown_on_idle();
+}
+
+async fn run() -> Result<(), failure::Error> {
     #[cfg(unix)]
-    let docker1 = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
-    let docker1 = Docker::connect_with_named_pipe_defaults().unwrap();
-    let docker2 = docker1.clone();
+    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
+    let sd1 = docker.clone();
+    let sd2 = docker.clone();
 
     let zookeeper_config = Config {
         image: Some(ZOOKEEPER_IMAGE),
@@ -102,8 +77,7 @@ fn main() {
         ..Default::default()
     };
 
-    let stream = docker1
-        .chain()
+    &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: ZOOKEEPER_IMAGE,
@@ -111,51 +85,91 @@ fn main() {
             }),
             None,
         )
-        .and_then(move |(docker, _)| {
-            docker.create_container(
-                Some(CreateContainerOptions { name: "zookeeper" }),
-                zookeeper_config,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.start_container("zookeeper", None::<StartContainerOptions<String>>)
-        })
-        .map(|(docker, _)| {
-            let stream1 = docker
-                .create_image(
-                    Some(CreateImageOptions {
-                        from_image: KAFKA_IMAGE,
-                        ..Default::default()
-                    }),
-                    None,
-                )
-                .map(move |(docker, _)| create_and_logs(docker, "kafka1", broker1_config))
-                .into_stream()
-                .flatten();
+        .collect::<Vec<_>>()
+        .await;
 
-            let stream2 = docker2
-                .chain()
-                .create_image(
-                    Some(CreateImageOptions {
-                        from_image: KAFKA_IMAGE,
-                        ..Default::default()
-                    }),
-                    None,
-                )
-                .map(move |(docker, _)| create_and_logs(docker, "kafka2", broker2_config))
-                .into_stream()
-                .flatten();
+    &docker
+        .create_container(
+            Some(CreateContainerOptions { name: "zookeeper" }),
+            zookeeper_config,
+        )
+        .await?;
 
-            stream1.select(stream2)
-        })
-        .into_stream()
-        .flatten();
+    &docker
+        .start_container("zookeeper", None::<StartContainerOptions<String>>)
+        .await?;
 
-    let future = stream
+    &docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: KAFKA_IMAGE,
+                ..Default::default()
+            }),
+            None,
+        )
+        .collect::<Vec<_>>()
+        .await;
+
+    &docker
+        .create_container(
+            Some(CreateContainerOptions { name: "kafka1" }),
+            broker1_config,
+        )
+        .await?;
+
+    &docker
+        .start_container("kafka1", None::<StartContainerOptions<String>>)
+        .await?;
+
+    let mut stream1 = sd1.logs(
+        "kafka1",
+        Some(LogsOptions {
+            follow: true,
+            stdout: true,
+            stderr: false,
+            ..Default::default()
+        }),
+    );
+
+    &docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: KAFKA_IMAGE,
+                ..Default::default()
+            }),
+            None,
+        )
+        .collect::<Vec<_>>()
+        .await;
+
+    &docker
+        .create_container(
+            Some(CreateContainerOptions { name: "kafka2" }),
+            broker2_config,
+        )
+        .await?;
+
+    &docker
+        .start_container("kafka2", None::<StartContainerOptions<String>>)
+        .await?;
+
+    let mut stream2 = sd2.logs(
+        "kafka2",
+        Some(LogsOptions {
+            follow: true,
+            stdout: true,
+            stderr: false,
+            ..Default::default()
+        }),
+    );
+
+    let stream = select(&mut stream1, &mut stream2);
+
+    stream
         .map_err(|e| println!("{:?}", e))
-        .for_each(|x| Ok(println!("{:?}", x)));
+        .map_ok(|x| println!("{:?}", x))
+        .collect::<Vec<Result<(), ()>>>()
+        .await;
 
-    rt.spawn(future);
-
-    rt.shutdown_on_idle().wait().unwrap();
+    Ok(())
 }

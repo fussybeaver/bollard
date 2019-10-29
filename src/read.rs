@@ -227,7 +227,7 @@ where
                     }
                     Poll::Ready(None) => return Poll::Ready(Ok(0)),
                     Poll::Pending => {
-                        return Poll::Ready(Err(io::ErrorKind::WouldBlock.into()));
+                        return Poll::Pending;
                     }
                     Poll::Ready(Some(Err(e))) => {
                         return Poll::Ready(Err(io::Error::new(

@@ -84,6 +84,4 @@ fn main() {
 
     let rt = Runtime::new().unwrap();
     rt.block_on(run()).unwrap();
-
-    rt.shutdown_on_idle();
 }
