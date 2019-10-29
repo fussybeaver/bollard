@@ -1065,7 +1065,7 @@ impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
 #[allow(missing_docs)]
 pub struct TopResult {
     pub titles: Vec<String>,
-    pub processes: Vec<Vec<String>>,
+    pub processes: Option<Vec<Vec<String>>>,
 }
 
 /// Parameters used in the [Logs API](../struct.Docker.html#method.logs)

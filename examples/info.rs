@@ -1,9 +1,4 @@
-//! Fetch info of all running containers in parallel
-extern crate bollard;
-extern crate failure;
-extern crate futures;
-extern crate hyper;
-extern crate tokio;
+//! Fetch info of all running containers concurrently
 
 use bollard::container::{InspectContainerOptions, ListContainersOptions};
 use bollard::Docker;
@@ -11,11 +6,12 @@ use bollard::Docker;
 use std::collections::HashMap;
 use std::default::Default;
 
-use futures::{stream, Future, Stream};
+use futures_util::stream;
+use futures_util::stream::StreamExt;
+use futures_util::try_stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
-fn main() {
-    let mut rt = Runtime::new().unwrap();
+async fn run() -> Result<(), failure::Error> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
@@ -24,32 +20,37 @@ fn main() {
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);
 
-    let future = docker
-        .chain()
+    let containers = &docker
         .list_containers(Some(ListContainersOptions {
             all: true,
             filters: list_container_filters,
             ..Default::default()
         }))
-        .into_stream()
-        .map(|(docker, containers)| {
-            let docker_stream = stream::repeat(docker);
-            let container_stream = stream::iter_ok(containers);
+        .await?;
 
-            docker_stream.zip(container_stream)
-        })
-        .flatten()
-        .and_then(|(docker, container)| {
-            docker.inspect_container(&container.id, None::<InspectContainerOptions>)
-        })
-        .map(|(_, container)| {
-            println!("{:?}", container);
-        })
-        .into_future()
-        .map_err(|_| ())
-        .map(|_| ());
+    let docker_stream = stream::repeat(docker);
+    let container_stream = docker_stream
+        .zip(stream::iter(containers))
+        .for_each_concurrent(2, conc)
+        .await;
+    Ok(())
+}
 
-    rt.spawn(future);
+async fn conc(arg: (Docker, &bollard::container::APIContainers)) -> () {
+    let (docker, container) = arg;
+    println!(
+        "{:?}",
+        docker
+            .inspect_container(&container.id, None::<InspectContainerOptions>)
+            .await
+            .unwrap()
+    )
+}
 
-    rt.shutdown_on_idle().wait().unwrap();
+fn main() {
+    env_logger::init();
+
+    let rt = Runtime::new().unwrap();
+
+    rt.block_on(run()).unwrap();
 }

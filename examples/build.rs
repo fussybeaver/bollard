@@ -1,20 +1,16 @@
 //! Builds a container with a bunch of extra options for testing
-extern crate bollard;
-extern crate failure;
-extern crate futures;
-extern crate hyper;
-extern crate tokio;
 
-use bollard::image::BuildImageOptions;
+use bollard::image::{BuildImageOptions, BuildImageResults};
 use bollard::Docker;
 
 use std::collections::HashMap;
 
-use futures::{Future, Stream};
+use futures_util::stream::StreamExt;
+use futures_util::try_stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 fn main() {
-    let mut rt = Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
@@ -52,20 +48,26 @@ fn main() {
         platform: "linux/x86_64",
     };
 
-    let future = docker
+    let future = run(docker, build_image_options);
+
+    rt.block_on(future).unwrap();
+}
+
+async fn run<'a>(
+    docker: Docker,
+    build_image_options: BuildImageOptions<&'a str>,
+) -> Result<(), bollard::errors::Error> {
+    docker
         .build_image(build_image_options, None, None)
         .map(|v| {
             println!("{:?}", v);
             v
         })
-        .collect()
         .map_err(|e| {
             println!("{:?}", e);
-            ()
+            e
         })
-        .map(|_| ());
-
-    rt.spawn(future);
-
-    rt.shutdown_on_idle().wait().unwrap();
+        .collect::<Vec<Result<BuildImageResults, bollard::errors::Error>>>()
+        .await;
+    Ok(())
 }
