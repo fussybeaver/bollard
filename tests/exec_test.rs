@@ -1,9 +1,11 @@
 #![type_length_limit = "2097152"]
 
 use bollard::container::*;
+use bollard::errors::Error;
 use bollard::exec::*;
 use bollard::Docker;
 
+use futures_util::try_stream::TryStreamExt;
 use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
@@ -11,128 +13,134 @@ use tokio::runtime::Runtime;
 pub mod common;
 use crate::common::*;
 
-fn start_exec_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_daemon(docker.chain(), "integration_test_start_exec_test")
-        .and_then(move |docker| {
-            docker.create_exec(
-                "integration_test_start_exec_test",
-                CreateExecOptions {
-                    attach_stdout: Some(true),
-                    cmd: if cfg!(windows) {
-                        Some(vec![
-                            "cmd.exe",
-                            "/C",
-                            "type",
-                            "C:\\Windows\\System32\\Inetsrv\\Config\\ApplicationHost.config",
-                        ])
-                    } else {
-                        Some(vec!["/bin/cat", "/etc/config/uhttpd"])
-                    },
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(|(docker, message)| docker.start_exec(&message.id, None::<StartExecOptions>))
-        .and_then(|(docker, stream)| stream.take(2).collect().map(|v| (docker, v)))
-        .map(|(docker, lst)| {
-            assert!(lst.into_iter().any(|line| {
-                println!("{:?}", line);
-                let expected = if cfg!(windows) {
-                    "<configuration>\r"
-                } else {
-                    "config uhttpd main"
-                };
-                match line {
-                    StartExecResults::Attached { ref log } if format!("{}", log) == expected => {
-                        true
-                    }
-                    _ => false,
-                }
-            }));
-            docker
-        })
-        .and_then(|docker| {
-            docker.kill_container(
-                "integration_test_start_exec_test",
-                None::<KillContainerOptions<String>>,
-            )
-        })
-        .and_then(|(docker, _)| {
-            docker.wait_container(
-                "integration_test_start_exec_test",
-                None::<WaitContainerOptions<String>>,
-            )
-        })
-        .and_then(|(docker, _)| {
-            docker.remove_container(
-                "integration_test_start_exec_test",
-                None::<RemoveContainerOptions>,
-            )
-        });
+async fn start_exec_test(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "integration_test_start_exec_test").await?;
 
-    run_runtime(rt, future);
+    let message = &docker
+        .create_exec(
+            "integration_test_start_exec_test",
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                cmd: if cfg!(windows) {
+                    Some(vec![
+                        "cmd.exe",
+                        "/C",
+                        "type",
+                        "C:\\Windows\\System32\\Inetsrv\\Config\\ApplicationHost.config",
+                    ])
+                } else {
+                    Some(vec!["/bin/cat", "/etc/config/uhttpd"])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let vec = &docker
+        .start_exec(&message.id, None::<StartExecOptions>)
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    assert!(vec.iter().take(2).any(|line| {
+        println!("{:?}", line);
+        let expected = if cfg!(windows) {
+            "<configuration>\r"
+        } else {
+            "config uhttpd main"
+        };
+        match line {
+            StartExecResults::Attached { ref log } if format!("{}", log) == expected => true,
+            _ => false,
+        }
+    }));
+
+    &docker
+        .kill_container(
+            "integration_test_start_exec_test",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    &docker
+        .wait_container(
+            "integration_test_start_exec_test",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    &docker
+        .remove_container(
+            "integration_test_start_exec_test",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
 }
 
-fn inspect_exec_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_daemon(docker.chain(), "integration_test_inspect_exec_test")
-        .and_then(move |docker| {
-            docker.create_exec(
-                "integration_test_inspect_exec_test",
-                CreateExecOptions {
-                    attach_stdout: Some(true),
-                    cmd: if cfg!(windows) {
-                        Some(vec![
-                            "cmd.exe",
-                            "/C",
-                            "type",
-                            "C:\\Windows\\System32\\Inetsrv\\Config\\ApplicationHost.config",
-                        ])
-                    } else {
-                        Some(vec!["/bin/cat", "/etc/config/uhttpd"])
-                    },
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(|(docker, message)| {
-            docker
-                .start_exec(&message.id, Some(StartExecOptions { detach: true }))
-                .map(|(docker, _)| (docker, message.id))
-        })
-        .and_then(|(docker, id)| docker.inspect_exec(&id))
-        .map(|(docker, exec_process)| {
-            assert_eq!(
-                if cfg!(windows) {
-                    "cmd.exe".to_string()
-                } else {
-                    "/bin/cat".to_string()
-                },
-                exec_process.process_config.entrypoint
-            );
-            docker
-        })
-        .and_then(|docker| {
-            docker.kill_container(
-                "integration_test_inspect_exec_test",
-                None::<KillContainerOptions<String>>,
-            )
-        })
-        .and_then(|(docker, _)| {
-            docker.wait_container(
-                "integration_test_inspect_exec_test",
-                None::<WaitContainerOptions<String>>,
-            )
-        })
-        .and_then(|(docker, _)| {
-            docker.remove_container(
-                "integration_test_inspect_exec_test",
-                None::<RemoveContainerOptions>,
-            )
-        });
+async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "integration_test_inspect_exec_test").await?;
 
-    run_runtime(rt, future);
+    let message = &docker
+        .create_exec(
+            "integration_test_inspect_exec_test",
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                cmd: if cfg!(windows) {
+                    Some(vec![
+                        "cmd.exe",
+                        "/C",
+                        "type",
+                        "C:\\Windows\\System32\\Inetsrv\\Config\\ApplicationHost.config",
+                    ])
+                } else {
+                    Some(vec!["/bin/cat", "/etc/config/uhttpd"])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    &docker
+        .start_exec(&message.id, Some(StartExecOptions { detach: true }))
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let exec_process = &docker.inspect_exec(&message.id).await?;
+
+    assert_eq!(
+        if cfg!(windows) {
+            "cmd.exe".to_string()
+        } else {
+            "/bin/cat".to_string()
+        },
+        exec_process.process_config.entrypoint
+    );
+
+    &docker
+        .kill_container(
+            "integration_test_inspect_exec_test",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    &docker
+        .wait_container(
+            "integration_test_inspect_exec_test",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await;
+
+    &docker
+        .remove_container(
+            "integration_test_inspect_exec_test",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
 }
 
 #[test]
