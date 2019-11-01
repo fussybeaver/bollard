@@ -408,7 +408,7 @@ impl Docker {
         Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
-    /// Connect using unsecured HTTP.  
+    /// Connect using unsecured HTTP.
     ///
     /// # Arguments
     ///
