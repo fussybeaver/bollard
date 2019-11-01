@@ -1,22 +1,14 @@
 #![type_length_limit = "2097152"]
-extern crate bollard;
-extern crate failure;
-extern crate flate2;
-extern crate futures;
-extern crate hyper;
-#[cfg(unix)]
-extern crate hyperlocal;
-extern crate tar;
-extern crate tokio;
 
-use futures::Stream;
-use hyper::rt::Future;
+use futures_util::try_stream::TryStreamExt;
+use std::future::Future;
 use tokio::runtime::Runtime;
 
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
     WaitContainerOptions,
 };
+use bollard::errors::Error;
 use bollard::image::*;
 use bollard::Docker;
 
@@ -28,285 +20,259 @@ use std::io::Write;
 pub mod common;
 use crate::common::*;
 
-fn create_image_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain());
-    run_runtime(rt, future);
+async fn create_image_test(docker: Docker) -> Result<(), Error> {
+    create_image_hello_world(&docker).await?;
+
+    Ok(())
 }
 
-fn search_images_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-    let future = docker
-        .chain()
+async fn search_images_test(docker: Docker) -> Result<(), Error> {
+    let result = &docker
         .search_images(SearchImagesOptions {
             term: "hello-world",
             ..Default::default()
         })
-        .map(|(docker, result)| {
-            assert!(result
-                .into_iter()
-                .any(|api_image| &api_image.name == "hello-world"));
-            docker
-        });
+        .await?;
 
-    run_runtime(rt, future);
+    assert!(result
+        .into_iter()
+        .any(|api_image| &api_image.name == "hello-world"));
+
+    Ok::<_, Error>(())
 }
 
-fn inspect_image_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}hello-world:nanoserver", registry_http_addr())
-        } else {
-            format!("{}hello-world:linux", registry_http_addr())
-        }
+async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| docker.inspect_image(&image()))
-        .map(move |(docker, result)| {
-            assert!(result
-                .repo_tags
-                .into_iter()
-                .any(|repo_tag| repo_tag == image().to_string()));
-            docker
-        });
+    create_image_hello_world(&docker).await?;
 
-    run_runtime(rt, future);
+    let result = &docker.inspect_image(&image).await?;
+
+    assert!(result.repo_tags.iter().any(|repo_tag| repo_tag == &image));
+
+    Ok(())
 }
 
-fn list_images_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}hello-world:nanoserver", registry_http_addr())
-        } else {
-            format!("{}hello-world:linux", registry_http_addr())
-        }
+async fn list_images_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| {
-            docker.list_images(Some(ListImagesOptions::<String> {
-                all: true,
-                ..Default::default()
-            }))
-        })
-        .map(move |(docker, result)| {
-            assert!(result.into_iter().any(|api_image| api_image
-                .repo_tags
-                .unwrap_or(vec![String::new()])
-                .into_iter()
-                .any(|repo_tag| repo_tag == image().to_string())));
-            docker
-        });
+    create_image_hello_world(&docker).await?;
 
-    run_runtime(rt, future);
+    let result = &docker
+        .list_images(Some(ListImagesOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await?;
+
+    assert!(result.into_iter().any(|api_image| {
+        api_image
+            .repo_tags
+            .as_ref()
+            .unwrap_or(&vec![String::new()])
+            .into_iter()
+            .any(|repo_tag| repo_tag == &image)
+    }));
+
+    Ok(())
 }
 
-fn image_history_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}hello-world:nanoserver", registry_http_addr())
-        } else {
-            format!("{}hello-world:linux", registry_http_addr())
-        }
+async fn image_history_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| docker.image_history(&image()))
-        .map(move |(docker, result)| {
-            assert!(result.into_iter().take(1).any(|history| history
-                .tags
-                .unwrap_or(vec![String::new()])
-                .into_iter()
-                .any(|tag| tag == image().to_string())));
-            docker
-        });
+    create_image_hello_world(&docker).await?;
 
-    run_runtime(rt, future);
+    let result = &docker.image_history(&image).await?;
+
+    assert!(result.iter().take(1).any(|history| history
+        .tags
+        .as_ref()
+        .unwrap_or(&vec![String::new()])
+        .iter()
+        .any(|tag| tag == &image)));
+
+    Ok(())
 }
 
-fn prune_images_test(docker: Docker) {
+async fn prune_images_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
-    rt_exec!(
-        docker.prune_images(Some(PruneImagesOptions { filters: filters })),
-        |_| ()
-    );
+    &docker
+        .prune_images(Some(PruneImagesOptions { filters: filters }))
+        .await?;
+
+    Ok(())
 }
 
-fn remove_image_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}hello-world:nanoserver", registry_http_addr())
-        } else {
-            format!("{}hello-world:linux", registry_http_addr())
-        }
+async fn remove_image_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| {
-            docker.remove_image(
-                &image(),
-                Some(RemoveImageOptions {
-                    noprune: true,
-                    ..Default::default()
-                }),
-                if cfg!(windows) {
-                    None
-                } else {
-                    Some(integration_test_registry_credentials())
-                },
-            )
-        })
-        .map(move |(docker, result)| {
-            assert!(result.into_iter().any(|s| match s {
-                RemoveImageResults::RemoveImageUntagged { untagged } => untagged == image(),
-                _ => false,
-            }));
-            docker
-        });
+    create_image_hello_world(&docker).await?;
 
-    run_runtime(rt, future);
+    let result = &docker
+        .remove_image(
+            &image,
+            Some(RemoveImageOptions {
+                noprune: true,
+                ..Default::default()
+            }),
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .await?;
+
+    assert!(result.iter().any(|s| match s {
+        RemoveImageResults::RemoveImageUntagged { untagged } => untagged == &image,
+        _ => false,
+    }));
+
+    Ok(())
 }
 
-fn commit_container_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}microsoft/nanoserver", registry_http_addr())
-        } else {
-            format!("{}alpine", registry_http_addr())
-        }
+async fn commit_container_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}microsoft/nanoserver", registry_http_addr())
+    } else {
+        format!("{}alpine", registry_http_addr())
     };
 
     let cmd = if cfg!(windows) {
-        Some(vec![
-            "cmd.exe".to_string(),
-            "/C".to_string(),
-            "copy".to_string(),
-            "nul".to_string(),
-            "bollard.txt".to_string(),
-        ])
+        Some(vec!["cmd.exe", "/C", "copy", "nul", "bollard.txt"])
     } else {
-        Some(vec!["touch".to_string(), "/bollard.txt".to_string()])
+        Some(vec!["touch", "/bollard.txt"])
     };
 
-    let rt = Runtime::new().unwrap();
-    let future = chain_create_image_hello_world(docker.chain())
-        .and_then(move |docker| {
-            docker.create_container(
-                Some(CreateContainerOptions {
-                    name: "integration_test_commit_container",
-                }),
-                Config {
-                    cmd: cmd,
-                    image: Some(image()),
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.start_container(
-                "integration_test_commit_container",
-                None::<StartContainerOptions<String>>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.wait_container(
-                "integration_test_commit_container",
-                None::<WaitContainerOptions<String>>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.commit_container(
-                CommitContainerOptions {
-                    container: "integration_test_commit_container",
-                    repo: "integration_test_commit_container_next",
-                    pause: true,
-                    ..Default::default()
-                },
-                Config::<String> {
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.create_container(
-                Some(CreateContainerOptions {
-                    name: "integration_test_commit_container_next",
-                }),
-                Config {
-                    image: Some("integration_test_commit_container_next"),
-                    cmd: if cfg!(windows) {
-                        Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
-                    } else {
-                        Some(vec!["ls", "/bollard.txt"])
-                    },
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.start_container(
-                "integration_test_commit_container_next",
-                None::<StartContainerOptions<String>>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.wait_container(
-                "integration_test_commit_container_next",
-                None::<WaitContainerOptions<String>>,
-            )
-        })
-        .map(move |(docker, stream)| {
-            stream
-                .take(1)
-                .into_future()
-                .map(|(head, _)| {
-                    let first = head.unwrap();
-                    if let Some(error) = first.error {
-                        println!("{}", error.message);
-                    }
-                    assert_eq!(first.status_code, 0);
-                    docker
-                })
-                .or_else(|e| {
-                    println!("{}", e.0);
-                    Err(e.0)
-                })
-        })
-        .flatten()
-        .and_then(move |docker| {
-            docker.remove_container(
-                "integration_test_commit_container_next",
-                None::<RemoveContainerOptions>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.remove_image(
-                "integration_test_commit_container_next",
-                None::<RemoveImageOptions>,
-                if cfg!(windows) {
-                    None
-                } else {
-                    Some(integration_test_registry_credentials())
-                },
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.remove_container(
-                "integration_test_commit_container",
-                None::<RemoveContainerOptions>,
-            )
-        });
+    create_image_hello_world(&docker).await?;
 
-    run_runtime(rt, future);
+    &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "integration_test_commit_container",
+            }),
+            Config {
+                cmd: cmd,
+                image: Some(&image[..]),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    &docker
+        .start_container(
+            "integration_test_commit_container",
+            None::<StartContainerOptions<String>>,
+        )
+        .await?;
+
+    &docker
+        .wait_container(
+            "integration_test_commit_container",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    &docker
+        .commit_container(
+            CommitContainerOptions {
+                container: "integration_test_commit_container",
+                repo: "integration_test_commit_container_next",
+                pause: true,
+                ..Default::default()
+            },
+            Config::<String> {
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "integration_test_commit_container_next",
+            }),
+            Config {
+                image: Some("integration_test_commit_container_next"),
+                cmd: if cfg!(windows) {
+                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                } else {
+                    Some(vec!["ls", "/bollard.txt"])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    &docker
+        .start_container(
+            "integration_test_commit_container_next",
+            None::<StartContainerOptions<String>>,
+        )
+        .await?;
+
+    let vec = &docker
+        .wait_container(
+            "integration_test_commit_container_next",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let first = vec.get(0).unwrap();
+    if let Some(error) = &first.error {
+        println!("{}", error.message);
+    }
+    assert_eq!(first.status_code, 0);
+
+    &docker
+        .remove_container(
+            "integration_test_commit_container_next",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    &docker
+        .remove_image(
+            "integration_test_commit_container_next",
+            None::<RemoveImageOptions>,
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .await?;
+
+    &docker
+        .remove_container(
+            "integration_test_commit_container",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
 }
 
-fn build_image_test(docker: Docker) {
+async fn build_image_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = if cfg!(windows) {
         format!(
             "FROM {}microsoft/nanoserver
@@ -335,16 +301,13 @@ RUN touch bollard.txt
     c.write_all(&uncompressed).unwrap();
     let compressed = c.finish().unwrap();
 
-    let rt = Runtime::new().unwrap();
-
     let mut creds = HashMap::new();
     creds.insert(
         "localhost:5000".to_string(),
         integration_test_registry_credentials(),
     );
 
-    let future = docker
-        .chain()
+    &docker
         .build_image(
             BuildImageOptions {
                 dockerfile: "Dockerfile".to_string(),
@@ -356,77 +319,66 @@ RUN touch bollard.txt
             if cfg!(windows) { None } else { Some(creds) },
             Some(compressed.into()),
         )
-        .and_then(move |(docker, stream)| {
-            stream.collect().map(|v| {
-                println!("{:?}", v);
-                (docker, v)
-            })
-        })
-        .and_then(|(docker, _)| {
-            docker.create_container(
-                Some(CreateContainerOptions {
-                    name: "integration_test_build_image",
-                }),
-                Config {
-                    image: Some("integration_test_build_image"),
-                    cmd: if cfg!(windows) {
-                        Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
-                    } else {
-                        Some(vec!["ls", "/bollard.txt"])
-                    },
-                    ..Default::default()
-                },
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.start_container(
-                "integration_test_build_image",
-                None::<StartContainerOptions<String>>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.wait_container(
-                "integration_test_build_image",
-                None::<WaitContainerOptions<String>>,
-            )
-        })
-        .map(move |(docker, stream)| {
-            stream
-                .take(1)
-                .into_future()
-                .map(|(head, _)| {
-                    let first = head.unwrap();
-                    if let Some(error) = first.error {
-                        println!("{}", error.message);
-                    }
-                    assert_eq!(first.status_code, 0);
-                    docker
-                })
-                .or_else(|e| {
-                    println!("{}", e.0);
-                    Err(e.0)
-                })
-        })
-        .flatten()
-        .and_then(move |docker| {
-            docker.remove_container(
-                "integration_test_build_image",
-                None::<RemoveContainerOptions>,
-            )
-        })
-        .and_then(move |(docker, _)| {
-            docker.remove_image(
-                "integration_test_build_image",
-                None::<RemoveImageOptions>,
-                if cfg!(windows) {
-                    None
-                } else {
-                    Some(integration_test_registry_credentials())
-                },
-            )
-        });
+        .try_collect::<Vec<_>>()
+        .await?;
 
-    run_runtime(rt, future);
+    &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "integration_test_build_image",
+            }),
+            Config {
+                image: Some("integration_test_build_image"),
+                cmd: if cfg!(windows) {
+                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                } else {
+                    Some(vec!["ls", "/bollard.txt"])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    &docker
+        .start_container(
+            "integration_test_build_image",
+            None::<StartContainerOptions<String>>,
+        )
+        .await?;
+
+    let vec = &docker
+        .wait_container(
+            "integration_test_build_image",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let first = vec.get(0).unwrap();
+    if let Some(error) = &first.error {
+        println!("{}", error.message);
+    }
+    assert_eq!(first.status_code, 0);
+    &docker
+        .remove_container(
+            "integration_test_build_image",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    &docker
+        .remove_image(
+            "integration_test_build_image",
+            None::<RemoveImageOptions>,
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .await?;
+
+    Ok(())
 }
 
 #[test]
