@@ -3,6 +3,7 @@ extern crate hyper;
 extern crate tokio;
 
 use bollard::container::*;
+use bollard::errors::Error;
 use bollard::network::*;
 use bollard::Docker;
 
@@ -15,9 +16,7 @@ use std::collections::HashMap;
 pub mod common;
 use crate::common::*;
 
-fn create_network_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-
+async fn create_network_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IPAMConfig {
         subnet: Some("10.10.10.10/24"),
         ..Default::default()
@@ -38,36 +37,31 @@ fn create_network_test(docker: Docker) {
         ..Default::default()
     };
 
-    let future = docker
-        .chain()
-        .create_network(create_network_options)
-        .map(|(docker, result)| (docker, result.id))
-        .and_then(move |(docker, id)| {
-            docker.inspect_network(
-                &id,
-                Some(InspectNetworkOptions::<&str> {
-                    verbose: true,
-                    ..Default::default()
-                }),
-            )
-        })
-        .map(|(docker, result)| {
-            assert!(result
-                .ipam
-                .config
-                .into_iter()
-                .take(1)
-                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"));
-            docker
-        })
-        .and_then(|docker| docker.remove_network("integration_test_create_network"));
+    let result = &docker.create_network(create_network_options).await?;
+    let result = &docker
+        .inspect_network(
+            &result.id,
+            Some(InspectNetworkOptions::<&str> {
+                verbose: true,
+                ..Default::default()
+            }),
+        )
+        .await?;
+    assert!(result
+        .ipam
+        .config
+        .iter()
+        .take(1)
+        .any(|i| i.subnet.as_ref().unwrap() == "10.10.10.10/24"));
 
-    run_runtime(rt, future);
+    &docker
+        .remove_network("integration_test_create_network")
+        .await?;
+
+    Ok(())
 }
 
-fn list_networks_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-
+async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IPAMConfig {
         subnet: Some("10.10.10.10/24"),
         ..Default::default()
@@ -95,31 +89,30 @@ fn list_networks_test(docker: Docker) {
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
 
-    let future = docker
-        .chain()
-        .create_network(create_network_options)
-        .and_then(move |(docker, _)| {
-            docker.list_networks(Some(ListNetworksOptions {
-                filters: list_networks_filters,
-            }))
-        })
-        .map(|(docker, results)| {
-            assert!(results
-                .into_iter()
-                .take(1)
-                .map(|v| v.ipam.config)
-                .flatten()
-                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"));
-            docker
-        })
-        .and_then(|docker| docker.remove_network("integration_test_list_network"));
+    &docker.create_network(create_network_options).await?;
 
-    run_runtime(rt, future);
+    let results = &docker
+        .list_networks(Some(ListNetworksOptions {
+            filters: list_networks_filters,
+        }))
+        .await?;
+
+    let v = results.get(0).unwrap();
+
+    assert!(v
+        .ipam
+        .config
+        .iter()
+        .any(|i| i.subnet.as_ref().unwrap() == "10.10.10.10/24"));
+
+    &docker
+        .remove_network("integration_test_list_network")
+        .await?;
+
+    Ok(())
 }
 
-fn connect_network_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-
+async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IPAMConfig {
         subnet: Some("10.10.10.10/24"),
         ..Default::default()
@@ -146,62 +139,61 @@ fn connect_network_test(docker: Docker) {
         },
     };
 
-    let future = chain_create_daemon(docker.chain(), "integration_test_connect_network_test")
-        .and_then(|docker| docker.create_network(create_network_options))
-        .and_then(|(docker, result)| {
-            docker
-                .connect_network(&result.id, connect_network_options)
-                .map(|(docker, _)| (docker, result.id))
-        })
-        .and_then(|(docker, id)| {
-            docker
-                .inspect_network(
-                    &id,
-                    Some(InspectNetworkOptions::<&str> {
-                        verbose: true,
-                        ..Default::default()
-                    }),
-                )
-                .map(|(docker, result)| (docker, id, result))
-        })
-        .map(|(docker, id, result)| {
-            assert!(result
-                .containers
-                .into_iter()
-                .any(|(_, container)| container.ipv4_address == "10.10.10.101/24"));
-            (docker, id)
-        })
-        .and_then(|(docker, id)| {
-            docker
-                .disconnect_network(
-                    &id,
-                    DisconnectNetworkOptions {
-                        container: "integration_test_connect_network_test",
-                        force: true,
-                    },
-                )
-                .map(|(docker, _)| (docker, id))
-        })
-        .and_then(|(docker, id)| docker.remove_network(&id))
-        .and_then(|(docker, _)| {
-            docker.kill_container(
-                "integration_test_connect_network_test",
-                None::<KillContainerOptions<String>>,
-            )
-        })
-        .and_then(|(docker, _)| {
-            docker.remove_container(
-                "integration_test_connect_network_test",
-                None::<RemoveContainerOptions>,
-            )
-        });
+    create_daemon(&docker, "integration_test_connect_network_test").await?;
 
-    run_runtime(rt, future);
+    let result = &docker.create_network(create_network_options).await?;
+
+    &docker
+        .connect_network(&result.id, connect_network_options)
+        .await?;
+
+    let id = &result.id;
+
+    let result = &docker
+        .inspect_network(
+            &id,
+            Some(InspectNetworkOptions::<&str> {
+                verbose: true,
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    assert!(result
+        .containers
+        .iter()
+        .any(|(_, container)| container.ipv4_address == "10.10.10.101/24"));
+
+    &docker
+        .disconnect_network(
+            &id,
+            DisconnectNetworkOptions {
+                container: "integration_test_connect_network_test",
+                force: true,
+            },
+        )
+        .await?;
+
+    &docker.remove_network(&id).await?;
+
+    &docker
+        .kill_container(
+            "integration_test_connect_network_test",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    &docker
+        .remove_container(
+            "integration_test_connect_network_test",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
 }
 
-fn prune_networks_test(docker: Docker) {
-    let rt = Runtime::new().unwrap();
-
+async fn prune_networks_test(docker: Docker) -> Result<(), Error> {
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_prune_networks",
         attachable: true,
@@ -217,25 +209,26 @@ fn prune_networks_test(docker: Docker) {
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("scope", vec!["global"]);
 
-    let future = docker
-        .chain()
-        .create_network(create_network_options)
-        .and_then(|(docker, _)| docker.prune_networks(None::<PruneNetworksOptions<&str>>))
-        .map(|(docker, result)| {
-            assert_eq!(
-                "integration_test_prune_networks",
-                result.networks_deleted.unwrap()[0]
-            );
-            docker
-        })
-        .and_then(move |docker| {
-            docker.list_networks(Some(ListNetworksOptions {
-                filters: list_networks_filters,
-            }))
-        })
-        .map(|(_, results)| assert_eq!(0, results.len()));
+    &docker.create_network(create_network_options).await?;
 
-    run_runtime(rt, future);
+    let result = &docker
+        .prune_networks(None::<PruneNetworksOptions<&str>>)
+        .await?;
+
+    assert_eq!(
+        "integration_test_prune_networks",
+        result.networks_deleted.as_ref().unwrap()[0]
+    );
+
+    let results = &docker
+        .list_networks(Some(ListNetworksOptions {
+            filters: list_networks_filters,
+        }))
+        .await?;
+
+    assert_eq!(0, results.len());
+
+    Ok(())
 }
 
 #[test]
