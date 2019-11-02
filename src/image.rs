@@ -14,8 +14,6 @@ use serde_json;
 use super::{Docker, DockerChain};
 use crate::auth::DockerCredentials;
 use crate::container::{Config, GraphDriver};
-#[cfg(test)]
-use crate::docker::API_DEFAULT_VERSION;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;

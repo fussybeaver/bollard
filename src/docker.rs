@@ -259,17 +259,13 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssl_defaults().unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
         let cert_path = default_cert_path()?;
@@ -308,14 +304,11 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
     /// use std::path::Path;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssl(
     ///     "localhost:2375",
@@ -325,8 +318,7 @@ impl Docker {
     ///     1,
     ///     120).unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_ssl(
         addr: &str,
@@ -391,17 +383,13 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_http_defaults().unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
@@ -419,19 +407,15 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_http(
-    ///                    "http://my-custom-docker-server:2735", 4, 20, API_DEFAULT_VERSION)
+    ///                    "http://my-custom-docker-server:2735", 4, API_DEFAULT_VERSION)
     ///                    .unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_http(
         addr: &str,
@@ -474,16 +458,12 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_unix_defaults().unwrap();
-    /// connection.ping().and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix_defaults() -> Result<Docker, Error> {
         Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
@@ -500,16 +480,12 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
-    /// connection.ping().and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix(
         addr: &str,
@@ -555,17 +531,13 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_named_pipe_defaults().unwrap();
-    /// connection.ping().and_then(|_| Ok(println!("Connected!")));
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     ///
-    /// # }
     /// ```
     pub fn connect_with_named_pipe_defaults() -> Result<Docker, Error> {
         Docker::connect_with_named_pipe(DEFAULT_NAMED_PIPE, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
@@ -582,19 +554,14 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures::future::Future;
-    ///
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_named_pipe(
     ///     "//./pipe/docker_engine", 120, API_DEFAULT_VERSION).unwrap();
-    /// connection.ping().and_then(|_| Ok(println!("Connected!")));
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     ///
-    /// # }
     /// ```
     pub fn connect_with_named_pipe(
         addr: &str,
@@ -691,17 +658,13 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_tls_defaults().unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_tls_defaults() -> Result<Docker, Error> {
         let cert_path = default_cert_path()?;
@@ -749,14 +712,11 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     /// use bollard::Docker;
     ///
     /// use std::path::Path;
     ///
-    /// use futures::future::Future;
+    /// use futures_util::try_future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_tls(
     ///     "localhost:2375",
@@ -767,8 +727,7 @@ impl Docker {
     ///     120
     /// ).unwrap();
     /// connection.ping()
-    ///   .and_then(|_| Ok(println!("Connected!")));
-    /// # }
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_tls(
         addr: &str,
@@ -979,18 +938,12 @@ impl Docker {
     /// # Examples:
     ///
     /// ```rust,norun
-    /// # extern crate bollard;
-    /// # extern crate futures;
-    /// # fn main () {
     ///     use bollard::Docker;
     ///
-    ///     use futures::future::Future;
-    ///
     ///     let docker = Docker::connect_with_http_defaults().unwrap();
-    ///     docker.negotiate_version().map(|docker| {
-    ///         docker.version()
-    ///     });
-    /// # }
+    ///     async move {
+    ///         &docker.negotiate_version().await.unwrap().version();
+    ///     };
     /// ```
     pub async fn negotiate_version(self) -> Result<Self, Error> {
         let req = self.build_request::<_, String, String>(

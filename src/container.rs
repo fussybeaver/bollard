@@ -17,8 +17,6 @@ use std::future::Future;
 use std::hash::Hash;
 
 use super::{Docker, DockerChain};
-#[cfg(test)]
-use crate::docker::API_DEFAULT_VERSION;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;

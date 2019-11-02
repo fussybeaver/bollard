@@ -135,12 +135,9 @@
 //! First, check that the API is working with your server:
 //!
 //! ```rust, no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::Future;
-//!
 //! use bollard::Docker;
+//!
+//! use futures_util::future::FutureExt;
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
@@ -150,7 +147,6 @@
 //!     .map(|version| {
 //!         println!("{:?}", version);
 //!     });
-//! # }
 //! ```
 //!
 //! ### Listing images
@@ -158,13 +154,10 @@
 //! To list docker images available on the Docker server:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::Future;
-//!
 //! use bollard::Docker;
 //! use bollard::image::ListImagesOptions;
+//!
+//! use futures_util::future::FutureExt;
 //!
 //! use std::default::Default;
 //!
@@ -181,7 +174,6 @@
 //!            println!("-> {:?}", i);
 //!        }
 //!    });
-//! # }
 //! ```
 //!
 //! ## Streaming Stats
@@ -189,13 +181,10 @@
 //! To receive a stream of stats for a running container.
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::stream::Stream;
-//!
 //! use bollard::Docker;
 //! use bollard::container::StatsOptions;
+//!
+//! use futures_util::try_stream::TryStreamExt;
 //!
 //! use std::default::Default;
 //!
@@ -203,17 +192,19 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.stats("postgres", Some(StatsOptions {
-//!    stream: true,
-//!    ..Default::default()
-//! }))
-//!   .map(|stat| {
+//! async move {
+//!     let stats = docker.stats("postgres", Some(StatsOptions {
+//!        stream: true,
+//!        ..Default::default()
+//!     })).try_collect::<Vec<_>>().await.unwrap();
+//!
+//!     for stat in stats {
 //!         println!("{} - mem total: {:?} | mem usage: {:?}",
 //!             stat.name,
 //!             stat.memory_stats.max_usage,
 //!             stat.memory_stats.usage);
-//!    });
-//! # }
+//!     }
+//! };
 //! ```
 //!
 //! ## Chaining docker commands
@@ -222,15 +213,12 @@
 //! will return an instance of itself in the return call.
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
 //! use bollard::Docker;
 //! use bollard::image::CreateImageOptions;
 //! use bollard::container::CreateContainerOptions;
 //! use bollard::container::Config;
 //!
-//! use tokio::prelude::Future;
+//! use futures_util::try_stream::TryStreamExt;
 //!
 //! use std::default::Default;
 //!
@@ -238,18 +226,20 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.chain().create_image(Some(CreateImageOptions{
-//!     from_image: "hello-world",
-//!     ..Default::default()
-//! }), None).and_then(|(docker, _)|
-//!     docker.create_container(
+//! async move {
+//!     &docker.create_image(Some(CreateImageOptions{
+//!         from_image: "hello-world",
+//!         ..Default::default()
+//!     }), None).try_collect::<Vec<_>>().await.unwrap();
+//!
+//!     &docker.create_container(
 //!         None::<CreateContainerOptions<String>>,
 //!         Config {
 //!             image: Some("hello-world"),
 //!             cmd: Some(vec!["/hello"]),
 //!             ..Default::default()
-//!         }));
-//! # }
+//!         }).await.unwrap();
+//! };
 //! ```
 //!
 //! # Examples
@@ -264,72 +254,60 @@
 //! Create a Tokio Runtime:
 //!
 //! ```rust
-//! # extern crate tokio;
-//! # fn main () {
 //! use tokio::runtime::Runtime;
 //!
 //! let mut rt = Runtime::new().unwrap();
-//! # }
 //! ```
 //!
 //! Subsequently, use the docker API:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
+//! # use futures_util::future::FutureExt;
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //! let future = docker.list_images(None::<ListImagesOptions<String>>);
-//! # }
 //! ```
 //!
 //! Execute the future aynchronously:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
+//! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
+//! # let future = async move {
+//! #   docker.list_images(None::<ListImagesOptions<String>>).map(|_| ());
+//! # };
 //! rt.spawn(future);
-//! # }
 //! ```
 //!
 //! Or, to execute and receive the result:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
+//! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
+//! # let future = docker.list_images(None::<ListImagesOptions<String>>);
 //! let result = rt.block_on(future);
-//! # }
 //! ```
 //!
 //! Finally, to shut down the executor:
 //!
 //! ```rust,no_run
-//! # extern crate tokio;
-//! # fn main () {
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
 //! # let mut rt = Runtime::new().unwrap();
-//! rt.shutdown_now().wait().unwrap();
-//! # }
+//! rt.shutdown_now();
 //! ```
 //!
 //! # History

@@ -11,8 +11,6 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::{Docker, DockerChain};
-#[cfg(test)]
-use crate::docker::API_DEFAULT_VERSION;
 use crate::either::EitherStream;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;

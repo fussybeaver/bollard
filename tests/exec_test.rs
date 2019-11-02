@@ -6,7 +6,6 @@ use bollard::exec::*;
 use bollard::Docker;
 
 use futures_util::try_stream::TryStreamExt;
-use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
 #[macro_use]
