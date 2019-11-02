@@ -12,8 +12,6 @@ use serde::ser::Serialize;
 use std::future::Future;
 
 use super::{Docker, DockerChain};
-#[cfg(test)]
-use crate::docker::API_DEFAULT_VERSION;
 
 use crate::container::LogOutput;
 use crate::errors::Error;

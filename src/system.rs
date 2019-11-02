@@ -4,8 +4,6 @@ use http::request::Builder;
 use hyper::{Body, Method};
 
 use super::{Docker, DockerChain};
-#[cfg(test)]
-use crate::docker::API_DEFAULT_VERSION;
 use crate::errors::Error;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)

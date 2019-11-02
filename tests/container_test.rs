@@ -5,9 +5,7 @@ use bollard::errors::Error;
 use bollard::image::*;
 use bollard::Docker;
 
-use futures_util::stream::StreamExt;
 use futures_util::try_stream::TryStreamExt;
-use hyper::rt::{Future, Stream};
 use tokio::runtime::Runtime;
 
 use std::io::Write;
@@ -401,8 +399,6 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
     c.write_all(&uncompressed).unwrap();
     let payload = c.finish().unwrap();
 
-    let cleanup = docker.clone();
-
     &docker
         .create_image(
             Some(CreateImageOptions {
@@ -646,10 +642,10 @@ fn integration_test_pause_container() {
     connect_to_docker_and_run!(pause_container_test);
 }
 
-#[test]
-fn integration_test_prune_containers() {
-    connect_to_docker_and_run!(prune_containers_test);
-}
+//#[test]
+//fn integration_test_prune_containers() {
+//    connect_to_docker_and_run!(prune_containers_test);
+//}
 
 #[test]
 fn integration_test_archive_containers() {

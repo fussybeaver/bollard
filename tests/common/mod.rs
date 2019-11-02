@@ -1,10 +1,8 @@
-use futures_util::stream::StreamExt;
 use futures_util::try_stream::TryStreamExt;
 use std::future::Future;
 use tokio::runtime::Runtime;
 
 use std;
-use std::collections::HashMap;
 
 use bollard::auth::DockerCredentials;
 use bollard::container::*;

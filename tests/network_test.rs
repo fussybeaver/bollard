@@ -7,7 +7,6 @@ use bollard::errors::Error;
 use bollard::network::*;
 use bollard::Docker;
 
-use hyper::rt::Future;
 use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
