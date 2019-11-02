@@ -15,16 +15,8 @@ use bollard::Docker;
 #[allow(unused_macros)]
 macro_rules! rt_exec {
     ($docker_call:expr, $assertions:expr) => {{
-        let mut rt = Runtime::new().unwrap();
-        let call = $docker_call;
-        let res = $assertions(
-            rt.block_on(call)
-                .or_else(|e| {
-                    println!("{}", e);
-                    Err(e)
-                })
-                .unwrap(),
-        );
+        let rt = Runtime::new().unwrap();
+        let res = $assertions(rt.block_on($docker_call).unwrap());
         rt.shutdown_now();
         res
     }};
