@@ -785,48 +785,8 @@ impl Docker {
     }
 }
 
-#[derive(Debug)]
-/// ---
-/// # DockerChain
-///
-/// Retains the same API as the [Docker
-/// Client](struct.Docker.html), but consumes the instance and returns the
-/// instance as part of the response.
-///
-/// # Examples
-///
-/// ```rust,norun
-/// use bollard::Docker;
-/// let docker = Docker::connect_with_http_defaults().unwrap();
-/// docker.chain();
-/// ```
-pub struct DockerChain {
-    pub(super) inner: Docker,
-}
-
-impl Clone for DockerChain {
-    fn clone(&self) -> DockerChain {
-        DockerChain {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
 // The implementation block for Docker requests
 impl Docker {
-    /// Create a chain of docker commands, useful to calling the API in a sequential manner.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,norun
-    /// use bollard::Docker;
-    /// let docker = Docker::connect_with_http_defaults().unwrap();
-    /// docker.chain();
-    /// ```
-    pub fn chain(self) -> DockerChain {
-        DockerChain { inner: self }
-    }
-
     pub(crate) fn process_into_value<T>(
         &self,
         req: Result<Request<Body>, Error>,

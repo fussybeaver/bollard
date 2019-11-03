@@ -5,7 +5,7 @@ use bollard::container::{
 };
 use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
-use bollard::{Docker, DockerChain};
+use bollard::Docker;
 
 use futures_util::stream::select;
 use futures_util::try_stream::TryStreamExt;

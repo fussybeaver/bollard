@@ -207,41 +207,6 @@
 //! };
 //! ```
 //!
-//! ## Chaining docker commands
-//!
-//! It's sometimes more convenient to chain a string of Docker API calls. The `DockerChain` API
-//! will return an instance of itself in the return call.
-//!
-//! ```rust,no_run
-//! use bollard::Docker;
-//! use bollard::image::CreateImageOptions;
-//! use bollard::container::CreateContainerOptions;
-//! use bollard::container::Config;
-//!
-//! use futures_util::try_stream::TryStreamExt;
-//!
-//! use std::default::Default;
-//!
-//! // Use a connection function described above
-//! // let docker = Docker::connect_...;
-//! # let docker = Docker::connect_with_local_defaults().unwrap();
-//!
-//! async move {
-//!     &docker.create_image(Some(CreateImageOptions{
-//!         from_image: "hello-world",
-//!         ..Default::default()
-//!     }), None).try_collect::<Vec<_>>().await.unwrap();
-//!
-//!     &docker.create_container(
-//!         None::<CreateContainerOptions<String>>,
-//!         Config {
-//!             image: Some("hello-world"),
-//!             cmd: Some(vec!["/hello"]),
-//!             ..Default::default()
-//!         }).await.unwrap();
-//! };
-//! ```
-//!
 //! # Examples
 //!
 //! Further examples are available in the examples folder, or the integration/unit tests.
@@ -388,10 +353,9 @@ pub mod exec;
 pub mod image;
 mod named_pipe;
 pub mod network;
-mod options;
 mod read;
 pub mod system;
 mod uri;
 
 // publicly re-export
-pub use crate::docker::{ClientVersion, Docker, DockerChain, API_DEFAULT_VERSION};
+pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};

@@ -1,7 +1,6 @@
 #![type_length_limit = "2097152"]
 
 use futures_util::try_stream::TryStreamExt;
-use std::future::Future;
 use tokio::runtime::Runtime;
 
 use bollard::container::{

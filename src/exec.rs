@@ -9,9 +9,8 @@ use http::request::Builder;
 use hyper::Body;
 use hyper::Method;
 use serde::ser::Serialize;
-use std::future::Future;
 
-use super::{Docker, DockerChain};
+use super::Docker;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
@@ -257,127 +256,5 @@ impl Docker {
         );
 
         self.process_into_value(req).await
-    }
-}
-
-impl DockerChain {
-    /// ---
-    ///
-    /// # Create Exec
-    ///
-    /// Run a command inside a running container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - [Create Exec Options](container/struct.CreateExecOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Create Exec Results](container/struct.CreateExecResults.html) struct, wrapped in a
-    ///  Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::exec::CreateExecOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let config = CreateExecOptions {
-    ///     cmd: Some(vec!["ps", "-ef"]),
-    ///     attach_stdout: Some(true),
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().create_exec("hello-world", config);
-    /// ```
-    pub async fn create_exec<T>(
-        self,
-        container_name: &str,
-        config: CreateExecOptions<T>,
-    ) -> Result<(DockerChain, CreateExecResults), Error>
-    where
-        T: AsRef<str> + Serialize,
-    {
-        let r = self.inner.create_exec(container_name, config).await?;
-        Ok((self, r))
-    }
-
-    /// ---
-    ///
-    /// # Start Exec
-    ///
-    /// Starts a previously set up exec instance. If detach is true, this endpoint returns
-    /// immediately after starting the command. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Log
-    ///  Output](container/enum.LogOutput.html) enum, wrapped in a Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::exec::StartExecOptions;
-    ///
-    /// docker.chain().start_exec("hello-world", None::<StartExecOptions>);
-    /// ```
-    pub fn start_exec(
-        self,
-        container_name: &str,
-        config: Option<StartExecOptions>,
-    ) -> impl Future<
-        Output = Result<
-            (
-                DockerChain,
-                impl Stream<Item = Result<StartExecResults, Error>>,
-            ),
-            Error,
-        >,
-    > {
-        chain_stream!(self, self.inner.start_exec(container_name, config))
-    }
-
-    /// ---
-    ///
-    /// # Inspect Exec
-    ///
-    /// Return low-level information about an exec instance. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and an
-    ///  [ExecInspect](container/struct.ExecInspect.html) struct, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().inspect_exec("hello-world");
-    /// ```
-    pub async fn inspect_exec(
-        self,
-        container_name: &str,
-    ) -> Result<(DockerChain, ExecInspect), Error> {
-        let r = self.inner.inspect_exec(container_name).await?;
-        Ok((self, r))
     }
 }

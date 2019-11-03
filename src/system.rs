@@ -7,10 +7,7 @@ use futures::{stream, Stream};
 use http::request::Builder;
 use hyper::{Body, Method};
 
-use std::collections::HashMap;
-use std::hash::Hash;
-
-use super::{Docker, DockerChain};
+use super::Docker;
 use crate::either::EitherStream;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
@@ -239,116 +236,5 @@ impl Docker {
         );
 
         self.process_into_stream(req)
-    }
-}
-
-impl DockerChain {
-    /// ---
-    ///
-    /// # Version
-    ///
-    /// Returns the version of Docker that is running and various information about the system that
-    /// Docker is running on. Consumes the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Version](version/struct.Version.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// docker.chain().version();
-    /// ```
-    pub async fn version(self) -> Result<(DockerChain, Version), Error> {
-        self.inner.version().await.map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Ping
-    ///
-    /// This is a dummy endpoint you can use to test if the server is accessible. Consumes the
-    /// client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  String, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().ping();
-    /// ```
-    pub async fn ping(self) -> Result<(DockerChain, String), Error> {
-        self.inner.ping().await.map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Events
-    ///
-    /// Stream real-time events from the server.. This is a non-blocking operation, the resulting stream will
-    /// end when the container stops. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    /// - [Events Options](container/struct.EventsOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Events Results](container/struct.EventsResults.html), wrapped in a Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # extern crate chrono;
-    /// use bollard::system::EventsOptions;
-    /// use chrono::{Duration, Utc};
-    /// use std::collections::HashMap;
-    ///
-    /// # fn main() {
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// let options = Some(EventsOptions::<String>{
-    ///     since: Utc::now() - Duration::minutes(20),
-    ///     until: Utc::now(),
-    ///     filters: HashMap::new(),
-    /// });
-    ///
-    /// docker.chain().events(options);
-    /// # }
-    /// ```
-    pub fn events<T, K, V>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = EventsResults, Error = Error>,
-        ),
-        Error = Error,
-    >
-    where
-        T: EventsQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .events(options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
     }
 }
