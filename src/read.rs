@@ -5,12 +5,12 @@ use pin_project::pin_project;
 use serde::de::DeserializeOwned;
 use serde_json;
 use std::pin::Pin;
+use std::string::String;
 use std::task::{Context, Poll};
 use std::{
     cmp,
     io::{self},
     marker::PhantomData,
-    str::from_utf8,
 };
 use tokio_codec::Decoder;
 use tokio_io::AsyncRead;
@@ -33,9 +33,12 @@ impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
     type Error = Error;
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        println!("{:?}", src);
         let nl_index = src.iter().position(|b| *b == b'\n');
 
-        if let Some(pos) = nl_index {
+        if src.len() > 0 {
+            let pos = nl_index.unwrap_or(src.len() - 1);
+
             let slice = src.split_to(pos + 1);
             let slice = &slice[..slice.len() - 1];
 
@@ -48,40 +51,26 @@ impl Decoder for NewlineLogOutputDecoder {
                     0 if slice.len() <= 8 => Ok(Some(LogOutput::StdIn {
                         message: String::new(),
                     })),
-                    0 => from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdIn {
-                            message: s.to_string(),
-                        })
-                    }),
+                    0 => Ok(Some(LogOutput::StdIn {
+                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
+                    })),
                     1 if slice.len() <= 8 => Ok(Some(LogOutput::StdOut {
                         message: String::new(),
                     })),
-                    1 => from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdOut {
-                            message: s.to_string(),
-                        })
-                    }),
+                    1 => Ok(Some(LogOutput::StdOut {
+                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
+                    })),
                     2 if slice.len() <= 8 => Ok(Some(LogOutput::StdErr {
                         message: String::new(),
                     })),
-                    2 => from_utf8(&slice[8..]).map(|s| {
-                        Some(LogOutput::StdErr {
-                            message: s.to_string(),
-                        })
-                    }),
+                    2 => Ok(Some(LogOutput::StdErr {
+                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
+                    })),
                     _ =>
                     // `start_exec` API on unix socket will emit values without a header
                     {
                         Ok(Some(LogOutput::Console {
-                            message: from_utf8(&slice)
-                                .map_err::<Error, _>(|e| {
-                                    StrParseError {
-                                        content: hex::encode(slice.to_owned()),
-                                        err: e,
-                                    }
-                                    .into()
-                                })?
-                                .to_string(),
+                            message: String::from_utf8_lossy(&slice).to_string(),
                         }))
                     }
                 }
@@ -122,37 +111,27 @@ where
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let nl_index = src.iter().position(|b| *b == b'\n');
 
-        if let Some(pos) = nl_index {
+        if src.len() > 0 {
+            let pos = nl_index.unwrap_or(src.len() - 1);
+
             let slice = src.split_to(pos + 1);
             let slice = &slice[..slice.len() - 1];
 
             debug!(
                 "Decoding JSON line from stream: {}",
-                from_utf8(&slice).unwrap()
+                String::from_utf8_lossy(&slice).to_string()
             );
 
             match serde_json::from_slice(slice) {
                 Ok(json) => Ok(json),
-                Err(ref e) if e.is_data() => from_utf8(&slice)
-                    .map_err(|e| {
-                        StrParseError {
-                            content: hex::encode(slice.to_owned()),
-                            err: e,
-                        }
-                        .into()
-                    })
-                    .and_then(|content| {
-                        Err(JsonDataError {
-                            message: e.to_string(),
-                            column: e.column(),
-                            contents: content.to_string(),
-                        }
-                        .into())
-                    }),
+                Err(ref e) if e.is_data() => Err(JsonDataError {
+                    message: e.to_string(),
+                    column: e.column(),
+                    contents: String::from_utf8_lossy(&slice).to_string(),
+                }
+                .into()),
                 Err(e) => Err(JsonDeserializeError {
-                    content: from_utf8(slice)
-                        .map(|s| s.to_owned())
-                        .unwrap_or_else(|e| format!("{:?}", e)),
+                    content: String::from_utf8_lossy(slice).to_string(),
                     err: e,
                 }
                 .into()),

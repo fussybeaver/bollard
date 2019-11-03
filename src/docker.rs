@@ -48,11 +48,11 @@ use crate::errors::ErrorKind::{
 };
 #[cfg(feature = "openssl")]
 use crate::errors::ErrorKind::{NoCertPathError, SSLError};
+#[cfg(windows)]
+use crate::named_pipe::NamedPipeConnector;
 use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
 use crate::system::Version;
 use crate::uri::Uri;
-#[cfg(windows)]
-use named_pipe::NamedPipeConnector;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
