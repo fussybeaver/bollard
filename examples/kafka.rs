@@ -1,26 +1,20 @@
 //! This example will spin up Zookeeper and two Kafka brokers asynchronously.
 
 use bollard::container::{
-    Config, CreateContainerOptions, HostConfig, LogOutput, LogsOptions, StartContainerOptions,
+    Config, CreateContainerOptions, HostConfig, LogsOptions, StartContainerOptions,
 };
-use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
 
 use futures_util::stream::select;
 use futures_util::try_stream::TryStreamExt;
-use serde::ser::Serialize;
-use tokio::prelude::*;
 use tokio::runtime::Runtime;
-
-use std::cmp::Eq;
-use std::hash::Hash;
 
 const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
 const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
 fn main() {
-    let mut rt = Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
 
     rt.block_on(run()).unwrap();
 
@@ -85,8 +79,8 @@ async fn run() -> Result<(), failure::Error> {
             }),
             None,
         )
-        .collect::<Vec<_>>()
-        .await;
+        .try_collect::<Vec<_>>()
+        .await?;
 
     &docker
         .create_container(
@@ -107,8 +101,8 @@ async fn run() -> Result<(), failure::Error> {
             }),
             None,
         )
-        .collect::<Vec<_>>()
-        .await;
+        .try_collect::<Vec<_>>()
+        .await?;
 
     &docker
         .create_container(
@@ -139,8 +133,8 @@ async fn run() -> Result<(), failure::Error> {
             }),
             None,
         )
-        .collect::<Vec<_>>()
-        .await;
+        .try_collect::<Vec<_>>()
+        .await?;
 
     &docker
         .create_container(
@@ -168,8 +162,9 @@ async fn run() -> Result<(), failure::Error> {
     stream
         .map_err(|e| println!("{:?}", e))
         .map_ok(|x| println!("{:?}", x))
-        .collect::<Vec<Result<(), ()>>>()
-        .await;
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap();
 
     Ok(())
 }

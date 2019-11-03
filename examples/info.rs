@@ -8,7 +8,6 @@ use std::default::Default;
 
 use futures_util::stream;
 use futures_util::stream::StreamExt;
-use futures_util::try_stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 async fn run() -> Result<(), failure::Error> {
@@ -29,7 +28,7 @@ async fn run() -> Result<(), failure::Error> {
         .await?;
 
     let docker_stream = stream::repeat(docker);
-    let container_stream = docker_stream
+    docker_stream
         .zip(stream::iter(containers))
         .for_each_concurrent(2, conc)
         .await;

@@ -180,21 +180,6 @@ impl std::error::Error for Error {
     }
 }
 
-impl<'a> std::error::Error for &'a Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self.inner.get_context() {
-            ErrorKind::JsonSerializeError { err, .. } => Some(err),
-            ErrorKind::JsonDeserializeError { err, .. } => Some(err),
-            ErrorKind::StrParseError { err, .. } => Some(err),
-            ErrorKind::IOError { err, .. } => Some(err),
-            ErrorKind::StrFmtError { err, .. } => Some(err),
-            ErrorKind::HttpClientError { err, .. } => Some(err),
-            ErrorKind::HyperResponseError { err, .. } => Some(err),
-            _ => None,
-        }
-    }
-}
-
 impl Error {
     /// yield the underlying error kind of this error.
     pub fn kind(&self) -> &ErrorKind {

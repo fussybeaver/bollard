@@ -33,7 +33,6 @@ impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
     type Error = Error;
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        println!("{:?}", src);
         let nl_index = src.iter().position(|b| *b == b'\n');
 
         if src.len() > 0 {
