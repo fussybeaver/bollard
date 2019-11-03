@@ -154,11 +154,29 @@ async fn top_processes_test(docker: Docker) -> Result<(), Error> {
 async fn logs_test(docker: Docker) -> Result<(), Error> {
     create_container_hello_world(&docker, "integration_test_logs").await?;
 
+    // for some reason on windows, even though we start the container,
+    // wait until it finishes, the API request for logs seems to be flaky
+    // on the first request.
+    #[cfg(windows)]
+    &docker
+        .logs(
+            "integration_test_logs",
+            Some(LogsOptions {
+                follow: true,
+                stdout: true,
+                stderr: false,
+                tail: "all".to_string(),
+                ..Default::default()
+            }),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
     let vec = &docker
         .logs(
             "integration_test_logs",
             Some(LogsOptions {
-                follow: false,
+                follow: true,
                 stdout: true,
                 stderr: false,
                 tail: "all".to_string(),
@@ -216,7 +234,9 @@ async fn stats_test(docker: Docker) -> Result<(), Error> {
     let value = vec.get(0);
 
     assert_eq!(value.unwrap().name, "/integration_test_stats".to_string());
-    kill_container(&docker, "integration_test_stats").await?;
+    kill_container(&docker, "integration_test_stats")
+        .await
+        .unwrap_or(());
 
     Ok(())
 }
@@ -430,7 +450,11 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .upload_to_container(
             "integration_test_archive_container",
             Some(UploadToContainerOptions {
-                path: "/tmp",
+                path: if cfg!(windows) {
+                    "C:\\Windows\\Logs"
+                } else {
+                    "/tmp"
+                },
                 ..Default::default()
             }),
             payload.into(),
@@ -440,7 +464,13 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
     let chunk: hyper::Chunk = docker
         .download_from_container(
             "integration_test_archive_container",
-            Some(DownloadFromContainerOptions { path: "/tmp" }),
+            Some(DownloadFromContainerOptions {
+                path: if cfg!(windows) {
+                    "C:\\Windows\\Logs\\"
+                } else {
+                    "/tmp"
+                },
+            }),
         )
         .try_concat()
         .await?;
@@ -455,7 +485,14 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .map(|file| file.unwrap())
         .filter(|file| {
             let path = file.header().path().unwrap();
-            if path == std::path::Path::new("tmp/readme.txt") {
+            println!("{:?}", path);
+            if path
+                == std::path::Path::new(if cfg!(windows) {
+                    "Logs/readme.txt"
+                } else {
+                    "tmp/readme.txt"
+                })
+            {
                 return true;
             }
             false
@@ -642,10 +679,10 @@ fn integration_test_pause_container() {
     connect_to_docker_and_run!(pause_container_test);
 }
 
-//#[test]
-//fn integration_test_prune_containers() {
-//    connect_to_docker_and_run!(prune_containers_test);
-//}
+#[test]
+fn integration_test_prune_containers() {
+    connect_to_docker_and_run!(prune_containers_test);
+}
 
 #[test]
 fn integration_test_archive_containers() {

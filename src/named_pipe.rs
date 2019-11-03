@@ -1,29 +1,32 @@
 #![cfg(windows)]
 
-use bytes::{Buf, BufMut};
-use futures::{Async, Future, Poll};
+use futures_core::ready;
 use hyper::client::connect::{Connect, Connected, Destination};
-use mio::Ready;
 use mio_named_pipes::NamedPipe;
+use pin_project::pin_project;
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_reactor::PollEvented;
+use tokio_net::util::PollEvented;
 use winapi::um::winbase::*;
 
 use std::fmt;
 use std::fs::OpenOptions;
+use std::future::Future;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::os::windows::fs::*;
 use std::os::windows::io::*;
 use std::path::Path;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use docker::ClientType;
-use uri::Uri;
+use crate::docker::ClientType;
+use crate::uri::Uri;
 
 pub struct NamedPipeStream {
     io: PollEvented<NamedPipe>,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct ConnectFuture {
     inner: State,
@@ -60,45 +63,6 @@ impl NamedPipeStream {
         let io = PollEvented::new(stream);
         NamedPipeStream { io }
     }
-
-    pub fn poll_read_ready(&self, ready: Ready) -> Poll<Ready, io::Error> {
-        self.io.poll_read_ready(ready)
-    }
-
-    pub fn poll_write_ready(&self) -> Poll<Ready, io::Error> {
-        self.io.poll_write_ready()
-    }
-}
-
-impl Read for NamedPipeStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.io.read(buf)
-    }
-}
-
-impl Write for NamedPipeStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.io.write(buf)
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        self.io.flush()
-    }
-}
-
-impl<'a> Read for &'a NamedPipeStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        (&self.io).read(buf)
-    }
-}
-
-impl<'a> Write for &'a NamedPipeStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        (&self.io).write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        (&self.io).flush()
-    }
 }
 
 impl AsyncRead for NamedPipeStream {
@@ -106,90 +70,54 @@ impl AsyncRead for NamedPipeStream {
         false
     }
 
-    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        <&NamedPipeStream>::read_buf(&mut &*self, buf)
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &mut [u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        match self.io.get_ref().read(bytes) {
+            Ok(r) => Poll::Ready(Ok(r)),
+            Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => Poll::Ready(Ok(0)),
+
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.io.clear_write_ready(cx)?;
+                Poll::Pending
+            }
+
+            Err(e) => Poll::Ready(Err(e)),
+        }
     }
 }
 
 impl AsyncWrite for NamedPipeStream {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        <&NamedPipeStream>::shutdown(&mut &*self)
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        <&NamedPipeStream>::write_buf(&mut &*self, buf)
-    }
-}
-
-impl<'a> AsyncRead for &'a NamedPipeStream {
-    unsafe fn prepare_uninitialized_buffer(&self, _: &mut [u8]) -> bool {
-        false
-    }
-
-    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        if let Async::NotReady = <NamedPipeStream>::poll_read_ready(self, Ready::readable())? {
-            return Ok(Async::NotReady);
-        }
-
-        let res = unsafe {
-            let mut bytes = buf.bytes_mut();
-            self.io.get_ref().read(&mut bytes)
-        };
-
-        match res {
-            Ok(r) => {
-                unsafe {
-                    buf.advance_mut(r);
-                }
-                Ok(r.into())
-            }
-
-            Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(0.into()),
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        match self.io.get_ref().write(bytes) {
+            Ok(r) => Poll::Ready(Ok(r.into())),
 
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.io.clear_write_ready()?;
-                Ok(Async::NotReady)
+                self.io.clear_write_ready(cx)?;
+                Poll::Pending
             }
 
-            Err(e) => Err(e),
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
-}
 
-impl<'a> AsyncWrite for &'a NamedPipeStream {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        Ok(().into())
-    }
-
-    #[allow(unused_unsafe)]
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        if let Async::NotReady = <NamedPipeStream>::poll_write_ready(self)? {
-            return Ok(Async::NotReady);
-        }
-
-        let res = unsafe {
-            let bytes = buf.bytes();
-            self.io.get_ref().write(bytes)
-        };
-
-        match res {
-            Ok(r) => {
-                buf.advance(r);
-                Ok(r.into())
-            }
-
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.io.clear_write_ready()?;
-                Ok(Async::NotReady)
-            }
-
-            Err(e) => Err(e),
-        }
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Poll::Ready(self.io.get_ref().flush())
     }
 }
 
 impl fmt::Debug for NamedPipeStream {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.io.get_ref().fmt(f)
     }
 }
@@ -201,29 +129,30 @@ impl AsRawHandle for NamedPipeStream {
 }
 
 impl Future for ConnectFuture {
-    type Item = NamedPipeStream;
-    type Error = io::Error;
+    type Output = Result<NamedPipeStream, io::Error>;
 
-    fn poll(&mut self) -> Poll<NamedPipeStream, io::Error> {
-        match self.inner {
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<NamedPipeStream, io::Error>> {
+        let this = self.project();
+        match this.inner {
             State::Waiting(ref mut stream) => {
-                if let Async::NotReady = stream.io.poll_write_ready()? {
-                    return Ok(Async::NotReady);
-                }
+                ready!(stream.io.poll_write_ready(cx)?);
 
                 if let Some(e) = stream.io.get_ref().take_error()? {
-                    return Err(e);
+                    return Poll::Ready(Err(e));
                 }
             }
-            State::Error(_) => match mem::replace(&mut self.inner, State::Empty) {
-                State::Error(e) => return Err(e),
+            State::Error(_) => match mem::replace(this.inner, State::Empty) {
+                State::Error(e) => return Poll::Ready(Err(e)),
                 _ => unreachable!(),
             },
             State::Empty => panic!("can't poll stream twice"),
         }
 
-        match mem::replace(&mut self.inner, State::Empty) {
-            State::Waiting(stream) => Ok(Async::Ready(stream)),
+        match mem::replace(this.inner, State::Empty) {
+            State::Waiting(stream) => Poll::Ready(Ok(stream)),
             _ => unreachable!(),
         }
     }
@@ -251,60 +180,70 @@ impl NamedPipeConnector {
 impl Connect for NamedPipeConnector {
     type Transport = NamedPipeStream;
     type Error = io::Error;
-    type Future = ConnectorConnectFuture;
+    type Future = Pin<Box<ConnectorConnectFuture>>;
 
     fn connect(&self, destination: Destination) -> Self::Future {
-        ConnectorConnectFuture::Start(destination)
+        Box::pin(ConnectorConnectFuture {
+            state: ConnectorConnectState::Start(destination),
+        })
     }
 }
 
 #[derive(Debug)]
-pub enum ConnectorConnectFuture {
+pub enum ConnectorConnectState {
     Start(Destination),
-    Connect(ConnectFuture),
+    Connect(Pin<Box<ConnectFuture>>),
+}
+
+#[pin_project]
+#[derive(Debug)]
+pub struct ConnectorConnectFuture {
+    state: ConnectorConnectState,
 }
 
 const NAMED_PIPE_SCHEME: &str = "net.pipe";
 
 impl Future for ConnectorConnectFuture {
-    type Item = (NamedPipeStream, Connected);
-    type Error = io::Error;
+    type Output = Result<(NamedPipeStream, Connected), io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         loop {
-            let next_state = match self {
-                ConnectorConnectFuture::Start(destination) => {
+            let next_state = match this.state {
+                ConnectorConnectState::Start(destination) => {
                     if destination.scheme() != NAMED_PIPE_SCHEME {
-                        return Err(io::Error::new(
+                        return Poll::Ready(Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             format!("Invalid scheme {:?}", destination.scheme()),
-                        ));
+                        )));
                     }
 
                     let path = match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
                         Some(path) => path,
 
                         None => {
-                            return Err(io::Error::new(
+                            return Poll::Ready(Err(io::Error::new(
                                 io::ErrorKind::InvalidInput,
                                 format!("Invalid uri {:?}", destination),
-                            ));
+                            )));
                         }
                     };
 
-                    ConnectorConnectFuture::Connect(NamedPipeStream::connect(&path))
+                    ConnectorConnectFuture {
+                        state: ConnectorConnectState::Connect(Box::pin(NamedPipeStream::connect(
+                            &path,
+                        ))),
+                    }
                 }
 
-                ConnectorConnectFuture::Connect(f) => match f.poll() {
-                    Ok(Async::Ready(stream)) => {
-                        return Ok(Async::Ready((stream, Connected::new())))
-                    }
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(err) => return Err(err),
+                ConnectorConnectState::Connect(f) => match f.as_mut().poll(cx) {
+                    Poll::Ready(Ok(stream)) => return Poll::Ready(Ok((stream, Connected::new()))),
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
                 },
             };
 
-            *self = next_state;
+            *this.state = next_state.state;
         }
     }
 }

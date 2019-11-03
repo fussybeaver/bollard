@@ -152,6 +152,7 @@ pub async fn create_container_hello_world(
     &docker
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await?;
+
     let wait = &docker
         .wait_container(container_name, None::<WaitContainerOptions<String>>)
         .try_collect::<Vec<_>>()
