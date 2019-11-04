@@ -1,16 +1,14 @@
-extern crate bollard;
-extern crate chrono;
-extern crate futures;
-extern crate hyper;
-extern crate tokio;
-
 use bollard::auth::DockerCredentials;
+use bollard::errors::Error;
 use bollard::image::*;
 use bollard::system::*;
 use bollard::Docker;
 
-use futures::future;
-use hyper::rt::{Future, Stream};
+use futures_util::future;
+use futures_util::stream::select;
+use futures_util::stream::StreamExt;
+use futures_util::try_stream::TryStreamExt;
+use tokio::future::ok;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -23,22 +21,18 @@ enum Results {
     EventsResults(EventsResults),
 }
 
-fn events_test(docker: Docker) {
-    let image = move || {
-        if cfg!(windows) {
-            format!("{}hello-world:nanoserver", registry_http_addr())
-        } else {
-            format!("{}hello-world:linux", registry_http_addr())
-        }
+async fn events_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
     };
-    let docker2 = docker.clone();
 
-    let rt = Runtime::new().unwrap();
     let stream = docker.events(None::<EventsOptions<String>>);
 
-    let stream2 = docker2.create_image(
+    let stream2 = docker.create_image(
         Some(CreateImageOptions {
-            from_image: image(),
+            from_image: &image[..],
             ..Default::default()
         }),
         if cfg!(windows) {
@@ -52,28 +46,20 @@ fn events_test(docker: Docker) {
         },
     );
 
-    let future = stream
-        .map(|events_results| Results::EventsResults(events_results))
-        .select(stream2.map(|image_results| Results::CreateImageResults(image_results)))
-        .skip_while(|value| match value {
-            Results::EventsResults(_) => future::ok(false),
-            _ => future::ok(true),
-        })
-        .take(1)
-        .collect();
+    let vec = select(
+        stream.map_ok(|events_results| Results::EventsResults(events_results)),
+        stream2.map_ok(|image_results| Results::CreateImageResults(image_results)),
+    )
+    .skip_while(|value| match value {
+        Ok(Results::EventsResults(_)) => future::ready(false),
+        _ => future::ready(true),
+    })
+    .take(1)
+    .try_collect::<Vec<_>>()
+    .await?;
 
-    let iter = rt
-        .block_on_all(future)
-        .or_else(|e| {
-            println!("{:?}", e);
-            Err(e)
-        })
-        .unwrap()
-        .into_iter();
-
-    println!("{}", iter.len());
-
-    assert!(iter
+    assert!(vec
+        .iter()
         .map(|value| {
             println!("{:?}", value);
             value
@@ -82,6 +68,8 @@ fn events_test(docker: Docker) {
             Results::EventsResults(EventsResults { type_: t, .. }) => true,
             _ => false,
         }));
+
+    Ok(())
 }
 
 #[test]

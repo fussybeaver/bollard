@@ -3,12 +3,14 @@
 use arrayvec::ArrayVec;
 use chrono::serde::{ts_nanoseconds, ts_seconds};
 use chrono::{DateTime, Utc};
-use futures::{stream, Stream};
+use futures_core::Stream;
 use http::request::Builder;
 use hyper::{Body, Method};
 
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use super::Docker;
-use crate::either::EitherStream;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 
@@ -201,12 +203,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # extern crate chrono;
     /// use bollard::system::EventsOptions;
     /// use chrono::{Duration, Utc};
     /// use std::collections::HashMap;
     ///
-    /// # fn main() {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
@@ -215,12 +215,11 @@ impl Docker {
     ///     until: Utc::now(),
     ///     filters: HashMap::new(),
     /// }));
-    /// # }
     /// ```
     pub fn events<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Stream<Item = EventsResults, Error = Error>
+    ) -> impl Stream<Item = Result<EventsResults, Error>>
     where
         T: EventsQueryParams<K, V>,
         K: AsRef<str>,
