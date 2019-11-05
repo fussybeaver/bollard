@@ -163,98 +163,6 @@ pub async fn create_container_hello_world(
     Ok(())
 }
 
-// #[allow(dead_code)]
-// pub fn create_registry(
-//     docker: Docker,
-//     container_name: &'static str,
-// ) -> impl Future<Item = DockerChain, Error = Error> {
-//     let image = || {
-//         if cfg!(windows) {
-//             String::from("stefanscherer/registry-windows")
-//         } else {
-//             String::from("registry:2")
-//         }
-//     };
-//
-//     let cmd = || {
-//         if cfg!(windows) {
-//             Some(vec![
-//                 "\\registry.exe".to_string(),
-//                 "serve".to_string(),
-//                 "/config/config.yml".to_string(),
-//             ])
-//         } else {
-//             Some(vec![
-//                 "/entrypoint.sh".to_string(),
-//                 "/etc/docker/registry/config.yml".to_string(),
-//             ])
-//         }
-//     };
-//
-//     chain
-//         .create_image(
-//             Some(CreateImageOptions {
-//                 from_image: image(),
-//                 ..Default::default()
-//             }),
-//             if cfg!(windows) {
-//                 None
-//             } else {
-//                 Some(integration_test_registry_credentials())
-//             },
-//         )
-//         .and_then(move |(docker, _)| {
-//             docker.create_container(
-//                 Some(CreateContainerOptions {
-//                     name: container_name.to_string(),
-//                 }),
-//                 Config {
-//                     attach_stdout: Some(false),
-//                     attach_stderr: Some(false),
-//                     cmd: cmd(),
-//                     image: Some(image()),
-//                     exposed_ports: Some(
-//                         [("5000/tcp".to_string(), HashMap::new())]
-//                             .iter()
-//                             .cloned()
-//                             .collect::<HashMap<String, HashMap<(), ()>>>(),
-//                     ),
-//                     host_config: Some(HostConfig {
-//                         port_bindings: Some(
-//                             [(
-//                                 "5000/tcp".to_string(),
-//                                 vec![PortBinding {
-//                                     host_ip: ::std::env::var("HOST_IP")
-//                                         .unwrap_or("0.0.0.0".to_string()),
-//                                     host_port: "5000".to_string(),
-//                                 }],
-//                             )]
-//                             .iter()
-//                             .cloned()
-//                             .collect::<HashMap<String, Vec<PortBinding<String>>>>(),
-//                         ),
-//                         publish_all_ports: Some(true),
-//                         restart_policy: Some(RestartPolicy {
-//                             name: Some("always".to_string()),
-//                             ..Default::default()
-//                         }),
-//                         ..Default::default()
-//                     }),
-//                     ..Default::default()
-//                 },
-//             )
-//         })
-//         .and_then(move |(docker, _)| {
-//             docker.start_container(container_name, None::<StartContainerOptions<String>>)
-//         })
-//         .map(|(docker, _)| docker)
-// }
-//
-// #[allow(dead_code)]
-// pub fn chain_create_noop(docker: Docker) -> impl Future<Output = Result<Docker, Error>> {
-//     future::ok(docker)
-// }
-//
 #[allow(dead_code)]
 pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Result<(), Error> {
     let image = if cfg!(windows) {
@@ -279,9 +187,6 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
             "/www".to_string(),
         ])
     };
-
-    //let docker = future::ok(docker);
-    //#[cfg(unix)]
 
     &docker
         .create_image(
