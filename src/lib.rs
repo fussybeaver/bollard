@@ -8,7 +8,7 @@
 //!
 //! Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 //! [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
-//! futures and streams.
+//! futures, streams and the async/await paradigm.
 //!
 //! The library also features Windows support through Named Pipes and HTTPS support through
 //! optional SSL bindings or a native TLS implementation.
@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.3"
+//! bollard = "0.4"
 //! ```
 //!
 //! # API
@@ -29,7 +29,7 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.39/) is pegged at version `1.39`
+//! The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`
 //!
 //! # Usage
 //!
@@ -128,7 +128,7 @@
 //!
 //! Note: all these examples need a [Tokio
 //! Runtime](https://tokio.rs/docs/getting-started/runtime/). A small example about how to use
-//! Tokio is below.
+//! Tokio is further below.
 //!
 //! ### Version
 //!
@@ -143,10 +143,10 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.version()
-//!     .map(|version| {
-//!         println!("{:?}", version);
-//!     });
+//! async move {
+//!     let version = docker.version().await.unwrap();
+//!     println!("{:?}", version);
+//! };
 //! ```
 //!
 //! ### Listing images
@@ -165,15 +165,16 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.list_images(Some(ListImagesOptions::<String> {
-//!    all: true,
-//!    ..Default::default()
-//! }))
-//!   .map(|images| {
-//!        for i in images {
-//!            println!("-> {:?}", i);
-//!        }
-//!    });
+//! async move {
+//!     let images = &docker.list_images(Some(ListImagesOptions::<String> {
+//!         all: true,
+//!         ..Default::default()
+//!     })).await.unwrap();
+//!
+//!     for image in images {
+//!         println!("-> {:?}", image);
+//!     }
+//! };
 //! ```
 //!
 //! ## Streaming Stats
@@ -193,7 +194,7 @@
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! async move {
-//!     let stats = docker.stats("postgres", Some(StatsOptions {
+//!     let stats = &docker.stats("postgres", Some(StatsOptions {
 //!        stream: true,
 //!        ..Default::default()
 //!     })).try_collect::<Vec<_>>().await.unwrap();
@@ -221,7 +222,7 @@
 //! ```rust
 //! use tokio::runtime::Runtime;
 //!
-//! let mut rt = Runtime::new().unwrap();
+//! let rt = Runtime::new().unwrap();
 //! ```
 //!
 //! Subsequently, use the docker API:
@@ -233,7 +234,9 @@
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! let future = docker.list_images(None::<ListImagesOptions<String>>);
+//! let future = async move {
+//!     &docker.list_images(None::<ListImagesOptions<String>>).await;
+//! };
 //! ```
 //!
 //! Execute the future aynchronously:

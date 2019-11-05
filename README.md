@@ -8,7 +8,7 @@
 
 Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
-futures and streams.
+futures, streams and the async/await paradigm.
 
 The library also features Windows support through Named Pipes and HTTPS support through
 optional SSL bindings or a native TLS implementation.
@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.3"
+bollard = "0.4"
 ```
 
 ## API
@@ -29,7 +29,7 @@ bollard = "0.3"
 
 ### Version
 
-The [Docker API](https://docs.docker.com/engine/api/v1.39/) is pegged at version `1.39`
+The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`
 
 ## Usage
 
@@ -128,29 +128,25 @@ Docker::connect_with_tls_defaults();
 
 Note: all these examples need a [Tokio
 Runtime](https://tokio.rs/docs/getting-started/runtime/). A small example about how to use
-Tokio is below.
+Tokio is further below.
 
 #### Version
 
 First, check that the API is working with your server:
 
 ```rust, no_run
-## extern crate bollard;
-## extern crate futures;
-## fn main () {
-use futures::Future;
-
 use bollard::Docker;
+
+use futures_util::future::FutureExt;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
 ## let docker = Docker::connect_with_local_defaults().unwrap();
 
-docker.version()
-    .map(|version| {
-        println!("{:?}", version);
-    });
-## }
+async move {
+    let version = docker.version().await.unwrap();
+    println!("{:?}", version);
+};
 ```rust
 
 ### Listing images
@@ -158,25 +154,26 @@ docker.version()
 To list docker images available on the Docker server:
 
 ```rust,no_run
-use futures::Future;
-
 use bollard::Docker;
 use bollard::image::ListImagesOptions;
+
+use futures_util::future::FutureExt;
 
 use std::default::Default;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
 
-docker.list_images(Some(ListImagesOptions::<String> {
-   all: true,
-   ..Default::default()
-}))
-  .map(|images| {
-       for i in images {
-           println!("-> {:?}", i);
-       }
-   });
+async move {
+    let images = &docker.list_images(Some(ListImagesOptions::<String> {
+        all: true,
+        ..Default::default()
+    })).await.unwrap();
+
+    for image in images {
+        println!("-> {:?}", image);
+    }
+};
 ```
 
 ### Streaming Stats
@@ -184,57 +181,29 @@ docker.list_images(Some(ListImagesOptions::<String> {
 To receive a stream of stats for a running container.
 
 ```rust
-use futures::stream::Stream;
-
 use bollard::Docker;
 use bollard::container::StatsOptions;
+
+use futures_util::try_stream::TryStreamExt;
 
 use std::default::Default;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
 
-docker.stats("postgres", Some(StatsOptions {
-   stream: true,
-   ..Default::default()
-}))
-  .map(|stat| {
+async move {
+    let stats = &docker.stats("postgres", Some(StatsOptions {
+       stream: true,
+       ..Default::default()
+    })).try_collect::<Vec<_>>().await.unwrap();
+
+    for stat in stats {
         println!("{} - mem total: {:?} | mem usage: {:?}",
             stat.name,
             stat.memory_stats.max_usage,
             stat.memory_stats.usage);
-   });
-```
-
-### Chaining docker commands
-
-It's sometimes more convenient to chain a string of Docker API calls. The `DockerChain` API
-will return an instance of itself in the return call.
-
-```rust
-use bollard::Docker;
-use bollard::image::CreateImageOptions;
-use bollard::container::CreateContainerOptions;
-use bollard::container::Config;
-
-use tokio::prelude::Future;
-
-use std::default::Default;
-
-// Use a connection function described above
-// let docker = Docker::connect_...;
-
-docker.chain().create_image(Some(CreateImageOptions{
-    from_image: "hello-world",
-    ..Default::default()
-}), None).and_then(|(docker, _)|
-    docker.create_container(
-        None::<CreateContainerOptions<String>>,
-        Config {
-            image: Some("hello-world"),
-            cmd: Some(vec!["/hello"]),
-            ..Default::default()
-        }));
+    }
+};
 ```
 
 ## Examples
@@ -251,7 +220,7 @@ Create a Tokio Runtime:
 ```rust
 use tokio::runtime::Runtime;
 
-let mut rt = Runtime::new().unwrap();
+let rt = Runtime::new().unwrap();
 ```
 
 Subsequently, use the docker API:
@@ -259,7 +228,9 @@ Subsequently, use the docker API:
 ```rust
 // Use a connection function described above
 // let docker = Docker::connect_...;
-let future = docker.list_images(None::<ListImagesOptions<String>>);
+let future = async move {
+    &docker.list_images(None::<ListImagesOptions<String>>).await;
+};
 ```
 
 Execute the future aynchronously:
@@ -277,7 +248,7 @@ let result = rt.block_on(future);
 Finally, to shut down the executor:
 
 ```rust
-rt.shutdown_now().wait().unwrap();
+rt.shutdown_now();
 ```
 
 ## History
