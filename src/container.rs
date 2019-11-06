@@ -308,7 +308,7 @@ where
     #[serde(rename = "BlkioDeviceWriteIOps")]
     pub blkio_device_write_iops: Option<Vec<HashMap<T, T>>>,
     /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
-    pub memory_swappiness: Option<u64>,
+    pub memory_swappiness: Option<i64>,
     /// Disable OOM Killer for the container.
     pub oom_kill_disable: Option<bool>,
     /// An integer value containing the score given to the container in order to tune OOM killer
@@ -1509,7 +1509,7 @@ pub struct UpdateContainerOptions {
     /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
     pub memory_swap: Option<i64>,
     /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
-    pub memory_swappiness: Option<u64>,
+    pub memory_swappiness: Option<i64>,
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
     pub nano_cpus: Option<u64>,
     /// Disable OOM Killer for the container.
