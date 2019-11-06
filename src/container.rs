@@ -486,6 +486,7 @@ pub struct LogConfig {
 
 /// This container's networking configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkingConfig {
     pub endpoints_config: HashMap<String, ContainerNetwork>,
