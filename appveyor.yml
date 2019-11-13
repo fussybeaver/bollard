@@ -3,7 +3,7 @@ image: Visual Studio 2017
 install:
   - docker version
   - ps: Start-FileDownload "https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe"
-  - rustup-init.exe -y --default-host i686-pc-windows-msvc --default-toolchain nightly
+  - rustup-init.exe -y --default-host i686-pc-windows-msvc
   - SET PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - SET PATH=%PATH%;C:\MinGW\bin
   - rustc -V
