@@ -122,17 +122,21 @@ pub enum ErrorKind {
         err: hyper::Error,
     },
     /// Error emitted when a request times out.
-    #[fail(display = "Timeout error: {:?}", err)]
-    RequestTimeoutError {
-        /// The original error emitted.
-        err: tokio_timer::timeout::Error<hyper::Error>,
-    },
+    #[fail(display = "Timeout error")]
+    RequestTimeoutError,
     /// Error emitted when an SSL context fails to configure.
     #[cfg(feature = "openssl")]
     #[fail(display = "SSL error: {:?}", err)]
     SSLError {
         /// The original error emitted.
         err: openssl::error::ErrorStack,
+    },
+    /// Error emitted when a TLS context fails to configure.
+    #[cfg(feature = "tls")]
+    #[fail(display = "TLS error: {:?}", err)]
+    TLSError {
+        /// The original error emitted.
+        err: native_tls::Error,
     },
 }
 
@@ -171,7 +175,6 @@ impl std::error::Error for Error {
             ErrorKind::StrFmtError { err, .. } => Some(err),
             ErrorKind::HttpClientError { err, .. } => Some(err),
             ErrorKind::HyperResponseError { err, .. } => Some(err),
-            ErrorKind::RequestTimeoutError { err, .. } => Some(err),
             _ => None,
         }
     }

@@ -3,25 +3,20 @@ use arrayvec::ArrayVec;
 use base64;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use futures::future;
-use futures::future::Either;
-use futures::{stream, Stream};
+use futures_core::Stream;
+use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::Serialize;
 use serde_json;
 
-use super::{Docker, DockerChain};
-use auth::DockerCredentials;
-use container::{Config, GraphDriver};
-#[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use either::EitherStream;
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
+use super::Docker;
+use crate::auth::DockerCredentials;
+use crate::container::{Config, GraphDriver};
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -646,7 +641,7 @@ pub struct CommitContainerOptions<T> {
     /// Whether to pause the container before committing.
     pub pause: bool,
     /// `Dockerfile` instructions to apply while committing
-    pub changes: T,
+    pub changes: Option<T>,
 }
 
 /// Trait providing implementations for [Commit Container Options](struct.CommitContainerOptions.html)
@@ -657,34 +652,40 @@ where
     K: AsRef<str>,
     V: AsRef<str>,
 {
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 7]>, Error>;
+    fn into_array(self) -> Result<Vec<(K, V)>, Error>;
 }
 
 impl<'a> CommitContainerQueryParams<&'a str, &'a str> for CommitContainerOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 7]>, Error> {
-        Ok(ArrayVec::from([
+    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
+        let mut res = vec![
             ("container", self.container),
             ("repo", self.repo),
             ("tag", self.tag),
             ("comment", self.comment),
             ("author", self.author),
             ("pause", if self.pause { TRUE_STR } else { FALSE_STR }),
-            ("changes", self.changes),
-        ]))
+        ];
+        if let Some(c) = self.changes {
+            res.push(("changes", c));
+        }
+        Ok(res)
     }
 }
 
 impl<'a> CommitContainerQueryParams<&'a str, String> for CommitContainerOptions<String> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 7]>, Error> {
-        Ok(ArrayVec::from([
+    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
+        let mut res = vec![
             ("container", self.container),
             ("repo", self.repo),
             ("tag", self.tag),
             ("comment", self.comment),
             ("author", self.author),
             ("pause", self.pause.to_string()),
-            ("changes", self.changes),
-        ]))
+        ];
+        if let Some(c) = self.changes {
+            res.push(("changes", c));
+        }
+        Ok(res)
     }
 }
 
@@ -974,10 +975,7 @@ impl Docker {
     ///
     /// docker.list_images(options);
     /// ```
-    pub fn list_images<T, K>(
-        &self,
-        options: Option<T>,
-    ) -> impl Future<Item = Vec<APIImages>, Error = Error>
+    pub async fn list_images<T, K>(&self, options: Option<T>) -> Result<Vec<APIImages>, Error>
     where
         T: ListImagesQueryParams<K>,
         K: AsRef<str>,
@@ -991,7 +989,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1036,7 +1034,7 @@ impl Docker {
         &self,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = CreateImageResults, Error = Error>
+    ) -> impl Stream<Item = Result<CreateImageResults, Error>>
     where
         T: CreateImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1056,10 +1054,10 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
-                EitherStream::A(self.process_into_stream(req))
+                self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                EitherStream::B(future::err(JsonSerializeError { err: e }.into()).into_stream())
+                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
             }
         }
     }
@@ -1088,7 +1086,7 @@ impl Docker {
     ///
     /// docker.inspect_image("hello-world");
     /// ```
-    pub fn inspect_image(&self, image_name: &str) -> impl Future<Item = Image, Error = Error> {
+    pub async fn inspect_image(&self, image_name: &str) -> Result<Image, Error> {
         let url = format!("/images/{}/json", image_name);
 
         let req = self.build_request::<_, String, String>(
@@ -1098,7 +1096,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1133,10 +1131,7 @@ impl Docker {
     ///
     /// docker.prune_images(options);
     /// ```
-    pub fn prune_images<T, K>(
-        &self,
-        options: Option<T>,
-    ) -> impl Future<Item = PruneImagesResults, Error = Error>
+    pub async fn prune_images<T, K>(&self, options: Option<T>) -> Result<PruneImagesResults, Error>
     where
         T: PruneImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1150,7 +1145,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1176,10 +1171,7 @@ impl Docker {
     ///
     /// docker.image_history("hello-world");
     /// ```
-    pub fn image_history(
-        &self,
-        image_name: &str,
-    ) -> impl Future<Item = Vec<ImageHistory>, Error = Error> {
+    pub async fn image_history(&self, image_name: &str) -> Result<Vec<ImageHistory>, Error> {
         let url = format!("/images/{}/history", image_name);
 
         let req = self.build_request::<_, String, String>(
@@ -1189,7 +1181,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1228,10 +1220,7 @@ impl Docker {
     ///
     /// docker.search_images(search_options);
     /// ```
-    pub fn search_images<T, K>(
-        &self,
-        options: T,
-    ) -> impl Future<Item = Vec<APIImageSearch>, Error = Error>
+    pub async fn search_images<T, K>(&self, options: T) -> Result<Vec<APIImageSearch>, Error>
     where
         T: SearchImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1245,7 +1234,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1280,12 +1269,12 @@ impl Docker {
     ///
     /// docker.remove_image("hello-world", remove_options, None);
     /// ```
-    pub fn remove_image<T, K, V>(
+    pub async fn remove_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = Vec<RemoveImageResults>, Error = Error>
+    ) -> Result<Vec<RemoveImageResults>, Error>
     where
         T: RemoveImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1305,9 +1294,9 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     Ok(Body::empty()),
                 );
-                Either::A(self.process_into_value(req))
+                self.process_into_value(req).await
             }
-            Err(e) => Either::B(future::err(JsonSerializeError { err: e }.into())),
+            Err(e) => Err(JsonSerializeError { err: e }.into()),
         }
     }
 
@@ -1342,11 +1331,11 @@ impl Docker {
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
-    pub fn tag_image<T, K, V>(
+    pub async fn tag_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: TagImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1361,7 +1350,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1403,12 +1392,12 @@ impl Docker {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image<T, K, V>(
+    pub async fn push_image<T, K, V>(
         &self,
         image_name: &str,
         options: Option<T>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: PushImageQueryParams<K, V>,
         K: AsRef<str>,
@@ -1430,9 +1419,9 @@ impl Docker {
                     Ok(Body::empty()),
                 );
 
-                Either::A(self.process_into_unit(req))
+                self.process_into_unit(req).await
             }
-            Err(e) => Either::B(future::err(JsonSerializeError { err: e }.into())),
+            Err(e) => Err(JsonSerializeError { err: e }.into()),
         }
     }
 
@@ -1473,11 +1462,11 @@ impl Docker {
     ///
     /// docker.commit_container(options, config);
     /// ```
-    pub fn commit_container<T, K, V, Z>(
+    pub async fn commit_container<T, K, V, Z>(
         &self,
         options: T,
         config: Config<Z>,
-    ) -> impl Future<Item = CommitContainerResults, Error = Error>
+    ) -> Result<CommitContainerResults, Error>
     where
         T: CommitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1493,7 +1482,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1548,7 +1537,7 @@ impl Docker {
         options: T,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
-    ) -> impl Stream<Item = BuildImageResults, Error = Error>
+    ) -> impl Stream<Item = Result<BuildImageResults, Error>>
     where
         T: BuildImageQueryParams<K>,
         K: AsRef<str>,
@@ -1567,964 +1556,11 @@ impl Docker {
                     Ok(tar.unwrap_or_else(|| Body::empty())),
                 );
 
-                EitherStream::A(self.process_into_stream(req))
+                self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                EitherStream::B(future::err(JsonSerializeError { err: e }.into()).into_stream())
+                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
             }
         }
-    }
-}
-
-impl DockerChain {
-    /// ---
-    ///
-    /// # Create Image
-    ///
-    /// Create an image by either pulling it from a registry or importing it. Consumes the client
-    /// instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - An optional [Create Image Options](image/struct.CreateImageOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Create Image
-    ///  Results](image/enum.CreateImageResults.html), wrapped in an asynchronous Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::CreateImageOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let options = Some(CreateImageOptions{
-    ///   from_image: "hello-world",
-    ///   ..Default::default()
-    /// });
-    ///
-    /// docker.chain().create_image(options, None);
-    ///
-    /// // do some other work while the image is pulled from the docker hub...
-    /// ```
-    ///
-    /// # Unsupported
-    ///
-    ///  - Import from tarball
-    ///
-    pub fn create_image<T, K, V>(
-        self,
-        options: Option<T>,
-        credentials: Option<DockerCredentials>,
-    ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = CreateImageResults, Error = Error>,
-        ),
-        Error = Error,
-    >
-    where
-        T: CreateImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .create_image(options, credentials)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-
-    /// ---
-    ///
-    /// # Tag Image
-    ///
-    /// Tag an image so that it becomes part of a repository. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Image name as a string slice.
-    ///  - Optional [Tag Image Options](struct.TagImageOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    ///
-    /// use bollard::image::TagImageOptions;
-    ///
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let tag_options = Some(TagImageOptions {
-    ///     tag: "v1.0.1",
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.chain().tag_image("hello-world", tag_options);
-    /// ```
-    pub fn tag_image<T, K, V>(
-        self,
-        image_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: TagImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .tag_image(image_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Push Image
-    ///
-    /// Push an image to a registry. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Image name as a string slice.
-    ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](../auth/struct.DockerCredentials.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    ///
-    /// use bollard::auth::DockerCredentials;
-    /// use bollard::image::PushImageOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let push_options = Some(PushImageOptions {
-    ///     tag: "v1.0.1",
-    /// });
-    ///
-    /// let credentials = Some(DockerCredentials {
-    ///     username: Some("Jack".to_string()),
-    ///     password: Some("myverysecretpassword".to_string()),
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.push_image("hello-world", push_options, credentials);
-    /// ```
-    pub fn push_image<T, K, V>(
-        self,
-        image_name: &str,
-        options: Option<T>,
-        credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: PushImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .push_image(image_name, options, credentials)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Remove Image
-    ///
-    /// Remove an image, along with any untagged parent images that were referenced by that image.
-    /// Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Image name as a string slice.
-    ///  - An optional [Remove Image Options](image/struct.RemoveImageOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    /// of [Remove Image Results](image/struct.RemoveImageResults.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    ///
-    /// use bollard::image::RemoveImageOptions;
-    ///
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let remove_options = Some(RemoveImageOptions {
-    ///     force: true,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.chain().remove_image("hello-world", remove_options, None);
-    /// ```
-    pub fn remove_image<T, K, V>(
-        self,
-        image_name: &str,
-        options: Option<T>,
-        credentials: Option<DockerCredentials>,
-    ) -> impl Future<Item = (DockerChain, Vec<RemoveImageResults>), Error = Error>
-    where
-        T: RemoveImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .remove_image(image_name, options, credentials)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Search Images
-    ///
-    /// Search for an image on Docker Hub. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - [Search Image Options](struct.SearchImagesOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    ///  of [API Image Search](image/struct.APIImageSearch.html) results, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    ///
-    /// use bollard::image::SearchImagesOptions;
-    /// use std::default::Default;
-    /// use std::collections::HashMap;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
-    ///
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let search_options = SearchImagesOptions {
-    ///     term: "hello-world",
-    ///     filters: filters,
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().search_images(search_options);
-    /// ```
-    pub fn search_images<T, K>(
-        self,
-        options: T,
-    ) -> impl Future<Item = (DockerChain, Vec<APIImageSearch>), Error = Error>
-    where
-        T: SearchImagesQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .search_images(options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Inspect Image
-    ///
-    /// Return low-level information about an image. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Image name as a string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and an
-    ///  [Image](image/struct.Image.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use std::default::Default;
-    ///
-    /// docker.chain().inspect_image("hello-world");
-    /// ```
-    pub fn inspect_image(
-        self,
-        image_name: &str,
-    ) -> impl Future<Item = (DockerChain, Image), Error = Error> {
-        self.inner
-            .inspect_image(image_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # List Images
-    ///
-    /// Returns a list of images on the server. Note that it uses a different, smaller
-    /// representation of an image than inspecting a single image. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - An optional [List Images Options](image/struct.ListImagesOptions.html) struct.
-    ///
-    ///  # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    ///  of [APIImages](image/struct.APIImages.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::ListImagesOptions;
-    ///
-    /// use std::collections::HashMap;
-    /// use std::default::Default;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("dangling", vec!["true"]);
-    ///
-    /// let options = Some(ListImagesOptions{
-    ///   all: true,
-    ///   filters: filters,
-    ///   ..Default::default()
-    /// });
-    ///
-    /// docker.chain().list_images(options);
-    /// ```
-    pub fn list_images<T, K>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<APIImages>), Error = Error>
-    where
-        T: ListImagesQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner.list_images(options).map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Image History
-    ///
-    /// Return parent layers of an image. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Image name as a string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    ///  of [Image History Results](image/struct.ImageHistoryResults.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().image_history("hello-world");
-    /// ```
-    pub fn image_history(
-        self,
-        image_name: &str,
-    ) -> impl Future<Item = (DockerChain, Vec<ImageHistory>), Error = Error> {
-        self.inner
-            .image_history(image_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Prune Images
-    ///
-    /// Delete unused images. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    /// - An optional [Prune Images Options](image/struct.PruneImagesOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Prune Images Results](image/struct.PruneImagesResults.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::PruneImagesOptions;
-    ///
-    /// use std::collections::HashMap;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("until", vec!["10m"]);
-    ///
-    /// let options = Some(PruneImagesOptions {
-    ///   filters: filters
-    /// });
-    ///
-    /// docker.chain().prune_images(options);
-    /// ```
-    pub fn prune_images<T, K>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneImagesResults), Error = Error>
-    where
-        T: PruneImagesQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .prune_images(options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Commit Container
-    ///
-    /// Create a new image from a container.
-    ///
-    /// # Arguments
-    ///
-    ///  - [Commit Container Options](image/struct.CommitContainerOptions.html) struct.
-    ///  - Container [Config](container/struct.Config.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Commit Container Results](container/struct.CommitContainerResults.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::CommitContainerOptions;
-    /// use bollard::container::Config;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let options = CommitContainerOptions{
-    ///     container: "my-running-container",
-    ///     pause: true,
-    ///     ..Default::default()
-    /// };
-    ///
-    /// let config = Config::<String> {
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().commit_container(options, config);
-    /// ```
-    pub fn commit_container<T, K, V, Z>(
-        self,
-        options: T,
-        config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain, CommitContainerResults), Error = Error>
-    where
-        T: CommitContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-        Z: AsRef<str> + Eq + Hash + Serialize,
-    {
-        self.inner
-            .commit_container(options, config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Build Image
-    ///
-    /// Build an image from a tar archive with a `Dockerfile` in it.
-    ///
-    /// The `Dockerfile` specifies how the image is built from the tar archive. It is typically in
-    /// the archive's root, but can be at a different path or have a different name by specifying
-    /// the `dockerfile` parameter.
-    ///
-    /// # Arguments
-    ///
-    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
-    ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
-    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Build
-    ///  Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::BuildImageOptions;
-    /// use bollard::container::Config;
-    ///
-    /// use std::default::Default;
-    /// use std::fs::File;
-    /// use std::io::Read;
-    ///
-    /// let options = BuildImageOptions{
-    ///     dockerfile: "Dockerfile",
-    ///     t: "my-image",
-    ///     rm: true,
-    ///     ..Default::default()
-    /// };
-    ///
-    /// let mut file = File::open("tarball.tar.gz").unwrap();
-    /// let mut contents = Vec::new();
-    /// file.read_to_end(&mut contents).unwrap();
-    ///
-    /// docker.build_image(options, None, Some(contents.into()));
-    /// ```
-    pub fn build_image<T, K>(
-        self,
-        options: T,
-        credentials: Option<HashMap<String, DockerCredentials>>,
-        tar: Option<Body>,
-    ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = BuildImageResults, Error = Error>,
-        ),
-        Error = Error,
-    >
-    where
-        T: BuildImageQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .build_image(options, credentials, tar)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use hyper_mock::HostToReplyConnector;
-    use tokio::runtime::Runtime;
-
-    #[test]
-    fn list_images() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 310\r\n\r\n[{\"Containers\":-1,\"Created\":1484347856,\"Id\":\"sha256:48b5124b2768d2b917edcb640435044a97967015485e812545546cbed5cf0233\",\"Labels\":{},\"ParentId\":\"\",\"RepoDigests\":[\"hello-world@sha256:c5515758d4c5e1e838e9cd307f6c6a0d620b5e07e6f927b07d05f6d12a1ac8d7\"],\"RepoTags\":null,\"SharedSize\":-1,\"Size\":1840,\"VirtualSize\":1840}]\r\n\r\n".to_string()
-     );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let mut filters = HashMap::new();
-        filters.insert("dangling", vec!["true"]);
-        filters.insert("label", vec!["maintainer=some_maintainer"]);
-
-        let options = Some(ListImagesOptions {
-            all: true,
-            filters: filters,
-            ..Default::default()
-        });
-
-        let images = docker.list_images(options);
-
-        let future = images.map(|images| assert_eq!(images[0].size, 1840));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_create_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 542\r\n\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"latest\"}\r\n{\"status\":\"Digest: sha256:0add3ace90ecb4adbf7777e9aacf18357296e799f81cabc9fde470971e499788\"}\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"linux\"}\r\n{\"status\":\"Digest: sha256:d5c7d767f5ba807f9b363aa4db87d75ab030404a670880e16aedff16f605484b\"}\r\n{\"status\":\"Pulling from library/hello-world\",\"id\":\"nanoserver-1709\"}\r\n{\"errorDetail\":{\"message\":\"no matching manifest for unknown in the manifest list entries\"},\"error\":\"no matching manifest for unknown in the manifest list entries\"}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(CreateImageOptions {
-            from_image: String::from("hello-world"),
-            ..Default::default()
-        });
-
-        let stream = docker.create_image(options, None);
-
-        let future = stream
-            .into_future()
-            .map(|images| assert_eq!(images.0.is_some(), true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e.0);
-                Err(e.0)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_inspect_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1744\r\n\r\n{\"Id\":\"sha256:4ab4c602aa5eed5528a6620ff18a1dc4faef0e1ab3a5eddeddb410714478c67f\",\"RepoTags\":[\"hello-world:latest\",\"hello-world:linux\"],\"RepoDigests\":[\"hello-world@sha256:0add3ace90ecb4adbf7777e9aacf18357296e799f81cabc9fde470971e499788\",\"hello-world@sha256:d5c7d767f5ba807f9b363aa4db87d75ab030404a670880e16aedff16f605484b\"],\"Parent\":\"\",\"Comment\":\"\",\"Created\":\"2018-09-07T19:25:39.809797627Z\",\"Container\":\"15c5544a385127276a51553acb81ed24a9429f9f61d6844db1fa34f46348e420\",\"ContainerConfig\":{\"Hostname\":\"15c5544a3851\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"],\"Cmd\":[\"/bin/sh\",\"-c\",\"#(nop) \",\"CMD [\\\"/hello\\\"]\"],\"ArgsEscaped\":true,\"Image\":\"sha256:9a5813f1116c2426ead0a44bbec252bfc5c3d445402cc1442ce9194fc1397027\",\"Volumes\":null,\"WorkingDir\":\"\",\"Entrypoint\":null,\"OnBuild\":null,\"Labels\":{}},\"DockerVersion\":\"17.06.2-ce\",\"Author\":\"\",\"Config\":{\"Hostname\":\"\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"],\"Cmd\":[\"/hello\"],\"ArgsEscaped\":true,\"Image\":\"sha256:9a5813f1116c2426ead0a44bbec252bfc5c3d445402cc1442ce9194fc1397027\",\"Volumes\":null,\"WorkingDir\":\"\",\"Entrypoint\":null,\"OnBuild\":null,\"Labels\":null},\"Architecture\":\"amd64\",\"Os\":\"linux\",\"Size\":1840,\"VirtualSize\":1840,\"GraphDriver\":{\"Data\":{\"MergedDir\":\"\",\"UpperDir\":\"\",\"WorkDir\":\"\"},\"Name\":\"overlay2\"},\"RootFS\":{\"Type\":\"layers\",\"Layers\":[\"sha256:428c97da766c4c13b19088a471de6b622b038f3ae8efa10ec5a37d6d31a2df0b\"]},\"Metadata\":{\"LastTagTime\":\"0001-01-01T00:00:00Z\"}}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let image = docker.inspect_image("hello-world");
-
-        let future = image.map(|image| assert_eq!(image.architecture, "amd64"));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_prune_images() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"ImagesDeleted\":null,\"SpaceReclaimed\":40}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let prune_images_results = docker.prune_images(None::<PruneImagesOptions<String>>);
-
-        let future = prune_images_results.map(|image| assert_eq!(image.space_reclaimed, 40));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_image_history() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 415\r\n\r\n[{\"Comment\":\"\",\"Created\":1536348339,\"CreatedBy\":\"/bin/sh -c #(nop)  CMD [\\\"/hello\\\"]\",\"Id\":\"sha256:4ab4c602aa5eed5528a6620ff18a1dc4faef0e1ab3a5eddeddb410714478c67f\",\"Size\":0,\"Tags\":[\"hello-world:latest\",\"hello-world:linux\"]},{\"Comment\":\"\",\"Created\":1536348339,\"CreatedBy\":\"/bin/sh -c #(nop) COPY file:9824c33ef192ac944822908370af9f04ab049bfa5c10724e4f727206f5167094 in / \",\"Id\":\"<missing>\",\"Size\":1840,\"Tags\":null}]\r\n\r\n".to_string()
-      );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let image_history_results = docker.image_history("hello-world");
-
-        let future = image_history_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .take(1)
-                .any(|history| history.tags.unwrap_or(vec![String::new()])[0]
-                    == "hello-world:latest"))
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_search_images() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 148\r\n\r\n[{\"star_count\":660,\"is_official\":true,\"name\":\"hello-world\",\"is_automated\":false,\"description\":\"Hello World! (an example of minimal Dockerization)\"}]\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let search_options = SearchImagesOptions {
-            term: "hello-world".to_string(),
-            ..Default::default()
-        };
-
-        let search_results = docker.search_images(search_options);
-
-        let future = search_results.map(|vec| {
-            assert!(vec
-                .into_iter()
-                .any(|api_image| &api_image.name == "hello-world"))
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_remove_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 35\r\n\r\n[{\"Untagged\":\"hello-world:latest\"}]\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let remove_options = RemoveImageOptions {
-            noprune: true,
-            ..Default::default()
-        };
-
-        let remove_results = docker.remove_image("hello-world", Some(remove_options), None);
-
-        let future = remove_results.map(|vec| {
-            assert!(vec.into_iter().any(|result| match result {
-                RemoveImageResults::RemoveImageUntagged { untagged } => {
-                    untagged == "hello-world:latest"
-                }
-                _ => false,
-            }))
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_push_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let push_options = PushImageOptions {
-            tag: "v1.0.1".to_string(),
-        };
-
-        let credentials = DockerCredentials {
-            username: Some("Jack".to_string()),
-            password: Some("myverysecretpassword".to_string()),
-            ..Default::default()
-        };
-
-        let results = docker.push_image("hello-world", Some(push_options), Some(credentials));
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_tag_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let tag_options = TagImageOptions {
-            tag: "v1.0.1".to_string(),
-            ..Default::default()
-        };
-
-        let results = docker.tag_image("hello-world", Some(tag_options));
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_commit_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 80\r\n\r\n{\"Id\":\"sha256:c69d56ed58eb9b519bb3de569de7e83f5c3eff57858eaa7883a9e206cf7ca5eb\"}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let commit_container_options = CommitContainerOptions {
-            container: "my-running-container",
-            pause: true,
-            ..Default::default()
-        };
-
-        let config = Config::<String> {
-            ..Default::default()
-        };
-
-        let results = docker.commit_container(commit_container_options, config);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_build_image() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/x-tar\r\nContent-Length: 520\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e 3f53bb00af94\\n\"}\r\n{\"stream\":\"Step 2/2 : RUN touch bollard.txt\"}\r\n{\"stream\":\"\\n\"}\r\n{\"stream\":\" ---\\u003e Running in 853fceb48e80\\n\"}\r\n{\"stream\":\"Removing intermediate container 853fceb48e80\\n\"}\r\n{\"stream\":\" ---\\u003e 5949ad5433c9\\n\"}\r\n{\"aux\":{\"ID\":\"sha256:5949ad5433c96bb38c6a60acc84653600ccb06f1bdd7216acdba752bc2da7460\"}}\r\n{\"stream\":\"Successfully built 5949ad5433c9\\n\"}\r\n{\"stream\":\"Successfully tagged integration_test_build_image:latest\\n\"}\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let build_image_options = BuildImageOptions {
-            t: "my-image",
-            rm: true,
-            ..Default::default()
-        };
-
-        let mut credentials = HashMap::new();
-        credentials.insert(
-            "quay.io".to_string(),
-            DockerCredentials {
-                username: Some("Jack".to_string()),
-                password: Some("myverysecretpassword".to_string()),
-                ..Default::default()
-            },
-        );
-
-        let results = docker.build_image(
-            build_image_options,
-            Some(credentials),
-            Some(Vec::new().into()),
-        );
-
-        let future = results.collect().map(|vec| {
-            assert!(vec.into_iter().any(|result| match result {
-                BuildImageResults::BuildImageStream { stream } => {
-                    stream == "Successfully tagged integration_test_build_image:latest\n"
-                }
-                _ => false,
-            }))
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
     }
 }

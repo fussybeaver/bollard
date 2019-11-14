@@ -1,4 +1,4 @@
-FROM ekidd/rust-musl-builder AS builder
+FROM ekidd/rust-musl-builder:stable AS builder
 
 WORKDIR /tmp/bollard
 

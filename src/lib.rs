@@ -2,13 +2,13 @@
 //! [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 //! [![circle-ci](https://circleci.com/gh/fussybeaver/bollard/tree/master.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard/tree/master)
 //! [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv/branch/master?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
-//! [![docs](https://docs.rs/bollard/badge.svg?version=0.1.0)](https://docs.rs/bollard/)
+//! [![docs](https://docs.rs/bollard/badge.svg)](https://docs.rs/bollard/)
 //!
 //! # Bollard: an asynchronous rust client library for the docker API
 //!
 //! Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 //! [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
-//! futures and streams.
+//! futures, streams and the async/await paradigm.
 //!
 //! The library also features Windows support through Named Pipes and HTTPS support through
 //! optional SSL bindings or a native TLS implementation.
@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.3"
+//! bollard = "0.4"
 //! ```
 //!
 //! # API
@@ -29,7 +29,7 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.39/) is pegged at version `1.39`
+//! The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`
 //!
 //! # Usage
 //!
@@ -128,29 +128,25 @@
 //!
 //! Note: all these examples need a [Tokio
 //! Runtime](https://tokio.rs/docs/getting-started/runtime/). A small example about how to use
-//! Tokio is below.
+//! Tokio is further below.
 //!
 //! ### Version
 //!
 //! First, check that the API is working with your server:
 //!
 //! ```rust, no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::Future;
-//!
 //! use bollard::Docker;
+//!
+//! use futures_util::future::FutureExt;
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.version()
-//!     .map(|version| {
-//!         println!("{:?}", version);
-//!     });
-//! # }
+//! async move {
+//!     let version = docker.version().await.unwrap();
+//!     println!("{:?}", version);
+//! };
 //! ```
 //!
 //! ### Listing images
@@ -158,13 +154,10 @@
 //! To list docker images available on the Docker server:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::Future;
-//!
 //! use bollard::Docker;
 //! use bollard::image::ListImagesOptions;
+//!
+//! use futures_util::future::FutureExt;
 //!
 //! use std::default::Default;
 //!
@@ -172,16 +165,16 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.list_images(Some(ListImagesOptions::<String> {
-//!    all: true,
-//!    ..Default::default()
-//! }))
-//!   .map(|images| {
-//!        for i in images {
-//!            println!("-> {:?}", i);
-//!        }
-//!    });
-//! # }
+//! async move {
+//!     let images = &docker.list_images(Some(ListImagesOptions::<String> {
+//!         all: true,
+//!         ..Default::default()
+//!     })).await.unwrap();
+//!
+//!     for image in images {
+//!         println!("-> {:?}", image);
+//!     }
+//! };
 //! ```
 //!
 //! ## Streaming Stats
@@ -189,13 +182,10 @@
 //! To receive a stream of stats for a running container.
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate futures;
-//! # fn main () {
-//! use futures::stream::Stream;
-//!
 //! use bollard::Docker;
 //! use bollard::container::StatsOptions;
+//!
+//! use futures_util::try_stream::TryStreamExt;
 //!
 //! use std::default::Default;
 //!
@@ -203,53 +193,19 @@
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
-//! docker.stats("postgres", Some(StatsOptions {
-//!    stream: true,
-//!    ..Default::default()
-//! }))
-//!   .map(|stat| {
+//! async move {
+//!     let stats = &docker.stats("postgres", Some(StatsOptions {
+//!        stream: true,
+//!        ..Default::default()
+//!     })).try_collect::<Vec<_>>().await.unwrap();
+//!
+//!     for stat in stats {
 //!         println!("{} - mem total: {:?} | mem usage: {:?}",
 //!             stat.name,
 //!             stat.memory_stats.max_usage,
 //!             stat.memory_stats.usage);
-//!    });
-//! # }
-//! ```
-//!
-//! ## Chaining docker commands
-//!
-//! It's sometimes more convenient to chain a string of Docker API calls. The `DockerChain` API
-//! will return an instance of itself in the return call.
-//!
-//! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
-//! use bollard::Docker;
-//! use bollard::image::CreateImageOptions;
-//! use bollard::container::CreateContainerOptions;
-//! use bollard::container::Config;
-//!
-//! use tokio::prelude::Future;
-//!
-//! use std::default::Default;
-//!
-//! // Use a connection function described above
-//! // let docker = Docker::connect_...;
-//! # let docker = Docker::connect_with_local_defaults().unwrap();
-//!
-//! docker.chain().create_image(Some(CreateImageOptions{
-//!     from_image: "hello-world",
-//!     ..Default::default()
-//! }), None).and_then(|(docker, _)|
-//!     docker.create_container(
-//!         None::<CreateContainerOptions<String>>,
-//!         Config {
-//!             image: Some("hello-world"),
-//!             cmd: Some(vec!["/hello"]),
-//!             ..Default::default()
-//!         }));
-//! # }
+//!     }
+//! };
 //! ```
 //!
 //! # Examples
@@ -264,72 +220,62 @@
 //! Create a Tokio Runtime:
 //!
 //! ```rust
-//! # extern crate tokio;
-//! # fn main () {
 //! use tokio::runtime::Runtime;
 //!
-//! let mut rt = Runtime::new().unwrap();
-//! # }
+//! let rt = Runtime::new().unwrap();
 //! ```
 //!
 //! Subsequently, use the docker API:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
+//! # use futures_util::future::FutureExt;
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! let future = docker.list_images(None::<ListImagesOptions<String>>);
-//! # }
+//! let future = async move {
+//!     &docker.list_images(None::<ListImagesOptions<String>>).await;
+//! };
 //! ```
 //!
 //! Execute the future aynchronously:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
+//! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
+//! # let future = async move {
+//! #   docker.list_images(None::<ListImagesOptions<String>>).map(|_| ());
+//! # };
 //! rt.spawn(future);
-//! # }
 //! ```
 //!
 //! Or, to execute and receive the result:
 //!
 //! ```rust,no_run
-//! # extern crate bollard;
-//! # extern crate tokio;
-//! # fn main () {
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
+//! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = docker.list_images(None::<ListImagesOptions<String>>).map(|_| ()).map_err(|_| ());
+//! # let future = docker.list_images(None::<ListImagesOptions<String>>);
 //! let result = rt.block_on(future);
-//! # }
 //! ```
 //!
 //! Finally, to shut down the executor:
 //!
 //! ```rust,no_run
-//! # extern crate tokio;
-//! # fn main () {
 //! # use tokio::runtime::Runtime;
 //! # use tokio::prelude::Future;
 //! # let mut rt = Runtime::new().unwrap();
-//! rt.shutdown_now().wait().unwrap();
-//! # }
+//! rt.shutdown_now();
 //! ```
 //!
 //! # History
@@ -367,62 +313,52 @@
     unused_import_braces,
     unused_qualifications
 )]
+#![warn(rust_2018_idioms)]
 
 #[macro_use]
 extern crate failure;
-extern crate futures;
-extern crate http;
-extern crate hyper;
-#[cfg(feature = "tls")]
-extern crate hyper_tls;
-#[cfg(feature = "tls")]
-extern crate native_tls;
-#[cfg(feature = "openssl")]
-extern crate openssl;
 #[macro_use]
 extern crate serde_derive;
-extern crate arrayvec;
-extern crate bytes;
-extern crate chrono;
-extern crate dirs;
-extern crate hex;
-#[cfg(feature = "openssl")]
-extern crate hyper_openssl;
-#[cfg(unix)]
-extern crate hyperlocal;
 #[macro_use]
 extern crate log;
-extern crate base64;
-extern crate mio;
-#[cfg(windows)]
-extern crate mio_named_pipes;
-extern crate serde;
-extern crate serde_json;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_io;
-#[cfg(windows)]
-extern crate tokio_reactor;
-extern crate tokio_timer;
-extern crate url;
-#[cfg(windows)]
-extern crate winapi;
-extern crate yup_hyper_mock as hyper_mock;
+
+macro_rules! chain_stream {
+    ($self:ident, $invoc:expr) => {{
+        use futures_util::stream;
+        use futures_util::stream::StreamExt;
+        use std::pin::Pin;
+
+        let mut rest = $invoc;
+        async move {
+            let first = rest.next().await.transpose()?;
+            #[allow(trivial_casts)]
+            match first {
+                Some(head) => Ok((
+                    $self,
+                    Pin::from(Box::new(stream::once(async move { Ok(head) }).chain(rest))
+                        as Box<dyn Stream<Item = _>>),
+                )),
+                None => Ok((
+                    $self,
+                    Pin::from(Box::new(stream::empty()) as Box<dyn Stream<Item = _>>),
+                )),
+            }
+        }
+    }};
+}
 
 // declare modules
 pub mod auth;
 pub mod container;
 mod docker;
-mod either;
 pub mod errors;
 pub mod exec;
 pub mod image;
 mod named_pipe;
 pub mod network;
-mod options;
 mod read;
 pub mod system;
 mod uri;
 
 // publicly re-export
-pub use docker::{ClientVersion, Docker, DockerChain, API_DEFAULT_VERSION};
+pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};

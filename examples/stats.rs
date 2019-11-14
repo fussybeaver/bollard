@@ -1,78 +1,65 @@
 //! Stream stats for all running Docker containers asynchronously
 #![type_length_limit = "2097152"]
-extern crate bollard;
 #[macro_use]
 extern crate failure;
-extern crate env_logger;
-extern crate futures;
-extern crate hyper;
-extern crate serde;
-extern crate tokio;
 
 use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
+use failure::Error;
 
-use futures::future::{loop_fn, Loop};
+use futures_util::stream;
+use futures_util::try_stream::TryStreamExt;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 
-fn main() {
-    env_logger::init();
-
-    let mut rt = Runtime::new().unwrap();
+async fn run<'a>() -> Result<(), Error> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
     let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
-    let future = loop_fn(
-        (docker.chain(), HashMap::new()),
-        move |(client, monitor)| {
-            let mut filter = HashMap::<&'static str, Vec<&'static str>>::new();
-            filter.insert("status", vec!["running"]);
-            client
-                .list_containers(Some(ListContainersOptions {
-                    all: true,
-                    filters: filter,
-                    ..Default::default()
-                }))
-                .map_err(failure::Error::from)
-                .and_then(move |(docker, containers)| {
-                    if containers.is_empty() {
-                        Err(bail!("no running containers"))
-                    } else {
-                        for c in containers
-                            .iter()
-                            .filter(|c| !monitor.contains_key(&c.id))
-                            .map(|c| (c.id.to_owned(), c.names.to_owned(), c.image.to_owned()))
-                        {
-                            println!("Starting tokio spawn for container {}", &c.0);
-                            tokio::executor::spawn(future::lazy(move || {
-                                #[cfg(unix)]
-                                let client = Docker::connect_with_unix_defaults().unwrap();
-                                #[cfg(windows)]
-                                let client = Docker::connect_with_named_pipe_defaults().unwrap();
-                                client
-                                    .stats(&c.0, Some(StatsOptions { stream: true }))
-                                    .for_each(move |s| Ok(println!("{:?}:{} {:?}", c.1, c.2, s)))
-                                    .map_err(|e| println!("{:?}", e))
-                            }));
+    loop {
+        let mut filter = HashMap::new();
+        filter.insert(String::from("status"), vec![String::from("running")]);
+        let containers = &docker
+            .list_containers(Some(ListContainersOptions {
+                all: true,
+                filters: filter,
+                ..Default::default()
+            }))
+            .await?;
+
+        if containers.is_empty() {
+            return Err(bail!("no running containers"));
+        } else {
+            for container in containers {
+                &docker
+                    .stats(&container.id, Some(StatsOptions { stream: false }))
+                    .take(1)
+                    .map(|value| match value {
+                        Ok(stats) => {
+                            println!(
+                                "{} - {:?}: {} {:?}",
+                                &container.id, &container.names, &container.image, stats
+                            );
+                            Ok(())
                         }
-
-                        let mut new_monitor = HashMap::new();
-                        for c in containers.iter().map(|c| c.id.to_owned()) {
-                            new_monitor.insert(c, ());
+                        Err(e) => {
+                            return Err(e);
                         }
-                        Ok(Loop::Continue((docker, new_monitor)))
-                    }
-                })
-                .map_err(|e| println!("{:?}", e))
-        },
-    );
+                    })
+                    .try_collect::<Vec<()>>()
+                    .await?;
+            }
+        }
+    }
+}
 
-    rt.spawn(future);
+fn main() {
+    env_logger::init();
 
-    rt.shutdown_on_idle().wait().unwrap();
+    let rt = Runtime::new().unwrap();
+    rt.block_on(run()).unwrap();
 }

@@ -1,17 +1,15 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.3.3"
-authors = ["Graham Lee <ghmlee@ghmlee.com>",
-           "Toby Lawrence <toby@nuclearfurnace.com>",
-           "Eric Kidd <git@randomhacks.net>",
-	   "Niel Drummond <niel@drummond.lu>"]
+version = "0.4.0-alpha.1"
+authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
 repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard"
 readme = "README.md"
 keywords = ["docker"]
+edition = "2018"
 
 [features]
 # Enable OpenSSL both directly and for Hyper
@@ -24,43 +22,44 @@ test_http = []
 test_tls = []
 
 [dependencies]
-arrayvec = "0.4.10"
-base64 = "0.10.0"
+arrayvec = "0.5.1"
+base64 = "0.11.0"
 bytes = "0.4.12"
-chrono = { version = "0.4.6", features = ["serde"] }
-dirs = "1.0.5"
-env_logger = "0.6.1"
-failure = "0.1.5"
-futures = "0.1.27"
-hex = "0.3.2"
-http = "0.1.17"
-hyper = { version = "0.12.28" }
-hyper-openssl = { version = "0.7.1", optional = true }
-hyper-tls = { version = "0.3.2", optional = true }
-log = "0.4.6"
-mio = "0.6.16"
+chrono = { version = "0.4.9", features = ["serde"] }
+dirs = "2.0.2"
+env_logger = "0.7.1"
+failure = "0.1.6"
+futures-core-preview = "0.3.0-alpha.19"
+futures-util-preview = "0.3.0-alpha.19"
+hex = "0.4.0"
+http = "0.1.19"
+hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
+hyper-openssl = { version = "0.8.0-alpha.4", optional = true }
+hyper-tls = { version = "0.4.0-alpha.4", optional = true }
+log = "0.4.8"
+mio = "0.6.19"
 native-tls = { version = "0.2.3", optional = true }
 openssl = { version = "0.10.22", optional = true }
-serde = "1.0.91"
-serde_derive = "1.0.91"
-serde_json = "1.0.39"
-tokio = "0.1.19"
-tokio-codec = "0.1.1"
-tokio-io = "0.1.11"
-tokio-reactor = "0.1.9"
-tokio-timer = "0.2.10"
-url = "1.7.2"
-yup-hyper-mock = "3.15.0"
+pin-project = "0.4"
+serde = "1.0.102"
+serde_derive = "1.0.102"
+serde_json = "1.0.41"
+tokio = "0.2.0-alpha.6"
+tokio-codec = "0.2.0-alpha.6"
+tokio-io = "0.2.0-alpha.6"
+tokio-timer = "0.3.0-alpha.6"
+url = "2.1.0"
 
 [dev-dependencies]
-tokio-executor = "0.1.7"
-tokio-threadpool = "0.1.14"
+tokio-executor = "0.2.0-alpha.6"
 flate2 = "1.0"
 tar = "0.4.20"
 
 [target.'cfg(unix)'.dependencies]
-hyperlocal = "0.6.0"
+hyperlocal =  { version = "0.1.0", package = "hyper-unix-connector" }
 
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"
 winapi = "0.3.7"
+tokio-net = "0.2.0-alpha.6"
+

@@ -1,6 +1,5 @@
 #[cfg(windows)]
 use hex::FromHex;
-use hex::ToHex;
 #[cfg(windows)]
 use hyper::client::connect::Destination;
 use hyper::Uri as HyperUri;
@@ -9,9 +8,8 @@ use url::Url;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 
-use docker::{ClientType, ClientVersion};
-use errors::Error;
-use errors::ErrorKind::StrFmtError;
+use crate::docker::{ClientType, ClientVersion};
+use crate::errors::Error;
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -24,7 +22,7 @@ impl<'a> Into<HyperUri> for Uri<'a> {
     }
 }
 
-impl<'a> Uri<'a> where {
+impl<'a> Uri<'a> {
     pub(crate) fn parse<O, K, V>(
         socket: &'a str,
         client_type: &ClientType,
@@ -38,12 +36,10 @@ impl<'a> Uri<'a> where {
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        let host: String = Uri::socket_host(socket, client_type)?;
-
         let host_str = format!(
             "{}://{}/v{}.{}{}",
             Uri::socket_scheme(client_type),
-            host,
+            Uri::socket_host(socket, client_type),
             client_version.major_version,
             client_version.minor_version,
             path
@@ -66,42 +62,18 @@ impl<'a> Uri<'a> where {
         })
     }
 
-    fn socket_host<P>(socket: P, client_type: &ClientType) -> Result<String, Error>
+    fn socket_host<P>(socket: P, client_type: &ClientType) -> String
     where
         P: AsRef<OsStr>,
     {
         match client_type {
-            ClientType::Http => Ok(socket.as_ref().to_string_lossy().into_owned()),
+            ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(any(feature = "ssl", feature = "tls"))]
-            ClientType::SSL => Ok(socket.as_ref().to_string_lossy().into_owned()),
+            ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(unix)]
-            ClientType::Unix => {
-                let mut host: String = String::new();
-                socket
-                    .as_ref()
-                    .to_string_lossy()
-                    .as_bytes()
-                    .write_hex(&mut host)
-                    .map_err(|e| StrFmtError {
-                        content: socket.as_ref().to_string_lossy().into_owned(),
-                        err: e,
-                    })?;
-                Ok(host)
-            }
+            ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
             #[cfg(windows)]
-            ClientType::NamedPipe => {
-                let mut host: String = String::new();
-                socket
-                    .as_ref()
-                    .to_string_lossy()
-                    .as_bytes()
-                    .write_hex(&mut host)
-                    .map_err(|e| StrFmtError {
-                        content: socket.as_ref().to_string_lossy().into_owned(),
-                        err: e,
-                    })?;
-                Ok(host)
-            }
+            ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
         }
     }
 

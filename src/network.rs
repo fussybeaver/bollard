@@ -2,7 +2,6 @@
 
 use arrayvec::ArrayVec;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
 use serde_json;
@@ -11,12 +10,10 @@ use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use super::{Docker, DockerChain};
-#[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
+use super::Docker;
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -392,7 +389,7 @@ where
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
     ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
-    ///  computed relative to the daemon machine’s time.  
+    ///  computed relative to the daemon machine’s time.
     ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`)
     ///  Prune networks with (or without, in case `label!=...` is used) the specified labels.
     pub filters: HashMap<T, Vec<T>>,
@@ -460,10 +457,10 @@ impl Docker {
     ///
     /// docker.create_network(config);
     /// ```
-    pub fn create_network<T>(
+    pub async fn create_network<T>(
         &self,
         config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = CreateNetworkResults, Error = Error>
+    ) -> Result<CreateNetworkResults, Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -476,7 +473,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -499,7 +496,7 @@ impl Docker {
     ///
     /// docker.remove_network("my_network_name");
     /// ```
-    pub fn remove_network(&self, network_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
         let url = format!("/networks/{}", network_name);
 
         let req = self.build_request::<_, String, String>(
@@ -509,7 +506,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -542,11 +539,11 @@ impl Docker {
     ///
     /// docker.inspect_network("my_network_name", Some(config));
     /// ```
-    pub fn inspect_network<'a, T, V>(
+    pub async fn inspect_network<'a, T, V>(
         &self,
         network_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = InspectNetworkResults, Error = Error>
+    ) -> Result<InspectNetworkResults, Error>
     where
         T: InspectNetworkQueryParams<'a, V>,
         V: AsRef<str>,
@@ -560,7 +557,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -595,10 +592,10 @@ impl Docker {
     ///
     /// docker.list_networks(Some(config));
     /// ```
-    pub fn list_networks<T, K, V>(
+    pub async fn list_networks<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = Vec<ListNetworksResults>, Error = Error>
+    ) -> Result<Vec<ListNetworksResults>, Error>
     where
         T: ListNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -613,7 +610,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -652,11 +649,11 @@ impl Docker {
     ///
     /// docker.connect_network("my_network_name", config);
     /// ```
-    pub fn connect_network<T>(
+    pub async fn connect_network<T>(
         &self,
         network_name: &str,
         config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: AsRef<str> + Eq + Hash + Serialize,
     {
@@ -669,7 +666,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -701,11 +698,11 @@ impl Docker {
     ///
     /// docker.disconnect_network("my_network_name", config);
     /// ```
-    pub fn disconnect_network<T>(
+    pub async fn disconnect_network<T>(
         &self,
         network_name: &str,
         config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: AsRef<str> + Serialize,
     {
@@ -718,7 +715,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -754,10 +751,10 @@ impl Docker {
     ///
     /// docker.prune_networks(Some(options));
     /// ```
-    pub fn prune_networks<T, K, V>(
+    pub async fn prune_networks<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = PruneNetworksResults, Error = Error>
+    ) -> Result<PruneNetworksResults, Error>
     where
         T: PruneNetworksQueryParams<K, V>,
         K: AsRef<str>,
@@ -772,590 +769,6 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
-    }
-}
-
-impl DockerChain {
-    /// ---
-    ///
-    /// # Create Network
-    ///
-    /// Create a new network. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - [Create Network Options](container/struct.CreateNetworkOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Create Exec Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
-    ///  Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::CreateNetworkOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let config = CreateNetworkOptions {
-    ///     name: "certs",
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().create_network(config);
-    /// ```
-    pub fn create_network<T>(
-        self,
-        config: CreateNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, CreateNetworkResults), Error = Error>
-    where
-        T: AsRef<str> + Eq + Hash + Serialize,
-    {
-        self.inner
-            .create_network(config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Remove a Network
-    ///
-    /// Remove an existing network. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Network name as a string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().remove_network("my_network_name");
-    /// ```
-    pub fn remove_network(
-        self,
-        network_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .remove_network(network_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Inspect a Network
-    ///
-    /// # Arguments
-    ///
-    ///  - Network name as a string slice. Consumes the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Inspect Network Results](container/struct.CreateNetworkResults.html) struct, wrapped in a
-    ///  Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::InspectNetworkOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let config = InspectNetworkOptions {
-    ///     verbose: true,
-    ///     scope: "global"
-    /// };
-    ///
-    /// docker.chain().inspect_network("my_network_name", Some(config));
-    /// ```
-    pub fn inspect_network<'a, T, V>(
-        self,
-        network_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, InspectNetworkResults), Error = Error>
-    where
-        T: InspectNetworkQueryParams<'a, V>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .inspect_network(network_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # List Networks
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [List Network Options](container/struct.ListNetworksOptions.html) struct.
-    ///  Consumes the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a vector
-    ///  of [List Networks Results](container/struct.CreateNetworkResults.html) struct, wrapped in
-    ///  a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::ListNetworksOptions;
-    ///
-    /// use std::collections::HashMap;
-    ///
-    /// let mut list_networks_filters = HashMap::new();
-    /// list_networks_filters.insert("label", vec!["maintainer=some_maintainer"]);
-    ///
-    /// let config = ListNetworksOptions {
-    ///     filters: list_networks_filters,
-    /// };
-    ///
-    /// docker.chain().list_networks(Some(config));
-    /// ```
-    pub fn list_networks<T, K, V>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<ListNetworksResults>), Error = Error>
-    where
-        T: ListNetworksQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .list_networks(options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Connect Network
-    ///
-    /// # Arguments
-    ///
-    ///  - A [Connect Network Options](network/struct.ConnectNetworkOptions.html) struct. Consumes
-    ///  the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::{EndpointSettings, EndpointIPAMConfig, ConnectNetworkOptions};
-    ///
-    /// use std::default::Default;
-    ///
-    /// let config = ConnectNetworkOptions {
-    ///     container: "3613f73ba0e4",
-    ///     endpoint_config: EndpointSettings {
-    ///         ipam_config: EndpointIPAMConfig {
-    ///             ipv4_address: "172.24.56.89",
-    ///             ipv6_address: "2001:db8::5689",
-    ///             ..Default::default()
-    ///         },
-    ///         ..Default::default()
-    ///     }
-    /// };
-    ///
-    /// docker.chain().connect_network("my_network_name", config);
-    /// ```
-    pub fn connect_network<T>(
-        self,
-        network_name: &str,
-        config: ConnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: AsRef<str> + Eq + Hash + Serialize,
-    {
-        self.inner
-            .connect_network(network_name, config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Disconnect Network
-    ///
-    /// # Arguments
-    ///
-    ///  - A [Disconnect Network Options](network/struct.DisconnectNetworkOptions.html) struct.
-    ///  Consumes the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::DisconnectNetworkOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let config = DisconnectNetworkOptions {
-    ///     container: "3613f73ba0e4",
-    ///     force: true
-    /// };
-    ///
-    /// docker.chain().disconnect_network("my_network_name", config);
-    /// ```
-    pub fn disconnect_network<T>(
-        self,
-        network_name: &str,
-        config: DisconnectNetworkOptions<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: AsRef<str> + Serialize,
-    {
-        self.inner
-            .disconnect_network(network_name, config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Prune Networks
-    ///
-    /// Deletes networks which are unused. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - A [Prune Networks Options](network/struct.PruneNetworksOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Prune
-    ///  Networks Results](network/struct.PruneNetworksResults.html) struct.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::PruneNetworksOptions;
-    ///
-    /// use std::collections::HashMap;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("label", vec!("maintainer=some_maintainer"));
-    ///
-    /// let options = PruneNetworksOptions {
-    ///     filters: filters,
-    /// };
-    ///
-    /// docker.chain().prune_networks(Some(options));
-    /// ```
-    pub fn prune_networks<T, K, V>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneNetworksResults), Error = Error>
-    where
-        T: PruneNetworksQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .prune_networks(options)
-            .map(|result| (self, result))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use hyper_mock::HostToReplyConnector;
-    use tokio::runtime::Runtime;
-
-    #[test]
-    fn test_create_network() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 86\r\n\r\n{\"Id\":\"d1022f34e396473dd2a1e39abe0816b6e3465cdb44b78d094606f122933d8da3\",\"Warning\":\"\"}\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let ipam_config = IPAMConfig {
-            subnet: Some("10.10.10.10/24"),
-            ..Default::default()
-        };
-
-        let create_network_options = CreateNetworkOptions {
-            name: "integration_test_create_network",
-            check_duplicate: true,
-            ipam: IPAM {
-                config: vec![ipam_config],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let results = docker.create_network(create_network_options);
-
-        let future = results.map(|result| {
-            assert_eq!(
-                "d1022f34e396473dd2a1e39abe0816b6e3465cdb44b78d094606f122933d8da3".to_string(),
-                result.id
-            )
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_inspect_network() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 428\r\n\r\n{\"Name\":\"integration_test_create_network\",\"Id\":\"c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43\",\"Created\":\"2019-02-23T09:23:10.60267Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{}}\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.inspect_network(
-            "c1c29f1f4265b413cad016eddb2ce25b9c55a59d7e1241f8a6c9bfa55b865a43",
-            Some(InspectNetworkOptions {
-                verbose: true,
-                scope: "global",
-            }),
-        );
-
-        let future = results.map(|result| {
-            assert!(result
-                .ipam
-                .config
-                .into_iter()
-                .take(1)
-                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"));
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_remove_network() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.remove_network("my_network_name");
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_list_networks() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 463\r\n\r\n[{\"Name\":\"integration_test_list_network\",\"Id\":\"594423d1fbc3d894f8dc5a5b6565fffe4b4b5c379ceb23e1daf6ead4e3397fe3\",\"Created\":\"2019-02-23T09:54:21.8154268Z\",\"Scope\":\"local\",\"Driver\":\"bridge\",\"EnableIPv6\":false,\"IPAM\":{\"Driver\":\"default\",\"Options\":null,\"Config\":[{\"Subnet\":\"10.10.10.10/24\"}]},\"Internal\":false,\"Attachable\":false,\"Ingress\":false,\"ConfigFrom\":{\"Network\":\"\"},\"ConfigOnly\":false,\"Containers\":{},\"Options\":{},\"Labels\":{\"maintainer\":\"bollard-maintainer\"}}]\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let mut list_networks_filters = HashMap::new();
-        list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
-
-        let results = docker.list_networks(Some(ListNetworksOptions {
-            filters: list_networks_filters,
-        }));
-
-        let future = results.map(|result| {
-            assert!(result
-                .into_iter()
-                .take(1)
-                .map(|v| v.ipam.config)
-                .flatten()
-                .any(|i| i.subnet.unwrap() == "10.10.10.10/24"))
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_connect_network() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let connect_network_options = ConnectNetworkOptions {
-            container: "my_running_container",
-            endpoint_config: EndpointSettings {
-                ipam_config: EndpointIPAMConfig {
-                    ipv4_address: "10.10.10.101",
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        };
-
-        let results = docker.connect_network(
-            "f3f9ef4375ca3ada374b9ecd6d8a1ebd501a59f0b2eedd0b93cd0502d7a009dc",
-            connect_network_options,
-        );
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_disconnect_network() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.disconnect_network(
-            "f3f9ef4375ca3ada374b9ecd6d8a1ebd501a59f0b2eedd0b93cd0502d7a009dc",
-            DisconnectNetworkOptions {
-                container: "my_running_container",
-                force: true,
-            },
-        );
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_prune_networks() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"NetworksDeleted\":[\"my_running_container\"]}\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.prune_networks(None::<PruneNetworksOptions<&str>>);
-
-        let future =
-            results.map(|v| assert_eq!("my_running_container", v.networks_deleted.unwrap()[0]));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
+        self.process_into_value(req).await
     }
 }

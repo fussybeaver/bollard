@@ -3,10 +3,9 @@
 use arrayvec::ArrayVec;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use futures::{stream, Stream};
+use futures_core::Stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::rt::Future;
 use hyper::{Body, Chunk, Method};
 use serde::Serialize;
 use serde_json;
@@ -16,14 +15,11 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 
-use super::{Docker, DockerChain};
-#[cfg(test)]
-use docker::API_DEFAULT_VERSION;
-use docker::{FALSE_STR, TRUE_STR};
-use either::EitherStream;
-use errors::Error;
-use errors::ErrorKind::JsonSerializeError;
-use network::EndpointIPAMConfig;
+use super::Docker;
+use crate::docker::{FALSE_STR, TRUE_STR};
+use crate::errors::Error;
+use crate::errors::ErrorKind::JsonSerializeError;
+use crate::network::EndpointIPAMConfig;
 
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
 ///
@@ -312,7 +308,7 @@ where
     #[serde(rename = "BlkioDeviceWriteIOps")]
     pub blkio_device_write_iops: Option<Vec<HashMap<T, T>>>,
     /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
-    pub memory_swappiness: Option<u64>,
+    pub memory_swappiness: Option<i64>,
     /// Disable OOM Killer for the container.
     pub oom_kill_disable: Option<bool>,
     /// An integer value containing the score given to the container in order to tune OOM killer
@@ -331,7 +327,7 @@ where
     pub port_bindings: Option<HashMap<T, Vec<PortBinding<T>>>>,
     /// Allocates an ephemeral host port for all of a container's exposed ports.
     /// Ports are de-allocated when the container stops and allocated when the container starts.
-    /// The allocated port might be changed when restarting the container.  
+    /// The allocated port might be changed when restarting the container.
     /// The port is selected from the ephemeral port range that depends on the kernel. For example,
     /// on Linux the range is defined by `/proc/sys/net/ipv4/ip_local_port_range`.
     pub publish_all_ports: Option<bool>,
@@ -486,6 +482,7 @@ pub struct LogConfig {
 
 /// This container's networking configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkingConfig {
     pub endpoints_config: HashMap<String, ContainerNetwork>,
@@ -1066,7 +1063,7 @@ impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
 #[allow(missing_docs)]
 pub struct TopResult {
     pub titles: Vec<String>,
-    pub processes: Vec<Vec<String>>,
+    pub processes: Option<Vec<Vec<String>>>,
 }
 
 /// Parameters used in the [Logs API](../struct.Docker.html#method.logs)
@@ -1136,7 +1133,7 @@ pub enum LogOutput {
 }
 
 impl fmt::Display for LogOutput {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             LogOutput::StdErr { message } => write!(f, "{}", message),
             LogOutput::StdOut { message } => write!(f, "{}", message),
@@ -1156,7 +1153,7 @@ pub struct Change {
 }
 
 impl fmt::Display for Change {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             0 => write!(f, "C {}", self.path),
             1 => write!(f, "A {}", self.path),
@@ -1512,7 +1509,7 @@ pub struct UpdateContainerOptions {
     /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
     pub memory_swap: Option<i64>,
     /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
-    pub memory_swappiness: Option<u64>,
+    pub memory_swappiness: Option<i64>,
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
     pub nano_cpus: Option<u64>,
     /// Disable OOM Killer for the container.
@@ -1762,10 +1759,10 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub fn list_containers<T, K>(
+    pub async fn list_containers<T, K>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = Vec<APIContainers>, Error = Error>
+    ) -> Result<Vec<APIContainers>, Error>
     where
         T: ListContainersQueryParams<K, String>,
         K: AsRef<str>,
@@ -1779,7 +1776,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1818,11 +1815,11 @@ impl Docker {
     ///
     /// docker.create_container(options, config);
     /// ```
-    pub fn create_container<T, K, V, Z>(
+    pub async fn create_container<T, K, V, Z>(
         &self,
         options: Option<T>,
         config: Config<Z>,
-    ) -> impl Future<Item = CreateContainerResults, Error = Error>
+    ) -> Result<CreateContainerResults, Error>
     where
         T: CreateContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1838,7 +1835,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -1866,11 +1863,11 @@ impl Docker {
     ///
     /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub fn start_container<T, K, V>(
+    pub async fn start_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: StartContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1885,7 +1882,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1916,11 +1913,11 @@ impl Docker {
     ///
     /// docker.stop_container("hello-world", options);
     /// ```
-    pub fn stop_container<T, K>(
+    pub async fn stop_container<T, K>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: StopContainerQueryParams<K>,
         K: AsRef<str>,
@@ -1934,7 +1931,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -1969,11 +1966,11 @@ impl Docker {
     ///
     /// docker.remove_container("hello-world", options);
     /// ```
-    pub fn remove_container<T, K, V>(
+    pub async fn remove_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RemoveContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -1988,7 +1985,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2026,7 +2023,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = WaitContainerResults, Error = Error>
+    ) -> impl Stream<Item = Result<WaitContainerResults, Error>>
     where
         T: WaitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2073,11 +2070,11 @@ impl Docker {
     ///
     /// docker.restart_container("postgres", options);
     /// ```
-    pub fn restart_container<T, K>(
+    pub async fn restart_container<T, K>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RestartContainerQueryParams<K>,
         K: AsRef<str>,
@@ -2091,7 +2088,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2122,11 +2119,11 @@ impl Docker {
     ///
     /// docker.inspect_container("hello-world", options);
     /// ```
-    pub fn inspect_container<T, K, V>(
+    pub async fn inspect_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = Container, Error = Error>
+    ) -> Result<Container, Error>
     where
         T: InspectContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2141,7 +2138,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2172,11 +2169,11 @@ impl Docker {
     ///
     /// docker.top_processes("fnichol/uhttpd", options);
     /// ```
-    pub fn top_processes<T, K, V>(
+    pub async fn top_processes<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = TopResult, Error = Error>
+    ) -> Result<TopResult, Error>
     where
         T: TopQueryParams<K, V>,
         K: AsRef<str>,
@@ -2191,7 +2188,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2231,7 +2228,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = LogOutput, Error = Error>
+    ) -> impl Stream<Item = Result<LogOutput, Error>>
     where
         T: LogsQueryParams<K>,
         K: AsRef<str>,
@@ -2271,10 +2268,10 @@ impl Docker {
     ///
     /// docker.container_changes("hello-world");
     /// ```
-    pub fn container_changes(
+    pub async fn container_changes(
         &self,
         container_name: &str,
-    ) -> impl Future<Item = Option<Vec<Change>>, Error = Error> {
+    ) -> Result<Option<Vec<Change>>, Error> {
         let url = format!("/containers/{}/changes", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2284,7 +2281,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2321,7 +2318,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Stats, Error = Error>
+    ) -> impl Stream<Item = Result<Stats, Error>>
     where
         T: StatsQueryParams<K, V>,
         K: AsRef<str>,
@@ -2368,11 +2365,11 @@ impl Docker {
     ///
     /// docker.kill_container("postgres", options);
     /// ```
-    pub fn kill_container<T, K, V>(
+    pub async fn kill_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: KillContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2387,7 +2384,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2422,11 +2419,11 @@ impl Docker {
     ///
     /// docker.update_container("postgres", config);
     /// ```
-    pub fn update_container(
+    pub async fn update_container(
         &self,
         container_name: &str,
         config: UpdateContainerOptions,
-    ) -> impl Future<Item = (), Error = Error> {
+    ) -> Result<(), Error> {
         let url = format!("/containers/{}/update", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2436,7 +2433,7 @@ impl Docker {
             Docker::serialize_payload(Some(config)),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2468,11 +2465,11 @@ impl Docker {
     ///
     /// docker.rename_container("hello-world", required);
     /// ```
-    pub fn rename_container<T, K, V>(
+    pub async fn rename_container<T, K, V>(
         &self,
         container_name: &str,
         options: T,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: RenameContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2487,7 +2484,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2512,7 +2509,7 @@ impl Docker {
     ///
     /// docker.pause_container("postgres");
     /// ```
-    pub fn pause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
         let url = format!("/containers/{}/pause", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2522,7 +2519,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2547,7 +2544,7 @@ impl Docker {
     ///
     /// docker.unpause_container("postgres");
     /// ```
-    pub fn unpause_container(&self, container_name: &str) -> impl Future<Item = (), Error = Error> {
+    pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
         let url = format!("/containers/{}/unpause", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2557,7 +2554,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2593,10 +2590,10 @@ impl Docker {
     ///
     /// docker.prune_containers(options);
     /// ```
-    pub fn prune_containers<T, K>(
+    pub async fn prune_containers<T, K>(
         &self,
         options: Option<T>,
-    ) -> impl Future<Item = PruneContainersResults, Error = Error>
+    ) -> Result<PruneContainersResults, Error>
     where
         T: PruneContainersQueryParams<K>,
         K: AsRef<str> + Eq + Hash,
@@ -2610,7 +2607,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req)
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -2649,12 +2646,12 @@ impl Docker {
     ///
     /// docker.upload_to_container("my-container", options, contents.into());
     /// ```
-    pub fn upload_to_container<T, K, V>(
+    pub async fn upload_to_container<T, K, V>(
         &self,
         container_name: &str,
         options: Option<T>,
         tar: Body,
-    ) -> impl Future<Item = (), Error = Error>
+    ) -> Result<(), Error>
     where
         T: UploadToContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2671,7 +2668,7 @@ impl Docker {
             Ok(tar),
         );
 
-        self.process_into_unit(req)
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2706,7 +2703,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Chunk, Error = Error>
+    ) -> impl Stream<Item = Result<Chunk, Error>>
     where
         T: DownloadFromContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2722,1446 +2719,5 @@ impl Docker {
         );
 
         self.process_into_body(req)
-    }
-}
-
-impl DockerChain {
-    /// ---
-    ///
-    /// # Kill Container
-    ///
-    /// Kill a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Container name as string slice.
-    /// - Optional [Kill Container Options](container/struct.KillContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::KillContainerOptions;
-    ///
-    /// let options = Some(KillContainerOptions{
-    ///     signal: "SIGINT",
-    /// });
-    ///
-    /// docker.chain().kill_container("postgres", options);
-    /// ```
-    pub fn kill_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: KillContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .kill_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Remove Container
-    ///
-    /// Remove a container. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Container name as a string slice.
-    /// - Optional [Remove Container Options](container/struct.RemoveContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::RemoveContainerOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let options = Some(RemoveContainerOptions{
-    ///     force: true,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.chain().remove_container("hello-world", options);
-    /// ```
-    pub fn remove_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: RemoveContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .remove_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Create Container
-    ///
-    /// Prepares a container for a subsequent start operation. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [Create Container Options](container/struct.CreateContainerOptions.html) struct.
-    ///  - Container [Config](container/struct.Config.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Create Container Results](container/struct.CreateContainerResults.html), wrapped in a
-    ///  Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::{CreateContainerOptions, Config};
-    ///
-    /// use std::default::Default;
-    ///
-    /// let options = Some(CreateContainerOptions{
-    ///     name: "my-new-container",
-    /// });
-    ///
-    /// let config = Config {
-    ///     image: Some("hello-world"),
-    ///     cmd: Some(vec!["/hello"]),
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().create_container(options, config);
-    /// ```
-    pub fn create_container<T, K, V, Z>(
-        self,
-        options: Option<T>,
-        config: Config<Z>,
-    ) -> impl Future<Item = (DockerChain, CreateContainerResults), Error = Error>
-    where
-        T: CreateContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-        Z: AsRef<str> + Eq + Hash + Serialize,
-    {
-        self.inner
-            .create_container(options, config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Start Container
-    ///
-    /// Starts a container, after preparing it with the [Create Container
-    /// API](struct.Docker.html#method.create_container). Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as a string slice.
-    ///  - Optional [Start Container Options](container/struct.StartContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::StartContainerOptions;
-    ///
-    /// docker.chain().start_container("hello-world", None::<StartContainerOptions<String>>);
-    /// ```
-    pub fn start_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: StartContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .start_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Stop Container
-    ///
-    /// Stops a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Container name as string slice.
-    /// - Optional [Stop Container Options](container/struct.StopContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// use bollard::container::StopContainerOptions;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// let options = Some(StopContainerOptions{
-    ///     t: 30,
-    /// });
-    ///
-    /// docker.chain().stop_container("hello-world", options);
-    /// ```
-    pub fn stop_container<T, K>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: StopContainerQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .stop_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # List Containers
-    ///
-    /// Returns a list of containers. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [ListContainersOptions](container/struct.ListContainersOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a Vector
-    ///  of [APIContainers](container/struct.APIContainers.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::ListContainersOptions;
-    ///
-    /// use std::collections::HashMap;
-    /// use std::default::Default;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("health", vec!("unhealthy"));
-    ///
-    /// let options = Some(ListContainersOptions{
-    ///     all: true,
-    ///     filters: filters,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.chain().list_containers(options);
-    /// ```
-    pub fn list_containers<T, K>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Vec<APIContainers>), Error = Error>
-    where
-        T: ListContainersQueryParams<K, String>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .list_containers(options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Wait Container
-    ///
-    /// Wait for a container to stop. This is a non-blocking operation, the resulting stream will
-    /// end when the container stops. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Container name as string slice.
-    /// - Optional [Wait Container Options](container/struct.WaitContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Wait
-    ///  Container Results](container/struct.WaitContainerResults.html), wrapped in a Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::WaitContainerOptions;
-    ///
-    /// let options = Some(WaitContainerOptions{
-    ///     condition: "not-running",
-    /// });
-    ///
-    /// docker.chain().wait_container("hello-world", options);
-    /// ```
-    pub fn wait_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<
-        Item = (
-            DockerChain,
-            impl Stream<Item = WaitContainerResults, Error = Error>,
-        ),
-        Error = Error,
-    >
-    where
-        T: WaitContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .wait_container(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-
-    /// ---
-    ///
-    /// # Inspect Container
-    ///
-    /// Inspect a container. Consumes the instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.struct) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Container](container/struct.Container.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::InspectContainerOptions;
-    ///
-    /// let options = Some(InspectContainerOptions{
-    ///     size: false,
-    /// });
-    ///
-    /// docker.chain().inspect_container("hello-world", options);
-    /// ```
-    pub fn inspect_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, Container), Error = Error>
-    where
-        T: InspectContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .inspect_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Restart Container
-    ///
-    /// Restart a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - Optional [Restart Container Options](container/struct.RestartContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::RestartContainerOptions;
-    ///
-    /// let options = Some(RestartContainerOptions{
-    ///     t: 30,
-    /// });
-    ///
-    /// docker.chain().restart_container("postgres", options);
-    /// ```
-    pub fn restart_container<T, K>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: RestartContainerQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .restart_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Top Processes
-    ///
-    /// List processes running inside a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - Optional [Top Options](container/struct.TopOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [TopResult](container/struct.TopResult.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::TopOptions;
-    ///
-    /// let options = Some(TopOptions{
-    ///     ps_args: "aux",
-    /// });
-    ///
-    /// docker.chain().top_processes("fnichol/uhttpd", options);
-    /// ```
-    pub fn top_processes<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, TopResult), Error = Error>
-    where
-        T: TopQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .top_processes(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Logs
-    ///
-    /// Get container logs. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - Optional [Logs Query Params](container/struct.LogsQueryParams.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a [Log
-    ///  Output](container/enum.LogOutput.html) enum, wrapped in a Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::LogsOptions;
-    ///
-    /// use std::default::Default;
-    ///
-    /// let options = Some(LogsOptions{
-    ///     stdout: true,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.chain().logs("hello-world", options);
-    /// ```
-    pub fn logs<T, K>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = LogOutput, Error = Error>), Error = Error>
-    where
-        T: LogsQueryParams<K>,
-        K: AsRef<str>,
-    {
-        self.inner
-            .logs(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-
-    /// ---
-    ///
-    /// # Container Changes
-    ///
-    /// Get changes on a container's filesystem. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and an
-    ///  Option of Vector of [Change](container/struct.Change.html) structs, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().container_changes("hello-world");
-    /// ```
-    pub fn container_changes(
-        self,
-        container_name: &str,
-    ) -> impl Future<Item = (DockerChain, Option<Vec<Change>>), Error = Error> {
-        self.inner
-            .container_changes(container_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Stats
-    ///
-    /// Get container stats based on resource usage. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    /// - Container name as string slice.
-    /// - Optional [Stats Options](container/struct.StatsOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [Stats](container/struct.Stats.html) struct, wrapped in a Stream.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::StatsOptions;
-    ///
-    /// let options = Some(StatsOptions{
-    ///     stream: false,
-    /// });
-    ///
-    /// docker.chain().stats("hello-world", options);
-    /// ```
-    pub fn stats<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Stats, Error = Error>), Error = Error>
-    where
-        T: StatsQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .stats(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-
-    /// ---
-    ///
-    /// # Update Container
-    ///
-    /// Update a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - [Update Container Options](container/struct.UpdateContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::UpdateContainerOptions;
-    /// use std::default::Default;
-    ///
-    /// let config = UpdateContainerOptions {
-    ///     memory: Some(314572800),
-    ///     memory_swap: Some(314572800),
-    ///     ..Default::default()
-    /// };
-    ///
-    /// docker.chain().update_container("postgres", config);
-    /// ```
-    pub fn update_container(
-        self,
-        container_name: &str,
-        config: UpdateContainerOptions,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .update_container(container_name, config)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Rename Container
-    ///
-    /// Rename a container. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as string slice.
-    ///  - [Rename Container Options](container/struct.RenameContainerOptions.html) struct
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::RenameContainerOptions;
-    ///
-    /// let required = RenameContainerOptions {
-    ///     name: "my_new_container_name"
-    /// };
-    ///
-    /// docker.chain().rename_container("hello-world", required);
-    /// ```
-    pub fn rename_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: T,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: RenameContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .rename_container(container_name, options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Pause Container
-    ///
-    /// Use the cgroups freezer to suspend all processes in a container. Consumes the client
-    /// instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Container name as a string slice.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().pause_container("postgres");
-    /// ```
-    pub fn pause_container(
-        self,
-        container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .pause_container(container_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Unpause Container
-    ///
-    /// Resume a container which has been paused. Consumes the client instance.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// docker.chain().unpause_container("postgres");
-    /// ```
-    pub fn unpause_container(
-        self,
-        container_name: &str,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error> {
-        self.inner
-            .unpause_container(container_name)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Prune Containers
-    ///
-    /// Delete stopped containers. Consumes the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [Prune Containers Options](container/struct.PruneContainersOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a
-    ///  [PruneContainersResults](container/struct.PruneContainersResults.html) struct, wrapped in
-    ///  a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::container::PruneContainersOptions;
-    ///
-    /// use std::collections::HashMap;
-    ///
-    /// let mut filters = HashMap::new();
-    /// filters.insert("until", vec!("10m"));
-    ///
-    /// let options = Some(PruneContainersOptions {
-    ///   filters: filters
-    /// });
-    ///
-    /// docker.chain().prune_containers(options);
-    /// ```
-    pub fn prune_containers<T, K>(
-        self,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, PruneContainersResults), Error = Error>
-    where
-        T: PruneContainersQueryParams<K>,
-        K: AsRef<str> + Eq + Hash,
-    {
-        self.inner
-            .prune_containers(options)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Upload To Container
-    ///
-    /// Upload a tar archive to be extracted to a path in the filesystem of container id. Consumes
-    /// the client instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [Upload To Container Options](container/struct.UploadToContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and the unit
-    ///  type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::UploadToContainerOptions;
-    ///
-    /// use std::default::Default;
-    /// use std::fs::File;
-    /// use std::io::Read;
-    ///
-    /// let options = Some(UploadToContainerOptions{
-    ///     path: "/opt",
-    ///     ..Default::default()
-    /// });
-    ///
-    /// let mut file = File::open("tarball.tar.gz").unwrap();
-    /// let mut contents = Vec::new();
-    /// file.read_to_end(&mut contents).unwrap();
-    ///
-    /// docker.chain().upload_to_container("my-container", options, contents.into());
-    /// ```
-    pub fn upload_to_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-        tar: Body,
-    ) -> impl Future<Item = (DockerChain, ()), Error = Error>
-    where
-        T: UploadToContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .upload_to_container(container_name, options, tar)
-            .map(|result| (self, result))
-    }
-
-    /// ---
-    ///
-    /// # Download From Container
-    ///
-    /// Get a tar archive of a resource in the filesystem of container id. Consumes the client
-    /// instance.
-    ///
-    /// # Arguments
-    ///
-    ///  - [Download From Container Options](container/struct.DownloadFromContainerOptions.html) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - A Tuple containing the original [DockerChain](struct.Docker.html) instance, and a tar
-    ///  archive compressed with one of the following algorithms: identity (no compression), gzip,
-    ///  bzip2, xz, represented as a [Hyper
-    ///  Body](https://hyper.rs/hyper/master/hyper/struct.Body.html), wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::DownloadFromContainerOptions;
-    ///
-    /// let options = Some(DownloadFromContainerOptions{
-    ///     path: "/opt",
-    /// });
-    ///
-    /// docker.chain().download_from_container("my-container", options);
-    /// ```
-    pub fn download_from_container<T, K, V>(
-        self,
-        container_name: &str,
-        options: Option<T>,
-    ) -> impl Future<Item = (DockerChain, impl Stream<Item = Chunk, Error = Error>), Error = Error>
-    where
-        T: DownloadFromContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
-        self.inner
-            .download_from_container(container_name, options)
-            .into_future()
-            .map(|(first, rest)| match first {
-                Some(head) => (self, EitherStream::A(stream::once(Ok(head)).chain(rest))),
-                None => (self, EitherStream::B(stream::empty())),
-            })
-            .map_err(|(err, _)| err)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use hyper_mock::HostToReplyConnector;
-    use tokio::runtime::Runtime;
-
-    #[test]
-    fn test_create_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 89\r\n\r\n{\"Id\":\"696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc\",\"Warnings\":null}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(CreateContainerOptions {
-            name: "unit-test".to_string(),
-        });
-
-        let config = Config {
-            image: Some("hello-world"),
-            ..Default::default()
-        };
-
-        let results = docker.create_container(options, config);
-
-        let future = results.map(|result| {
-            assert_eq!(
-                result.id,
-                "696ce476e95d5122486cac5a446280c56aa0b02617690936e25243195992d3cc".to_string()
-            )
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_start_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.start_container("hello-world", None::<StartContainerOptions<String>>);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_stop_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.stop_container("hello-world", None::<StopContainerOptions>);
-
-        let future = results
-            .map_err(|e| panic!("error = {:?}", e))
-            .map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_remove_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        });
-
-        let results = docker.remove_container("hello-world", options);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_wait_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 33\r\n\r\n{\"Error\":null,\"StatusCode\":0}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(WaitContainerOptions {
-            condition: String::from("not-running"),
-        });
-
-        let stream = docker.wait_container("hello-world", options);
-
-        let future = stream
-            .into_future()
-            .map(|result| assert_eq!(0, result.0.unwrap().status_code));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e.0);
-                Err(e.0)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_restart_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(RestartContainerOptions { t: 30 });
-
-        let results = docker.restart_container("hello-world", options);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_inspect_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 2759\r\n\r\n{\"Id\":\"156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7\",\"Created\":\"2018-10-06T15:15:43.525300512Z\",\"Path\":\"/usr/sbin/run_uhttpd\",\"Args\":[],\"State\":{\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":28837,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2018-10-06T15:15:54.444625149Z\",\"FinishedAt\":\"2018-10-06T15:15:53.958358249Z\",\"Health\":{\"Status\":\"healthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2019-05-03T15:19:37.238626547Z\",\"End\":\"2019-05-03T15:19:37.362289957Z\",\"ExitCode\":0,\"Output\":\"\"}]}},\"Image\":\"sha256:df0db1779d4d71e169756bbcc7757f3d3d8b99032f4022c44509bf9b8f297997\",\"ResolvConfPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/resolv.conf\",\"HostnamePath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hostname\",\"HostsPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/hosts\",\"LogPath\":\"/home/docker/containers/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7/156ffa6b4233d93b91dc3185b9de7225c22350d55a6db250549039a7e53efda7-json.log\",\"Name\":\"/integration_test_restart_container\",\"RestartCount\":0,\"Driver\":\"overlay2\",\"Platform\":\"linux\",\"MountLabel\":\"\",\"ProcessLabel\":\"\",\"AppArmorProfile\":\"docker-default\",\"ExecIDs\":null,\"HostConfig\":{},\"GraphDriver\":{\"Data\":null,\"Name\":\"overlay2\"},\"Mounts\":[],\"Config\":{\"Hostname\":\"156ffa6b4233\",\"Domainname\":\"\",\"User\":\"\",\"AttachStdin\":false,\"AttachStdout\":false,\"AttachStderr\":false,\"ExposedPorts\":{\"80/tcp\":{}},\"Tty\":false,\"OpenStdin\":false,\"StdinOnce\":false,\"Env\":[],\"Cmd\":null,\"Image\":\"fnichol/uhttpd\",\"Volumes\":{\"/www\":{}},\"WorkingDir\":\"\",\"Entrypoint\":[\"/usr/sbin/run_uhttpd\",\"-f\",\"-p\",\"80\",\"-h\",\"/www\"],\"OnBuild\":null,\"Labels\":{}},\"NetworkSettings\":{\"Bridge\":\"\",\"SandboxID\":\"20cd513ef83bc14934be89953d22aab5a54c7769b07c8e93e90f0227d0aba96b\",\"HairpinMode\":false,\"LinkLocalIPv6Address\":\"\",\"LinkLocalIPv6PrefixLen\":0,\"Ports\":{\"80/tcp\":null},\"SandboxKey\":\"/var/run/docker/netns/20cd513ef83b\",\"SecondaryIPAddresses\":null,\"SecondaryIPv6Addresses\":null,\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"MacAddress\":\"02:42:ac:11:00:03\",\"Networks\":{\"bridge\":{\"IPAMConfig\":null,\"Links\":null,\"Aliases\":null,\"NetworkID\":\"424a1638d72f8984c670bc8bf269102360f24bd356188635ab359cb0b0792b20\",\"EndpointID\":\"992f7e94fd721f627d9d1611c27b477d39b959c209286c38426215ea764f6d63\",\"Gateway\":\"172.17.0.1\",\"IPAddress\":\"172.17.0.3\",\"IPPrefixLen\":16,\"IPv6Gateway\":\"\",\"GlobalIPv6Address\":\"\",\"GlobalIPv6PrefixLen\":0,\"MacAddress\":\"02:42:ac:11:00:03\",\"DriverOpts\":null}}}}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.inspect_container("uhttpd", None::<InspectContainerOptions>);
-
-        let future =
-            results.map(|result| assert_eq!(result.path, "/usr/sbin/run_uhttpd".to_string()));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_top_processes() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 243\r\n\r\n{\"Processes\":[[\"root\",\"3773\",\"0.0\",\"0.0\",\"11056\",\"348\",\"?\",\"Ss\",\"19:42\",\"0:00\",\"/usr/sbin/uhttpd -f -p 80 -h /www /usr/sbin/run_uhttpd -f -p 80 -h /www\"]],\"Titles\":[\"USER\",\"PID\",\"%CPU\",\"%MEM\",\"VSZ\",\"RSS\",\"TTY\",\"STAT\",\"START\",\"TIME\",\"COMMAND\"]}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.top_processes(
-            "uhttpd",
-            Some(TopOptions {
-                ps_args: "aux".to_string(),
-            }),
-        );
-
-        let future = results.map(|result| assert_eq!(result.titles[0], "USER".to_string()));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_logs() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n\u{1}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{13}Hello from Docker!\n\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let stream = docker.logs(
-            "hello-world",
-            Some(LogsOptions {
-                stdout: true,
-                ..Default::default()
-            }),
-        );
-
-        let future = stream.into_future().map(|result| {
-            assert_eq!(
-                format!("{}", result.0.unwrap()),
-                "Hello from Docker!".to_string()
-            )
-        });
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e.0);
-                Err(e.0)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_container_changes() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nnull\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let result = docker.container_changes("hello-world");
-
-        let future = result.map(|result| assert!(result.is_none()));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_stats() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 1879\r\n\r\n{\"read\":\"2018-10-19T06:11:22.220728356Z\",\"preread\":\"2018-10-19T06:11:21.218466258Z\",\"pids_stats\":{\"current\":1,\"limit\":1000},\"blkio_stats\":{\"io_service_bytes_recursive\":[],\"io_serviced_recursive\":[],\"io_queue_recursive\":[],\"io_service_time_recursive\":[],\"io_wait_time_recursive\":[],\"io_merged_recursive\":[],\"io_time_recursive\":[],\"sectors_recursive\":[]},\"num_procs\":0,\"storage_stats\":{},\"cpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447677200000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"precpu_stats\":{\"cpu_usage\":{\"total_usage\":23097208,\"percpu_usage\":[709093,1595689,5032998,15759428],\"usage_in_kernelmode\":0,\"usage_in_usermode\":10000000},\"system_cpu_usage\":4447673150000000,\"online_cpus\":4,\"throttling_data\":{\"periods\":0,\"throttled_periods\":0,\"throttled_time\":0}},\"memory_stats\":{\"usage\":962560,\"max_usage\":5406720,\"stats\":{\"active_anon\":86016,\"active_file\":0,\"cache\":0,\"dirty\":0,\"hierarchical_memory_limit\":9223372036854771712,\"hierarchical_memsw_limit\":0,\"inactive_anon\":0,\"inactive_file\":0,\"mapped_file\":0,\"pgfault\":1485,\"pgmajfault\":0,\"pgpgin\":1089,\"pgpgout\":1084,\"rss\":0,\"rss_huge\":0,\"total_active_anon\":86016,\"total_active_file\":0,\"total_cache\":0,\"total_dirty\":0,\"total_inactive_anon\":0,\"total_inactive_file\":0,\"total_mapped_file\":0,\"total_pgfault\":1485,\"total_pgmajfault\":0,\"total_pgpgin\":1089,\"total_pgpgout\":1084,\"total_rss\":0,\"total_rss_huge\":0,\"total_unevictable\":0,\"total_writeback\":0,\"unevictable\":0,\"writeback\":0},\"limit\":16750219264},\"name\":\"/integration_test_stats\",\"id\":\"66667eab5737dda2da2f578e9496e45c074d1bc5badc0484314f1c3afccfaeb0\",\"networks\":{\"eth0\":{\"rx_bytes\":1635,\"rx_packets\":14,\"rx_errors\":0,\"rx_dropped\":0,\"tx_bytes\":0,\"tx_packets\":0,\"tx_errors\":0,\"tx_dropped\":0}}}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let stream = docker.stats("hello-world", Some(StatsOptions { stream: false }));
-
-        let future = stream
-            .into_future()
-            .map(|result| assert_eq!(result.0.unwrap().pids_stats.current.unwrap(), 1));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e.0);
-                Err(e.0)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_kill_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = Some(KillContainerOptions {
-            signal: "SIGKILL".to_string(),
-        });
-
-        let results = docker.kill_container("postgres", options);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_update_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let config = UpdateContainerOptions {
-            memory: Some(314572800),
-            memory_swap: Some(314572800),
-            ..Default::default()
-        };
-
-        let results = docker.update_container("postgres", config);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_rename_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let options = RenameContainerOptions {
-            name: "my_new_container_name".to_string(),
-        };
-
-        let results = docker.rename_container("postgres", options);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_pause_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.pause_container("postgres");
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_unpause_container() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.unpause_container("postgres");
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
-    }
-
-    #[test]
-    fn test_prune_containers() {
-        let mut rt = Runtime::new().unwrap();
-        let mut connector = HostToReplyConnector::default();
-        connector.m.insert(
-            format!("{}://5f", if cfg!(windows) { "net.pipe" } else { "unix" }),
-            "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 45\r\n\r\n{\"ContainersDeleted\":null,\"SpaceReclaimed\":0}\r\n\r\n".to_string()
-        );
-
-        let docker =
-            Docker::connect_with_host_to_reply(connector, "_".to_string(), 5, API_DEFAULT_VERSION)
-                .unwrap();
-
-        let results = docker.prune_containers(None::<PruneContainersOptions<String>>);
-
-        let future = results.map(|_| assert!(true));
-
-        rt.block_on(future)
-            .or_else(|e| {
-                println!("{:?}", e);
-                Err(e)
-            })
-            .unwrap();
-
-        rt.shutdown_now().wait().unwrap();
     }
 }
