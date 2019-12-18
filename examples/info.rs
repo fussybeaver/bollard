@@ -49,7 +49,7 @@ async fn conc(arg: (Docker, &bollard::container::APIContainers)) -> () {
 fn main() {
     env_logger::init();
 
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
 
     rt.block_on(run()).unwrap();
 }

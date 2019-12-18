@@ -6,11 +6,11 @@ use bollard::Docker;
 use std::collections::HashMap;
 
 use futures_util::stream::StreamExt;
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 fn main() {
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]

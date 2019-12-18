@@ -1,6 +1,6 @@
 #![type_length_limit = "2097152"]
 
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 use bollard::container::{

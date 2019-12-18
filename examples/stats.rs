@@ -8,7 +8,8 @@ use bollard::Docker;
 use failure::Error;
 
 use futures_util::stream;
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::StreamExt;
+use futures_util::stream::TryStreamExt;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
@@ -60,6 +61,6 @@ async fn run<'a>() -> Result<(), Error> {
 fn main() {
     env_logger::init();
 
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     rt.block_on(run()).unwrap();
 }

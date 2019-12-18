@@ -184,7 +184,7 @@ To receive a stream of stats for a running container.
 use bollard::Docker;
 use bollard::container::StatsOptions;
 
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 
 use std::default::Default;
 

@@ -8,7 +8,7 @@ use std::str::from_utf8;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 //use crate::hyper_mock::HostToReplyConnector;
 use arrayvec::ArrayVec;
@@ -17,12 +17,12 @@ use dirs;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::stream;
-use futures_util::try_future::TryFutureExt;
-use futures_util::try_stream::TryStreamExt;
+use futures_util::future::TryFutureExt;
+use futures_util::stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
-use hyper::{self, Body, Chunk, Client, Method, Request, Response, StatusCode};
+use hyper::{self, Body, body::Bytes, Client, Method, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
@@ -35,8 +35,7 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use openssl::ssl::SslConnector;
 #[cfg(feature = "openssl")]
 use openssl::ssl::{SslFiletype, SslMethod};
-use tokio::timer::Timeout;
-use tokio_codec::FramedRead;
+use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
@@ -841,7 +840,7 @@ impl Docker {
     pub(crate) fn process_into_body(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = Result<Chunk, Error>> + Unpin {
+    ) -> impl Stream<Item = Result<Bytes, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
                 .map_ok(|response| {
@@ -994,7 +993,7 @@ impl Docker {
     pub(crate) fn build_request<O, K, V>(
         &self,
         path: &str,
-        builder: &mut Builder,
+        builder: Builder,
         query: Result<Option<O>, Error>,
         payload: Result<Body, Error>,
     ) -> Result<Request<Body>, Error>
@@ -1015,13 +1014,14 @@ impl Docker {
                     &self.client_version(),
                 )?;
                 let request_uri: hyper::Uri = uri.into();
+                let builder_string = format!("{:?}", builder);
                 Ok(builder
                     .uri(request_uri)
                     .header(CONTENT_TYPE, "application/json")
                     .body(body)
                     .map_err::<Error, _>(|e| {
                         HttpClientError {
-                            builder: format!("{:?}", builder),
+                            builder: builder_string,
                             err: e,
                         }
                         .into()
@@ -1034,8 +1034,6 @@ impl Docker {
         req: Request<Body>,
         timeout: u64,
     ) -> Result<Response<Body>, Error> {
-        let now = Instant::now();
-
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
             Transport::Http { ref client } => client.request(req),
@@ -1049,7 +1047,7 @@ impl Docker {
             Transport::NamedPipe { ref client } => client.request(req),
         };
 
-        match Timeout::new_at(request, now + Duration::from_secs(timeout)).await {
+        match tokio::time::timeout(Duration::from_secs(timeout), request).await {
             Ok(v) => v.map_err(|err| HyperResponseError { err }.into()),
             Err(_) => Err(RequestTimeoutError.into()),
         }
@@ -1092,9 +1090,7 @@ impl Docker {
     }
 
     async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {
-        let body = response
-            .into_body()
-            .try_concat()
+        let body = hyper::body::to_bytes(response.into_body())
             .await
             .map_err(|e| HyperResponseError { err: e })?;
 

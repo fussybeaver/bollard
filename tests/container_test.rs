@@ -5,7 +5,7 @@ use bollard::errors::Error;
 use bollard::image::*;
 use bollard::Docker;
 
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 use std::io::Write;
@@ -461,7 +461,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let chunk: hyper::Chunk = docker
+    let res = docker
         .download_from_container(
             "integration_test_archive_container",
             Some(DownloadFromContainerOptions {
@@ -471,11 +471,10 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
                     "/tmp"
                 },
             }),
-        )
-        .try_concat()
-        .await?;
+        );
 
-    let bytes = &chunk.into_bytes()[..];
+    let bytes = concat_byte_stream(res).await?;
+
     let mut a: tar::Archive<&[u8]> = tar::Archive::new(&bytes[..]);
 
     use std::io::Read;
