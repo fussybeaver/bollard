@@ -10,7 +10,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-//use crate::hyper_mock::HostToReplyConnector;
 use arrayvec::ArrayVec;
 #[cfg(any(feature = "ssl", feature = "tls"))]
 use dirs;
@@ -569,7 +568,7 @@ impl Docker {
     ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("npipe://", "", 1);
 
-        let named_pipe_connector = NamedPipeConnector::new();
+        let named_pipe_connector = NamedPipeConnector;
 
         let mut client_builder = Client::builder();
         client_builder.keep_alive(false);
@@ -582,8 +581,8 @@ impl Docker {
             client_addr: client_addr.to_owned(),
             client_timeout: timeout,
             version: Arc::new((
-                AtomicUsize::new(API_DEFAULT_VERSION.major_version),
-                AtomicUsize::new(API_DEFAULT_VERSION.minor_version),
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
             )),
         };
 

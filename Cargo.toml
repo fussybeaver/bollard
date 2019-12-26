@@ -59,5 +59,3 @@ hyperlocal =  { version = "0.1.4", package = "hyper-unix-connector" }
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"
 winapi = "0.3.8"
-tokio-net = "0.2.0-alpha.6"
-
