@@ -245,7 +245,6 @@
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
-//! # use tokio::prelude::Future;
 //! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
@@ -261,21 +260,11 @@
 //! # use bollard::Docker;
 //! # use bollard::image::ListImagesOptions;
 //! # use tokio::runtime::Runtime;
-//! # use tokio::prelude::Future;
 //! # use futures_util::future::FutureExt;
 //! # let mut rt = Runtime::new().unwrap();
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //! # let future = docker.list_images(None::<ListImagesOptions<String>>);
 //! let result = rt.block_on(future);
-//! ```
-//!
-//! Finally, to shut down the executor:
-//!
-//! ```rust,no_run
-//! # use tokio::runtime::Runtime;
-//! # use tokio::prelude::Future;
-//! # let mut rt = Runtime::new().unwrap();
-//! rt.shutdown_now();
 //! ```
 //!
 //! # History
@@ -321,31 +310,6 @@ extern crate failure;
 extern crate serde_derive;
 #[macro_use]
 extern crate log;
-
-macro_rules! chain_stream {
-    ($self:ident, $invoc:expr) => {{
-        use futures_util::stream;
-        use futures_util::stream::StreamExt;
-        use std::pin::Pin;
-
-        let mut rest = $invoc;
-        async move {
-            let first = rest.next().await.transpose()?;
-            #[allow(trivial_casts)]
-            match first {
-                Some(head) => Ok((
-                    $self,
-                    Pin::from(Box::new(stream::once(async move { Ok(head) }).chain(rest))
-                        as Box<dyn Stream<Item = _>>),
-                )),
-                None => Ok((
-                    $self,
-                    Pin::from(Box::new(stream::empty()) as Box<dyn Stream<Item = _>>),
-                )),
-            }
-        }
-    }};
-}
 
 // declare modules
 pub mod auth;

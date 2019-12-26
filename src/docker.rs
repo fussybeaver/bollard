@@ -384,7 +384,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::Docker;
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_http_defaults().unwrap();
     /// connection.ping()
@@ -408,7 +408,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_http(
     ///                    "http://my-custom-docker-server:2735", 4, API_DEFAULT_VERSION)
@@ -459,7 +459,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::Docker;
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_unix_defaults().unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -481,7 +481,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -532,7 +532,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::Docker;
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_named_pipe_defaults().unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -555,7 +555,7 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_named_pipe(
     ///     "//./pipe/docker_engine", 120, API_DEFAULT_VERSION).unwrap();

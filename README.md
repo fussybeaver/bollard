@@ -245,12 +245,6 @@ Or, to execute and receive the result:
 let result = rt.block_on(future);
 ```
 
-Finally, to shut down the executor:
-
-```rust
-rt.shutdown_now();
-```
-
 ## History
 
 This library stems from the [boondock rust library](https://github.com/faradayio/boondock),
