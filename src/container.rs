@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, Chunk, Method};
+use hyper::{Body, body::Bytes, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -2703,7 +2703,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Result<Chunk, Error>>
+    ) -> impl Stream<Item = Result<Bytes, Error>>
     where
         T: DownloadFromContainerQueryParams<K, V>,
         K: AsRef<str>,

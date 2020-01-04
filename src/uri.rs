@@ -1,7 +1,5 @@
 #[cfg(windows)]
 use hex::FromHex;
-#[cfg(windows)]
-use hyper::client::connect::Destination;
 use hyper::Uri as HyperUri;
 use url::Url;
 
@@ -102,8 +100,8 @@ impl<'a> Uri<'a> {
     }
 
     #[cfg(windows)]
-    pub(crate) fn socket_path_dest(dest: &Destination, client_type: &ClientType) -> Option<String> {
-        format!("{}://{}", Uri::socket_scheme(client_type), dest.host())
+    pub(crate) fn socket_path_dest(dest: &HyperUri, client_type: &ClientType) -> Option<String> {
+        format!("{}://{}", Uri::socket_scheme(client_type), dest.host().unwrap_or("UNKNOWN_HOST"))
             .parse()
             .ok()
             .and_then(|uri| Self::socket_path(&uri))

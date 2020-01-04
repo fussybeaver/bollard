@@ -8,21 +8,19 @@ use std::default::Default;
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::stream::StreamExt;
-use futures_util::try_future::TryFutureExt;
+use futures_util::future::TryFutureExt;
 use tokio::runtime::Runtime;
 
 fn main() {
     env_logger::init();
 
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]
     let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     rt.block_on(run(docker)).unwrap();
-
-    rt.shutdown_on_idle();
 }
 
 async fn run(docker: Docker) -> Result<(), Error> {

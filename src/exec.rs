@@ -2,8 +2,7 @@
 
 use arrayvec::ArrayVec;
 use futures_core::Stream;
-use futures_util::try_stream::TryStreamExt;
-use futures_util::{stream, stream::StreamExt};
+use futures_util::{stream, stream::{StreamExt, TryStreamExt}};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
 use hyper::Body;

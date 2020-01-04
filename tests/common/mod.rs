@@ -1,4 +1,6 @@
-use futures_util::try_stream::TryStreamExt;
+use futures_core::Stream;
+use bytes::Bytes;
+use futures_util::stream::TryStreamExt;
 use std::future::Future;
 use tokio::runtime::Runtime;
 
@@ -13,9 +15,8 @@ use bollard::Docker;
 #[allow(unused_macros)]
 macro_rules! rt_exec {
     ($docker_call:expr, $assertions:expr) => {{
-        let rt = Runtime::new().unwrap();
+        let mut rt = Runtime::new().unwrap();
         let res = $assertions(rt.block_on($docker_call).unwrap());
-        rt.shutdown_now();
         res
     }};
 }
@@ -86,7 +87,7 @@ pub(crate) fn registry_http_addr() -> String {
 }
 
 #[allow(dead_code)]
-pub(crate) fn run_runtime<T>(rt: Runtime, future: T)
+pub(crate) fn run_runtime<T>(mut rt: Runtime, future: T)
 where
     T: Future<Output = Result<(), Error>>,
 {
@@ -274,4 +275,15 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
     };
 
     Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn concat_byte_stream<S>(s: S) -> Result<Vec<u8>, Error>
+where
+    S: Stream<Item = Result<Bytes, Error>>
+{
+    s.try_fold(Vec::new(), |mut acc, chunk| async move {
+        acc.extend_from_slice(&chunk[..]);
+        Ok(acc)
+    }).await
 }

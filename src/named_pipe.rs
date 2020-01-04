@@ -1,11 +1,11 @@
 #![cfg(windows)]
 
 use futures_core::ready;
-use hyper::client::connect::{Connect, Connected, Destination};
+use hyper::client::connect::Connected;
 use mio_named_pipes::NamedPipe;
 use pin_project::pin_project;
-use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_net::util::PollEvented;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::PollEvented;
 use winapi::um::winbase::*;
 
 use std::fmt;
@@ -22,7 +22,9 @@ use std::task::{Context, Poll};
 use crate::docker::ClientType;
 use crate::uri::Uri;
 
+#[pin_project]
 pub struct NamedPipeStream {
+    //#[pin] 
     io: PollEvented<NamedPipe>,
 }
 
@@ -60,13 +62,13 @@ impl NamedPipeStream {
     }
 
     pub fn new(stream: NamedPipe) -> NamedPipeStream {
-        let io = PollEvented::new(stream);
+        let io = PollEvented::new(stream).unwrap();
         NamedPipeStream { io }
     }
 }
 
 impl AsyncRead for NamedPipeStream {
-    unsafe fn prepare_uninitialized_buffer(&self, _: &mut [u8]) -> bool {
+    unsafe fn prepare_uninitialized_buffer(&self, _: &mut [std::mem::MaybeUninit<u8>]) -> bool {
         false
     }
 
@@ -171,51 +173,58 @@ impl IsZero for i32 {
 #[derive(Clone, Copy, Debug)]
 pub struct NamedPipeConnector;
 
-impl NamedPipeConnector {
-    pub fn new() -> Self {
-        NamedPipeConnector
-    }
-}
-
-impl Connect for NamedPipeConnector {
-    type Transport = NamedPipeStream;
+impl hyper::service::Service<hyper::Uri> for NamedPipeConnector {
+    type Response = NamedPipeStream;
     type Error = io::Error;
-    type Future = Pin<Box<ConnectorConnectFuture>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn connect(&self, destination: Destination) -> Self::Future {
-        Box::pin(ConnectorConnectFuture {
-            state: ConnectorConnectState::Start(destination),
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, destination: hyper::Uri) -> Self::Future {
+        Box::pin(NamedPipeConnecting {
+            state: NamedPipeConnectingState::Start(destination),
         })
     }
 }
 
+impl hyper::client::connect::Connection for NamedPipeStream {
+    fn connected(&self) -> Connected {
+        Connected::new()
+    }
+}
+
 #[derive(Debug)]
-pub enum ConnectorConnectState {
-    Start(Destination),
+pub enum NamedPipeConnectingState {
+    Start(hyper::Uri),
     Connect(Pin<Box<ConnectFuture>>),
 }
 
 #[pin_project]
 #[derive(Debug)]
-pub struct ConnectorConnectFuture {
-    state: ConnectorConnectState,
+pub struct NamedPipeConnecting {
+    state: NamedPipeConnectingState,
 }
 
 const NAMED_PIPE_SCHEME: &str = "net.pipe";
 
-impl Future for ConnectorConnectFuture {
-    type Output = Result<(NamedPipeStream, Connected), io::Error>;
+impl Future for NamedPipeConnecting {
+    type Output = Result<NamedPipeStream, io::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         loop {
             let next_state = match this.state {
-                ConnectorConnectState::Start(destination) => {
-                    if destination.scheme() != NAMED_PIPE_SCHEME {
-                        return Poll::Ready(Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            format!("Invalid scheme {:?}", destination.scheme()),
-                        )));
+                NamedPipeConnectingState::Start(destination) => {
+                    match destination.scheme() {
+                        Some(scheme) if scheme == NAMED_PIPE_SCHEME => (),
+                        _ => {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                format!("Invalid scheme {:?}", destination.scheme()),
+                            )))
+                        }
                     }
 
                     let path = match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
@@ -229,15 +238,15 @@ impl Future for ConnectorConnectFuture {
                         }
                     };
 
-                    ConnectorConnectFuture {
-                        state: ConnectorConnectState::Connect(Box::pin(NamedPipeStream::connect(
+                    NamedPipeConnecting {
+                        state: NamedPipeConnectingState::Connect(Box::pin(NamedPipeStream::connect(
                             &path,
                         ))),
                     }
                 }
 
-                ConnectorConnectState::Connect(f) => match f.as_mut().poll(cx) {
-                    Poll::Ready(Ok(stream)) => return Poll::Ready(Ok((stream, Connected::new()))),
+                NamedPipeConnectingState::Connect(f) => match f.as_mut().poll(cx) {
+                    Poll::Ready(Ok(stream)) => return Poll::Ready(Ok(stream)),
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
                 },

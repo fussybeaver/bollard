@@ -62,7 +62,7 @@ fn test_version_tls() {
 #[cfg(unix)]
 #[test]
 fn test_downversioning() {
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
 
     env_logger::init();
 
@@ -87,6 +87,4 @@ fn test_downversioning() {
         );
     };
     rt.block_on(fut);
-
-    rt.shutdown_now();
 }

@@ -184,7 +184,7 @@ To receive a stream of stats for a running container.
 use bollard::Docker;
 use bollard::container::StatsOptions;
 
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 
 use std::default::Default;
 
@@ -243,12 +243,6 @@ Or, to execute and receive the result:
 
 ```rust
 let result = rt.block_on(future);
-```
-
-Finally, to shut down the executor:
-
-```rust
-rt.shutdown_now();
 ```
 
 ## History

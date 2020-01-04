@@ -7,18 +7,16 @@ use bollard::image::CreateImageOptions;
 use bollard::Docker;
 
 use futures_util::stream::select;
-use futures_util::try_stream::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
 const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
 const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
 fn main() {
-    let rt = Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
 
     rt.block_on(run()).unwrap();
-
-    rt.shutdown_on_idle();
 }
 
 async fn run() -> Result<(), failure::Error> {

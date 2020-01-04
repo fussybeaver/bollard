@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use futures_core::Stream;
-use hyper::Chunk;
+use hyper::body::Bytes;
 use pin_project::pin_project;
 use serde::de::DeserializeOwned;
 use serde_json;
@@ -12,8 +12,8 @@ use std::{
     io::{self},
     marker::PhantomData,
 };
-use tokio_codec::Decoder;
-use tokio_io::AsyncRead;
+use tokio_util::codec::Decoder;
+use tokio::io::AsyncRead;
 
 use crate::container::LogOutput;
 
@@ -143,7 +143,7 @@ where
 
 #[derive(Debug)]
 enum ReadState {
-    Ready(Chunk, usize),
+    Ready(Bytes, usize),
     NotReady,
 }
 
@@ -157,7 +157,7 @@ pub(crate) struct StreamReader<S> {
 
 impl<S> StreamReader<S>
 where
-    S: Stream<Item = Result<Chunk, Error>>,
+    S: Stream<Item = Result<Bytes, Error>>,
 {
     #[inline]
     pub(crate) fn new(stream: S) -> StreamReader<S> {
@@ -170,7 +170,7 @@ where
 
 impl<S> AsyncRead for StreamReader<S>
 where
-    S: Stream<Item = Result<Chunk, Error>>,
+    S: Stream<Item = Result<Bytes, Error>>,
 {
     fn poll_read(
         self: Pin<&mut Self>,
