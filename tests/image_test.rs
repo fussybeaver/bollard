@@ -2,6 +2,7 @@
 
 use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
+use tar::Archive;
 
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
@@ -380,6 +381,31 @@ RUN touch bollard.txt
     Ok(())
 }
 
+async fn export_image_test(docker: Docker) -> Result<(), Error> {
+    create_image_hello_world(&docker).await?;
+
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
+    };
+
+    let res = docker.export_image(&image);
+    let bytes = concat_byte_stream(res).await?;
+    // Check to see if the response is a valid tar file.
+    let mut archive = Archive::new(&bytes[..]);
+    let inner_files: Vec<String> = archive.entries().unwrap().map(|f_res| {
+        let file = f_res.unwrap();
+        let path = file.header().path().unwrap();
+        path.to_str().unwrap().to_owned()
+    }).collect();
+
+    // Testing for the existence of files that should be within the exported archive
+    assert!(inner_files.iter().any(|f| f == "manifest.json"));
+    assert!(inner_files.iter().any(|f| f == "repositories"));
+    Ok(())
+}
+
 #[test]
 fn integration_test_search_images() {
     connect_to_docker_and_run!(search_images_test);
@@ -423,4 +449,9 @@ fn integration_test_commit_container() {
 #[test]
 fn integration_test_build_image() {
     connect_to_docker_and_run!(build_image_test);
+}
+
+#[test]
+fn integration_test_export_image() {
+    connect_to_docker_and_run!(export_image_test);
 }
