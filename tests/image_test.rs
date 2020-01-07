@@ -3,6 +3,7 @@
 use futures_util::stream::{TryStreamExt, StreamExt};
 use futures_util::future::ready;
 use tokio::runtime::Runtime;
+use tar::Archive;
 
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
