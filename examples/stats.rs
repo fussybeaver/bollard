@@ -31,7 +31,7 @@ async fn run<'a>() -> Result<(), Error> {
             .await?;
 
         if containers.is_empty() {
-            return Err(bail!("no running containers"));
+            bail!("no running containers");
         } else {
             for container in containers {
                 &docker

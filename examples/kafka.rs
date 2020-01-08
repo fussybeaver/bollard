@@ -76,6 +76,7 @@ async fn run() -> Result<(), failure::Error> {
                 ..Default::default()
             }),
             None,
+            None,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -97,6 +98,7 @@ async fn run() -> Result<(), failure::Error> {
                 from_image: KAFKA_IMAGE,
                 ..Default::default()
             }),
+            None,
             None,
         )
         .try_collect::<Vec<_>>()
@@ -129,6 +131,7 @@ async fn run() -> Result<(), failure::Error> {
                 from_image: KAFKA_IMAGE,
                 ..Default::default()
             }),
+            None,
             None,
         )
         .try_collect::<Vec<_>>()
