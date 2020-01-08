@@ -1,8 +1,8 @@
 #![type_length_limit = "2097152"]
 
-use futures_util::stream::TryStreamExt;
+use futures_util::stream::{TryStreamExt, StreamExt};
+use futures_util::future::ready;
 use tokio::runtime::Runtime;
-use tar::Archive;
 
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
@@ -15,6 +15,7 @@ use bollard::Docker;
 use std::collections::HashMap;
 use std::default::Default;
 use std::io::Write;
+use std::fs::{File, remove_file};
 
 #[macro_use]
 pub mod common;
@@ -389,20 +390,29 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
     } else {
         format!("{}hello-world:linux", registry_http_addr())
     };
+    let temp_file = if cfg!(windows) {
+        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_image_export.tar"
+    } else {
+        "/tmp/bollard_test_image_export.tar"
+    };
 
     let res = docker.export_image(&image);
-    let bytes = concat_byte_stream(res).await?;
-    // Check to see if the response is a valid tar file.
-    let mut archive = Archive::new(&bytes[..]);
-    let inner_files: Vec<String> = archive.entries().unwrap().map(|f_res| {
-        let file = f_res.unwrap();
-        let path = file.header().path().unwrap();
-        path.to_str().unwrap().to_owned()
-    }).collect();
 
-    // Testing for the existence of files that should be within the exported archive
-    assert!(inner_files.iter().any(|f| f == "manifest.json"));
-    assert!(inner_files.iter().any(|f| f == "repositories"));
+    let mut archive_file = File::create(temp_file).unwrap();
+    // Shouldn't load the whole file into memory, stream it to disk instead
+    res.for_each(move |data| {
+        archive_file.write_all(&data.unwrap()).unwrap();
+        archive_file.sync_all().unwrap();
+        ready(())
+    }).await;
+
+    // assert that the file containg the exported archive actually exists
+    let test_file = File::open(temp_file).unwrap();
+    // and metadata can be read
+    test_file.metadata().unwrap();
+
+    // And delete it to clean up
+    remove_file(temp_file).unwrap();
     Ok(())
 }
 
