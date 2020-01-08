@@ -7,10 +7,8 @@ use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
 use failure::Error;
 
-use futures_util::stream;
 use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
-use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
 use std::collections::HashMap;

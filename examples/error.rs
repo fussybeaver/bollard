@@ -15,7 +15,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
-    run();
+    run().unwrap();
 
     ()
 }
