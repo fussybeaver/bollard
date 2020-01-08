@@ -5,7 +5,6 @@ use bollard::errors::Error;
 use bollard::exec::*;
 use bollard::Docker;
 
-use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
 use tokio::runtime::Runtime;
 
