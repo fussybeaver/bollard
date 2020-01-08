@@ -380,7 +380,6 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    println!("{:?}", result.iter().map(|c| c.clone().names));
     assert_eq!(
         0,
         result

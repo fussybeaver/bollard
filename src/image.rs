@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, Method};
+use hyper::{Body, body::Bytes, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -1563,4 +1563,41 @@ impl Docker {
             }
         }
     }
+
+    /// ---
+    ///
+    /// # Export Image
+    ///
+    /// Get a tarball containing all images and metadata for a repository.
+    ///
+    /// The root of the resulting tar file will contain the file "mainifest.json". If the export is
+    /// of an image repository, rather than a signle image, there will also be a `repositories` file
+    /// with a JSON description of the exported image repositories.
+    /// Additionally, each layer of all exported images will have a sub directory in the archive
+    /// containing the filesystem of the layer.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageCommit)
+    /// for more information.
+    /// # Arguments
+    /// - The `image_name` string can refer to an individual image and tag (e.g. alpine:latest),
+    ///   an individual image by I
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_image(
+            &self,
+            image_name: &str,
+        ) ->  impl Stream<Item = Result<Bytes, Error>> {
+            let url = format!("/images/{}/get", image_name);
+            dbg!(&url);
+            let req = self.build_request::<_, String, String>(
+                &url,
+                Builder::new()
+                    .method(Method::GET)
+                    .header(CONTENT_TYPE, "application/json"),
+                Ok(None::<ArrayVec<[(_, _); 0]>>),
+                Ok(Body::empty()),
+            );
+            self.process_into_body(req)
+        }
 }

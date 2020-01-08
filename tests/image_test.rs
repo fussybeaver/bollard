@@ -1,6 +1,7 @@
 #![type_length_limit = "2097152"]
 
-use futures_util::stream::TryStreamExt;
+use futures_util::stream::{TryStreamExt, StreamExt};
+use futures_util::future::ready;
 use tokio::runtime::Runtime;
 
 use bollard::container::{
@@ -14,6 +15,7 @@ use bollard::Docker;
 use std::collections::HashMap;
 use std::default::Default;
 use std::io::Write;
+use std::fs::{File, remove_file};
 
 #[macro_use]
 pub mod common;
@@ -380,6 +382,40 @@ RUN touch bollard.txt
     Ok(())
 }
 
+async fn export_image_test(docker: Docker) -> Result<(), Error> {
+    create_image_hello_world(&docker).await?;
+
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
+    };
+    let temp_file = if cfg!(windows) {
+        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_image_export.tar"
+    } else {
+        "/tmp/bollard_test_image_export.tar"
+    };
+
+    let res = docker.export_image(&image);
+
+    let mut archive_file = File::create(temp_file).unwrap();
+    // Shouldn't load the whole file into memory, stream it to disk instead
+    res.for_each(move |data| {
+        archive_file.write_all(&data.unwrap()).unwrap();
+        archive_file.sync_all().unwrap();
+        ready(())
+    }).await;
+
+    // assert that the file containg the exported archive actually exists
+    let test_file = File::open(temp_file).unwrap();
+    // and metadata can be read
+    test_file.metadata().unwrap();
+
+    // And delete it to clean up
+    remove_file(temp_file).unwrap();
+    Ok(())
+}
+
 #[test]
 fn integration_test_search_images() {
     connect_to_docker_and_run!(search_images_test);
@@ -423,4 +459,9 @@ fn integration_test_commit_container() {
 #[test]
 fn integration_test_build_image() {
     connect_to_docker_and_run!(build_image_test);
+}
+
+#[test]
+fn integration_test_export_image() {
+    connect_to_docker_and_run!(export_image_test);
 }
