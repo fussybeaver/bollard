@@ -1023,7 +1023,7 @@ impl Docker {
     ///   ..Default::default()
     /// });
     ///
-    /// docker.create_image(options, None);
+    /// docker.create_image(options, None, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```

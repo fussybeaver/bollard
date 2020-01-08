@@ -62,7 +62,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
 
 async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IPAMConfig {
-        subnet: Some("10.10.10.11/24"),
+        subnet: Some("10.10.10.10/24"),
         ..Default::default()
     };
 
