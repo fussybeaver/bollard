@@ -55,6 +55,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
                 from_image: &image[..],
                 ..Default::default()
             }),
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -424,6 +425,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
                 from_image: &image[..],
                 ..Default::default()
             }),
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -563,6 +565,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             from_image: &image[..],
             ..Default::default()
         }),
+        None,
         if cfg!(windows) {
             None
         } else {

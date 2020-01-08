@@ -34,6 +34,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             from_image: &image[..],
             ..Default::default()
         }),
+        None,
         if cfg!(windows) {
             None
         } else {
