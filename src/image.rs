@@ -83,7 +83,7 @@ pub struct APIImages {
     pub repo_digests: Option<Vec<String>>,
     pub labels: Option<HashMap<String, String>>,
     pub containers: isize,
-    pub shared_size: i32,
+    pub shared_size: i64,
 }
 
 /// Parameters available for pulling an image, used in the [Create Image
