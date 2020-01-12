@@ -416,6 +416,8 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 #[test]
 fn integration_test_search_images() {
     connect_to_docker_and_run!(search_images_test);
