@@ -83,7 +83,7 @@ pub struct APIImages {
     pub repo_digests: Option<Vec<String>>,
     pub labels: Option<HashMap<String, String>>,
     pub containers: isize,
-    pub shared_size: i32,
+    pub shared_size: i64,
 }
 
 /// Parameters available for pulling an image, used in the [Create Image
@@ -1001,6 +1001,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - An optional [Create Image Options](image/struct.CreateImageOptions.html) struct.
+    ///  - An optional request body consisting of a tar or tar.gz archive with the root file system
+    ///    for the image. If this argument is used, the value of the `from_src` option must be "-".
     ///
     /// # Returns
     ///
@@ -1021,7 +1023,7 @@ impl Docker {
     ///   ..Default::default()
     /// });
     ///
-    /// docker.create_image(options, None);
+    /// docker.create_image(options, None, None);
     ///
     /// // do some other work while the image is pulled from the docker hub...
     /// ```
@@ -1033,6 +1035,7 @@ impl Docker {
     pub fn create_image<T, K, V>(
         &self,
         options: Option<T>,
+        root_fs: Option<Body>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageResults, Error>>
     where
@@ -1052,7 +1055,10 @@ impl Docker {
                         .method(Method::POST)
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
                     Docker::transpose_option(options.map(|o| o.into_array())),
-                    Ok(Body::empty()),
+                    match root_fs {
+                        Some(body) => Ok(body),
+                        None => Ok(Body::empty())
+                    }
                 );
                 self.process_into_stream(req).boxed()
             }

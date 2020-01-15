@@ -11,8 +11,10 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
+use crate::container::APIContainers;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
+use crate::image::APIImages;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]
@@ -128,6 +130,40 @@ pub struct EventsResults {
     pub scope: String,
 }
 
+/// Volumes returned in the [Df API](../struct.Docker.html#method.df)
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+#[allow(missing_docs)]
+pub struct DfVolumesUsageDataResults {
+    pub size: u64,
+    pub ref_count: usize,
+}
+
+/// Volumes returned in the [Df API](../struct.Docker.html#method.df)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+#[allow(missing_docs)]
+pub struct DfVolumesResults {
+    pub name: String,
+    pub driver: String,
+    pub mountpoint: String,
+    pub labels: Option<HashMap<String, String>>,
+    pub scope: String,
+    pub options: Option<HashMap<String, String>>,
+    pub usage_data: DfVolumesUsageDataResults,
+}
+
+/// Result type for the [Df API](../struct.Docker.html#method.df)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+#[allow(missing_docs)]
+pub struct DfResults {
+    pub layers_size: u64,
+    pub images: Vec<APIImages>,
+    pub containers: Vec<APIContainers>,
+    pub volumes: Vec<DfVolumesResults>,
+}
+
 impl Docker {
     /// ---
     ///
@@ -138,7 +174,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Version](version/struct.Version.html), wrapped in a Future.
+    ///  - [Version](system/struct.Version.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -197,7 +233,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Events Results](container/struct.EventsResults.html), wrapped in a
+    ///  - [Events Results](system/struct.EventsResults.html), wrapped in a
     ///  Stream.
     ///
     /// # Examples
@@ -235,5 +271,36 @@ impl Docker {
         );
 
         self.process_into_stream(req)
+    }
+
+    /// ---
+    ///
+    /// # Get data usage information
+    ///
+    /// Show docker disk usage
+    ///
+    /// # Returns
+    ///
+    ///  - [Df Results](system/struct.DfResults.html), wrapped in a
+    ///  Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// docker.df();
+    /// ```
+    pub async fn df(&self) -> Result<DfResults, Error> {
+        let url = "/system/df";
+
+        let req = self.build_request::<_, String, String>(
+            url,
+            Builder::new().method(Method::GET),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value(req).await
     }
 }

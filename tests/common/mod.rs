@@ -126,6 +126,7 @@ pub async fn create_container_hello_world(
                 from_image: &image[..],
                 ..Default::default()
             }),
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -195,6 +196,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
                 from_image: &image[..],
                 ..Default::default()
             }),
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -258,6 +260,7 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
                 from_image: &image[..],
                 ..Default::default()
             }),
+            None,
             if cfg!(windows) {
                 None
             } else {

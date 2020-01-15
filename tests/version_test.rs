@@ -1,6 +1,5 @@
 use bollard::system::Version;
 use bollard::{ClientVersion, Docker};
-use std::future::Future;
 use tokio::runtime::Runtime;
 
 #[macro_use]

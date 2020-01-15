@@ -34,6 +34,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             from_image: &image[..],
             ..Default::default()
         }),
+        None,
         if cfg!(windows) {
             None
         } else {
@@ -64,9 +65,33 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             value
         })
         .any(|value| match value {
-            Results::EventsResults(EventsResults { type_: t, .. }) => true,
+            Results::EventsResults(EventsResults { type_: _, .. }) => true,
             _ => false,
         }));
+
+    Ok(())
+}
+
+async fn df_test(docker: Docker) -> Result<(), Error> {
+    env_logger::init();
+
+    create_image_hello_world(&docker).await?;
+
+    let result = &docker.df().await?;
+
+    let c: Vec<&bollard::image::APIImages> = result
+        .images
+        .iter()
+        .filter(|c| {
+            if let Some(ref repo_tags) = c.repo_tags {
+                repo_tags.iter().any(|r| r.contains("hello-world"))
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    assert!(c.len() > 0);
 
     Ok(())
 }
@@ -74,4 +99,9 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
 #[test]
 fn integration_test_events() {
     connect_to_docker_and_run!(events_test);
+}
+
+#[test]
+fn integration_test_df() {
+    connect_to_docker_and_run!(df_test);
 }
