@@ -323,6 +323,7 @@ pub mod network;
 mod read;
 pub mod system;
 mod uri;
+pub mod volume;
 
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
