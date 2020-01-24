@@ -1,5 +1,5 @@
-use futures_core::Stream;
 use bytes::Bytes;
+use futures_core::Stream;
 use futures_util::stream::TryStreamExt;
 use std::future::Future;
 use tokio::runtime::Runtime;
@@ -170,7 +170,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
     let image = if cfg!(windows) {
         format!("{}nanoserver/iis", registry_http_addr())
     } else {
-        format!("{}fnichol/uhttpd", registry_http_addr())
+        format!("{}fussybeaver/uhttpd", registry_http_addr())
     };
 
     let cmd = if cfg!(windows) {
@@ -283,10 +283,13 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
 #[allow(dead_code)]
 pub async fn concat_byte_stream<S>(s: S) -> Result<Vec<u8>, Error>
 where
-    S: Stream<Item = Result<Bytes, Error>>
+    S: Stream<Item = Result<Bytes, Error>>,
 {
-    s.try_fold(Vec::new(), |mut acc, chunk| async move {
-        acc.extend_from_slice(&chunk[..]);
-        Ok(acc)
-    }).await
+    s.try_fold(Vec::new(), |mut acc, chunk| {
+        async move {
+            acc.extend_from_slice(&chunk[..]);
+            Ok(acc)
+        }
+    })
+    .await
 }

@@ -11,12 +11,12 @@ cat dockerfiles/registry/config.yml | docker run --rm -i --volumes-from config -
 docker run -d --restart always --name registry -p 5000:5000 --volumes-from config registry:2
 docker login --username bollard --password "${REGISTRY_PASSWORD}" localhost:5000
 docker pull hello-world:linux
-docker pull fnichol/uhttpd
+docker pull fussybeaver/uhttpd
 docker pull alpine
 docker tag hello-world:linux localhost:5000/hello-world:linux
-docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+docker tag fussybeaver/uhttpd localhost:5000/fussybeaver/uhttpd
 docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
-docker push localhost:5000/fnichol/uhttpd
+docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
 docker run -e RUST_LOG=bollard=debug -e REGISTRY_PASSWORD -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test -- --test-threads 1
