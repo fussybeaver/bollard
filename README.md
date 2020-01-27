@@ -260,13 +260,13 @@ and pushed there. To disable this behaviour, set the `DISABLE_REGISTRY` environm
 ```bash
 docker run -d --restart always --name registry -p 5000:5000 registry:2
 docker pull hello-world:linux
-docker pull fnichol/uhttpd
+docker pull fussybeaver/uhttpd
 docker pull alpine
 docker tag hello-world:linux localhost:5000/hello-world:linux
-docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+docker tag fussybeaver/uhttpd localhost:5000/fussybeaver/uhttpd
 docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
-docker push localhost:5000/fnichol/uhttpd
+docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
 REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 ```

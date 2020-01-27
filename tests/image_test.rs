@@ -1,9 +1,8 @@
 #![type_length_limit = "2097152"]
 
-use futures_util::stream::{TryStreamExt, StreamExt};
 use futures_util::future::ready;
+use futures_util::stream::{StreamExt, TryStreamExt};
 use tokio::runtime::Runtime;
-use tar::Archive;
 
 use bollard::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
@@ -15,8 +14,8 @@ use bollard::Docker;
 
 use std::collections::HashMap;
 use std::default::Default;
+use std::fs::{remove_file, File};
 use std::io::Write;
-use std::fs::{File, remove_file};
 
 #[macro_use]
 pub mod common;
@@ -405,7 +404,8 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
         archive_file.write_all(&data.unwrap()).unwrap();
         archive_file.sync_all().unwrap();
         ready(())
-    }).await;
+    })
+    .await;
 
     // assert that the file containg the exported archive actually exists
     let test_file = File::open(temp_file).unwrap();

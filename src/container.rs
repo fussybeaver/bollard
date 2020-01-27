@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, body::Bytes, Method};
+use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -2167,7 +2167,7 @@ impl Docker {
     ///     ps_args: "aux",
     /// });
     ///
-    /// docker.top_processes("fnichol/uhttpd", options);
+    /// docker.top_processes("fussybeaver/uhttpd", options);
     /// ```
     pub async fn top_processes<T, K, V>(
         &self,

@@ -282,13 +282,13 @@
 //! ```bash
 //! docker run -d --restart always --name registry -p 5000:5000 registry:2
 //! docker pull hello-world:linux
-//! docker pull fnichol/uhttpd
+//! docker pull fussybeaver/uhttpd
 //! docker pull alpine
 //! docker tag hello-world:linux localhost:5000/hello-world:linux
-//! docker tag fnichol/uhttpd localhost:5000/fnichol/uhttpd
+//! docker tag fussybeaver/uhttpd localhost:5000/fussybeaver/uhttpd
 //! docker tag alpine localhost:5000/alpine
 //! docker push localhost:5000/hello-world:linux
-//! docker push localhost:5000/fnichol/uhttpd
+//! docker push localhost:5000/fussybeaver/uhttpd
 //! docker push localhost:5000/alpine
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 //! ```
@@ -323,6 +323,7 @@ pub mod network;
 mod read;
 pub mod system;
 mod uri;
+pub mod volume;
 
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
