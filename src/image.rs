@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, body::Bytes, Method};
+use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -1057,8 +1057,8 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     match root_fs {
                         Some(body) => Ok(body),
-                        None => Ok(Body::empty())
-                    }
+                        None => Ok(Body::empty()),
+                    },
                 );
                 self.process_into_stream(req).boxed()
             }
