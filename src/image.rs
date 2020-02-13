@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, body::Bytes, Method};
+use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -1057,8 +1057,8 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     match root_fs {
                         Some(body) => Ok(body),
-                        None => Ok(Body::empty())
-                    }
+                        None => Ok(Body::empty()),
+                    },
                 );
                 self.process_into_stream(req).boxed()
             }
@@ -1590,20 +1590,17 @@ impl Docker {
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
-    pub fn export_image(
-            &self,
-            image_name: &str,
-        ) ->  impl Stream<Item = Result<Bytes, Error>> {
-            let url = format!("/images/{}/get", image_name);
-            dbg!(&url);
-            let req = self.build_request::<_, String, String>(
-                &url,
-                Builder::new()
-                    .method(Method::GET)
-                    .header(CONTENT_TYPE, "application/json"),
-                Ok(None::<ArrayVec<[(_, _); 0]>>),
-                Ok(Body::empty()),
-            );
-            self.process_into_body(req)
-        }
+    pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
+        let url = format!("/images/{}/get", image_name);
+        dbg!(&url);
+        let req = self.build_request::<_, String, String>(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+        self.process_into_body(req)
+    }
 }
