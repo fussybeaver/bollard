@@ -1,9 +1,13 @@
+//! Service API: manage and inspect docker services within a swarm
+
 use super::Docker;
+use crate::auth::DockerCredentials;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 use crate::service_models::Service;
-use crate::service_models::ServiceSpec;
+use crate::service_models::{ServiceCreateResponse, ServiceSpec};
 use arrayvec::ArrayVec;
+use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde_json;
@@ -127,24 +131,72 @@ impl Docker {
         self.process_into_value(req).await
     }
 
+    /// ---
+    ///
+    /// # Create Service
+    ///
+    /// Dispatch a new service on the docker swarm
+    ///
+    /// # Arguments
+    ///
+    ///  - [ServiceSpec](service_models/struct.ServiceSpec.html) struct.
+    ///  - Optional [ListServicesOptions](service/struct.ListServicesOptions.html) struct.
+    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A [Service Create Response](service_models/struct.ServiceCreateResponse.html) struct,
+    ///  wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::{ListServicesOptions};
+    ///
+    /// use std::collections::HashMap;
+    /// use std::default::Default;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("mode", vec!("global"));
+    ///
+    /// let options = Some(ListServicesOptions{
+    ///     filters: filters,
+    ///     ..Default::default()
+    /// });
+    ///
+    /// docker.create_service(options);
+    /// ```
     pub async fn create_service<T, K>(
         &self,
         service_spec: ServiceSpec,
         options: Option<T>,
-    ) -> Result<Vec<Service>, Error>
+        credentials: Option<DockerCredentials>,
+    ) -> Result<ServiceCreateResponse, Error>
     where
         T: ListServicesQueryParams<K, String>,
         K: AsRef<str>,
     {
         let url = "/services/create";
 
-        let req = self.build_request(
-            url,
-            Builder::new().method(Method::POST),
-            Docker::transpose_option(options.map(|o| o.into_array())),
-            Docker::serialize_payload(Some(service_spec)),
-        );
+        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        })) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/json")
+                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                    Docker::transpose_option(options.map(|o| o.into_array())),
+                    Docker::serialize_payload(Some(service_spec)),
+                );
 
-        self.process_into_value(req).await
+                self.process_into_value(req).await
+            }
+            Err(e) => Err(JsonSerializeError { err: e }.into()),
+        }
     }
 }
