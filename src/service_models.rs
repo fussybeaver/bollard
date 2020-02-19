@@ -1,3 +1,5 @@
+//! Service API object definitions
+
 use chrono::Utc;
 use chrono::{serde::ts_seconds, DateTime};
 use std::collections::HashMap;
@@ -648,4 +650,16 @@ pub enum ServiceUpdateStatusState {
     Updating,
     Paused,
     Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+#[allow(missing_docs)]
+pub struct ServiceCreateResponse {
+    /// The ID of the created service.
+    #[serde(rename = "ID")]
+    pub id: Option<String>,
+
+    /// Optional warning message
+    pub warning: Option<String>,
 }
