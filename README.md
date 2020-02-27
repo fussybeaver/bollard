@@ -147,7 +147,7 @@ async move {
     let version = docker.version().await.unwrap();
     println!("{:?}", version);
 };
-```rust
+```
 
 ### Listing images
 
