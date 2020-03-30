@@ -732,7 +732,7 @@ where
 {
     pub state: ServiceUpdateStatusState,
     pub started_at: DateTime<Utc>,
-    pub completed_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
     pub message: T,
 }
 
