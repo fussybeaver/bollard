@@ -1,7 +1,7 @@
 //! Service API object definitions
 
 use chrono::Utc;
-use chrono::{serde::ts_seconds, DateTime};
+use chrono::DateTime;
 use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
