@@ -1595,7 +1595,6 @@ impl Docker {
             image_name: &str,
         ) ->  impl Stream<Item = Result<Bytes, Error>> {
             let url = format!("/images/{}/get", image_name);
-            dbg!(&url);
             let req = self.build_request::<_, String, String>(
                 &url,
                 Builder::new()
