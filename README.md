@@ -23,6 +23,7 @@ bollard = "0.4"
 ```
 
 ## API
+
 ### Documentation
 
 [API docs](https://docs.rs/bollard/)
@@ -67,6 +68,7 @@ The client will connect to the OS specific handler it is compiled for.
 This is a convenience for localhost environment that should run on multiple
 operating systems.
 Use the `Docker::connect_with_local` method API to parameterise the interface.
+
 ```rust
 use bollard::Docker;
 Docker::connect_with_local_defaults();
@@ -134,7 +136,7 @@ Tokio is further below.
 
 First, check that the API is working with your server:
 
-```rust, no_run
+````rust, no_run
 use bollard::Docker;
 
 use futures_util::future::FutureExt;
@@ -174,7 +176,7 @@ async move {
         println!("-> {:?}", image);
     }
 };
-```
+````
 
 ### Streaming Stats
 
@@ -268,6 +270,7 @@ docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
 docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
+docker swarm init
 REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 ```
 
