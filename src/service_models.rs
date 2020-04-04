@@ -1,7 +1,7 @@
 //! Service API object definitions
 
+use chrono::DateTime;
 use chrono::Utc;
-use chrono::{serde::ts_seconds, DateTime};
 use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -731,9 +731,7 @@ where
     T: AsRef<str> + Eq + Hash,
 {
     pub state: ServiceUpdateStatusState,
-    #[serde(with = "ts_seconds")]
     pub started_at: DateTime<Utc>,
-    #[serde(with = "ts_seconds")]
     pub completed_at: DateTime<Utc>,
     pub message: T,
 }
@@ -746,4 +744,3 @@ pub enum ServiceUpdateStatusState {
     Paused,
     Completed,
 }
-
