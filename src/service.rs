@@ -142,10 +142,10 @@ impl<'a> InspectServiceQueryParams<&'a str, &'a str> for InspectServiceOptions {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.
-    pub version: u64,
+    pub version: ObjectVersion,
     /// If the X-Registry-Auth header is not specified, this parameter indicates whether to use registry authorization credentials from the current or the previous spec.
     pub registry_auth_from_previous: bool,
-    /// Set to this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
+    /// Set this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
     pub rollback: bool,
 }
 
@@ -162,7 +162,7 @@ where
 impl<'a> UpdateServiceQueryParams<&'a str, String> for UpdateServiceOptions {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
         Ok(ArrayVec::from([
-            ("version", self.version.to_string()),
+            ("version", self.version.index.to_string()),
             (
                 "registryAuthFrom",
                 if self.registry_auth_from_previous {
@@ -446,7 +446,7 @@ impl Docker {
     ///     let current_version = docker.inspect_service(
     ///         service_name,
     ///         None::<InspectServiceOptions>
-    ///     ).await?.version.index;
+    ///     ).await?.version;
     ///     let service = ServiceSpec::<&str> {
     ///         mode: Some(ServiceSpecMode::Replicated {
     ///             replicas: 0,
