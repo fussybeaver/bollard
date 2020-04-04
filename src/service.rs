@@ -81,7 +81,7 @@ where
 pub struct ServiceCreateResponse {
     /// The ID of the created service.
     #[serde(rename = "ID")]
-    pub id: Option<String>,
+    pub id: String,
 
     /// Optional warning message
     pub warning: Option<String>,
