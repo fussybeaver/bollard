@@ -15,14 +15,14 @@ build_script:
   - ps: Get-VMNetworkAdapter -VMName MobyLinuxVM | Set-VMNetworkAdapter -MacAddressSpoofing On
   - ps: Get-NetAdapter
   - ps: |
-        $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
-        Set-Item -path env:HOST_IP -value $ipv4
+      $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
+      Set-Item -path env:HOST_IP -value $ipv4
   - ipconfig
   - echo %HOST_IP%
   - ps: |
-        cd dockerfiles/windows/registry
-        docker build -t stefanscherer/registry-windows -f Dockerfile .
-        cd ../../../
+      cd dockerfiles/windows/registry
+      docker build -t stefanscherer/registry-windows -f Dockerfile .
+      cd ../../../
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
   - docker pull hello-world:nanoserver-sac2016
   - docker pull nanoserver/iis
@@ -33,6 +33,7 @@ build_script:
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
   - docker push localhost:5000/microsoft/nanoserver
+  - docker swarm init --advertise-addr "10.0.75.1"
   - cargo build --verbose
 
 test_script:

@@ -132,10 +132,10 @@ impl<'a> InspectServiceQueryParams<&'a str, &'a str> for InspectServiceOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::service::UpdateServiceOptions;
+/// use bollard::service::{ObjectVersion, UpdateServiceOptions};
 ///
-/// UpdateServiceOptions{
-///     version: 1234,
+/// UpdateServiceOptions {
+///     version: ObjectVersion { index: 1234 },
 ///     ..Default::default()
 /// };
 /// ```
