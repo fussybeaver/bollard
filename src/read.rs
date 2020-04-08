@@ -12,8 +12,8 @@ use std::{
     io::{self},
     marker::PhantomData,
 };
-use tokio_util::codec::Decoder;
 use tokio::io::AsyncRead;
+use tokio_util::codec::Decoder;
 
 use crate::container::LogOutput;
 
@@ -111,29 +111,31 @@ where
         let nl_index = src.iter().position(|b| *b == b'\n');
 
         if src.len() > 0 {
-            let pos = nl_index.unwrap_or(src.len() - 1);
+            if let Some(pos) = nl_index {
+                let slice = src.split_to(pos + 1);
+                let slice = &slice[..slice.len() - 1];
 
-            let slice = src.split_to(pos + 1);
-            let slice = &slice[..slice.len() - 1];
+                debug!(
+                    "Decoding JSON line from stream: {}",
+                    String::from_utf8_lossy(&slice).to_string()
+                );
 
-            debug!(
-                "Decoding JSON line from stream: {}",
-                String::from_utf8_lossy(&slice).to_string()
-            );
-
-            match serde_json::from_slice(slice) {
-                Ok(json) => Ok(json),
-                Err(ref e) if e.is_data() => Err(JsonDataError {
-                    message: e.to_string(),
-                    column: e.column(),
-                    contents: String::from_utf8_lossy(&slice).to_string(),
+                match serde_json::from_slice(slice) {
+                    Ok(json) => Ok(json),
+                    Err(ref e) if e.is_data() => Err(JsonDataError {
+                        message: e.to_string(),
+                        column: e.column(),
+                        contents: String::from_utf8_lossy(&slice).to_string(),
+                    }
+                    .into()),
+                    Err(e) => Err(JsonDeserializeError {
+                        content: String::from_utf8_lossy(slice).to_string(),
+                        err: e,
+                    }
+                    .into()),
                 }
-                .into()),
-                Err(e) => Err(JsonDeserializeError {
-                    content: String::from_utf8_lossy(slice).to_string(),
-                    err: e,
-                }
-                .into()),
+            } else {
+                Ok(None)
             }
         } else {
             Ok(None)
