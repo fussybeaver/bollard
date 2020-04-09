@@ -417,6 +417,61 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn issue_55_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = "FROM ubuntu:18.04
+RUN apt-get update && \
+    apt-get install -y \
+        build-essential \
+        cmake \
+        curl \
+        file \
+        git \
+        graphviz \
+        musl-dev \
+        musl-tools \
+        libpq-dev \
+        libsqlite-dev \
+        libssl-dev \
+        linux-libc-dev \
+        pkgconf \
+        sudo \
+        xutils-dev \
+        gcc-multilib-arm-linux-gnueabihf \
+        && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* 
+";
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let mut stream = docker.build_image(
+        BuildImageOptions {
+            dockerfile: "Dockerfile".to_string(),
+            t: "issue_55".to_string(),
+            pull: true,
+            rm: true,
+            ..Default::default()
+        },
+        None,
+        Some(compressed.into()),
+    );
+
+    while let Some(update) = stream.next().await {
+        assert!(update.is_ok());
+    }
+
+    Ok(())
+}
+
 // ND - Test sometimes hangs on appveyor.
 #[cfg(not(windows))]
 #[test]
@@ -468,3 +523,10 @@ fn integration_test_build_image() {
 fn integration_test_export_image() {
     connect_to_docker_and_run!(export_image_test);
 }
+
+#[test]
+#[cfg(unix)]
+fn integration_test_issue_55() {
+    connect_to_docker_and_run!(issue_55_test);
+}
+
