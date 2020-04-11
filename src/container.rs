@@ -364,7 +364,7 @@ where
     /// `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to
     /// which this container should connect to.
     pub network_mode: Option<T>,
-    pub devices: Option<Vec<T>>,
+    pub devices: Option<Vec<HashMap<T, T>>>,
     /// A list of resource limits to set in the container. For example: `{"Name": "nofile", "Soft":
     /// 1024, "Hard": 2048}`
     pub ulimits: Option<Vec<HashMap<T, T>>>,
