@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, body::Bytes, Method};
+use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
 use serde_json;
 
@@ -938,6 +938,54 @@ pub enum BuildImageResults {
     BuildImageNone {},
 }
 
+/// Parameters to the [Import Image API](../struct.Docker.html#method.import_image)
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::image::ImportImageOptions;
+/// use std::default::Default;
+///
+/// ImportImageOptions {
+///     quiet: true,
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ImportImageOptions {
+    /// Suppress progress details during load.
+    pub quiet: bool,
+}
+
+/// Trait providing implementations for [Import Image Options](struct.ImportImageOptions.html)
+/// struct.
+#[allow(missing_docs)]
+pub trait ImportImageQueryParams<K, V>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
+}
+
+impl<'a> ImportImageQueryParams<&'a str, &'a str> for ImportImageOptions {
+    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 1]>, Error> {
+        Ok(ArrayVec::from([(
+            "quiet",
+            if self.quiet { TRUE_STR } else { FALSE_STR },
+        )]))
+    }
+}
+
+/// Result type for the [Import Image API](../struct.Docker.html#method.import_image)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+#[allow(missing_docs)]
+pub enum ImportImageResults {
+    #[serde(rename_all = "camelCase")]
+    ImportImageStream { stream: String },
+}
+
 impl Docker {
     /// ---
     ///
@@ -1057,8 +1105,8 @@ impl Docker {
                     Docker::transpose_option(options.map(|o| o.into_array())),
                     match root_fs {
                         Some(body) => Ok(body),
-                        None => Ok(Body::empty())
-                    }
+                        None => Ok(Body::empty()),
+                    },
                 );
                 self.process_into_stream(req).boxed()
             }
@@ -1590,19 +1638,105 @@ impl Docker {
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
-    pub fn export_image(
-            &self,
-            image_name: &str,
-        ) ->  impl Stream<Item = Result<Bytes, Error>> {
-            let url = format!("/images/{}/get", image_name);
-            let req = self.build_request::<_, String, String>(
-                &url,
-                Builder::new()
-                    .method(Method::GET)
-                    .header(CONTENT_TYPE, "application/json"),
-                Ok(None::<ArrayVec<[(_, _); 0]>>),
-                Ok(Body::empty()),
-            );
-            self.process_into_body(req)
+    pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
+        let url = format!("/images/{}/get", image_name);
+        let req = self.build_request::<_, String, String>(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+        self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Import Image
+    ///
+    /// Load a set of images and tags into a repository.
+    ///
+    /// For details on the format, see the [export image
+    /// endpoint](struct.Docker.html#method.export_image).
+    ///
+    /// # Arguments
+    ///  - [Image Import Options](./image/struct.ImportImageOptions.html) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - [Import Image Results](./image/enum.ImportImageResults.html), wrapped in an asynchronous
+    ///  Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::ImportImageOptions;
+    /// use bollard::errors::Error;
+    ///
+    /// use std::default::Default;
+    /// use tokio::fs::File;
+    /// use tokio::io::AsyncWriteExt;
+    /// use tokio_util::codec;
+    /// use tokio::stream::StreamExt;
+    ///
+    /// let options = ImportImageOptions{
+    ///     ..Default::default()
+    /// };
+    ///
+    /// async move {
+    ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
+    ///
+    ///     let byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///         let bytes = r.unwrap().freeze();
+    ///         Ok::<_, Error>(bytes)
+    ///     });
+
+    ///     let body = hyper::Body::wrap_stream(byte_stream);
+
+    ///     let mut stream = docker
+    ///         .import_image(
+    ///             ImportImageOptions {
+    ///                 ..Default::default()
+    ///             },
+    ///             body,
+    ///             None,
+    ///         );
+    ///
+    ///     while let Some(response) = stream.next().await {
+    ///         // ...
+    ///     }
+    /// };
+    /// ```
+    pub fn import_image<K, V, T>(
+        &self,
+        options: T,
+        root_fs: Body,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+    ) -> impl Stream<Item = Result<ImportImageResults, Error>>
+    where
+        T: ImportImageQueryParams<K, V>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        match serde_json::to_string(&credentials.unwrap_or_else(|| HashMap::new())) {
+            Ok(ser_cred) => {
+                let req = self.build_request(
+                    "/images/load",
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/json")
+                        .header("X-Registry-Config", base64::encode(&ser_cred)),
+                    options.into_array().map(|v| Some(v)),
+                    Ok(root_fs),
+                );
+                self.process_into_stream(req).boxed()
+            }
+            Err(e) => {
+                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+            }
         }
+    }
 }
