@@ -591,7 +591,7 @@ where
 }
 
 /// Scheduling mode for the service.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 #[allow(missing_docs)]
 pub enum ServiceSpecMode {
     Replicated {
