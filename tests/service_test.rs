@@ -138,16 +138,19 @@ async fn service_update_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_create_service() {
     connect_to_docker_and_run!(service_create_test);
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_list_services() {
     connect_to_docker_and_run!(service_list_test);
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_update_service() {
     connect_to_docker_and_run!(service_update_test);
 }

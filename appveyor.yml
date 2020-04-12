@@ -33,7 +33,6 @@ build_script:
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
   - docker push localhost:5000/microsoft/nanoserver
-  - docker swarm init --advertise-addr "10.0.75.1"
   - cargo build --verbose
 
 test_script:
