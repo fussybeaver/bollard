@@ -591,14 +591,14 @@ where
 }
 
 /// Scheduling mode for the service.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[allow(missing_docs)]
 pub enum ServiceSpecMode {
     Replicated {
         #[serde(rename = "Replicas")]
         replicas: i64,
     },
-    Global,
+    Global(HashMap<String, String>),
 }
 
 /// Specification for the update or rollback strategy of the service.
@@ -732,7 +732,7 @@ where
 {
     pub state: ServiceUpdateStatusState,
     pub started_at: DateTime<Utc>,
-    pub completed_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
     pub message: T,
 }
 

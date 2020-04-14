@@ -81,7 +81,7 @@ where
 pub struct ServiceCreateResponse {
     /// The ID of the created service.
     #[serde(rename = "ID")]
-    pub id: String,
+    pub id: Option<String>,
 
     /// Optional warning message
     pub warning: Option<String>,
@@ -132,20 +132,20 @@ impl<'a> InspectServiceQueryParams<&'a str, &'a str> for InspectServiceOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::service::{ObjectVersion, UpdateServiceOptions};
+/// use bollard::service::UpdateServiceOptions;
 ///
-/// UpdateServiceOptions {
-///     version: ObjectVersion { index: 1234 },
+/// UpdateServiceOptions{
+///     version: 1234,
 ///     ..Default::default()
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default)]
 pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.
-    pub version: ObjectVersion,
+    pub version: u64,
     /// If the X-Registry-Auth header is not specified, this parameter indicates whether to use registry authorization credentials from the current or the previous spec.
     pub registry_auth_from_previous: bool,
-    /// Set this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
+    /// Set to this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
     pub rollback: bool,
 }
 
@@ -162,7 +162,7 @@ where
 impl<'a> UpdateServiceQueryParams<&'a str, String> for UpdateServiceOptions {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
         Ok(ArrayVec::from([
-            ("version", self.version.index.to_string()),
+            ("version", self.version.to_string()),
             (
                 "registryAuthFrom",
                 if self.registry_auth_from_previous {
@@ -446,7 +446,7 @@ impl Docker {
     ///     let current_version = docker.inspect_service(
     ///         service_name,
     ///         None::<InspectServiceOptions>
-    ///     ).await?.version;
+    ///     ).await?.version.index;
     ///     let service = ServiceSpec::<&str> {
     ///         mode: Some(ServiceSpecMode::Replicated {
     ///             replicas: 0,

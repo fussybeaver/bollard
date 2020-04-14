@@ -1590,19 +1590,16 @@ impl Docker {
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
-    pub fn export_image(
-            &self,
-            image_name: &str,
-        ) ->  impl Stream<Item = Result<Bytes, Error>> {
-            let url = format!("/images/{}/get", image_name);
-            let req = self.build_request::<_, String, String>(
-                &url,
-                Builder::new()
-                    .method(Method::GET)
-                    .header(CONTENT_TYPE, "application/json"),
-                Ok(None::<ArrayVec<[(_, _); 0]>>),
-                Ok(Body::empty()),
-            );
-            self.process_into_body(req)
-        }
+    pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
+        let url = format!("/images/{}/get", image_name);
+        let req = self.build_request::<_, String, String>(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            Ok(Body::empty()),
+        );
+        self.process_into_body(req)
+    }
 }
