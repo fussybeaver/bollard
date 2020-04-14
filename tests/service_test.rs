@@ -1,4 +1,5 @@
 use bollard::errors::Error;
+use bollard::service_models::ObjectVersion;
 use bollard::{service::*, Docker};
 
 use tokio::runtime::Runtime;
@@ -25,9 +26,9 @@ async fn service_create_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    let respone = docker.create_service(spec, None).await?;
+    let response = docker.create_service(spec, None).await?;
 
-    assert_ne!(respone.id.len(), 0);
+    assert!(response.id.is_some());
 
     docker
         .delete_service("integration_test_create_service")
@@ -112,7 +113,7 @@ async fn service_update_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
     let options = UpdateServiceOptions {
-        version: current_version,
+        version: current_version.index,
         ..Default::default()
     };
     let credentials = None;
