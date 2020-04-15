@@ -44,7 +44,7 @@ where
 }
 
 /// Result type for the [Create Exec API](../struct.Docker.html#method.create_exec)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateExecResults {
@@ -67,7 +67,7 @@ pub enum StartExecResults {
     Detached,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct ExecProcessConfig {
     pub user: Option<String>,
@@ -78,7 +78,7 @@ pub struct ExecProcessConfig {
 }
 
 /// Result type for the [Inspect Exec API](../struct.Docker.html#method.inspect_exec)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ExecInspect {

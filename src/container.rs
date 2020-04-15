@@ -517,7 +517,7 @@ pub struct ContainerNetwork {
 }
 
 /// Network Settings for a container.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkSettings {
@@ -611,7 +611,7 @@ pub struct State {
 }
 
 /// Maps internal container port to external host port.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct APIPort {
@@ -624,7 +624,7 @@ pub struct APIPort {
 }
 
 /// A mapping of network name to endpoint configuration for that network.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkList {
@@ -632,7 +632,7 @@ pub struct NetworkList {
 }
 
 /// Result type for the [List Containers API](../struct.Docker.html#method.list_containers)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct APIContainers {
@@ -656,7 +656,7 @@ pub struct APIContainers {
 }
 
 /// Result type for the [Inspect Container API](../struct.Docker.html#method.inspect_container)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Container {
@@ -778,7 +778,7 @@ where
 }
 
 /// Result type for the [Create Container API](../struct.Docker.html#method.create_container)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateContainerResults {
@@ -935,7 +935,7 @@ impl<'a, T: AsRef<str>> WaitContainerQueryParams<&'a str, T> for WaitContainerOp
 }
 
 /// Error messages returned in the [Wait Container API](../struct.Docker.html#method.wait_container)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct WaitContainerResultsError {
@@ -943,7 +943,7 @@ pub struct WaitContainerResultsError {
 }
 
 /// Result type for the [Wait Container API](../struct.Docker.html#method.wait_container)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct WaitContainerResults {
@@ -1058,7 +1058,7 @@ impl<'a, T: AsRef<str>> TopQueryParams<&'a str, T> for TopOptions<T> {
 }
 
 /// Result type for the [Top Processes API](../struct.Docker.html#method.top_processes)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct TopResult {
@@ -1144,7 +1144,7 @@ impl fmt::Display for LogOutput {
 }
 
 /// Result type for the [Container Changes API](../struct.Docker.html#method.container_changes)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Change {
@@ -1200,7 +1200,7 @@ impl<'a> StatsQueryParams<&'a str, &'a str> for StatsOptions {
 }
 
 /// Granular memory statistics for the container.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct MemoryStatsStats {
     pub cache: u64,
@@ -1238,7 +1238,7 @@ pub struct MemoryStatsStats {
 }
 
 /// General memory statistics for the container.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct MemoryStats {
     pub stats: Option<MemoryStatsStats>,
@@ -1254,7 +1254,7 @@ pub struct MemoryStats {
 }
 
 /// Process ID statistics for the container.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct PidsStats {
     pub current: Option<u64>,
@@ -1262,7 +1262,7 @@ pub struct PidsStats {
 }
 
 /// I/O statistics for the container.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
@@ -1276,7 +1276,7 @@ pub struct BlkioStats {
 }
 
 /// File I/O statistics for the container.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct StorageStats {
     pub read_count_normalized: Option<u64>,
@@ -1286,7 +1286,7 @@ pub struct StorageStats {
 }
 
 /// Statistics for the container.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct Stats {
     pub read: DateTime<Utc>,
@@ -1305,7 +1305,7 @@ pub struct Stats {
 }
 
 /// Network statistics for the container.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct NetworkStats {
     pub rx_dropped: u64,
@@ -1319,7 +1319,7 @@ pub struct NetworkStats {
 }
 
 /// CPU usage statistics for the container.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CPUUsage {
     pub percpu_usage: Option<Vec<u64>>,
@@ -1329,7 +1329,7 @@ pub struct CPUUsage {
 }
 
 /// CPU throttling statistics.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct ThrottlingData {
     pub periods: u64,
@@ -1338,7 +1338,7 @@ pub struct ThrottlingData {
 }
 
 /// General CPU statistics for the container.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CPUStats {
     pub cpu_usage: CPUUsage,
@@ -1347,7 +1347,7 @@ pub struct CPUStats {
     pub throttling_data: ThrottlingData,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BlkioStatsEntry {
     pub major: u64,
@@ -1393,7 +1393,7 @@ impl<'a, T: AsRef<str>> KillContainerQueryParams<&'a str, T> for KillContainerOp
 }
 
 /// Block IO weight (relative device weight).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioWeight {
@@ -1402,7 +1402,7 @@ pub struct UpdateContainerOptionsBlkioWeight {
 }
 
 /// Limit read/write rate (IO/bytes per second) from/to a device.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsBlkioDeviceRate {
@@ -1411,7 +1411,7 @@ pub struct UpdateContainerOptionsBlkioDeviceRate {
 }
 
 /// A list of devices to add to the container.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsDevices {
@@ -1421,7 +1421,7 @@ pub struct UpdateContainerOptionsDevices {
 }
 
 /// A list of resource limits to set in the container.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsUlimits {
@@ -1434,7 +1434,7 @@ pub struct UpdateContainerOptionsUlimits {
 ///
 /// An ever increasing delay (double the previous delay, starting at 100ms) is added before each
 /// restart to prevent flooding the server.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct UpdateContainerOptionsRestartPolicy {
@@ -1456,7 +1456,7 @@ pub struct UpdateContainerOptionsRestartPolicy {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct UpdateContainerOptions {
     /// An integer value representing this container's relative CPU weight versus other containers.
@@ -1631,7 +1631,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a s
 }
 
 /// Result type for the [Prune Containers API](../struct.Docker.html#method.prune_containers)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneContainersResults {
