@@ -104,7 +104,7 @@ where
 }
 
 /// Actor returned in the [Events API](../struct.Docker.html#method.events)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct EventsActorResults {
@@ -114,7 +114,7 @@ pub struct EventsActorResults {
 }
 
 /// Result type for the [Events API](../struct.Docker.html#method.events)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct EventsResults {
@@ -131,7 +131,7 @@ pub struct EventsResults {
 }
 
 /// Volumes returned in the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct DfVolumesUsageDataResults {
@@ -140,7 +140,7 @@ pub struct DfVolumesUsageDataResults {
 }
 
 /// Volumes returned in the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct DfVolumesResults {
@@ -154,7 +154,7 @@ pub struct DfVolumesResults {
 }
 
 /// Result type for the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct DfResults {

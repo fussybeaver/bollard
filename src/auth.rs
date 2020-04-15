@@ -1,6 +1,6 @@
 //! Credentials management, for access to the Docker Hub or a custom Registry.
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[allow(missing_docs)]
 /// DockerCredentials credentials and server URI to push images using the [Push Image
 /// API](../struct.Docker.html#method.push_image) or the [Build Image
