@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 /// Image type returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Image {
@@ -51,7 +51,7 @@ pub struct Image {
 }
 
 /// Metadata returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct Metadata {
@@ -59,7 +59,7 @@ pub struct Metadata {
 }
 
 /// Root FS returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct RootFS {
@@ -69,7 +69,7 @@ pub struct RootFS {
 }
 
 /// APIImages type returned by the [List Images API](../struct.Docker.html#method.list_images)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct APIImages {
@@ -166,7 +166,7 @@ impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> 
 }
 
 /// Subtype for the [Create Image Results](struct.CreateImagesResults.html) type.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CreateImageProgressDetail {
     pub current: Option<u64>,
@@ -174,13 +174,13 @@ pub struct CreateImageProgressDetail {
 }
 
 /// Subtype for the [Create Image Results](struct.CreateImagesResults.html) type.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateImageErrorDetail {
     message: String,
 }
 
 /// Result type for the [Create Image API](../struct.Docker.html#method.create_image)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(missing_docs)]
 pub enum CreateImageResults {
@@ -334,7 +334,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneImagesQueryParams<&'a str>
 }
 
 /// Subtype for the [Prune Image Results](struct.PruneImagesResults.html) type.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneImagesImagesDeleted {
@@ -343,7 +343,7 @@ pub struct PruneImagesImagesDeleted {
 }
 
 /// Result type for the [Prune Images API](../struct.Docker.html#method.prune_images)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneImagesResults {
@@ -352,7 +352,7 @@ pub struct PruneImagesResults {
 }
 
 /// Result type for the [Image History API](../struct.Docker.html#method.image_history)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ImageHistory {
@@ -455,7 +455,7 @@ impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<String> {
 }
 
 /// Result type for the [Image Search API](../struct.Docker.html#method.image_search)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct APIImageSearch {
     pub description: String,
@@ -507,7 +507,7 @@ impl<'a> RemoveImageQueryParams<&'a str, &'a str> for RemoveImageOptions {
 }
 
 /// Result type for the [Remove Image API](../struct.Docker.html#method.remove_image)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(missing_docs)]
 pub enum RemoveImageResults {
@@ -690,7 +690,7 @@ impl<'a> CommitContainerQueryParams<&'a str, String> for CommitContainerOptions<
 }
 
 /// Result type for the [Commit Container API](../struct.Docker.html#method.commit_container)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CommitContainerResults {
@@ -889,7 +889,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageAuxDetail {
     #[serde(rename = "ID")]
@@ -897,7 +897,7 @@ pub struct BuildImageAuxDetail {
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageErrorDetail {
     pub code: Option<u64>,
@@ -905,7 +905,7 @@ pub struct BuildImageErrorDetail {
 }
 
 /// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageProgressDetail {
     pub current: Option<u64>,
@@ -913,7 +913,7 @@ pub struct BuildImageProgressDetail {
 }
 
 /// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(missing_docs)]
 pub enum BuildImageResults {

@@ -82,7 +82,7 @@ where
 }
 
 /// Result type for the [Create Network API](../struct.Docker.html#method.create_network)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateNetworkResults {
@@ -148,7 +148,7 @@ impl<'a> InspectNetworkQueryParams<'a, String> for InspectNetworkOptions<String>
 }
 
 /// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct InspectNetworkResults {
@@ -172,7 +172,7 @@ pub struct InspectNetworkResults {
 }
 
 /// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct InspectNetworkResultsContainers {
@@ -187,7 +187,7 @@ pub struct InspectNetworkResultsContainers {
 }
 
 /// Result type for the [List Networks API](../struct.Docker.html#method.list_networks)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ListNetworksResults {
@@ -417,7 +417,7 @@ impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a 
 }
 
 /// Result type for the [Prune Networks API](../struct.Docker.html#method.prune_networks)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneNetworksResults {

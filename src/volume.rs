@@ -17,7 +17,7 @@ use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 
 /// Subresult type for the [List Volumes API](../struct.Docker.html#method.list_volumes)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct VolumesListVolumesResults {
@@ -31,7 +31,7 @@ pub struct VolumesListVolumesResults {
 }
 
 /// Result type for the [List Volumes API](../struct.Docker.html#method.list_volumes)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct ListVolumesResults {
@@ -79,7 +79,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListVolumesQueryParams<&'a str, 
 
 /// Result type for the [Inspect Volume API](../struct.Docker.html#method.inspect_volume) and the
 /// [Create Volume API](../struct.Docker.html#method.create_volume)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct VolumeAPI {
@@ -197,7 +197,7 @@ impl<'a> PruneVolumesQueryParams<&'a str, String> for PruneVolumesOptions<&'a st
 }
 
 /// Result type for the [Prune Volumes API](../struct.Docker.html#method.prune_volumes)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct PruneVolumesResults {
