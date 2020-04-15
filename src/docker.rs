@@ -15,13 +15,13 @@ use arrayvec::ArrayVec;
 use dirs;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
-use futures_util::stream;
 use futures_util::future::TryFutureExt;
+use futures_util::stream;
 use futures_util::stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
-use hyper::{self, Body, body::Bytes, Client, Method, Request, Response, StatusCode};
+use hyper::{self, body::Bytes, Body, Client, Method, Request, Response, StatusCode};
 #[cfg(feature = "openssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
