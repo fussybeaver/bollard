@@ -639,8 +639,8 @@ impl Docker {
     ///     container: "3613f73ba0e4",
     ///     endpoint_config: EndpointSettings {
     ///         ipam_config: EndpointIPAMConfig {
-    ///             ipv4_address: "172.24.56.89",
-    ///             ipv6_address: "2001:db8::5689",
+    ///             ipv4_address: Some("172.24.56.89"),
+    ///             ipv6_address: Some("2001:db8::5689"),
     ///             ..Default::default()
     ///         },
     ///         ..Default::default()
