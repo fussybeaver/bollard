@@ -131,7 +131,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         container: "integration_test_connect_network_test",
         endpoint_config: EndpointSettings {
             ipam_config: EndpointIPAMConfig {
-                ipv4_address: "10.10.10.101",
+                ipv4_address: Some("10.10.10.101"),
                 ..Default::default()
             },
             ..Default::default()
@@ -161,7 +161,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     assert!(result
         .containers
         .iter()
-        .any(|(_, container)| container.ipv4_address == "10.10.10.101/24"));
+        .any(|(_, container)| container.ipv4_address == Some("10.10.10.101/24".into())));
 
     &docker
         .disconnect_network(
