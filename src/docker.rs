@@ -571,7 +571,7 @@ impl Docker {
         let named_pipe_connector = NamedPipeConnector;
 
         let mut client_builder = Client::builder();
-        client_builder.keep_alive(false);
+        client_builder.pool_max_idle_per_host(0);
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
         let transport = Transport::NamedPipe { client };
