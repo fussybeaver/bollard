@@ -573,6 +573,7 @@ fn integration_test_build_image() {
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_export_image() {
     connect_to_docker_and_run!(export_image_test);
 }
@@ -584,6 +585,7 @@ fn integration_test_issue_55() {
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_import_image() {
     connect_to_docker_and_run!(import_image_test);
 }
