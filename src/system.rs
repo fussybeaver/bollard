@@ -93,8 +93,8 @@ where
 {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
         Ok(ArrayVec::from([
-            ("since", self.since.timestamp().to_string()),
-            ("until", self.until.timestamp().to_string()),
+            ("since", format!("{}.{}", self.since.timestamp(), self.since.timestamp_subsec_nanos())),
+            ("until", format!("{}.{}", self.until.timestamp(), self.until.timestamp_subsec_nanos())),
             (
                 "filters",
                 serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
