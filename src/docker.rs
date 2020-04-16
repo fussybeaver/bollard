@@ -495,7 +495,7 @@ impl Docker {
         let unix_connector = UnixConnector;
 
         let mut client_builder = Client::builder();
-        client_builder.keep_alive(false);
+        client_builder.pool_max_idle_per_host(0);
 
         let client = client_builder.build(unix_connector);
         let transport = Transport::Unix { client };
