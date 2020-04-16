@@ -178,12 +178,12 @@ pub struct InspectNetworkResults {
 pub struct InspectNetworkResultsContainers {
     pub name: String,
     #[serde(rename = "EndpointID")]
-    pub endpoint_id: String,
-    pub mac_address: String,
+    pub endpoint_id: Option<String>,
+    pub mac_address: Option<String>,
     #[serde(rename = "IPv4Address")]
-    pub ipv4_address: String,
+    pub ipv4_address: Option<String>,
     #[serde(rename = "IPv6Address")]
-    pub ipv6_address: String,
+    pub ipv6_address: Option<String>,
 }
 
 /// Result type for the [List Networks API](../struct.Docker.html#method.list_networks)
@@ -336,11 +336,11 @@ where
     T: AsRef<str>,
 {
     #[serde(rename = "IPv4Address")]
-    pub ipv4_address: T,
+    pub ipv4_address: Option<T>,
     #[serde(rename = "IPv6Address")]
-    pub ipv6_address: T,
+    pub ipv6_address: Option<T>,
     #[serde(rename = "LinkLocalIPs")]
-    pub link_local_ips: Vec<T>,
+    pub link_local_ips: Option<Vec<T>>,
 }
 
 /// Network configuration used in the [Disconnect Network API](../struct.Docker.html#method.disconnect_network)
@@ -639,8 +639,8 @@ impl Docker {
     ///     container: "3613f73ba0e4",
     ///     endpoint_config: EndpointSettings {
     ///         ipam_config: EndpointIPAMConfig {
-    ///             ipv4_address: "172.24.56.89",
-    ///             ipv6_address: "2001:db8::5689",
+    ///             ipv4_address: Some("172.24.56.89"),
+    ///             ipv6_address: Some("2001:db8::5689"),
     ///             ..Default::default()
     ///         },
     ///         ..Default::default()
