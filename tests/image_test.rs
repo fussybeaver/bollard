@@ -472,6 +472,59 @@ RUN apt-get update && \
     Ok(())
 }
 
+async fn import_image_test(docker: Docker) -> Result<(), Error> {
+    // round-trip test
+    create_image_hello_world(&docker).await?;
+
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
+    };
+    let temp_file = if cfg!(windows) {
+        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_import_image.tar"
+    } else {
+        "/tmp/bollard_test_import_image.tar"
+    };
+
+    let mut res = docker.export_image(&image);
+    use tokio::io::AsyncWriteExt;
+    use tokio_util::codec;
+
+    let mut archive_file = tokio::fs::File::create(temp_file).await?;
+    while let Some(data) = res.next().await {
+        archive_file.write_all(&data.unwrap()).await?;
+        archive_file.sync_all().await?;
+    }
+    drop(archive_file);
+
+    let archive_file = tokio::fs::File::open(temp_file).await?;
+    let byte_stream = codec::FramedRead::new(archive_file, codec::BytesCodec::new()).map(|r| {
+        let bytes = r.unwrap().freeze();
+        Ok::<_, Error>(bytes)
+    });
+
+    let body = hyper::Body::wrap_stream(byte_stream);
+
+    let mut creds = HashMap::new();
+    creds.insert(
+        "localhost:5000".to_string(),
+        integration_test_registry_credentials(),
+    );
+
+    docker
+        .import_image(
+            ImportImageOptions {
+                ..Default::default()
+            },
+            body,
+            Some(creds),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    Ok(())
+}
 // ND - Test sometimes hangs on appveyor.
 #[cfg(not(windows))]
 #[test]
@@ -520,6 +573,7 @@ fn integration_test_build_image() {
 }
 
 #[test]
+#[cfg(unix)]
 fn integration_test_export_image() {
     connect_to_docker_and_run!(export_image_test);
 }
@@ -530,3 +584,8 @@ fn integration_test_issue_55() {
     connect_to_docker_and_run!(issue_55_test);
 }
 
+#[test]
+#[cfg(unix)]
+fn integration_test_import_image() {
+    connect_to_docker_and_run!(import_image_test);
+}
