@@ -249,6 +249,16 @@ where
     pub tmpfs_options: Option<MountPointTmpfsOptions>,
 }
 
+/// Ulimit definitions
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+#[allow(missing_docs)]
+pub struct Ulimits {
+    pub name: String,
+    pub hard: Option<u64>,
+    pub soft: Option<u64>,
+}
+
 /// Container configuration that depends on the host we are running on
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -367,7 +377,7 @@ where
     pub devices: Option<Vec<HashMap<T, T>>>,
     /// A list of resource limits to set in the container. For example: `{"Name": "nofile", "Soft":
     /// 1024, "Hard": 2048}`
-    pub ulimits: Option<Vec<HashMap<T, T>>>,
+    pub ulimits: Option<Vec<Ulimits>>,
     /// The logging configuration for this container.
     pub log_config: Option<LogConfig>,
     /// A list of string values to customize labels for MLS systems, such as SELinux.
