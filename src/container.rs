@@ -586,7 +586,7 @@ pub struct Mount {
 pub struct LogStateHealth {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    pub exit_code: u16,
+    pub exit_code: i16,
     pub output: String,
 }
 
