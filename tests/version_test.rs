@@ -63,8 +63,6 @@ fn test_version_tls() {
 fn test_downversioning() {
     let mut rt = Runtime::new().unwrap();
 
-    env_logger::init();
-
     let docker = Docker::connect_with_unix(
         "unix:///var/run/docker.sock",
         120,

@@ -1,7 +1,6 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 
 use arrayvec::ArrayVec;
-use chrono::serde::{ts_nanoseconds, ts_seconds};
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::request::Builder;
@@ -11,10 +10,9 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
-use crate::container::APIContainers;
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
-use crate::image::APIImages;
+use crate::models::*;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,75 +91,28 @@ where
 {
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
         Ok(ArrayVec::from([
-            ("since", format!("{}.{}", self.since.timestamp(), self.since.timestamp_subsec_nanos())),
-            ("until", format!("{}.{}", self.until.timestamp(), self.until.timestamp_subsec_nanos())),
+            (
+                "since",
+                format!(
+                    "{}.{}",
+                    self.since.timestamp(),
+                    self.since.timestamp_subsec_nanos()
+                ),
+            ),
+            (
+                "until",
+                format!(
+                    "{}.{}",
+                    self.until.timestamp(),
+                    self.until.timestamp_subsec_nanos()
+                ),
+            ),
             (
                 "filters",
                 serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
             ),
         ]))
     }
-}
-
-/// Actor returned in the [Events API](../struct.Docker.html#method.events)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct EventsActorResults {
-    #[serde(rename = "ID")]
-    pub id: String,
-    pub attributes: HashMap<String, String>,
-}
-
-/// Result type for the [Events API](../struct.Docker.html#method.events)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct EventsResults {
-    #[serde(rename = "Type")]
-    pub type_: String,
-    pub action: String,
-    pub actor: EventsActorResults,
-    #[serde(rename = "time", with = "ts_seconds")]
-    pub time: DateTime<Utc>,
-    #[serde(rename = "timeNano", with = "ts_nanoseconds")]
-    pub time_nano: DateTime<Utc>,
-    #[serde(rename = "scope")]
-    pub scope: String,
-}
-
-/// Volumes returned in the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct DfVolumesUsageDataResults {
-    pub size: u64,
-    pub ref_count: usize,
-}
-
-/// Volumes returned in the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct DfVolumesResults {
-    pub name: String,
-    pub driver: String,
-    pub mountpoint: String,
-    pub labels: Option<HashMap<String, String>>,
-    pub scope: String,
-    pub options: Option<HashMap<String, String>>,
-    pub usage_data: DfVolumesUsageDataResults,
-}
-
-/// Result type for the [Df API](../struct.Docker.html#method.df)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct DfResults {
-    pub layers_size: u64,
-    pub images: Vec<APIImages>,
-    pub containers: Vec<APIContainers>,
-    pub volumes: Vec<DfVolumesResults>,
 }
 
 impl Docker {
@@ -233,8 +184,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Events Results](system/struct.EventsResults.html), wrapped in a
-    ///  Stream.
+    ///  - [System Events Response](models/struct.SystemEventsResponse.html),
+    ///  wrapped in a Stream.
     ///
     /// # Examples
     ///
@@ -255,7 +206,7 @@ impl Docker {
     pub fn events<T, K, V>(
         &self,
         options: Option<T>,
-    ) -> impl Stream<Item = Result<EventsResults, Error>>
+    ) -> impl Stream<Item = Result<SystemEventsResponse, Error>>
     where
         T: EventsQueryParams<K, V>,
         K: AsRef<str>,
@@ -281,7 +232,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Df Results](system/struct.DfResults.html), wrapped in a
+    ///  - [System Data Usage
+    ///  Response](models/struct.SystemDataUsageResponse.html), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -291,7 +243,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.df();
     /// ```
-    pub async fn df(&self) -> Result<DfResults, Error> {
+    pub async fn df(&self) -> Result<SystemDataUsageResponse, Error> {
         let url = "/system/df";
 
         let req = self.build_request::<_, String, String>(

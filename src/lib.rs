@@ -19,13 +19,17 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.5"
+//! bollard = "0.6"
 //! ```
 //!
 //! # API
 //! ## Documentation
 //!
-//! [API docs](https://docs.rs/bollard/)
+//! [API docs](https://docs.rs/bollard/).
+//!
+//! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
+//! Swagger OpenAPI specification. The generated models are committed to this repository, but
+//! packaged in a separate crate [bollard-stubs](https://crates.io/crates/bollard-stubs).
 //!
 //! ## Version
 //!
@@ -267,6 +271,16 @@
 //! let result = rt.block_on(future);
 //! ```
 //!
+//! # Building the stubs
+//!
+//! Serialization stubs are generated through the [Swagger
+//! library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
+//! following in the `codegen` folder:
+//!
+//! ```bash
+//! mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile generate-resources
+//! ```
+//!
 //! # History
 //!
 //! This library stems from the [boondock rust library](https://github.com/faradayio/boondock),
@@ -323,10 +337,10 @@ mod named_pipe;
 pub mod network;
 mod read;
 pub mod service;
-pub mod service_models;
 pub mod system;
 mod uri;
 pub mod volume;
 
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
+pub use bollard_stubs::models;

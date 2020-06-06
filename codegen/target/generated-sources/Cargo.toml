@@ -1,0 +1,22 @@
+[package]
+name = "bollard-stubs"
+version = "1.40.0"
+authors = [ "Bollard contributors" ]
+description = "Stubs used for the Bollard rust async Docker client API"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "0.2"
+log = "0.3.0"
+percent-encoding = {version = "1.0.0", optional = true}
+regex = {version = "0.2", optional = true}
+serde = "1.0"
+serde_derive = "1.0"
+serde_ignored = {version = "0.0.4", optional = true}
+serde_json = {version = "1.0", optional = true}
+serde_urlencoded = {version = "0.5.1", optional = true}
+serde_with = "1.4"
+url = {version = "1.5", optional = true}
+uuid = {version = "0.5", optional = true, features = ["serde", "v4"]}

@@ -1,8 +1,14 @@
 #![type_length_limit = "2097152"]
 
-use bollard::container::*;
+use bollard::container::{
+    Config, CreateContainerOptions, DownloadFromContainerOptions, InspectContainerOptions,
+    KillContainerOptions, ListContainersOptions, LogsOptions, PruneContainersOptions,
+    RemoveContainerOptions, RenameContainerOptions, RestartContainerOptions, StatsOptions,
+    TopOptions, UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
+};
 use bollard::errors::Error;
-use bollard::image::*;
+use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
+use bollard::models::*;
 use bollard::Docker;
 
 use futures_util::stream::TryStreamExt;
@@ -30,7 +36,9 @@ async fn list_containers_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     assert_ne!(0, result.len());
-    assert!(result.iter().any(|container| &container.image == &image));
+    assert!(result
+        .iter()
+        .any(|container| container.image.as_ref().unwrap() == &image));
 
     &docker
         .remove_container(
@@ -100,7 +108,7 @@ async fn container_restart_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let started_at = result.state.started_at;
+    let started_at = result.state.as_ref().unwrap().started_at.as_ref();
 
     &docker
         .restart_container(
@@ -115,7 +123,10 @@ async fn container_restart_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_ne!(started_at, result.state.started_at);
+    assert_ne!(
+        started_at,
+        result.state.as_ref().unwrap().started_at.as_ref()
+    );
     kill_container(&docker, "integration_test_restart_container").await?;
 
     Ok(())
@@ -146,7 +157,7 @@ async fn top_processes_test(docker: Docker) -> Result<(), Error> {
         .top_processes("integration_test_top_processes", top_options)
         .await?;
 
-    assert_eq!(result.titles[0], expected);
+    assert_eq!(result.titles.as_ref().unwrap()[0], expected);
     kill_container(&docker, "integration_test_top_processes").await?;
 
     Ok(())
@@ -261,7 +272,7 @@ async fn kill_container_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn update_container_test(docker: Docker) -> Result<(), Error> {
-    let update_options = UpdateContainerOptions {
+    let update_options = UpdateContainerOptions::<String> {
         memory: Some(314572800),
         memory_swap: Some(314572800),
         ..Default::default()
@@ -278,7 +289,10 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!(314572800, result.host_config.memory.unwrap());
+    assert_eq!(
+        314572800,
+        result.host_config.as_ref().unwrap().memory.unwrap()
+    );
 
     &docker
         .kill_container(
@@ -302,7 +316,10 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!("exited", result.state.status);
+    assert_eq!(
+        ContainerStateStatusEnum::EXITED,
+        result.state.as_ref().unwrap().status.unwrap()
+    );
 
     &docker
         .remove_container(
@@ -349,7 +366,10 @@ async fn pause_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!("paused".to_string(), result.state.status);
+    assert_eq!(
+        ContainerStateStatusEnum::PAUSED,
+        result.state.as_ref().unwrap().status.unwrap()
+    );
 
     &docker
         .unpause_container("integration_test_pause_container")
@@ -362,7 +382,10 @@ async fn pause_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!("running".to_string(), result.state.status);
+    assert_eq!(
+        ContainerStateStatusEnum::RUNNING,
+        result.state.as_ref().unwrap().status.unwrap()
+    );
 
     kill_container(&docker, "integration_test_pause_container").await?;
 
@@ -388,7 +411,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
             .filter(
                 |r| vec!["bollard", "registry:2", "stefanscherer/registry-windows"]
                     .into_iter()
-                    .all(|v| v.to_string() != r.image)
+                    .all(|v| v != r.image.as_ref().unwrap())
             )
             .collect::<Vec<_>>()
             .len()
@@ -462,17 +485,16 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let res = docker
-        .download_from_container(
-            "integration_test_archive_container",
-            Some(DownloadFromContainerOptions {
-                path: if cfg!(windows) {
-                    "C:\\Windows\\Logs\\"
-                } else {
-                    "/tmp"
-                },
-            }),
-        );
+    let res = docker.download_from_container(
+        "integration_test_archive_container",
+        Some(DownloadFromContainerOptions {
+            path: if cfg!(windows) {
+                "C:\\Windows\\Logs\\"
+            } else {
+                "/tmp"
+            },
+        }),
+    );
 
     let bytes = concat_byte_stream(res).await?;
 
@@ -527,7 +549,7 @@ async fn inspect_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!(None, result.host_config.capabilities);
+    assert_eq!(None, result.host_config.as_ref().unwrap().capabilities);
 
     kill_container(&docker, "integration_test_inspect_container").await?;
 
@@ -541,22 +563,32 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         format!("{}alpine", registry_http_addr())
     };
 
+    let mut port_bindings = ::std::collections::HashMap::new();
+    port_bindings.insert(
+        String::from("443/tcp"),
+        Some(vec![PortBinding {
+            host_ip: Some(String::from("127.0.0.1")),
+            host_port: Some(String::from("4443")),
+        }]),
+    );
+
     let host_config = HostConfig {
-        mounts: Some(vec![MountPoint {
-            target: if cfg!(windows) {
-                "C:\\Windows\\Temp"
+        mounts: Some(vec![Mount {
+            target: Some(if cfg!(windows) {
+                String::from("C:\\Windows\\Temp")
             } else {
-                "/tmp"
-            },
-            source: if cfg!(windows) {
-                "C:\\Windows\\Temp"
+                String::from("/tmp")
+            }),
+            source: Some(if cfg!(windows) {
+                String::from("C:\\Windows\\Temp")
             } else {
-                "/tmp"
-            },
-            type_: "bind",
-            consistency: Some("default"),
+                String::from("/tmp")
+            }),
+            _type: Some(MountTypeEnum::BIND),
+            consistency: Some(String::from("default")),
             ..Default::default()
         }]),
+        port_bindings: Some(port_bindings),
         ..Default::default()
     };
 
@@ -595,18 +627,42 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
 
     assert_eq!(
         if cfg!(windows) {
-            "C:\\Windows\\Temp".to_string()
+            "C:\\Windows\\Temp"
         } else {
-            "/tmp".to_string()
+            "/tmp"
         },
         result
             .host_config
+            .as_ref()
+            .unwrap()
             .mounts
             .as_ref()
             .unwrap()
             .first()
             .unwrap()
             .target
+            .as_ref()
+            .unwrap()
+    );
+
+    assert_eq!(
+        "4443",
+        result
+            .host_config
+            .as_ref()
+            .unwrap()
+            .port_bindings
+            .as_ref()
+            .unwrap()
+            .get("443/tcp")
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .first()
+            .unwrap()
+            .host_port
+            .as_ref()
+            .unwrap()
     );
 
     &docker

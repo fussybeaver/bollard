@@ -1,5 +1,5 @@
 .DS_Store
 Cargo.lock
-/target
+target
 doc
 main.rs

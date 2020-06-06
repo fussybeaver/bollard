@@ -1,0 +1,132 @@
+#![allow(unused_imports, unused_qualifications, unused_extern_crates)]
+
+use serde::ser::Serializer;
+use serde::de::{DeserializeOwned, Deserializer};
+
+use std::cmp::Eq;
+use std::collections::HashMap;
+use std::default::Default;
+use std::hash::Hash;
+
+use chrono::DateTime;
+use chrono::Utc;
+
+fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
+    d: D,
+) -> Result<Vec<T>, D::Error> {
+    serde::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or(Vec::new()))
+}
+
+fn deserialize_nonoptional_map<'de, D: Deserializer<'de>, T: DeserializeOwned>(
+    d: D,
+) -> Result<HashMap<String, T>, D::Error> {
+    serde::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or(HashMap::new()))
+}
+
+{{#models}}{{#model}}
+{{#description}}/// {{{description}}}
+{{/description}}{{#isEnum}}/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]{{#xmlName}}
+#[serde(rename = "{{xmlName}}")]{{/xmlName}}
+pub enum {{classname}} { {{#allowableValues}}{{#enumVars}}
+    #[serde(rename = {{{value}}})]
+    {{name}},{{/enumVars}}{{/allowableValues}}
+}
+
+impl ::std::fmt::Display for {{classname}} {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { {{#allowableValues}}{{#enumVars}}
+            {{classname}}::{{name}} => write!(f, "{}", {{{value}}}),{{/enumVars}}{{/allowableValues}}
+        }
+    }
+}
+
+impl ::std::str::FromStr for {{classname}} {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+{{#allowableValues}}{{#enumVars}}            {{{value}}} => Ok({{classname}}::{{name}}),
+{{/enumVars}}{{/allowableValues}}            _ => Err(()),
+        }
+    }
+}
+{{/isEnum}}{{^isEnum}}{{^dataType}}{{#arrayModelType}}{{! vec}}
+pub type {{classname}} = {{{arrayModelType}}};
+{{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}// special-casing PortMap, cos swagger-codegen doesn't figure out this type
+pub type {{classname}} = HashMap<String, Option<Vec<PortBinding>>>;
+{{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]{{#xmlName}}
+#[serde(rename = "{{xmlName}}")]{{/xmlName}}
+pub struct {{classname}} {
+{{#vars}}{{#description}}    /// {{{description}}}
+{{/description}}    #[serde(rename = "{{baseName}}")]{{#vendorExtensions}}{{#itemXmlName}}
+    #[serde(serialize_with = "wrap_in_{{itemXmlName}}")]{{/itemXmlName}}{{/vendorExtensions}}{{#required}}{{#isContainer}}{{^isListContainer}}
+    #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
+    #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
+    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}
+    pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
+{{/required}}{{^required}}
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub {{name}}: Option<{{#isEnum}}{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}}>,
+{{/required}}
+
+{{/vars}}
+}
+{{#vars}}{{#isEnum}}
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]{{#xmlName}}
+#[serde(rename = "{{xmlName}}")]{{/xmlName}}
+pub enum {{classname}}{{enumName}} { {{#vendorExtensions}}{{^x-rustgen-has-empty-enum}}
+    #[serde(rename = "")]
+    EMPTY,{{/x-rustgen-has-empty-enum}}{{/vendorExtensions}}{{#allowableValues}}{{#enumVars}}
+    #[serde(rename = {{{value}}})]
+    {{name}},{{/enumVars}}{{/allowableValues}}{{#vendorExtensions}}{{#x-rustgen-additional-enum-values}}
+    #[serde(rename = {{{value}}})]
+    {{name}},{{/x-rustgen-additional-enum-values}}{{/vendorExtensions}}
+}
+
+impl ::std::fmt::Display for {{classname}}{{enumName}} {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { {{#vendorExtensions}}{{^x-rustgen-has-empty-enum}}
+            {{classname}}{{enumName}}::EMPTY => write!(f, ""),{{/x-rustgen-has-empty-enum}}{{/vendorExtensions}}{{#allowableValues}}{{#enumVars}}
+            {{classname}}{{enumName}}::{{name}} => write!(f, "{}", {{{value}}}),{{/enumVars}}{{/allowableValues}}{{#vendorExtensions}}{{#x-rustgen-additional-enum-values}}
+            {{classname}}{{enumName}}::{{name}} => write!(f, "{}", {{{value}}}),{{/x-rustgen-additional-enum-values}}{{/vendorExtensions}}
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for {{classname}}{{enumName}} {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { {{#vendorExtensions}}{{^x-rustgen-has-empty-enum}}
+            "" => Ok({{classname}}{{enumName}}::EMPTY),{{/x-rustgen-has-empty-enum}}{{/vendorExtensions}}
+{{#allowableValues}}{{#enumVars}}            {{{value}}} => Ok({{classname}}{{enumName}}::{{name}}),
+{{/enumVars}}{{/allowableValues}}{{#vendorExtensions}}{{#x-rustgen-additional-enum-values}}            {{{value}}} => Ok({{classname}}{{enumName}}::{{name}}),
+{{/x-rustgen-additional-enum-values}}{{/vendorExtensions}}            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for {{classname}}{{enumName}} {
+    fn as_ref(&self) -> &str {
+        match self { {{#vendorExtensions}}{{^x-rustgen-has-empty-enum}}
+            {{classname}}{{enumName}}::EMPTY => "",{{/x-rustgen-has-empty-enum}}{{/vendorExtensions}}{{#allowableValues}}{{#enumVars}}
+            {{classname}}{{enumName}}::{{name}} => {{{value}}},{{/enumVars}}{{/allowableValues}}{{#vendorExtensions}}{{#x-rustgen-additional-enum-values}}
+            {{classname}}{{enumName}}::{{name}} => {{{value}}},{{/x-rustgen-additional-enum-values}}{{/vendorExtensions}}
+        }
+    }
+}
+{{/isEnum}}{{/vars}}{{/emptyVars}}{{/arrayModelType}}{{/dataType}}{{/isEnum}}{{/model}}{{/models}}{{#usesXmlNamespaces}}
+//XML namespaces
+pub mod namespaces {
+    lazy_static!{
+        {{#models}}{{#model}}{{#xmlNamespace}}pub static ref {{#vendorExtensions}}{{upperCaseName}}{{/vendorExtensions}}: String = "{{xmlNamespace}}".to_string();
+        {{/xmlNamespace}}{{/model}}{{/models}}
+    }
+}
+{{/usesXmlNamespaces}}

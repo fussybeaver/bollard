@@ -34,14 +34,15 @@ async fn run<'a>() -> Result<(), Error> {
             bail!("no running containers");
         } else {
             for container in containers {
+                let container_id = container.id.as_ref().unwrap();
                 &docker
-                    .stats(&container.id, Some(StatsOptions { stream: false }))
+                    .stats(container_id, Some(StatsOptions { stream: false }))
                     .take(1)
                     .map(|value| match value {
                         Ok(stats) => {
                             println!(
-                                "{} - {:?}: {} {:?}",
-                                &container.id, &container.names, &container.image, stats
+                                "{} - {:?}: {:?} {:?}",
+                                container_id, &container.names, container.image, stats
                             );
                             Ok(())
                         }

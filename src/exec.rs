@@ -2,7 +2,10 @@
 
 use arrayvec::ArrayVec;
 use futures_core::Stream;
-use futures_util::{stream, stream::{StreamExt, TryStreamExt}};
+use futures_util::{
+    stream,
+    stream::{StreamExt, TryStreamExt},
+};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
 use hyper::Body;
@@ -107,11 +110,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Create Exec Options](container/struct.CreateExecOptions.html) struct.
+    ///  - [Create Exec Options](exec/struct.CreateExecOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Create Exec Results](container/struct.CreateExecResults.html) struct, wrapped in a
+    ///  - A [Create Exec Results](exec/struct.CreateExecResults.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -234,7 +237,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An [ExecInspect](container/struct.ExecInspect.html) struct, wrapped in a Future.
+    ///  - An [ExecInspect](exec/struct.ExecInspect.html) struct, wrapped in a Future.
     ///
     /// # Examples
     ///
