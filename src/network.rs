@@ -277,7 +277,7 @@ impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a st
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: AsRef<str> + Eq + Hash + Default,
 {
     /// The ID or name of the container to connect to the network.
     pub container: T,
@@ -290,7 +290,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct EndpointSettings<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: AsRef<str> + Eq + Hash + Default,
 {
     /// EndpointIPAMConfig represents an endpoint's IPAM configuration.
     #[serde(rename = "IPAMConfig")]
@@ -333,7 +333,7 @@ where
 #[allow(missing_docs)]
 pub struct EndpointIPAMConfig<T>
 where
-    T: AsRef<str>,
+    T: AsRef<str> + Default,
 {
     #[serde(rename = "IPv4Address")]
     pub ipv4_address: Option<T>,
@@ -655,7 +655,7 @@ impl Docker {
         config: ConnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: AsRef<str> + Eq + Hash + Serialize,
+        T: AsRef<str> + Eq + Hash + Serialize + Default,
     {
         let url = format!("/networks/{}/connect", network_name);
 
