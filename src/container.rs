@@ -240,7 +240,7 @@ where
     /// Whether the mount should be read-only.
     pub read_only: Option<bool>,
     /// The consistency requirement for the mount: `default`, `consistent`, `cached`, or `delegated`.
-    pub consistency: T,
+    pub consistency: Option<T>,
     /// Optional configuration for the `bind` type.
     pub bind_options: Option<MountPointBindOptions<T>>,
     /// Optional configuration for the `volume` type.
