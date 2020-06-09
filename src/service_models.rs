@@ -737,10 +737,11 @@ where
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 #[allow(missing_docs)]
 pub enum ServiceUpdateStatusState {
     Updating,
     Paused,
     Completed,
+    RollbackCompleted,
 }
