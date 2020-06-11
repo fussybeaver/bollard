@@ -743,5 +743,7 @@ pub enum ServiceUpdateStatusState {
     Updating,
     Paused,
     Completed,
+    RollbackStarted,
+    RollbackPaused,
     RollbackCompleted,
 }
