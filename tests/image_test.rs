@@ -53,7 +53,12 @@ async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
 
     let result = &docker.inspect_image(&image).await?;
 
-    assert!(result.repo_tags.iter().any(|repo_tag| repo_tag == &image));
+    assert!(result
+        .repo_tags
+        .as_ref()
+        .unwrap()
+        .iter()
+        .any(|repo_tag| repo_tag == &image));
 
     Ok(())
 }
@@ -77,9 +82,7 @@ async fn list_images_test(docker: Docker) -> Result<(), Error> {
     assert!(result.into_iter().any(|api_image| {
         api_image
             .repo_tags
-            .as_ref()
-            .unwrap_or(&vec![String::new()])
-            .into_iter()
+            .iter()
             .any(|repo_tag| repo_tag == &image)
     }));
 
@@ -111,7 +114,7 @@ async fn prune_images_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
     &docker
-        .prune_images(Some(PruneImagesOptions { filters: filters }))
+        .prune_images(Some(PruneImagesOptions { filters }))
         .await?;
 
     Ok(())
@@ -170,7 +173,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
                 name: "integration_test_commit_container",
             }),
             Config {
-                cmd: cmd,
+                cmd,
                 image: Some(&image[..]),
                 ..Default::default()
             },
@@ -240,7 +243,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
 
     let first = vec.get(0).unwrap();
     if let Some(error) = &first.error {
-        println!("{}", error.message);
+        println!("{}", error.message.as_ref().unwrap());
     }
     assert_eq!(first.status_code, 0);
 
@@ -357,7 +360,7 @@ RUN touch bollard.txt
 
     let first = vec.get(0).unwrap();
     if let Some(error) = &first.error {
-        println!("{}", error.message);
+        println!("{}", error.message.as_ref().unwrap());
     }
     assert_eq!(first.status_code, 0);
     &docker

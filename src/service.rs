@@ -1,6 +1,6 @@
 //! Service API: manage and inspect docker services within a swarm
 
-pub use crate::service_models::*;
+pub use crate::models::*;
 
 use super::Docker;
 use crate::auth::DockerCredentials;
@@ -11,7 +11,6 @@ use arrayvec::ArrayVec;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{Body, Method};
-use serde::Serialize;
 use serde_json;
 use std::{collections::HashMap, hash::Hash};
 
@@ -52,7 +51,7 @@ where
 }
 
 #[allow(missing_docs)]
-/// Trait providing implementations for [List Services Options](struct.ListContainersOptions.html)
+/// Trait providing implementations for [List Services Options](struct.ListServicesOptions.html)
 /// struct.
 pub trait ListServicesQueryParams<K, V>
 where
@@ -201,7 +200,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [APIServices](service/struct.APIServices.html), wrapped in a Future.
+    ///  - Vector of [Services](models/struct.Service.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -223,10 +222,7 @@ impl Docker {
     ///
     /// docker.list_services(options);
     /// ```
-    pub async fn list_services<T, K>(
-        &self,
-        options: Option<T>,
-    ) -> Result<Vec<Service<String>>, Error>
+    pub async fn list_services<T, K>(&self, options: Option<T>) -> Result<Vec<Service>, Error>
     where
         T: ListServicesQueryParams<K, String>,
         K: AsRef<str>,
@@ -251,12 +247,12 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [ServiceSpec](service_models/struct.ServiceSpec.html) struct.
+    ///  - [ServiceSpec](models/struct.ServiceSpec.html) struct.
     ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Service Create Response](service_models/struct.ServiceCreateResponse.html) struct,
+    ///  - A [Service Create Response](models/struct.ServiceCreateResponse.html) struct,
     ///  wrapped in a Future.
     ///
     /// # Examples
@@ -269,36 +265,37 @@ impl Docker {
     /// use bollard::service::{
     ///     ServiceSpec,
     ///     ServiceSpecMode,
+    ///     ServiceSpecModeReplicated,
     ///     TaskSpec,
     ///     TaskSpecContainerSpec
     /// };
     ///
     /// let service = ServiceSpec {
-    ///     name: "my-service",
-    ///     mode: Some(ServiceSpecMode::Replicated {
-    ///         replicas: 2
+    ///     name: Some(String::from("my-service")),
+    ///     mode: Some(ServiceSpecMode {
+    ///         replicated: Some(ServiceSpecModeReplicated {
+    ///             replicas: Some(2)
+    ///         }),
+    ///         ..Default::default()
     ///     }),
-    ///     task_template: TaskSpec {
+    ///     task_template: Some(TaskSpec {
     ///         container_spec: Some(TaskSpecContainerSpec {
-    ///             image: Some("hello-world"),
+    ///             image: Some(String::from("hello-world")),
     ///             ..Default::default()
     ///         }),
     ///         ..Default::default()
-    ///     },
+    ///     }),
     ///     ..Default::default()
     /// };
     /// let credentials = None;
     ///
     /// docker.create_service(service, credentials);
     /// ```
-    pub async fn create_service<Z>(
+    pub async fn create_service(
         &self,
-        service_spec: ServiceSpec<Z>,
+        service_spec: ServiceSpec,
         credentials: Option<DockerCredentials>,
-    ) -> Result<ServiceCreateResponse, Error>
-    where
-        Z: AsRef<str> + Eq + Hash + Serialize,
-    {
+    ) -> Result<ServiceCreateResponse, Error> {
         let url = "/services/create";
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
@@ -330,11 +327,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Service name or id as a string slice.
-    ///  - Optional [Inspect Service Options](service_models/struct.InspectServiceOptions.struct) struct.
+    ///  - Optional [Inspect Service Options](service/struct.InspectServiceOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - [Service](service_models/struct.Service.html), wrapped in a Future.
+    ///  - [Service](models/struct.Service.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -353,7 +350,7 @@ impl Docker {
         &self,
         service_name: &str,
         options: Option<T>,
-    ) -> Result<Service<String>, Error>
+    ) -> Result<Service, Error>
     where
         T: InspectServiceQueryParams<K, V>,
         K: AsRef<str>,
@@ -415,13 +412,13 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Service name or id as a string slice.
-    ///  - [ServiceSpec](service_models/struct.ServiceSpec.html) struct.
+    ///  - [ServiceSpec](models/struct.ServiceSpec.html) struct.
     ///  - [UpdateServiceOptions](service/struct.UpdateServiceOptions.html) struct.
     ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Service Update Response](service_models/struct.ServiceUpdateResponse.html) struct,
+    ///  - A [Service Update Response](models/struct.ServiceUpdateResponse.html) struct,
     ///  wrapped in a Future.
     ///
     /// # Examples
@@ -433,6 +430,7 @@ impl Docker {
     ///     InspectServiceOptions,
     ///     ServiceSpec,
     ///     ServiceSpecMode,
+    ///     ServiceSpecModeReplicated,
     ///     TaskSpec,
     ///     TaskSpecContainerSpec,
     ///     UpdateServiceOptions,
@@ -446,10 +444,13 @@ impl Docker {
     ///     let current_version = docker.inspect_service(
     ///         service_name,
     ///         None::<InspectServiceOptions>
-    ///     ).await?.version.index;
-    ///     let service = ServiceSpec::<&str> {
-    ///         mode: Some(ServiceSpecMode::Replicated {
-    ///             replicas: 0,
+    ///     ).await?.version.unwrap().index.unwrap();
+    ///     let service = ServiceSpec {
+    ///         mode: Some(ServiceSpecMode {
+    ///             replicated: Some(ServiceSpecModeReplicated {
+    ///                 replicas: Some(0)
+    ///             }),
+    ///             ..Default::default()
     ///         }),
     ///         ..Default::default()
     ///     };
@@ -462,17 +463,16 @@ impl Docker {
     ///     docker.update_service("my-service", service, options, credentials).await
     /// };
     /// ```
-    pub async fn update_service<T, K, Z>(
+    pub async fn update_service<T, K>(
         &self,
         service_name: &str,
-        service_spec: ServiceSpec<Z>,
+        service_spec: ServiceSpec,
         options: T,
         credentials: Option<DockerCredentials>,
     ) -> Result<ServiceUpdateResponse, Error>
     where
         T: UpdateServiceQueryParams<K, String>,
         K: AsRef<str>,
-        Z: AsRef<str> + Eq + Hash + Serialize,
     {
         let url = format!("/services/{}/update", service_name);
 

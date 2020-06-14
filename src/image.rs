@@ -13,78 +13,15 @@ use serde_json;
 
 use super::Docker;
 use crate::auth::DockerCredentials;
-use crate::container::{Config, GraphDriver};
+use crate::container::Config;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
+use crate::models::*;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
-
-/// Image type returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Image {
-    #[serde(rename = "Id")]
-    pub id: String,
-    pub container: String,
-    pub comment: String,
-    pub os: String,
-    pub os_version: Option<String>,
-    pub architecture: String,
-    pub config: Config<String>,
-    pub container_config: Config<String>,
-    pub parent: String,
-    pub created: DateTime<Utc>,
-    pub repo_digests: Vec<String>,
-    pub repo_tags: Vec<String>,
-    #[serde(rename = "RootFS")]
-    pub root_fs: RootFS,
-    pub size: u64,
-    pub docker_version: String,
-    pub virtual_size: u64,
-    pub author: String,
-    pub graph_driver: GraphDriver,
-    pub metadata: Metadata,
-}
-
-/// Metadata returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Metadata {
-    pub last_tag_time: DateTime<Utc>,
-}
-
-/// Root FS returned by the [Inspect Image API](../struct.Docker.html#method.inspect_image)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct RootFS {
-    #[serde(rename = "Type")]
-    pub type_: String,
-    pub layers: Vec<String>,
-}
-
-/// APIImages type returned by the [List Images API](../struct.Docker.html#method.list_images)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct APIImages {
-    pub id: String,
-    pub repo_tags: Option<Vec<String>>,
-    #[serde(with = "ts_seconds")]
-    pub created: DateTime<Utc>,
-    pub size: u64,
-    pub virtual_size: u64,
-    pub parent_id: String,
-    pub repo_digests: Option<Vec<String>>,
-    pub labels: Option<HashMap<String, String>>,
-    pub containers: isize,
-    pub shared_size: i64,
-}
 
 /// Parameters available for pulling an image, used in the [Create Image
 /// API](../struct.Docker.html#method.create_image)
@@ -165,7 +102,7 @@ impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> 
     }
 }
 
-/// Subtype for the [Create Image Results](struct.CreateImagesResults.html) type.
+/// Subtype for the [Create Image Results](enum.CreateImageResults.html) type.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CreateImageProgressDetail {
@@ -173,7 +110,7 @@ pub struct CreateImageProgressDetail {
     pub total: Option<u64>,
 }
 
-/// Subtype for the [Create Image Results](struct.CreateImagesResults.html) type.
+/// Subtype for the [Create Image Results](enum.CreateImageResults.html) type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateImageErrorDetail {
     message: String,
@@ -888,7 +825,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
     }
 }
 
-/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageAuxDetail {
@@ -896,7 +833,7 @@ pub struct BuildImageAuxDetail {
     pub id: String,
 }
 
-/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageErrorDetail {
@@ -904,7 +841,7 @@ pub struct BuildImageErrorDetail {
     pub message: String,
 }
 
-/// Subtype for the [Build Image Results](struct.BuildImageResults.html) type.
+/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BuildImageProgressDetail {
@@ -1000,7 +937,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [API Images](image/struct.APIImages.html), wrapped in a Future.
+    ///  - Vector of [API Images](models/struct.ImageSummary.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1023,7 +960,7 @@ impl Docker {
     ///
     /// docker.list_images(options);
     /// ```
-    pub async fn list_images<T, K>(&self, options: Option<T>) -> Result<Vec<APIImages>, Error>
+    pub async fn list_images<T, K>(&self, options: Option<T>) -> Result<Vec<ImageSummary>, Error>
     where
         T: ListImagesQueryParams<K>,
         K: AsRef<str>,
@@ -1128,7 +1065,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Image](image/struct.Image.html), wrapped in a Future.
+    ///  - [Image](models/struct.Image.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1214,7 +1151,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image History Results](image/struct.ImageHistoryResults.html), wrapped in a
+    ///  - Vector of [Image History Results](image/struct.ImageHistory.html), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1246,7 +1183,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Search Image Options](struct.SearchImagesOptions.html) struct.
+    ///  - [Search Image Options](image/struct.SearchImagesOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1304,7 +1241,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [Remove Image Results](image/struct.RemoveImageResults.html), wrapped in a
+    ///  - Vector of [Remove Image Results](image/enum.RemoveImageResults.html), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1363,7 +1300,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Tag Image Options](struct.TagImageOptions.html) struct.
+    ///  - Optional [Tag Image Options](image/struct.TagImageOptions.html) struct.
     ///
     /// # Returns
     ///
@@ -1416,7 +1353,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Push Image Options](struct.PushImageOptions.html) struct.
+    ///  - Optional [Push Image Options](image/struct.PushImageOptions.html) struct.
     ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
     ///
     /// # Returns
@@ -1492,7 +1429,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Commit Container Results](container/struct.CommitContainerResults.html), wrapped in a Future.
+    ///  - [Commit Container Results](image/struct.CommitContainerResults.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1525,7 +1462,7 @@ impl Docker {
         T: CommitContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
-        Z: AsRef<str> + Eq + Hash + Serialize,
+        Z: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/commit";
 

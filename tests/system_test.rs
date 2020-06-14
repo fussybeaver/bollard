@@ -1,6 +1,7 @@
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
 use bollard::image::*;
+use bollard::models::*;
 use bollard::system::*;
 use bollard::Docker;
 
@@ -17,7 +18,7 @@ use common::*;
 #[derive(Debug)]
 enum Results {
     CreateImageResults(CreateImageResults),
-    EventsResults(EventsResults),
+    EventsResults(SystemEventsResponse),
 }
 
 async fn events_test(docker: Docker) -> Result<(), Error> {
@@ -65,7 +66,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             value
         })
         .any(|value| match value {
-            Results::EventsResults(EventsResults { type_: _, .. }) => true,
+            Results::EventsResults(SystemEventsResponse { _type: _, .. }) => true,
             _ => false,
         }));
 
@@ -73,22 +74,16 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn df_test(docker: Docker) -> Result<(), Error> {
-    env_logger::init();
-
     create_image_hello_world(&docker).await?;
 
     let result = &docker.df().await?;
 
-    let c: Vec<&bollard::image::APIImages> = result
+    let c: Vec<_> = result
         .images
+        .as_ref()
+        .unwrap()
         .iter()
-        .filter(|c| {
-            if let Some(ref repo_tags) = c.repo_tags {
-                repo_tags.iter().any(|r| r.contains("hello-world"))
-            } else {
-                false
-            }
-        })
+        .filter(|c: &&ImageSummary| c.repo_tags.iter().any(|r| r.contains("hello-world")))
         .collect();
 
     assert!(c.len() > 0);

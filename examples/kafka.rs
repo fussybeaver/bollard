@@ -1,9 +1,8 @@
 //! This example will spin up Zookeeper and two Kafka brokers asynchronously.
 
-use bollard::container::{
-    Config, CreateContainerOptions, HostConfig, LogsOptions, StartContainerOptions,
-};
+use bollard::container::{Config, CreateContainerOptions, LogsOptions, StartContainerOptions};
 use bollard::image::CreateImageOptions;
+use bollard::models::*;
 use bollard::Docker;
 
 use futures_util::stream::select;
@@ -47,7 +46,7 @@ async fn run() -> Result<(), failure::Error> {
             "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1",
         ]),
         host_config: Some(HostConfig {
-            network_mode: Some("container:zookeeper"),
+            network_mode: Some(String::from("container:zookeeper")),
             ..Default::default()
         }),
         ..Default::default()
@@ -63,7 +62,7 @@ async fn run() -> Result<(), failure::Error> {
             "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1",
         ]),
         host_config: Some(HostConfig {
-            network_mode: Some("container:zookeeper"),
+            network_mode: Some(String::from("container:zookeeper")),
             ..Default::default()
         }),
         ..Default::default()

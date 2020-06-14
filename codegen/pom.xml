@@ -1,0 +1,53 @@
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>bollard</groupId>
+    <artifactId>bollard-codegen</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>bollard</name>
+
+    <!-- build with: mvn clean compiler:compile generate-resources -->
+
+    <build>
+      <plugins>
+        <plugin>
+          <groupId>io.swagger</groupId>
+          <artifactId>swagger-codegen-maven-plugin</artifactId>
+          <version>2.4.14</version>
+          <executions>
+            <execution>
+              <goals>
+                <goal>generate</goal>
+              </goals>
+              <configuration>
+                <inputSpec>https://docs.docker.com/engine/api/v1.40.yaml</inputSpec>
+                <language>bollard.BollardCodegen</language>
+                <output>${project.build.directory}/generated-sources</output>
+                <generateApis>true</generateApis>
+                <templateDirectory>${project.basedir}/src/main/resources/bollard</templateDirectory>
+                <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
+                <configOptions>
+                  <packageName>bollard-stubs</packageName>
+                  <packageVersion>0</packageVersion>
+                </configOptions>
+              </configuration>
+            </execution>
+          </executions>
+          <dependencies>
+              <dependency>
+                  <groupId>bollard</groupId>
+                  <artifactId>bollard-codegen</artifactId>
+                  <version>0.1.0-SNAPSHOT</version>
+              </dependency>
+          </dependencies>
+        </plugin>
+      </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.swagger</groupId>
+            <artifactId>swagger-codegen</artifactId>
+            <version>2.4.14</version>
+        </dependency>
+    </dependencies>
+</project>

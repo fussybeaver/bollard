@@ -1,7 +1,6 @@
 //! Container API: run docker containers and manage their lifecycle
 
 use arrayvec::ArrayVec;
-use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::header::CONTENT_TYPE;
@@ -19,7 +18,8 @@ use super::Docker;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
-use crate::network::EndpointIPAMConfig;
+
+use crate::models::*;
 
 /// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
 ///
@@ -149,642 +149,155 @@ impl<'a, T: AsRef<str>> CreateContainerQueryParams<&'a str, T> for CreateContain
     }
 }
 
-/// A request for devices to be sent to device drivers
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct DeviceRequest<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    pub driver: T,
-    pub count: i64,
-    #[serde(rename = "DeviceIDs")]
-    pub device_ids: Vec<T>,
-    /// A list of capabilities; an OR list of AND lists of capabilities.
-    pub capabilities: Vec<T>,
-    /// Driver-specific options, specified as a key/value pairs. These options are passed directly to the driver.
-    pub options: Option<HashMap<T, T>>,
-}
-
-/// Bind options for mounts.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct MountPointBindOptions<T>
-where
-    T: AsRef<str>,
-{
-    /// A propagation mode with the value `[r]private`, `[r]shared`, or `[r]slave`.
-    pub propagation: T,
-    /// Disable recursive bind mount.
-    pub non_recursive: bool,
-}
-
-/// Driver config for volume options
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct VolumeOptionsDriverConfig<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// Name of the driver to use to create the volume.
-    pub name: T,
-    /// key/value map of driver specific options.
-    pub options: HashMap<T, T>,
-}
-
-/// Volume options for mounts.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct MountPointVolumeOptions<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// Populate volume with data from the target.
-    pub no_copy: bool,
-    /// User-defined key/value metadata.
-    pub labels: HashMap<T, T>,
-    /// Map of driver specific options
-    pub driver_config: VolumeOptionsDriverConfig<T>,
-}
-
-/// Tmpfs options for mounts.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct MountPointTmpfsOptions {
-    /// The size for the tmpfs mount in bytes.
-    pub size_bytes: u64,
-    /// The permission mode for the tmpfs mount in an integer.
-    pub mode: usize,
-}
-
-/// Specification for mounts to be added to the container.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct MountPoint<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// Container path.
-    pub target: T,
-    /// Mount source (e.g. a volume name, a host path).
-    pub source: T,
-    /// The mount type. Available types:
-    ///   - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container.
-    ///   - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed.
-    ///   - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs.
-    ///   - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container.
-    #[serde(rename = "Type")]
-    pub type_: T,
-    /// Whether the mount should be read-only.
-    pub read_only: Option<bool>,
-    /// The consistency requirement for the mount: `default`, `consistent`, `cached`, or `delegated`.
-    pub consistency: Option<T>,
-    /// Optional configuration for the `bind` type.
-    pub bind_options: Option<MountPointBindOptions<T>>,
-    /// Optional configuration for the `volume` type.
-    pub volume_options: Option<MountPointVolumeOptions<T>>,
-    /// Optional configuration for the `tmpfs` type.
-    pub tmpfs_options: Option<MountPointTmpfsOptions>,
-}
-
-/// Ulimit definitions
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Ulimits {
-    pub name: String,
-    pub hard: Option<u64>,
-    pub soft: Option<u64>,
-}
-
-/// Container configuration that depends on the host we are running on
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct HostConfig<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// A list of volume bindings for this container. Each volume binding is a string in one of these forms:
-    /// - `host-src:container-dest` to bind-mount a host path into the container. Both `host-src`, and `container-dest` must be an *absolute* path.
-    /// - `host-src:container-dest:ro` to make the bind mount read-only inside the container. Both `host-src`, and `container-dest` must be an *absolute* path.
-    /// - `volume-name:container-dest` to bind-mount a volume managed by a volume driver into the container. `container-dest` must be an *absolute* path.
-    /// - `volume-name:container-dest:ro` to mount the volume read-only inside the container. `container-dest` must be an *absolute* path.
-    pub binds: Option<Vec<T>>,
-    /// A list of links for the container in the form `container_name:alias`.
-    pub links: Option<Vec<T>>,
-    /// Memory limit in bytes.
-    pub memory: Option<u64>,
-    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
-    pub memory_swap: Option<i64>,
-    /// Memory soft limit in bytes.
-    pub memory_reservation: Option<u64>,
-    /// Kernel memory limit in bytes.
-    pub kernel_memory: Option<u64>,
-    /// Hard limit for kernel TCP buffer memory (in bytes).
-    #[serde(rename = "KernelMemoryTCP")]
-    pub kernel_memory_tcp: Option<i64>,
-    /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    pub nano_cpus: Option<u64>,
-    pub cpu_percent: Option<u64>,
-    /// An integer value representing this container's relative CPU weight versus other containers.
-    pub cpu_shares: Option<u64>,
-    /// The length of a CPU period in microseconds.
-    pub cpu_period: Option<u64>,
-    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
-    pub cpu_realtime_period: Option<u64>,
-    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
-    pub cpu_realtime_runtime: Option<u64>,
-    /// Microseconds of CPU time that the container can get in a CPU period.
-    pub cpu_quota: Option<u64>,
-    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
-    pub cpuset_cpus: Option<T>,
-    /// Memory nodes (MEMs) in which to allow execution (`0-3`, `0,1`). Only effective on NUMA systems.
-    pub cpuset_mems: Option<T>,
-    /// Block IO weight (relative weight).
-    pub blkio_weight: Option<u64>,
-    /// Block IO weight (relative device weight).
-    pub blkio_weight_device: Option<Vec<HashMap<T, T>>>,
-    /// Limit read rate (bytes per second) from a device.
-    pub blkio_device_read_bps: Option<Vec<HashMap<T, T>>>,
-    /// Limit write rate (bytes per second) to a device.
-    pub blkio_device_write_bps: Option<Vec<HashMap<T, T>>>,
-    /// Limit read rate (IO per second) from a device.
-    #[serde(rename = "BlkioDeviceReadIOps")]
-    pub blkio_device_read_iops: Option<Vec<HashMap<T, T>>>,
-    /// Limit write rate (IO per second) to a device.
-    #[serde(rename = "BlkioDeviceWriteIOps")]
-    pub blkio_device_write_iops: Option<Vec<HashMap<T, T>>>,
-    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
-    pub memory_swappiness: Option<i64>,
-    /// Disable OOM Killer for the container.
-    pub oom_kill_disable: Option<bool>,
-    /// An integer value containing the score given to the container in order to tune OOM killer
-    /// preferences.
-    pub oom_score_adj: Option<isize>,
-    /// Set the PID (Process) Namespace mode for the container. It can be either:
-    /// - `"container:<name|id>"`: joins another container's PID namespace
-    /// - `"host"`: use the host's PID namespace inside the container
-    pub pid_mode: Option<String>,
-    /// Tune a container's pids limit. Set `-1` for unlimited.
-    pub pids_limit: Option<u64>,
-    /// PortMap describes the mapping of container ports to host ports, using the container's
-    /// port-number and protocol as key in the format `<port>/<protocol`>, for example, `80/udp`.  If a
-    /// container's port is mapped for multiple protocols, separate entries are added to the
-    /// mapping table.
-    pub port_bindings: Option<HashMap<T, Vec<PortBinding<T>>>>,
-    /// Allocates an ephemeral host port for all of a container's exposed ports.
-    /// Ports are de-allocated when the container stops and allocated when the container starts.
-    /// The allocated port might be changed when restarting the container.
-    /// The port is selected from the ephemeral port range that depends on the kernel. For example,
-    /// on Linux the range is defined by `/proc/sys/net/ipv4/ip_local_port_range`.
-    pub publish_all_ports: Option<bool>,
-    /// Gives the container full access to the host.
-    pub privileged: Option<bool>,
-    /// Mount the container's root filesystem as read only.
-    pub readonly_rootfs: Option<bool>,
-    /// A list of DNS servers for the container to use.
-    pub dns: Option<Vec<T>>,
-    /// A list of DNS options.
-    pub dns_options: Option<Vec<T>>,
-    /// A list of DNS search domains.
-    pub dns_search: Option<Vec<T>>,
-    /// A list of volumes to inherit from another container, specified in the form `<container
-    /// name>[:<ro|rw>]`.
-    pub volumes_from: Option<Vec<T>>,
-    /// Specification for mounts to be added to the container.
-    pub mounts: Option<Vec<MountPoint<T>>>,
-    /// A list of kernel capabilities to be available for container (this overrides the default set).  Conflicts with options 'CapAdd' and 'CapDrop'
-    pub capabilities: Option<Vec<T>>,
-    /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'
-    pub cap_add: Option<Vec<T>>,
-    /// A list of kernel capabilities to drop from the container. Conflicts with option 'Capabilities'
-    pub cap_drop: Option<Vec<T>>,
-    pub group_add: Option<Vec<T>>,
-    /// The behavior to apply when the container exits. The default is not to restart.
-    /// An ever increasing delay (double the previous delay, starting at 100ms) is added before
-    /// each restart to prevent flooding the server.
-    pub restart_policy: Option<RestartPolicy<T>>,
-    /// Automatically remove the container when the container's process exits. This has no effect
-    /// if `RestartPolicy` is set.
-    pub auto_remove: Option<bool>,
-    /// Network mode to use for this container. Supported standard values are: `bridge`, `host`,
-    /// `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to
-    /// which this container should connect to.
-    pub network_mode: Option<T>,
-    pub devices: Option<Vec<HashMap<T, T>>>,
-    /// A list of resource limits to set in the container. For example: `{"Name": "nofile", "Soft":
-    /// 1024, "Hard": 2048}`
-    pub ulimits: Option<Vec<Ulimits>>,
-    /// The logging configuration for this container.
-    pub log_config: Option<LogConfig>,
-    /// A list of string values to customize labels for MLS systems, such as SELinux.
-    pub security_opt: Option<Vec<T>>,
-    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute,
-    /// the path is considered to be relative to the `cgroups` path of the init process. Cgroups are
-    /// created if they do not already exist.
-    pub cgroup_parent: Option<T>,
-    /// Driver that this container uses to mount volumes.
-    pub volume_driver: Option<T>,
-    /// Size of `/dev/shm` in bytes. If omitted, the system uses 64MB.
-    pub shm_size: Option<u64>,
-    /// Path to a file where the container ID is written.
-    #[serde(rename = "ContainerIDFile")]
-    pub container_id_file: Option<String>,
-    /// A list of hostnames/IP mappings to add to the container's `/etc/hosts` file. Specified in
-    /// the form `["hostname:IP"]`.
-    pub extra_hosts: Option<Vec<T>>,
-    /// IPC sharing mode for the container. Possible values are:
-    ///  - `"none"`: own private IPC namespace, with /dev/shm not mounted
-    ///  - `"private"`: own private IPC namespace
-    ///  - `"shareable"`: own private IPC namespace, with a possibility to share it with other containers
-    ///  - `"container:<name|id>"`: join another (shareable) container's IPC namespace
-    ///  - `"host"`: use the host system's IPC namespace
-    /// If not specified, daemon default is used, which can either be "private" or "shareable",
-    /// depending on daemon version and configuration.
-    pub ipc_mode: Option<T>,
-    /// Cgroup to use for the container.
-    pub cgroup: Option<T>,
-    /// UTS namespace to use for the container.
-    #[serde(rename = "UTSMode")]
-    pub uts_mode: Option<T>,
-    /// Sets the usernamespace mode for the container when usernamespace remapping option is enabled.
-    pub userns_mode: Option<T>,
-    /// Runtime to use with this container.
-    pub runtime: Option<T>,
-    /// Initial console size, as an [height, width] array. (Windows only)
-    pub console_size: Option<Vec<isize>>,
-    /// Isolation technology of the container. (Windows only)
-    pub isolation: Option<T>,
-    /// A list of cgroup rules to apply to the container.
-    pub device_cgroup_rules: Option<Vec<T>>,
-    /// Disk limit (in bytes).
-    pub disk_quota: Option<u64>,
-    /// A list of requests for devices to be sent to device drivers
-    pub device_requests: Option<DeviceRequest<T>>,
-    /// Hard limit for kernel TCP buffer memory (in bytes).
-    pub kernet_memory_tcp: Option<i64>,
-    /// The usable percentage of the available CPUs (Windows only).
-    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
-    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
-    pub cpu_count: Option<u64>,
-    /// Maximum IOps for the container system drive (Windows only).
-    #[serde(rename = "IOMaximumIOps")]
-    pub io_maximum_iops: Option<u64>,
-    /// Maximum IO in bytes per second for the container system drive (Windows only).
-    #[serde(rename = "IOMaximumBandwidth")]
-    pub io_maximum_bandwidth: Option<u64>,
-    pub masked_paths: Option<Vec<T>>,
-    pub readonly_paths: Option<Vec<T>>,
-    pub sysctls: Option<HashMap<T, T>>,
-}
-
-/// Storage driver name and configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct GraphDriver {
-    pub name: String,
-    pub data: Option<HashMap<String, String>>,
-}
-
-/// Describes the mapping of container ports to host ports, using the container's
-/// port-number and protocol as key in the format `<port>/<protocol>`, for example, `80/udp`.  If a
-/// container's port is mapped for multiple protocols, separate entries are added to the mapping
-/// table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct PortBinding<T>
-where
-    T: AsRef<str>,
-{
-    #[serde(rename = "HostIp")]
-    pub host_ip: T,
-    pub host_port: T,
-}
-
-/// The behavior to apply when the container exits. The default is not to restart.  An ever
-/// increasing delay (double the previous delay, starting at 100ms) is added before each restart to
-/// prevent flooding the server.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct RestartPolicy<T>
-where
-    T: AsRef<str>,
-{
-    pub name: Option<T>,
-    pub maximum_retry_count: Option<isize>,
-}
-
-/// The logging configuration for this container.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct LogConfig {
-    #[serde(rename = "Type")]
-    pub type_: Option<String>,
-    pub config: Option<HashMap<String, String>>,
-}
-
 /// This container's networking configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
-pub struct NetworkingConfig {
-    pub endpoints_config: HashMap<String, ContainerNetwork>,
-}
-
-/// Configuration for a network endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct ContainerNetwork {
-    #[serde(rename = "IPAMConfig")]
-    pub ipam_config: Option<EndpointIPAMConfig<String>>,
-    pub links: Option<Vec<String>>,
-    pub aliases: Option<Vec<String>>,
-    pub mac_address: String,
-    #[serde(rename = "GlobalIPv6Address")]
-    pub global_ipv6_address: String,
-    #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: isize,
-    #[serde(rename = "IPv6Gateway")]
-    pub ipv6_gateway: String,
-    #[serde(rename = "IPAddress")]
-    pub ip_address: String,
-    #[serde(rename = "IPPrefixLen")]
-    pub ip_prefix_len: i64,
-    pub gateway: String,
-    #[serde(rename = "EndpointID")]
-    pub endpoint_id: String,
-    #[serde(rename = "NetworkID")]
-    pub network_id: String,
-    pub driver_opts: Option<HashMap<String, String>>,
-}
-
-/// Network Settings for a container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct NetworkSettings {
-    pub networks: HashMap<String, ContainerNetwork>,
-    #[serde(rename = "IPAddress")]
-    pub ip_address: String,
-    #[serde(rename = "IPPrefixLen")]
-    pub ip_prefix_len: isize,
-    pub mac_address: String,
-    pub gateway: String,
-    pub bridge: String,
-    #[serde(rename = "EndpointID")]
-    pub endpoint_id: String,
-    pub sandbox_key: String,
-    #[serde(rename = "GlobalIPv6Address")]
-    pub global_ipv6_address: String,
-    #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: isize,
-    #[serde(rename = "IPv6Gateway")]
-    pub ipv6_gateway: String,
-    #[serde(rename = "LinkLocalIPv6Address")]
-    pub link_local_ipv6_address: String,
-    #[serde(rename = "LinkLocalIPv6PrefixLen")]
-    pub link_local_ipv6_prefix_len: isize,
-    #[serde(rename = "SecondaryIPAddresses")]
-    pub secondary_ip_addresses: Option<Vec<String>>,
-    #[serde(rename = "SecondaryIPv6Addresses")]
-    pub secondary_ipv6_addresses: Option<Vec<String>>,
-    #[serde(rename = "SandboxID")]
-    pub sandbox_id: String,
-    pub hairpin_mode: bool,
-    pub ports: HashMap<String, Option<Vec<PortBinding<String>>>>,
-}
-
-/// Specification for mounts to be added to the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Mount {
-    pub name: Option<String>,
-    pub source: String,
-    pub destination: String,
-    pub driver: Option<String>,
-    pub mode: String,
-    #[serde(rename = "RW")]
-    pub rw: bool,
-    #[serde(rename = "Type")]
-    pub type_: String,
-    pub propagation: String,
-}
-
-/// Log of the health of a running container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct LogStateHealth {
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-    pub exit_code: i16,
-    pub output: String,
-}
-
-/// Health of a running container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct StateHealth {
-    pub status: String,
-    pub failing_streak: u64,
-    pub log: Vec<LogStateHealth>,
-}
-
-/// Runtime status of the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct State {
-    pub status: String,
-    pub running: bool,
-    pub paused: bool,
-    pub restarting: bool,
-    #[serde(rename = "OOMKilled")]
-    pub oomkilled: bool,
-    pub dead: bool,
-    pub pid: isize,
-    pub exit_code: u16,
-    pub error: String,
-    pub started_at: DateTime<Utc>,
-    pub finished_at: DateTime<Utc>,
-    pub health: Option<StateHealth>,
-}
-
-/// Maps internal container port to external host port.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct APIPort {
-    #[serde(rename = "IP")]
-    pub ip: Option<String>,
-    pub private_port: i64,
-    pub public_port: Option<i64>,
-    #[serde(rename = "Type")]
-    pub type_: String,
-}
-
-/// A mapping of network name to endpoint configuration for that network.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct NetworkList {
-    pub networks: HashMap<String, ContainerNetwork>,
-}
-
-/// Result type for the [List Containers API](../struct.Docker.html#method.list_containers)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct APIContainers {
-    pub id: String,
-    pub names: Vec<String>,
-    pub image: String,
-    #[serde(rename = "ImageID")]
-    pub image_id: String,
-    pub command: String,
-    #[serde(with = "ts_seconds")]
-    pub created: DateTime<Utc>,
-    pub state: String,
-    pub status: String,
-    pub ports: Vec<APIPort>,
-    pub labels: HashMap<String, String>,
-    pub size_rw: Option<i64>,
-    pub size_root_fs: Option<i64>,
-    pub mounts: Vec<Mount>,
-    pub network_settings: NetworkList,
-    pub host_config: HostConfig<String>,
-}
-
-/// Result type for the [Inspect Container API](../struct.Docker.html#method.inspect_container)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Container {
-    pub id: String,
-    pub created: DateTime<Utc>,
-    pub path: String,
-    pub args: Vec<String>,
-    pub config: Config<String>,
-    pub state: State,
-    pub image: String,
-    pub network_settings: NetworkSettings,
-    pub resolv_conf_path: String,
-    pub hostname_path: String,
-    pub hosts_path: String,
-    pub log_path: String,
-    pub name: String,
-    pub driver: String,
-    pub mounts: Vec<Mount>,
-    pub host_config: HostConfig<String>,
-    pub restart_count: isize,
-    pub platform: String,
-    pub mount_label: String,
-    pub process_label: String,
-    pub app_armor_profile: String,
-    #[serde(rename = "ExecIDs")]
-    pub exec_ids: Option<Vec<String>>,
-    pub graph_driver: GraphDriver,
-}
-
-/// A test to perform to check that the container is healthy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct HealthConfig {
-    /// The test to perform. Possible values are:
-    ///  - `[]` inherit healthcheck from image or parent image
-    ///  - `["NONE"]` disable healthcheck
-    ///  - `["CMD", args...]` exec arguments directly
-    ///  - `["CMD-SHELL", command]` run command with system's default shell
-    pub test: Option<Vec<String>>,
-    /// The time to wait between checks in nanoseconds. It should be 0 or at least 1000000 (1 ms).
-    /// 0 means inherit.
-    pub interval: Option<u64>,
-    /// The time to wait before considering the check to have hung. It should be 0 or at least
-    /// 1000000 (1 ms). 0 means inherit.
-    pub timeout: Option<u64>,
-    /// The number of consecutive failures needed to consider a container as unhealthy. 0 means
-    /// inherit.
-    pub retries: Option<u64>,
-    /// Start period for the container to initialize before starting health-retries countdown in
-    /// nanoseconds. It should be 0 or at least 1000000 (1 ms). 0 means inherit.
-    pub start_period: Option<u64>,
+pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
+    pub endpoints_config: HashMap<T, EndpointSettings>,
 }
 
 /// Container to create.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Config<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash,
 {
     /// The hostname to use for the container, as a valid RFC 1123 hostname.
+    #[serde(rename = "Hostname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<T>,
+
     /// The domain name to use for the container.
+    #[serde(rename = "Domainname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub domainname: Option<T>,
+
     /// The user that commands are run as inside the container.
+    #[serde(rename = "User")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<T>,
+
     /// Whether to attach to `stdin`.
+    #[serde(rename = "AttachStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stdin: Option<bool>,
+
     /// Whether to attach to `stdout`.
+    #[serde(rename = "AttachStdout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stdout: Option<bool>,
+
     /// Whether to attach to `stderr`.
+    #[serde(rename = "AttachStderr")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stderr: Option<bool>,
-    /// Command is already escaped (Windows only).
-    pub args_escaped: Option<bool>,
-    /// Attach standard streams to a TTY, including `stdin` if it is not closed.
-    pub tty: Option<bool>,
-    /// Open `stdin`.
-    pub open_stdin: Option<bool>,
-    /// Close stdin after one attached client disconnects.
-    pub stdin_once: Option<bool>,
-    /// A list of environment variables to set inside the container in the form `["VAR=value", ...]`.
-    /// A variable without `=` is removed from the environment, rather than to have an empty value.
-    pub env: Option<Vec<T>>,
-    /// Command to run specified as a string or an array of strings.
-    pub cmd: Option<Vec<T>>,
-    /// The entry point for the container as a string or an array of strings.
-    ///
-    /// If the array consists of exactly one empty string (`[""]`) then the entry point is reset to
-    /// system default (i.e., the entry point used by docker when there is no `ENTRYPOINT`
-    /// instruction in the `Dockerfile`).
-    pub entrypoint: Option<Vec<T>>,
-    /// The name of the image to use when creating the container.
-    pub image: Option<T>,
-    /// User-defined key/value metadata.
-    pub labels: Option<HashMap<T, T>>,
-    /// An object mapping mount point paths inside the container to empty objects.
-    pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
-    /// The working directory for commands to run in.
-    pub working_dir: Option<T>,
-    /// Disable networking for the container.
-    pub network_disabled: Option<bool>,
-    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`.
-    pub on_build: Option<Vec<T>>,
-    /// MAC address of the container.
-    pub mac_address: Option<T>,
-    /// An object mapping ports to an empty object in the form:
-    /// `{"<port>/<tcp|udp|sctp>": {}}`
+
+    /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}`
+    #[serde(rename = "ExposedPorts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exposed_ports: Option<HashMap<T, HashMap<(), ()>>>,
-    /// Signal to stop a container as a string or unsigned integer.
-    pub stop_signal: Option<T>,
-    /// Timeout to stop a container in seconds.
-    pub stop_timeout: Option<isize>,
-    /// Container configuration that depends on the host we are running on.
-    pub host_config: Option<HostConfig<T>>,
-    /// This container's networking configuration.
-    pub networking_config: Option<NetworkingConfig>,
-    /// A test to perform to check that the container is healthy.
+
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed.
+    #[serde(rename = "Tty")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<bool>,
+
+    /// Open `stdin`
+    #[serde(rename = "OpenStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_stdin: Option<bool>,
+
+    /// Close `stdin` after one attached client disconnects
+    #[serde(rename = "StdinOnce")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin_once: Option<bool>,
+
+    /// A list of environment variables to set inside the container in the form `[\"VAR=value\", ...]`. A variable without `=` is removed from the environment, rather than to have an empty value.
+    #[serde(rename = "Env")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<T>>,
+
+    /// Command to run specified as a string or an array of strings.
+    #[serde(rename = "Cmd")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<Vec<T>>,
+
+    /// A TEST to perform TO Check that the container is healthy.
+    #[serde(rename = "Healthcheck")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub healthcheck: Option<HealthConfig>,
+
+    /// Command is already escaped (Windows only)
+    #[serde(rename = "ArgsEscaped")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args_escaped: Option<bool>,
+
+    /// The name of the image to use when creating the container
+    #[serde(rename = "Image")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<T>,
+
+    /// An object mapping mount point paths inside the container to empty objects.
+    #[serde(rename = "Volumes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
+
+    /// The working directory for commands to run in.
+    #[serde(rename = "WorkingDir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<T>,
+
+    /// The entry point for the container as a string or an array of strings.  If the array consists of exactly one empty string (`[\"\"]`) then the entry point is reset to system default (i.e., the entry point used by docker when there is no `ENTRYPOINT` instruction in the `Dockerfile`).
+    #[serde(rename = "Entrypoint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Vec<T>>,
+
+    /// Disable networking for the container.
+    #[serde(rename = "NetworkDisabled")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_disabled: Option<bool>,
+
+    /// MAC address of the container.
+    #[serde(rename = "MacAddress")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<T>,
+
+    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`.
+    #[serde(rename = "OnBuild")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_build: Option<Vec<T>>,
+
+    /// User-defined key/value metadata.
+    #[serde(rename = "Labels")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<HashMap<T, T>>,
+
+    /// Signal to stop a container as a string or unsigned integer.
+    #[serde(rename = "StopSignal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_signal: Option<T>,
+
+    /// Timeout to stop a container in seconds.
+    #[serde(rename = "StopTimeout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_timeout: Option<i64>,
+
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
+    #[serde(rename = "Shell")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<Vec<T>>,
+
+    /// Container configuration that depends on the host we are running on.
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
+    #[serde(rename = "HostConfig")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_config: Option<HostConfig>,
+
+    /// This container's networking configuration.
+    #[serde(rename = "NetworkingConfig")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub networking_config: Option<NetworkingConfig<T>>,
 }
 
 /// Result type for the [Create Container API](../struct.Docker.html#method.create_container)
@@ -1153,26 +666,6 @@ impl fmt::Display for LogOutput {
     }
 }
 
-/// Result type for the [Container Changes API](../struct.Docker.html#method.container_changes)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct Change {
-    pub path: String,
-    pub kind: isize,
-}
-
-impl fmt::Display for Change {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.kind {
-            0 => write!(f, "C {}", self.path),
-            1 => write!(f, "A {}", self.path),
-            2 => write!(f, "D {}", self.path),
-            _ => unreachable!(),
-        }
-    }
-}
-
 /// Parameters used in the [Stats API](../struct.Docker.html#method.stats)
 ///
 /// ## Examples
@@ -1402,56 +895,6 @@ impl<'a, T: AsRef<str>> KillContainerQueryParams<&'a str, T> for KillContainerOp
     }
 }
 
-/// Block IO weight (relative device weight).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct UpdateContainerOptionsBlkioWeight {
-    pub path: String,
-    pub weight: isize,
-}
-
-/// Limit read/write rate (IO/bytes per second) from/to a device.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct UpdateContainerOptionsBlkioDeviceRate {
-    pub path: String,
-    pub rate: u64,
-}
-
-/// A list of devices to add to the container.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct UpdateContainerOptionsDevices {
-    pub path_on_host: String,
-    pub path_in_container: String,
-    pub cgroup_permissions: String,
-}
-
-/// A list of resource limits to set in the container.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct UpdateContainerOptionsUlimits {
-    pub name: String,
-    pub soft: isize,
-    pub hard: isize,
-}
-
-/// The behavior to apply when the container exits. The default is not to restart.
-///
-/// An ever increasing delay (double the previous delay, starting at 100ms) is added before each
-/// restart to prevent flooding the server.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct UpdateContainerOptionsRestartPolicy {
-    pub name: String,
-    pub maximum_retry_count: isize,
-}
-
 /// Configuration for the [Update Container API](../struct.Docker.html#method.update_container)
 ///
 /// ## Examples
@@ -1460,98 +903,183 @@ pub struct UpdateContainerOptionsRestartPolicy {
 /// use bollard::container::UpdateContainerOptions;
 /// use std::default::Default;
 ///
-/// UpdateContainerOptions {
+/// UpdateContainerOptions::<String> {
 ///     memory: Some(314572800),
 ///     memory_swap: Some(314572800),
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct UpdateContainerOptions {
+pub struct UpdateContainerOptions<T>
+where
+    T: Into<String> + Eq + Hash,
+{
     /// An integer value representing this container's relative CPU weight versus other containers.
+    #[serde(rename = "CpuShares")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_shares: Option<isize>,
+
     /// Memory limit in bytes.
-    pub memory: Option<u64>,
-    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute,
-    /// the path is considered to be relative to the `cgroups` path of the init process. Cgroups are
-    /// created if they do not already exist.
-    pub cgroup_parent: Option<String>,
+    #[serde(rename = "Memory")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<i64>,
+
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.
+    #[serde(rename = "CgroupParent")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cgroup_parent: Option<T>,
+
     /// Block IO weight (relative weight).
-    pub blkio_weight: Option<isize>,
-    /// Block IO weight (relative device weight).
-    pub blkio_weight_device: Vec<UpdateContainerOptionsBlkioWeight>,
-    /// Limit read rate (bytes per second) from a device.
-    pub blkio_device_read_bps: Vec<UpdateContainerOptionsBlkioDeviceRate>,
-    /// Limit write rate (bytes per second) to a device.
-    #[serde(rename = "BlkioDeviceWriteIOps")]
-    pub blkio_device_write_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
-    /// Limit read rate (IO per second) from a device.
+    #[serde(rename = "BlkioWeight")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_weight: Option<u16>,
+
+    /// Block IO weight (relative device weight) in the form `[{\"Path\": \"device_path\", \"Weight\": weight}]`.
+    #[serde(rename = "BlkioWeightDevice")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_weight_device: Option<Vec<ResourcesBlkioWeightDevice>>,
+
+    /// Limit read rate (bytes per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceReadBps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_read_bps: Option<Vec<ThrottleDevice>>,
+
+    /// Limit write rate (bytes per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceWriteBps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_write_bps: Option<Vec<ThrottleDevice>>,
+
+    /// Limit read rate (IO per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
     #[serde(rename = "BlkioDeviceReadIOps")]
-    pub blkio_device_read_iops: Vec<UpdateContainerOptionsBlkioDeviceRate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
+
+    /// Limit write rate (IO per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceWriteIOps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
+
     /// The length of a CPU period in microseconds.
-    pub cpu_period: Option<u64>,
+    #[serde(rename = "CpuPeriod")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_period: Option<i64>,
+
     /// Microseconds of CPU time that the container can get in a CPU period.
-    pub cpu_quota: Option<u64>,
+    #[serde(rename = "CpuQuota")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_quota: Option<i64>,
+
     /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
-    pub cpu_realtime_period: Option<u64>,
+    #[serde(rename = "CpuRealtimePeriod")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_realtime_period: Option<i64>,
+
     /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
-    pub cpu_realtime_runtime: Option<u64>,
+    #[serde(rename = "CpuRealtimeRuntime")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_realtime_runtime: Option<i64>,
+
     /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
-    pub cpuset_cpus: Option<String>,
+    #[serde(rename = "CpusetCpus")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuset_cpus: Option<T>,
+
     /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems.
-    pub cpuset_mems: Option<String>,
+    #[serde(rename = "CpusetMems")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuset_mems: Option<T>,
+
     /// A list of devices to add to the container.
-    pub devices: Option<Vec<UpdateContainerOptionsDevices>>,
-    /// A list of cgroup rules to apply to the container.
-    pub device_cgroup_rules: Option<Vec<String>>,
-    /// Disk limit (in bytes).
-    pub disk_quota: Option<u64>,
-    /// A list of requests for devices to be sent to device drivers
-    pub device_requests: Option<DeviceRequest<String>>,
+    #[serde(rename = "Devices")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub devices: Option<Vec<DeviceMapping>>,
+
+    /// a list of cgroup rules to apply to the container
+    #[serde(rename = "DeviceCgroupRules")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_cgroup_rules: Option<Vec<T>>,
+
+    /// a list of requests for devices to be sent to device drivers
+    #[serde(rename = "DeviceRequests")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_requests: Option<Vec<DeviceRequest>>,
+
     /// Kernel memory limit in bytes.
-    pub kernel_memory: Option<u64>,
+    #[serde(rename = "KernelMemory")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kernel_memory: Option<i64>,
+
     /// Hard limit for kernel TCP buffer memory (in bytes).
     #[serde(rename = "KernelMemoryTCP")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_memory_tcp: Option<i64>,
+
     /// Memory soft limit in bytes.
-    pub memory_reservation: Option<u64>,
+    #[serde(rename = "MemoryReservation")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_reservation: Option<i64>,
+
     /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
+    #[serde(rename = "MemorySwap")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_swap: Option<i64>,
+
     /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
+    #[serde(rename = "MemorySwappiness")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_swappiness: Option<i64>,
+
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    pub nano_cpus: Option<u64>,
+    #[serde(rename = "NanoCPUs")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nano_cp_us: Option<i64>,
+
     /// Disable OOM Killer for the container.
+    #[serde(rename = "OomKillDisable")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub oom_kill_disable: Option<bool>,
-    /// Run an init inside the container that forwards signals and reaps processes. This field is
-    /// omitted if empty, and the default (as configured on the daemon) is used.
+
+    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used.
+    #[serde(rename = "Init")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub init: Option<bool>,
+
     /// Tune a container's PIDs limit. Set `0` or `-1` for unlimited, or `null` to not change.
-    pub pids_limit: Option<u64>,
-    /// A list of resource limits to set in the container.
-    pub ulimits: Vec<UpdateContainerOptionsUlimits>,
-    /// The number of usable CPUs (Windows only).
-    ///
-    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
-    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
-    pub cpu_count: Option<u64>,
-    /// The usable percentage of the available CPUs (Windows only).
-    ///
-    /// On Windows Server containers, the processor resource controls are mutually exclusive. The
-    /// order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
-    pub cpu_percent: Option<u64>,
-    /// Maximum IOps for the container system drive (Windows only).
+    #[serde(rename = "PidsLimit")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pids_limit: Option<i64>,
+
+    /// A list of resource limits to set in the container. For example: `{\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048}`\"
+    #[serde(rename = "Ulimits")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ulimits: Option<Vec<ResourcesUlimits>>,
+
+    /// The number of usable CPUs (Windows only).  On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
+    #[serde(rename = "CpuCount")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_count: Option<i64>,
+
+    /// The usable percentage of the available CPUs (Windows only).  On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
+    #[serde(rename = "CpuPercent")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<i64>,
+
+    /// Maximum IOps for the container system drive (Windows only)
     #[serde(rename = "IOMaximumIOps")]
-    pub io_maximum_iops: Option<u64>,
-    /// Maximum IO in bytes per second for the container system drive (Windows only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub io_maximum_i_ops: Option<i64>,
+
+    /// Maximum IO in bytes per second for the container system drive (Windows only)
     #[serde(rename = "IOMaximumBandwidth")]
-    pub io_maximum_bandwidth: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub io_maximum_bandwidth: Option<i64>,
+
     /// The behavior to apply when the container exits. The default is not to restart.
     ///
     /// An ever increasing delay (double the previous delay, starting at 100ms) is added before
     /// each restart to prevent flooding the server.
-    pub restart_policy: Option<UpdateContainerOptionsRestartPolicy>,
+    pub restart_policy: Option<RestartPolicy>,
 }
 
 /// Parameters used in the [Rename Container API](../struct.Docker.html#method.rename_container)
@@ -1733,6 +1261,7 @@ impl<'a, T: AsRef<str>> DownloadFromContainerQueryParams<&'a str, T>
         Ok(ArrayVec::from([("path", self.path)]))
     }
 }
+
 impl Docker {
     /// ---
     ///
@@ -1746,7 +1275,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [APIContainers](container/struct.APIContainers.html), wrapped in a Future.
+    ///  - Vector of [ContainerSummaryInner](models/struct.ContainerSummaryInner.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1769,10 +1298,10 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub async fn list_containers<T, K>(
+    pub async fn list_containers<'de, T, K>(
         &self,
         options: Option<T>,
-    ) -> Result<Vec<APIContainers>, Error>
+    ) -> Result<Vec<ContainerSummaryInner>, Error>
     where
         T: ListContainersQueryParams<K, String>,
         K: AsRef<str>,
@@ -1802,7 +1331,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Create Container Results](container/struct.CreateContainerResults.html), wrapped in a Future.
+    ///  - [ContainerCreateResponse](models/struct.ContainerCreateResponse.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1829,15 +1358,14 @@ impl Docker {
         &self,
         options: Option<T>,
         config: Config<Z>,
-    ) -> Result<CreateContainerResults, Error>
+    ) -> Result<ContainerCreateResponse, Error>
     where
         T: CreateContainerQueryParams<K, V>,
         K: AsRef<str>,
         V: AsRef<str>,
-        Z: AsRef<str> + Eq + Hash + Serialize,
+        Z: Into<String> + Hash + Eq + Serialize,
     {
         let url = "/containers/create";
-
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
@@ -2012,7 +1540,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Wait Container Results](container/struct.WaitContainerResults.html), wrapped in a
+    ///  - [ContainerWaitResponse](models/struct.ContainerWaitResponse.html), wrapped in a
     ///  Stream.
     ///
     /// # Examples
@@ -2033,7 +1561,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> impl Stream<Item = Result<WaitContainerResults, Error>>
+    ) -> impl Stream<Item = Result<ContainerWaitResponse, Error>>
     where
         T: WaitContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2110,11 +1638,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.struct) struct.
+    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.html) struct.
     ///
     /// # Returns
     ///
-    ///  - [Container](container/struct.Container.html), wrapped in a Future.
+    ///  - [ContainerInspectResponse](models/struct.ContainerInspectResponse.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -2133,7 +1661,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> Result<Container, Error>
+    ) -> Result<ContainerInspectResponse, Error>
     where
         T: InspectContainerQueryParams<K, V>,
         K: AsRef<str>,
@@ -2164,7 +1692,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [TopResult](container/struct.TopResult.html), wrapped in a Future.
+    ///  - [ContainerTopResponse](models/struct.ContainerTopResponse.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -2183,7 +1711,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<T>,
-    ) -> Result<TopResult, Error>
+    ) -> Result<ContainerTopResponse, Error>
     where
         T: TopQueryParams<K, V>,
         K: AsRef<str>,
@@ -2267,7 +1795,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An Option of Vector of [Change](container/struct.Change.html) structs, wrapped in a
+    ///  - An Option of Vector of [Container Change Response Item](models/struct.ContainerChangeResponseItem.html) structs, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -2281,7 +1809,7 @@ impl Docker {
     pub async fn container_changes(
         &self,
         container_name: &str,
-    ) -> Result<Option<Vec<Change>>, Error> {
+    ) -> Result<Option<Vec<ContainerChangeResponseItem>>, Error> {
         let url = format!("/containers/{}/changes", container_name);
 
         let req = self.build_request::<_, String, String>(
@@ -2421,7 +1949,7 @@ impl Docker {
     /// use bollard::container::UpdateContainerOptions;
     /// use std::default::Default;
     ///
-    /// let config = UpdateContainerOptions {
+    /// let config = UpdateContainerOptions::<String> {
     ///     memory: Some(314572800),
     ///     memory_swap: Some(314572800),
     ///     ..Default::default()
@@ -2429,10 +1957,10 @@ impl Docker {
     ///
     /// docker.update_container("postgres", config);
     /// ```
-    pub async fn update_container(
+    pub async fn update_container<T: Into<String> + Eq + Hash + Serialize>(
         &self,
         container_name: &str,
-        config: UpdateContainerOptions,
+        config: UpdateContainerOptions<T>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{}/update", container_name);
 
@@ -2579,8 +2107,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [PruneContainersResults](container/struct.PruneContainersResults.html) struct, wrapped in a
-    ///  Future.
+    ///  - [Container Prune Response](models/struct.ContainerPruneResponse.html) struct, wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -2603,7 +2130,7 @@ impl Docker {
     pub async fn prune_containers<T, K>(
         &self,
         options: Option<T>,
-    ) -> Result<PruneContainersResults, Error>
+    ) -> Result<ContainerPruneResponse, Error>
     where
         T: PruneContainersQueryParams<K>,
         K: AsRef<str> + Eq + Hash,

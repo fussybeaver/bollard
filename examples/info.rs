@@ -1,6 +1,7 @@
 //! Fetch info of all running containers concurrently
 
 use bollard::container::{InspectContainerOptions, ListContainersOptions};
+use bollard::models::ContainerSummary;
 use bollard::Docker;
 
 use std::collections::HashMap;
@@ -35,12 +36,15 @@ async fn run() -> Result<(), failure::Error> {
     Ok(())
 }
 
-async fn conc(arg: (Docker, &bollard::container::APIContainers)) -> () {
+async fn conc(arg: (Docker, &ContainerSummary)) -> () {
     let (docker, container) = arg;
     println!(
         "{:?}",
         docker
-            .inspect_container(&container.id, None::<InspectContainerOptions>)
+            .inspect_container(
+                container.id.as_ref().unwrap(),
+                None::<InspectContainerOptions>
+            )
             .await
             .unwrap()
     )

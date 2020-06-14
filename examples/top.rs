@@ -1,14 +1,15 @@
 //! Run top asynchronously across several docker containers
-use bollard::container::{ListContainersOptions, TopOptions, TopResult};
+use bollard::container::{ListContainersOptions, TopOptions};
 use bollard::errors::Error;
+use bollard::models::*;
 use bollard::Docker;
 
 use std::collections::HashMap;
 use std::default::Default;
 
+use futures_util::future::TryFutureExt;
 use futures_util::stream::FuturesUnordered;
 use futures_util::stream::StreamExt;
-use futures_util::future::TryFutureExt;
 use tokio::runtime::Runtime;
 
 fn main() {
@@ -38,16 +39,16 @@ async fn run(docker: Docker) -> Result<(), Error> {
     containers
         .iter()
         .map(|container| {
-            let name = container.id.to_owned();
+            let name = container.id.as_ref().unwrap();
             docker
-                .top_processes(&container.id, Some(TopOptions { ps_args: "aux" }))
-                .map_ok(|result| {
-                    Some((name, result))})
+                .top_processes(name, Some(TopOptions { ps_args: "aux" }))
+                .map_ok(move |result| {
+                    Some((name.to_owned(), result))})
         })
         .collect::<FuturesUnordered<_>>()
         .fold(Ok(HashMap::new()), |hashmap, res| match (hashmap, res) {
             (Ok(mut hashmap), Ok(opt)) => {
-                if let Some((name, TopResult{ processes: Some(p), .. })) = opt {
+                if let Some((name, ContainerTopResponse{ processes: Some(p), .. })) = opt {
                     hashmap.insert(name, p.get(0).unwrap().to_vec());
                 }
                 futures_util::future::ok::<_, Error>(hashmap)

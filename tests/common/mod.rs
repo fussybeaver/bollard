@@ -142,7 +142,7 @@ pub async fn create_container_hello_world(
                 name: container_name.to_string(),
             }),
             Config {
-                cmd: cmd,
+                cmd,
                 image: Some(image),
                 ..Default::default()
             },
@@ -212,7 +212,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
                 name: container_name,
             }),
             Config {
-                cmd: cmd,
+                cmd,
                 image: Some(image),
                 ..Default::default()
             },
@@ -285,11 +285,9 @@ pub async fn concat_byte_stream<S>(s: S) -> Result<Vec<u8>, Error>
 where
     S: Stream<Item = Result<Bytes, Error>>,
 {
-    s.try_fold(Vec::new(), |mut acc, chunk| {
-        async move {
-            acc.extend_from_slice(&chunk[..]);
-            Ok(acc)
-        }
+    s.try_fold(Vec::new(), |mut acc, chunk| async move {
+        acc.extend_from_slice(&chunk[..]);
+        Ok(acc)
     })
     .await
 }

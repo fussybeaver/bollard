@@ -19,13 +19,17 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.5"
+bollard = "0.6"
 ```
 
 ## API
 ### Documentation
 
-[API docs](https://docs.rs/bollard/)
+[API docs](https://docs.rs/bollard/).
+
+As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
+Swagger OpenAPI specification. The generated models are committed to this repository, but
+packaged in a separate crate [bollard-stubs](https://crates.io/crates/bollard-stubs).
 
 ### Version
 
@@ -245,6 +249,16 @@ Or, to execute and receive the result:
 let result = rt.block_on(future);
 ```
 
+## Building the stubs
+
+Serialization stubs are generated through the [Swagger
+library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
+following in the `codegen` folder:
+
+```bash
+mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile generate-resources
+```
+
 ## History
 
 This library stems from the [boondock rust library](https://github.com/faradayio/boondock),
@@ -268,7 +282,6 @@ docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
 docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
-docker swarm init
 REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 ```
 
