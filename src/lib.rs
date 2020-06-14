@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.4"
+//! bollard = "0.5"
 //! ```
 //!
 //! # API
@@ -290,6 +290,7 @@
 //! docker push localhost:5000/hello-world:linux
 //! docker push localhost:5000/fussybeaver/uhttpd
 //! docker push localhost:5000/alpine
+//! docker swarm init
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 //! ```
 #![deny(

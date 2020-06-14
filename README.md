@@ -19,11 +19,10 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.4"
+bollard = "0.5"
 ```
 
 ## API
-
 ### Documentation
 
 [API docs](https://docs.rs/bollard/)
@@ -68,7 +67,6 @@ The client will connect to the OS specific handler it is compiled for.
 This is a convenience for localhost environment that should run on multiple
 operating systems.
 Use the `Docker::connect_with_local` method API to parameterise the interface.
-
 ```rust
 use bollard::Docker;
 Docker::connect_with_local_defaults();
@@ -136,7 +134,7 @@ Tokio is further below.
 
 First, check that the API is working with your server:
 
-````rust, no_run
+```rust, no_run
 use bollard::Docker;
 
 use futures_util::future::FutureExt;
@@ -176,7 +174,7 @@ async move {
         println!("-> {:?}", image);
     }
 };
-````
+```
 
 ### Streaming Stats
 
