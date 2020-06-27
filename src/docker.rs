@@ -1,8 +1,9 @@
 use std::cmp;
 use std::env;
 use std::fmt;
+use std::fs;
 use std::future::Future;
-#[cfg(any(feature = "ssl", feature = "tls"))]
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::atomic::AtomicUsize;
@@ -11,8 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrayvec::ArrayVec;
-#[cfg(any(feature = "ssl", feature = "tls"))]
-use dirs;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
@@ -22,30 +21,16 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::{self, body::Bytes, Body, Client, Method, Request, Response, StatusCode};
-#[cfg(feature = "openssl")]
-use hyper_openssl::HttpsConnector;
-#[cfg(feature = "tls")]
-use hyper_tls;
+use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
 use hyperlocal::UnixClient as UnixConnector;
-#[cfg(feature = "tls")]
-use native_tls::{Certificate, Identity, TlsConnector};
-#[cfg(feature = "openssl")]
-use openssl::ssl::SslConnector;
-#[cfg(feature = "openssl")]
-use openssl::ssl::{SslFiletype, SslMethod};
+use rustls::internal::pemfile;
+use rustls::sign::{CertifiedKey, RSASigningKey};
 use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
-use crate::errors::ErrorKind::{
-    APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
-    DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
-    HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
-    RequestTimeoutError, StrParseError,
-};
-#[cfg(feature = "openssl")]
-use crate::errors::ErrorKind::{NoCertPathError, SSLError};
+use crate::errors::ErrorKind::*;
 #[cfg(windows)]
 use crate::named_pipe::NamedPipeConnector;
 use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
@@ -79,25 +64,11 @@ pub const API_DEFAULT_VERSION: &'static ClientVersion = &ClientVersion {
 pub(crate) const TRUE_STR: &'static str = "true";
 pub(crate) const FALSE_STR: &'static str = "false";
 
-/// The default directory in which to look for our Docker certificate
-/// files.
-#[cfg(any(feature = "ssl", feature = "tls"))]
-pub fn default_cert_path() -> Result<PathBuf, Error> {
-    let from_env = env::var("DOCKER_CERT_PATH").or_else(|_| env::var("DOCKER_CONFIG"));
-    if let Ok(ref path) = from_env {
-        Ok(Path::new(path).to_owned())
-    } else {
-        let home = dirs::home_dir().ok_or_else(|| NoCertPathError)?;
-        Ok(home.join(".docker"))
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
     #[cfg(unix)]
     Unix,
     Http,
-    #[cfg(any(feature = "ssl", feature = "tls"))]
     SSL,
     #[cfg(windows)]
     NamedPipe,
@@ -112,13 +83,8 @@ pub(crate) enum Transport {
     Http {
         client: Client<HttpConnector>,
     },
-    #[cfg(feature = "openssl")]
     Https {
         client: Client<HttpsConnector<HttpConnector>>,
-    },
-    #[cfg(feature = "tls")]
-    Tls {
-        client: Client<hyper_tls::HttpsConnector<HttpConnector>>,
     },
     #[cfg(unix)]
     Unix {
@@ -134,10 +100,7 @@ impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Transport::Http { .. } => write!(f, "HTTP"),
-            #[cfg(feature = "openssl")]
-            Transport::Https { .. } => write!(f, "HTTPS(openssl)"),
-            #[cfg(feature = "tls")]
-            Transport::Tls { .. } => write!(f, "HTTPS(native)"),
+            Transport::Https { .. } => write!(f, "HTTPS(rustls)"),
             #[cfg(unix)]
             Transport::Unix { .. } => write!(f, "Unix"),
             #[cfg(windows)]
@@ -239,7 +202,86 @@ impl Clone for Docker {
     }
 }
 
-#[cfg(feature = "openssl")]
+struct DockerClientCertResolver {
+    ssl_key: PathBuf,
+    ssl_cert: PathBuf,
+}
+
+impl DockerClientCertResolver {
+    /// The default directory in which to look for our Docker certificate
+    /// files.
+    pub fn default_cert_path() -> Result<PathBuf, Error> {
+        let from_env = env::var("DOCKER_CERT_PATH").or_else(|_| env::var("DOCKER_CONFIG"));
+        if let Ok(ref path) = from_env {
+            Ok(Path::new(path).to_owned())
+        } else {
+            let home = dirs::home_dir().ok_or_else(|| NoCertPathError)?;
+            Ok(home.join(".docker"))
+        }
+    }
+
+    fn open_buffered(path: &Path) -> Result<io::BufReader<fs::File>, Error> {
+        Ok(io::BufReader::new(fs::File::open(path).map_err(|_| {
+            CertPathError {
+                path: path.to_path_buf(),
+            }
+        })?))
+    }
+
+    fn certs(path: &Path) -> Result<Vec<rustls::Certificate>, Error> {
+        Ok(
+            pemfile::certs(&mut Self::open_buffered(path)?).map_err(|_| CertPathError {
+                path: path.to_path_buf(),
+            })?,
+        )
+    }
+
+    fn keys(path: &Path) -> Result<Vec<rustls::PrivateKey>, Error> {
+        let mut rdr = Self::open_buffered(path)?;
+        let keys = pemfile::rsa_private_keys(&mut rdr).map_err(|_| CertPathError {
+            path: path.to_path_buf(),
+        })?;
+
+        Ok(keys)
+    }
+
+    fn docker_client_key(&self) -> Result<CertifiedKey, Error> {
+        let all_certs = Self::certs(&self.ssl_cert).map_err(|_| CertPathError {
+            path: self.ssl_cert.to_owned(),
+        })?;
+
+        let mut all_keys = Self::keys(&self.ssl_key)?;
+        let key = if all_keys.len() == 1 {
+            all_keys.remove(0)
+        } else {
+            return Err(CertMultipleKeys {
+                count: all_keys.len(),
+                path: self.ssl_key.to_owned(),
+            }
+            .into());
+        };
+
+        let signing_key = RSASigningKey::new(&key).map_err(|_| CertParseError {
+            path: self.ssl_key.to_owned(),
+        })?;
+
+        Ok(CertifiedKey::new(
+            all_certs,
+            Arc::new(Box::new(signing_key)),
+        ))
+    }
+}
+
+impl rustls::ResolvesClientCert for DockerClientCertResolver {
+    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<CertifiedKey> {
+        self.docker_client_key().ok()
+    }
+
+    fn has_certs(&self) -> bool {
+        true
+    }
+}
+
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `openssl`
 /// library.
 impl Docker {
@@ -259,14 +301,14 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::Docker;
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssl_defaults().unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
-        let cert_path = default_cert_path()?;
+        let cert_path = DockerClientCertResolver::default_cert_path()?;
         if let Ok(ref host) = env::var("DOCKER_HOST") {
             Docker::connect_with_ssl(
                 host,
@@ -302,19 +344,19 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::Docker;
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
     /// use std::path::Path;
     ///
-    /// use futures_util::try_future::TryFutureExt;
+    /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssl(
-    ///     "localhost:2375",
+    ///     "tcp://localhost:2375/",
     ///     Path::new("/certs/key.pem"),
     ///     Path::new("/certs/cert.pem"),
     ///     Path::new("/certs/ca.pem"),
-    ///     1,
-    ///     120).unwrap();
+    ///     120,
+    ///     API_DEFAULT_VERSION).unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
@@ -329,25 +371,46 @@ impl Docker {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1);
 
-        let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())
-            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        let mut config = rustls::ClientConfig::new();
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        config.ct_logs = Some(&ct_logs::LOGS);
 
-        ssl_connector_builder
-            .set_ca_file(ssl_ca)
-            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
-        ssl_connector_builder
-            .set_certificate_file(ssl_cert, SslFiletype::PEM)
-            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
-        ssl_connector_builder
-            .set_private_key_file(ssl_key, SslFiletype::PEM)
-            .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+        config.root_store = match rustls_native_certs::load_native_certs() {
+            Ok(store) => store,
+            Err((Some(store), err)) => {
+                warn!("could not load all certificates: {}", err);
+                store
+            }
+            Err((None, err)) => {
+                warn!("cannot access native certificate store: {}", err);
+                config.root_store
+            }
+        };
+
+        let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
+            path: ssl_ca.to_owned(),
+        })?);
+
+        config
+            .root_store
+            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        config
+            .root_store
+            .add_pem_file(&mut ca_pem)
+            .map_err(|_| CertParseError {
+                path: ssl_ca.to_owned(),
+            })?;
+
+        config.client_auth_cert_resolver = Arc::new(DockerClientCertResolver {
+            ssl_key: ssl_key.to_owned(),
+            ssl_cert: ssl_cert.to_owned(),
+        });
 
         let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
 
         let https_connector: HttpsConnector<HttpConnector> =
-            HttpsConnector::with_connector(http_connector, ssl_connector_builder)
-                .map_err::<Error, _>(|e| SSLError { err: e }.into())?;
+            HttpsConnector::from((http_connector, config));
 
         let client_builder = Client::builder();
         let client = client_builder.build(https_connector);
@@ -628,161 +691,6 @@ impl Docker {
     }
 }
 
-/// A Docker implementation typed to connect to a secure HTTPS connection, using the native rust
-/// TLS library.
-#[cfg(feature = "tls")]
-impl Docker {
-    /// Connect using secure HTTPS using native TLS and defaults that are signalled by environment
-    /// variables.
-    ///
-    /// # Defaults
-    ///
-    ///  - The connection url is sourced from the `DOCKER_HOST` environment variable.
-    ///  - The certificate directory is sourced from the `DOCKER_CERT_PATH` environment variable.
-    ///  - Certificate PKCS #12 archive is named `identity.pfx` and the certificate chain is named `ca.pem`.
-    ///  - The password for the PKCS #12 archive defaults to an empty password.
-    ///  - The number of threads used for the HTTP connection pool defaults to 1.
-    ///  - The request timeout defaults to 2 minutes.
-    ///
-    ///  # PKCS12
-    ///
-    ///  PKCS #12 archives can be created with OpenSSL:
-    ///
-    ///  ```bash
-    ///  openssl pkcs12 -export -out identity.pfx -inkey key.pem -in cert.pem -certfile
-    ///  chain_certs.pem
-    ///  ```
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use bollard::Docker;
-    ///
-    /// use futures_util::try_future::TryFutureExt;
-    ///
-    /// let connection = Docker::connect_with_tls_defaults().unwrap();
-    /// connection.ping()
-    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
-    /// ```
-    pub fn connect_with_tls_defaults() -> Result<Docker, Error> {
-        let cert_path = default_cert_path()?;
-        if let Ok(ref host) = env::var("DOCKER_HOST") {
-            Docker::connect_with_tls(
-                host,
-                &cert_path.join("identity.pfx"),
-                &cert_path.join("ca.pem"),
-                "",
-                DEFAULT_TIMEOUT,
-                API_DEFAULT_VERSION,
-            )
-        } else {
-            Docker::connect_with_tls(
-                DEFAULT_DOCKER_HOST,
-                &cert_path.join("identity.pfx"),
-                &cert_path.join("ca.pem"),
-                "",
-                DEFAULT_TIMEOUT,
-                API_DEFAULT_VERSION,
-            )
-        }
-    }
-
-    /// Connect using secure HTTPS using native TLS.
-    ///
-    /// # Arguments
-    ///
-    ///  - `addr`: the connection url.
-    ///  - `pkcs12_file`: the PKCS #12 archive.
-    ///  - `ca_file`: the certificate chain.
-    ///  - `pkcs12_password`: the password to the PKCS #12 archive.
-    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
-    ///
-    ///  # PKCS12
-    ///
-    ///  PKCS #12 archives can be created with OpenSSL:
-    ///
-    ///  ```bash
-    ///  openssl pkcs12 -export -out identity.pfx -inkey key.pem -in cert.pem -certfile
-    ///  chain_certs.pem
-    ///  ```
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use bollard::Docker;
-    ///
-    /// use std::path::Path;
-    ///
-    /// use futures_util::try_future::TryFutureExt;
-    ///
-    /// let connection = Docker::connect_with_tls(
-    ///     "localhost:2375",
-    ///     Path::new("/certs/identity.pfx"),
-    ///     Path::new("/certs/ca.pem"),
-    ///     "my_secret_password",
-    ///     1,
-    ///     120
-    /// ).unwrap();
-    /// connection.ping()
-    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
-    /// ```
-    pub fn connect_with_tls(
-        addr: &str,
-        pkcs12_file: &Path,
-        ca_file: &Path,
-        pkcs12_password: &str,
-        timeout: u64,
-        client_version: &ClientVersion,
-    ) -> Result<Docker, Error> {
-        let client_addr = addr.replacen("tcp://", "", 1);
-
-        let mut tls_connector_builder = TlsConnector::builder();
-
-        use crate::errors::ErrorKind;
-        use std::fs::File;
-        use std::io::Read;
-        let mut file = File::open(pkcs12_file)?;
-        let mut buf = vec![];
-        file.read_to_end(&mut buf)?;
-        let identity = Identity::from_pkcs12(&buf, pkcs12_password)
-            .map_err(|err| ErrorKind::TLSError { err })?;
-
-        let mut file = File::open(ca_file)?;
-        let mut buf = vec![];
-        file.read_to_end(&mut buf)?;
-        let ca = Certificate::from_pem(&buf).map_err(|err| ErrorKind::TLSError { err })?;
-
-        let tls_connector_builder = tls_connector_builder.identity(identity);
-        tls_connector_builder.add_root_certificate(ca);
-
-        let mut http_connector = HttpConnector::new();
-        http_connector.enforce_http(false);
-
-        let tls_connector = tls_connector_builder
-            .build()
-            .map_err(|err| ErrorKind::TLSError { err })?;
-        let https_connector: hyper_tls::HttpsConnector<HttpConnector> =
-            hyper_tls::HttpsConnector::from((http_connector, tls_connector.into()));
-
-        let client_builder = Client::builder();
-        let client = client_builder.build(https_connector);
-        let transport = Transport::Tls { client };
-        let docker = Docker {
-            transport: Arc::new(transport),
-            client_type: ClientType::SSL,
-            client_addr: client_addr.to_owned(),
-            client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
-        };
-
-        Ok(docker)
-    }
-}
-
 // The implementation block for Docker requests
 impl Docker {
     pub(crate) fn process_into_value<T>(
@@ -1036,10 +944,7 @@ impl Docker {
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
             Transport::Http { ref client } => client.request(req),
-            #[cfg(feature = "openssl")]
             Transport::Https { ref client } => client.request(req),
-            #[cfg(feature = "tls")]
-            Transport::Tls { ref client } => client.request(req),
             #[cfg(unix)]
             Transport::Unix { ref client } => client.request(req),
             #[cfg(windows)]

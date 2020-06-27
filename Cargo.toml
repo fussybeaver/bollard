@@ -1,7 +1,7 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.6.0"
+version = "0.7.0"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
@@ -12,35 +12,28 @@ keywords = ["docker"]
 edition = "2018"
 
 [features]
-# Enable OpenSSL both directly and for Hyper
-ssl = ["openssl", "hyper-openssl"]
-# Enable native-tls both directly for Hyper
-tls = ["native-tls", "hyper-tls"]
 # Enable tests specifically for the http connector
 test_http = []
-# Enable tests specifically for the tls connector
-test_tls = []
+# Enable tests specifically for rustls
+test_ssl = []
 
 [dependencies]
 arrayvec = "0.5.1"
-base64 = "0.12.0"
-bytes = "0.5.4"
+base64 = "0.12.3"
+bytes = "0.5.5"
 chrono = { version = "0.4.11", features = ["serde"] }
-dirs = "2.0.2"
+dirs = "3.0.0"
 env_logger = "0.7.1"
 failure = "0.1.7"
 hex = "0.4.2"
 http = "0.2.1"
 hyper = "0.13.6"
-hyper-openssl = { version = "0.8.0", optional = true }
-hyper-tls = { version = "0.4.1", optional = true }
+hyper-rustls = "0.20.0"
 log = "0.4.8"
 mio = "0.7.0"
-native-tls = { version = "0.2.4", optional = true }
-openssl = { version = "0.10.29", optional = true }
-pin-project = "0.4.20"
-serde = "1.0.111"
-serde_derive = "1.0.111"
+pin-project = "0.4.22"
+serde = "1.0.114"
+serde_derive = "1.0.114"
 serde_json = "1.0.55"
 tokio = { version = "0.2.17", features = ["time", "fs"] }
 url = "2.1.1"
@@ -48,15 +41,19 @@ futures-core = "0.3.4"
 futures-util = "0.3.4"
 tokio-util = { version = "0.3.1", features = ["codec"] }
 bollard-stubs = { version = "1.40.0" }
+rustls = "0.17"
+rustls-native-certs = "0.3.0"
+ct-logs = "0.7.0"
+webpki-roots = "0.20.0"
 
 [dev-dependencies]
 tokio-executor = "0.2.0-alpha.6"
 flate2 = "1.0.14"
-tar = "0.4.26"
+tar = "0.4.29"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal =  { version = "0.1.4", package = "hyper-unix-connector" }
 
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"
-winapi = "0.3.8"
+winapi = "0.3.9"
