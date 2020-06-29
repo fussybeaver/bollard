@@ -26,7 +26,7 @@ jobs:
       - run: docker run -h test.example.com --volumes-from certs -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay --tlsverify --tlscacert=/certs/ca.pem --tlscert=/certs/cert.pem --tlskey=/certs/key.pem
       - run: docker run --rm --volumes-from certs --privileged --rm --entrypoint=chmod docker:stable-dind 644 /certs/key.pem /certs/ca-key.pem
       - run: docker build -t bollard .
-      - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test -- --test test_version_tls
+      - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features tls -- --test test_version_tls
   test_http:
     docker:
       - image: docker:19.03.8
