@@ -11,8 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrayvec::ArrayVec;
-#[cfg(any(feature = "ssl", feature = "tls"))]
-use dirs;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;

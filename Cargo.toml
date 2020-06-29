@@ -13,9 +13,9 @@ edition = "2018"
 
 [features]
 # Enable OpenSSL both directly and for Hyper
-ssl = ["openssl", "hyper-openssl"]
+ssl = ["dirs", "openssl", "hyper-openssl"]
 # Enable native-tls both directly for Hyper
-tls = ["native-tls", "hyper-tls"]
+tls = ["dirs", "native-tls", "hyper-tls"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for the tls connector
@@ -26,7 +26,7 @@ arrayvec = "0.5.1"
 base64 = "0.12.0"
 bytes = "0.5.4"
 chrono = { version = "0.4.11", features = ["serde"] }
-dirs = "2.0.2"
+dirs = { version = "2.0.2", optional = true }
 env_logger = "0.7.1"
 failure = "0.1.7"
 hex = "0.4.2"
