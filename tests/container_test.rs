@@ -551,6 +551,13 @@ async fn inspect_container_test(docker: Docker) -> Result<(), Error> {
 
     assert_eq!(None, result.host_config.as_ref().unwrap().capabilities);
 
+    let config: Config<String> = result.config.as_ref().unwrap().to_owned().into();
+
+    assert_eq!(
+        config.image.as_ref().unwrap(),
+        result.config.as_ref().unwrap().image.as_ref().unwrap()
+    );
+
     kill_container(&docker, "integration_test_inspect_container").await?;
 
     Ok(())

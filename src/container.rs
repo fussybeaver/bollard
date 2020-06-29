@@ -300,6 +300,40 @@ where
     pub networking_config: Option<NetworkingConfig<T>>,
 }
 
+impl From<ContainerConfig> for Config<String> {
+    fn from(container: ContainerConfig) -> Self {
+        Config {
+            hostname: container.hostname,
+            domainname: container.domainname,
+            user: container.user,
+            attach_stdin: container.attach_stdin,
+            attach_stdout: container.attach_stdout,
+            attach_stderr: container.attach_stderr,
+            exposed_ports: container.exposed_ports,
+            tty: container.tty,
+            open_stdin: container.open_stdin,
+            stdin_once: container.stdin_once,
+            env: container.env,
+            cmd: container.cmd,
+            healthcheck: container.healthcheck,
+            args_escaped: container.args_escaped,
+            image: container.image,
+            volumes: container.volumes,
+            working_dir: container.working_dir,
+            entrypoint: container.entrypoint,
+            network_disabled: container.network_disabled,
+            mac_address: container.mac_address,
+            on_build: container.on_build,
+            labels: container.labels,
+            stop_signal: container.stop_signal,
+            stop_timeout: container.stop_timeout,
+            shell: container.shell,
+            host_config: None,
+            networking_config: None,
+        }
+    }
+}
+
 /// Result type for the [Create Container API](../struct.Docker.html#method.create_container)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
