@@ -22,7 +22,7 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::{self, body::Bytes, Body, Client, Method, Request, Response, StatusCode};
-#[cfg(feature = "openssl")]
+#[cfg(feature = "ssl")]
 use hyper_openssl::HttpsConnector;
 #[cfg(feature = "tls")]
 use hyper_tls;
@@ -30,10 +30,8 @@ use hyper_tls;
 use hyperlocal::UnixClient as UnixConnector;
 #[cfg(feature = "tls")]
 use native_tls::{Certificate, Identity, TlsConnector};
-#[cfg(feature = "openssl")]
-use openssl::ssl::SslConnector;
-#[cfg(feature = "openssl")]
-use openssl::ssl::{SslFiletype, SslMethod};
+#[cfg(feature = "ssl")]
+use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
@@ -114,7 +112,7 @@ pub(crate) enum Transport {
     Http {
         client: Client<HttpConnector>,
     },
-    #[cfg(feature = "openssl")]
+    #[cfg(feature = "ssl")]
     Https {
         client: Client<HttpsConnector<HttpConnector>>,
     },
@@ -136,7 +134,7 @@ impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Transport::Http { .. } => write!(f, "HTTP"),
-            #[cfg(feature = "openssl")]
+            #[cfg(feature = "ssl")]
             Transport::Https { .. } => write!(f, "HTTPS(openssl)"),
             #[cfg(feature = "tls")]
             Transport::Tls { .. } => write!(f, "HTTPS(native)"),
@@ -241,7 +239,7 @@ impl Clone for Docker {
     }
 }
 
-#[cfg(feature = "openssl")]
+#[cfg(feature = "ssl")]
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `openssl`
 /// library.
 impl Docker {
@@ -1038,7 +1036,7 @@ impl Docker {
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
             Transport::Http { ref client } => client.request(req),
-            #[cfg(feature = "openssl")]
+            #[cfg(feature = "ssl")]
             Transport::Https { ref client } => client.request(req),
             #[cfg(feature = "tls")]
             Transport::Tls { ref client } => client.request(req),
