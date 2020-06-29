@@ -44,8 +44,10 @@ use crate::errors::ErrorKind::{
     HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
     RequestTimeoutError, StrParseError,
 };
-#[cfg(feature = "openssl")]
-use crate::errors::ErrorKind::{NoCertPathError, SSLError};
+#[cfg(any(feature = "ssl", feature = "tls"))]
+use crate::errors::ErrorKind::NoCertPathError;
+#[cfg(feature = "ssl")]
+use crate::errors::ErrorKind::SSLError;
 #[cfg(windows)]
 use crate::named_pipe::NamedPipeConnector;
 use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
