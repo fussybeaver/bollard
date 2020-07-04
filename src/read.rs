@@ -49,9 +49,11 @@ impl Decoder for NewlineLogOutputDecoder {
                 NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
                     if src.len() >= 1 && src[0] > 2 {
-                        debug!("NewlineLogOutputDecoder: no header found, return LogOutput::Console");
+                        debug!(
+                            "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
+                        );
                         return Ok(Some(LogOutput::Console {
-                            message: String::from_utf8_lossy(&src.split()).to_string(),
+                            message: src.split().freeze(),
                         }));
                     }
 
@@ -61,8 +63,12 @@ impl Decoder for NewlineLogOutputDecoder {
                     }
 
                     let header = src.split_to(8);
-                    let length = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
-                    debug!("NewlineLogOutputDecoder: read header, type = {}, length = {}", header[0], length);
+                    let length =
+                        u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
+                    debug!(
+                        "NewlineLogOutputDecoder: read header, type = {}, length = {}",
+                        header[0], length
+                    );
                     self.state = NewlineLogOutputDecoderState::WaitingPayload(header[0], length);
                 }
                 NewlineLogOutputDecoderState::WaitingPayload(typ, length) => {
@@ -71,14 +77,13 @@ impl Decoder for NewlineLogOutputDecoder {
                         return Ok(None);
                     } else {
                         debug!("NewlineLogOutputDecoder: Reading payload");
-                        let message = String::from_utf8_lossy(&src.split_to(length)).to_string();
+                        let message = src.split_to(length).freeze();
                         let item = match typ {
                             0 => LogOutput::StdIn { message },
                             1 => LogOutput::StdOut { message },
                             2 => LogOutput::StdErr { message },
                             _ => unreachable!(),
                         };
-
 
                         self.state = NewlineLogOutputDecoderState::WaitingHeader;
                         return Ok(Some(item));
