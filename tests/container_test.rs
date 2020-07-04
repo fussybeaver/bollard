@@ -200,7 +200,7 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     let value = vec.get(1).unwrap();
 
-    assert_eq!(format!("{}", value), "Hello from Docker!".to_string());
+    assert_eq!(format!("{}", value), "Hello from Docker!\n".to_string());
 
     &docker
         .remove_container("integration_test_logs", None::<RemoveContainerOptions>)

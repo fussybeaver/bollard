@@ -683,20 +683,21 @@ impl<'a> LogsQueryParams<&'a str> for LogsOptions {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum LogOutput {
-    StdErr { message: String },
-    StdOut { message: String },
-    StdIn { message: String },
-    Console { message: String },
+    StdErr { message: Bytes },
+    StdOut { message: Bytes },
+    StdIn { message: Bytes },
+    Console { message: Bytes },
 }
 
 impl fmt::Display for LogOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            LogOutput::StdErr { message } => write!(f, "{}", message),
-            LogOutput::StdOut { message } => write!(f, "{}", message),
-            LogOutput::StdIn { message } => write!(f, "{}", message),
-            LogOutput::Console { message } => write!(f, "{}", message),
-        }
+        let message = match &self {
+            LogOutput::StdErr { message } => message,
+            LogOutput::StdOut { message } => message,
+            LogOutput::StdIn { message } => message,
+            LogOutput::Console { message } => message,
+        };
+        write!(f, "{}", String::from_utf8_lossy(&message))
     }
 }
 
