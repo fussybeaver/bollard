@@ -17,7 +17,6 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.*;
 import java.util.Map.Entry;
 
-
 public class BollardCodegen extends RustServerCodegen {
     private static final Logger LOGGER = LoggerFactory.getLogger(BollardCodegen.class);
 
@@ -29,25 +28,34 @@ public class BollardCodegen extends RustServerCodegen {
     // than the official spec
     private static HashMap<String, List<Map<String, String>>> patchEnumValues;
     static {
-      patchEnumValues = new HashMap<String, List<Map<String, String>>>();
-      Map<String, String> additionalEnumValues = new HashMap<String, String>();
-      List<Map<String, String>> enumValues = new ArrayList <Map<String, String>>();
+        patchEnumValues = new HashMap<String, List<Map<String, String>>>();
+        Map<String, String> additionalEnumValues = new HashMap<String, String>();
+        List<Map<String, String>> enumValues = new ArrayList<Map<String, String>>();
 
-      additionalEnumValues.put("name", "ROLLBACK_UPDATING");
-      additionalEnumValues.put("value", "\"rollback_updating\"");
-      enumValues.add(additionalEnumValues);
+        additionalEnumValues.put("name", "ROLLBACK_UPDATING");
+        additionalEnumValues.put("value", "\"rollback_updating\"");
+        enumValues.add(additionalEnumValues);
 
-      additionalEnumValues = new HashMap<String, String>();
-      additionalEnumValues.put("name", "ROLLBACK_PAUSED");
-      additionalEnumValues.put("value", "\"rollback_paused\"");
-      enumValues.add(additionalEnumValues);
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "ROLLBACK_PAUSED");
+        additionalEnumValues.put("value", "\"rollback_paused\"");
+        enumValues.add(additionalEnumValues);
 
-      additionalEnumValues = new HashMap<String, String>();
-      additionalEnumValues.put("name", "ROLLBACK_COMPLETED");
-      additionalEnumValues.put("value", "\"rollback_completed\"");
-      enumValues.add(additionalEnumValues);
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "ROLLBACK_COMPLETED");
+        additionalEnumValues.put("value", "\"rollback_completed\"");
+        enumValues.add(additionalEnumValues);
 
-      patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
+        patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
+
+        additionalEnumValues = new HashMap<String, String>();
+        enumValues = new ArrayList<Map<String, String>>();
+
+        additionalEnumValues.put("name", "NO");
+        additionalEnumValues.put("value", "\"no\"");
+        enumValues.add(additionalEnumValues);
+
+        patchEnumValues.put("RestartPolicyNameEnum", enumValues);
     }
 
     @Override
@@ -55,7 +63,8 @@ public class BollardCodegen extends RustServerCodegen {
         Info info = swagger.getInfo();
         List versionComponents = new ArrayList(Arrays.asList(info.getVersion().split("[.]")));
         while (versionComponents.size() < 3) {
-            // Add the package version as a version component to the official specification version
+            // Add the package version as a version component to the official specification
+            // version
             versionComponents.add((String) additionalProperties.get(CodegenConstants.PACKAGE_VERSION));
         }
 
@@ -80,7 +89,7 @@ public class BollardCodegen extends RustServerCodegen {
     @Override
     public CodegenProperty fromProperty(String name, Property p) {
         CodegenProperty property = super.fromProperty(name, p);
-        
+
         // Remove extraneous references
         if (property.datatype.startsWith("models::")) {
             property.datatype = property.datatype.replace("models::", "");
@@ -90,10 +99,10 @@ public class BollardCodegen extends RustServerCodegen {
     }
 
     @Override
-    public Map<String, Object> postProcessAllModels(Map<String, Object> objs){
+    public Map<String, Object> postProcessAllModels(Map<String, Object> objs) {
         Map<String, Object> newObjs = super.postProcessAllModels(objs);
 
-        //Index all CodegenModels by model name.
+        // Index all CodegenModels by model name.
         HashMap<String, CodegenModel> allModels = new HashMap<String, CodegenModel>();
         for (Entry<String, Object> entry : objs.entrySet()) {
             String modelName = toModelName(entry.getKey());
@@ -105,15 +114,16 @@ public class BollardCodegen extends RustServerCodegen {
             }
         }
 
-        for (Entry<String, CodegenModel> entry : allModels.entrySet()){
+        for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
             CodegenModel model = entry.getValue();
-            for(CodegenProperty prop : model.vars){
+            for (CodegenProperty prop : model.vars) {
                 if (prop.dataFormat != null && prop.dataFormat.equals("dateTime")) {
                     // set DateTime format on properties where appropriate
                     prop.datatype = "DateTime<Utc>";
                 }
                 if (prop.isEnum) {
-                    ArrayList<HashMap<String, String>> vars = (ArrayList<HashMap<String, String>>) prop.allowableValues.get("enumVars");
+                    ArrayList<HashMap<String, String>> vars = (ArrayList<HashMap<String, String>>) prop.allowableValues
+                            .get("enumVars");
                     for (HashMap<String, String> enumVar : vars) {
                         String enumValue = enumVar.get("value");
 
@@ -125,7 +135,8 @@ public class BollardCodegen extends RustServerCodegen {
 
                     // add additional enum values that get patched in at the template level
                     if (patchEnumValues.containsKey(model.classname + prop.enumName)) {
-                        prop.vendorExtensions.put("x-rustgen-additional-enum-values", patchEnumValues.get(model.classname + prop.enumName));
+                        prop.vendorExtensions.put("x-rustgen-additional-enum-values",
+                                patchEnumValues.get(model.classname + prop.enumName));
                     }
                 }
             }
