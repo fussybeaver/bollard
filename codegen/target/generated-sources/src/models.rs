@@ -3766,6 +3766,8 @@ pub enum RestartPolicyNameEnum {
     UNLESS_STOPPED,
     #[serde(rename = "on-failure")]
     ON_FAILURE,
+    #[serde(rename = "no")]
+    NO,
 }
 
 impl ::std::fmt::Display for RestartPolicyNameEnum {
@@ -3775,6 +3777,7 @@ impl ::std::fmt::Display for RestartPolicyNameEnum {
             RestartPolicyNameEnum::ALWAYS => write!(f, "{}", "always"),
             RestartPolicyNameEnum::UNLESS_STOPPED => write!(f, "{}", "unless-stopped"),
             RestartPolicyNameEnum::ON_FAILURE => write!(f, "{}", "on-failure"),
+            RestartPolicyNameEnum::NO => write!(f, "{}", "no"),
 
         }
     }
@@ -3788,6 +3791,7 @@ impl ::std::str::FromStr for RestartPolicyNameEnum {
             "always" => Ok(RestartPolicyNameEnum::ALWAYS),
             "unless-stopped" => Ok(RestartPolicyNameEnum::UNLESS_STOPPED),
             "on-failure" => Ok(RestartPolicyNameEnum::ON_FAILURE),
+            "no" => Ok(RestartPolicyNameEnum::NO),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -3800,6 +3804,7 @@ impl ::std::convert::AsRef<str> for RestartPolicyNameEnum {
             RestartPolicyNameEnum::ALWAYS => "always",
             RestartPolicyNameEnum::UNLESS_STOPPED => "unless-stopped",
             RestartPolicyNameEnum::ON_FAILURE => "on-failure",
+            RestartPolicyNameEnum::NO => "no",
         }
     }
 }
