@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.6"
+bollard = "0.7"
 ```
 
 ## API
@@ -104,7 +104,7 @@ to parameterise the interface.
 
 ```rust
 use bollard::Docker;
-#[cfg(feature = "openssl")]
+#[cfg(feature = "ssl")]
 Docker::connect_with_ssl_defaults();
 ```
 
@@ -282,6 +282,7 @@ docker tag alpine localhost:5000/alpine
 docker push localhost:5000/hello-world:linux
 docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
+docker swarm init
 REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 ```
 
