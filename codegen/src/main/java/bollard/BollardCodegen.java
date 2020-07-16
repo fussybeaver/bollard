@@ -32,8 +32,8 @@ public class BollardCodegen extends RustServerCodegen {
         Map<String, String> additionalEnumValues = new HashMap<String, String>();
         List<Map<String, String>> enumValues = new ArrayList<Map<String, String>>();
 
-        additionalEnumValues.put("name", "ROLLBACK_UPDATING");
-        additionalEnumValues.put("value", "\"rollback_updating\"");
+        additionalEnumValues.put("name", "ROLLBACK_STARTED");
+        additionalEnumValues.put("value", "\"rollback_started\"");
         enumValues.add(additionalEnumValues);
 
         additionalEnumValues = new HashMap<String, String>();

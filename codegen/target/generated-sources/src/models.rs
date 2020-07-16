@@ -4304,8 +4304,8 @@ pub enum ServiceUpdateStatusStateEnum {
     PAUSED,
     #[serde(rename = "completed")]
     COMPLETED,
-    #[serde(rename = "rollback_updating")]
-    ROLLBACK_UPDATING,
+    #[serde(rename = "rollback_started")]
+    ROLLBACK_STARTED,
     #[serde(rename = "rollback_paused")]
     ROLLBACK_PAUSED,
     #[serde(rename = "rollback_completed")]
@@ -4319,7 +4319,7 @@ impl ::std::fmt::Display for ServiceUpdateStatusStateEnum {
             ServiceUpdateStatusStateEnum::UPDATING => write!(f, "{}", "updating"),
             ServiceUpdateStatusStateEnum::PAUSED => write!(f, "{}", "paused"),
             ServiceUpdateStatusStateEnum::COMPLETED => write!(f, "{}", "completed"),
-            ServiceUpdateStatusStateEnum::ROLLBACK_UPDATING => write!(f, "{}", "rollback_updating"),
+            ServiceUpdateStatusStateEnum::ROLLBACK_STARTED => write!(f, "{}", "rollback_started"),
             ServiceUpdateStatusStateEnum::ROLLBACK_PAUSED => write!(f, "{}", "rollback_paused"),
             ServiceUpdateStatusStateEnum::ROLLBACK_COMPLETED => write!(f, "{}", "rollback_completed"),
 
@@ -4335,7 +4335,7 @@ impl ::std::str::FromStr for ServiceUpdateStatusStateEnum {
             "updating" => Ok(ServiceUpdateStatusStateEnum::UPDATING),
             "paused" => Ok(ServiceUpdateStatusStateEnum::PAUSED),
             "completed" => Ok(ServiceUpdateStatusStateEnum::COMPLETED),
-            "rollback_updating" => Ok(ServiceUpdateStatusStateEnum::ROLLBACK_UPDATING),
+            "rollback_started" => Ok(ServiceUpdateStatusStateEnum::ROLLBACK_STARTED),
             "rollback_paused" => Ok(ServiceUpdateStatusStateEnum::ROLLBACK_PAUSED),
             "rollback_completed" => Ok(ServiceUpdateStatusStateEnum::ROLLBACK_COMPLETED),
             x => Err(format!("Invalid enum type: {}", x)),
@@ -4350,7 +4350,7 @@ impl ::std::convert::AsRef<str> for ServiceUpdateStatusStateEnum {
             ServiceUpdateStatusStateEnum::UPDATING => "updating",
             ServiceUpdateStatusStateEnum::PAUSED => "paused",
             ServiceUpdateStatusStateEnum::COMPLETED => "completed",
-            ServiceUpdateStatusStateEnum::ROLLBACK_UPDATING => "rollback_updating",
+            ServiceUpdateStatusStateEnum::ROLLBACK_STARTED => "rollback_started",
             ServiceUpdateStatusStateEnum::ROLLBACK_PAUSED => "rollback_paused",
             ServiceUpdateStatusStateEnum::ROLLBACK_COMPLETED => "rollback_completed",
         }
