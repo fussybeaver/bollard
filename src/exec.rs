@@ -164,7 +164,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Container name as string slice.
+    ///  - The ID of the previously created exec configuration.
     ///
     /// # Returns
     ///
@@ -176,16 +176,27 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::exec::StartExecOptions;
+    /// # use bollard::exec::CreateExecOptions;
+    /// # use std::default::Default;
     ///
-    /// docker.start_exec("hello-world", None::<StartExecOptions>);
+    /// # let config = CreateExecOptions {
+    /// #     cmd: Some(vec!["ps", "-ef"]),
+    /// #     attach_stdout: Some(true),
+    /// #     ..Default::default()
+    /// # };
+    ///
+    /// async {
+    ///     let message = docker.create_exec("hello-world", config).await.unwrap();
+    ///     use bollard::exec::StartExecOptions;
+    ///     docker.start_exec(&message.id, None::<StartExecOptions>);
+    /// };
     /// ```
     pub fn start_exec(
         &self,
-        container_name: &str,
+        exec_id: &str,
         config: Option<StartExecOptions>,
     ) -> impl Stream<Item = Result<StartExecResults, Error>> {
-        let url = format!("/exec/{}/start", container_name);
+        let url = format!("/exec/{}/start", exec_id);
 
         match config {
             Some(StartExecOptions { detach: true, .. }) => {
@@ -233,7 +244,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Container name as string slice.
+    ///  - The ID of the previously created exec configuration.
     ///
     /// # Returns
     ///
@@ -245,10 +256,22 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// docker.inspect_exec("hello-world");
+    /// # use bollard::exec::CreateExecOptions;
+    /// # use std::default::Default;
+    ///
+    /// # let config = CreateExecOptions {
+    /// #     cmd: Some(vec!["ps", "-ef"]),
+    /// #     attach_stdout: Some(true),
+    /// #     ..Default::default()
+    /// # };
+    ///
+    /// async {
+    ///     let message = docker.create_exec("hello-world", config).await.unwrap();
+    ///     docker.inspect_exec(&message.id);
+    /// };
     /// ```
-    pub async fn inspect_exec(&self, container_name: &str) -> Result<ExecInspect, Error> {
-        let url = format!("/exec/{}/json", container_name);
+    pub async fn inspect_exec(&self, exec_id: &str) -> Result<ExecInspect, Error> {
+        let url = format!("/exec/{}/json", exec_id);
 
         let req = self.build_request::<_, String, String>(
             &url,
