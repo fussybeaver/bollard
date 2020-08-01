@@ -59,7 +59,7 @@ pub struct AuthConfig {
 
 }
 
-/// Describes a permission accepted by the user upon installing the plugin.
+/// Describes a permission accepted by the user upon installing the plugin. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Body {
     #[serde(rename = "Name")]
@@ -78,17 +78,17 @@ pub struct Body {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Body1 {
-    /// Listen address used for inter-manager communication, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP). This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the default swarm listening port is used.
+    /// Listen address used for inter-manager communication, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP). This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the default swarm listening port is used. 
     #[serde(rename = "ListenAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub listen_addr: Option<String>,
 
-    /// Externally reachable address advertised to other nodes. This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the port number from the listen address is used. If `AdvertiseAddr` is not specified, it will be automatically detected when possible.
+    /// Externally reachable address advertised to other nodes. This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the port number from the listen address is used. If `AdvertiseAddr` is not specified, it will be automatically detected when possible. 
     #[serde(rename = "AdvertiseAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub advertise_addr: Option<String>,
 
-    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
+    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other  nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
     #[serde(rename = "DataPathAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data_path_addr: Option<String>,
@@ -108,7 +108,7 @@ pub struct Body1 {
     #[serde(skip_serializing_if="Option::is_none")]
     pub force_new_cluster: Option<bool>,
 
-    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool 
+    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool. 
     #[serde(rename = "SubnetSize")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub subnet_size: Option<u32>,
@@ -121,22 +121,22 @@ pub struct Body1 {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Body2 {
-    /// Listen address used for inter-manager communication if the node gets promoted to manager, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP).
+    /// Listen address used for inter-manager communication if the node gets promoted to manager, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP). 
     #[serde(rename = "ListenAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub listen_addr: Option<String>,
 
-    /// Externally reachable address advertised to other nodes. This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the port number from the listen address is used. If `AdvertiseAddr` is not specified, it will be automatically detected when possible.
+    /// Externally reachable address advertised to other nodes. This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the port number from the listen address is used. If `AdvertiseAddr` is not specified, it will be automatically detected when possible. 
     #[serde(rename = "AdvertiseAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub advertise_addr: Option<String>,
 
-    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
+    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same addres as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
     #[serde(rename = "DataPathAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data_path_addr: Option<String>,
 
-    /// Addresses of manager nodes already participating in the swarm.
+    /// Addresses of manager nodes already participating in the swarm. 
     #[serde(rename = "RemoteAddrs")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub remote_addrs: Option<Vec<String>>,
@@ -183,17 +183,20 @@ pub struct BuildCache {
     #[serde(skip_serializing_if="Option::is_none")]
     pub shared: Option<bool>,
 
+    /// Amount of disk space used by the build cache (in bytes). 
     #[serde(rename = "Size")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub size: Option<i64>,
 
+    /// Date and time at which the build cache was created in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<i64>,
+    pub created_at: Option<DateTime<Utc>>,
 
+    /// Date and time at which the build cache was last used in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "LastUsedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub last_used_at: Option<i64>,
+    pub last_used_at: Option<DateTime<Utc>>,
 
     #[serde(rename = "UsageCount")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -280,7 +283,7 @@ pub struct ClusterInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub tls_info: Option<TlsInfo>,
 
-    /// Whether there is currently a root CA rotation in progress for the swarm
+    /// Whether there is currently a root CA rotation in progress for the swarm 
     #[serde(rename = "RootRotationInProgress")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub root_rotation_in_progress: Option<bool>,
@@ -295,7 +298,7 @@ pub struct ClusterInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub default_addr_pool: Option<Vec<String>>,
 
-    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool 
+    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool. 
     #[serde(rename = "SubnetSize")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub subnet_size: Option<u32>,
@@ -353,7 +356,7 @@ pub struct ConfigSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
 
-    /// Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-3.2)) config data. 
+    /// Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-5)) config data. 
     #[serde(rename = "Data")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data: Option<String>,
@@ -380,12 +383,12 @@ pub struct Container {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Container1 {
-    /// The ID or name of the container to disconnect from the network.
+    /// The ID or name of the container to disconnect from the network. 
     #[serde(rename = "Container")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub container: Option<String>,
 
-    /// Force the container to disconnect from the network.
+    /// Force the container to disconnect from the network. 
     #[serde(rename = "Force")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub force: Option<bool>,
@@ -443,7 +446,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
 
-    /// Attach standard streams to a TTY, including `stdin` if it is not closed.
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed. 
     #[serde(rename = "Tty")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub tty: Option<bool>,
@@ -463,7 +466,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub env: Option<Vec<String>>,
 
-    /// Command to run specified as a string or an array of strings.
+    /// Command to run specified as a string or an array of strings. 
     #[serde(rename = "Cmd")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cmd: Option<Vec<String>>,
@@ -477,12 +480,12 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub args_escaped: Option<bool>,
 
-    /// The name of the image to use when creating the container
+    /// The name of the image to use when creating the container/ 
     #[serde(rename = "Image")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub image: Option<String>,
 
-    /// An object mapping mount point paths inside the container to empty objects.
+    /// An object mapping mount point paths inside the container to empty objects. 
     #[serde(rename = "Volumes")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
@@ -507,7 +510,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub mac_address: Option<String>,
 
-    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`.
+    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`. 
     #[serde(rename = "OnBuild")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub on_build: Option<Vec<String>>,
@@ -517,7 +520,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
 
-    /// Signal to stop a container as a string or unsigned integer.
+    /// Signal to stop a container as a string or unsigned integer. 
     #[serde(rename = "StopSignal")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub stop_signal: Option<String>,
@@ -527,7 +530,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub stop_timeout: Option<i64>,
 
-    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell. 
     #[serde(rename = "Shell")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub shell: Option<Vec<String>>,
@@ -574,7 +577,7 @@ pub struct ContainerInspectResponse {
     #[serde(skip_serializing_if="Option::is_none")]
     pub state: Option<ContainerState>,
 
-    /// The container's image
+    /// The container's image ID
     #[serde(rename = "Image")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub image: Option<String>,
@@ -641,7 +644,7 @@ pub struct ContainerInspectResponse {
     #[serde(skip_serializing_if="Option::is_none")]
     pub graph_driver: Option<GraphDriverData>,
 
-    /// The size of files that have been created or changed by this container.
+    /// The size of files that have been created or changed by this container. 
     #[serde(rename = "SizeRw")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub size_rw: Option<i64>,
@@ -702,7 +705,7 @@ pub struct ContainerState {
     #[serde(skip_serializing_if="Option::is_none")]
     pub restarting: Option<bool>,
 
-    /// Whether this container has been killed because it ran out of memory.
+    /// Whether this container has been killed because it ran out of memory. 
     #[serde(rename = "OOMKilled")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub oom_killed: Option<bool>,
@@ -914,7 +917,7 @@ pub struct ContainerTopResponse {
     #[serde(skip_serializing_if="Option::is_none")]
     pub titles: Option<Vec<String>>,
 
-    /// Each process running in the container, where each is process is an array of values corresponding to the titles
+    /// Each process running in the container, where each is process is an array of values corresponding to the titles. 
     #[serde(rename = "Processes")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub processes: Option<Vec<Vec<String>>>,
@@ -1026,14 +1029,14 @@ pub struct DistributionInspectResponse {
     #[serde(rename = "Descriptor")]
     pub descriptor: DistributionInspectResponseDescriptor,
 
-    /// An array containing all platforms supported by the image
+    /// An array containing all platforms supported by the image. 
     #[serde(rename = "Platforms")]
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub platforms: Vec<DistributionInspectResponsePlatforms>,
 
 }
 
-/// A descriptor struct containing digest, media type, and size
+/// A descriptor struct containing digest, media type, and size. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DistributionInspectResponseDescriptor {
     #[serde(rename = "MediaType")]
@@ -1308,7 +1311,7 @@ pub struct EndpointSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub mode: Option<EndpointSpecModeEnum>,
 
-    /// List of exposed ports that this service is accessible on from the outside. Ports can only be provided if `vip` resolution mode is used.
+    /// List of exposed ports that this service is accessible on from the outside. Ports can only be provided if `vip` resolution mode is used. 
     #[serde(rename = "Ports")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub ports: Option<Vec<EndpointPortConfig>>,
@@ -1426,7 +1429,7 @@ pub struct ExecConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub attach_stderr: Option<bool>,
 
-    /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`.
+    /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`. 
     #[serde(rename = "DetachKeys")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub detach_keys: Option<String>,
@@ -1436,7 +1439,7 @@ pub struct ExecConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub tty: Option<bool>,
 
-    /// A list of environment variables in the form `[\"VAR=value\", ...]`.
+    /// A list of environment variables in the form `[\"VAR=value\", ...]`. 
     #[serde(rename = "Env")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub env: Option<Vec<String>>,
@@ -1451,12 +1454,12 @@ pub struct ExecConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub privileged: Option<bool>,
 
-    /// The user, and optionally, group to run the exec process inside the container. Format is one of: `user`, `user:group`, `uid`, or `uid:gid`.
+    /// The user, and optionally, group to run the exec process inside the container. Format is one of: `user`, `user:group`, `uid`, or `uid:gid`. 
     #[serde(rename = "User")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub user: Option<String>,
 
-    /// The working directory for the exec process inside the container.
+    /// The working directory for the exec process inside the container. 
     #[serde(rename = "WorkingDir")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub working_dir: Option<String>,
@@ -1526,7 +1529,7 @@ pub struct ExecStartConfig {
 
 }
 
-/// User-defined resources can be either Integer resources (e.g, `SSD=3`) or String resources (e.g, `GPU=UUID1`)
+/// User-defined resources can be either Integer resources (e.g, `SSD=3`) or String resources (e.g, `GPU=UUID1`). 
 
 pub type GenericResources = GenericResourcesInner;
 
@@ -1660,22 +1663,22 @@ pub struct HealthConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub test: Option<Vec<String>>,
 
-    /// The time to wait between checks in nanoseconds. It should be 0 or at least 1000000 (1 ms). 0 means inherit.
+    /// The time to wait between checks in nanoseconds. It should be 0 or at least 1000000 (1 ms). 0 means inherit. 
     #[serde(rename = "Interval")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub interval: Option<i64>,
 
-    /// The time to wait before considering the check to have hung. It should be 0 or at least 1000000 (1 ms). 0 means inherit.
+    /// The time to wait before considering the check to have hung. It should be 0 or at least 1000000 (1 ms). 0 means inherit. 
     #[serde(rename = "Timeout")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub timeout: Option<i64>,
 
-    /// The number of consecutive failures needed to consider a container as unhealthy. 0 means inherit.
+    /// The number of consecutive failures needed to consider a container as unhealthy. 0 means inherit. 
     #[serde(rename = "Retries")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub retries: Option<i64>,
 
-    /// Start period for the container to initialize before starting health-retries countdown in nanoseconds. It should be 0 or at least 1000000 (1 ms). 0 means inherit.
+    /// Start period for the container to initialize before starting health-retries countdown in nanoseconds. It should be 0 or at least 1000000 (1 ms). 0 means inherit. 
     #[serde(rename = "StartPeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub start_period: Option<i64>,
@@ -2051,7 +2054,7 @@ pub struct InlineResponse400 {
     #[serde(skip_serializing_if="Option::is_none")]
     pub error_response: Option<ErrorResponse>,
 
-    /// The error message. Either \"must specify path parameter\" (path cannot be empty) or \"not a directory\" (path was asserted to be a directory but exists as a file).
+    /// The error message. Either \"must specify path parameter\" (path cannot be empty) or \"not a directory\" (path was asserted to be a directory but exists as a file). 
     #[serde(rename = "message")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub message: Option<String>,
@@ -2065,7 +2068,7 @@ pub struct Ipam {
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver: Option<String>,
 
-    /// List of IPAM configuration options, specified as a map: `{\"Subnet\": <CIDR>, \"IPRange\": <CIDR>, \"Gateway\": <IP address>, \"AuxAddress\": <device_name:IP address>}`
+    /// List of IPAM configuration options, specified as a map:  ``` {\"Subnet\": <CIDR>, \"IPRange\": <CIDR>, \"Gateway\": <IP address>, \"AuxAddress\": <device_name:IP address>} ``` 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub config: Option<Vec<HashMap<String, String>>>,
@@ -2476,20 +2479,20 @@ pub struct Network {
 
 }
 
-/// Specifies how a service should be attached to a particular network.
+/// Specifies how a service should be attached to a particular network. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkAttachmentConfig {
-    /// The target network for attachment. Must be a network name or ID.
+    /// The target network for attachment. Must be a network name or ID. 
     #[serde(rename = "Target")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub target: Option<String>,
 
-    /// Discoverable alternate names for the service on this network.
+    /// Discoverable alternate names for the service on this network. 
     #[serde(rename = "Aliases")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub aliases: Option<Vec<String>>,
 
-    /// Driver attachment options for the network target
+    /// Driver attachment options for the network target. 
     #[serde(rename = "DriverOpts")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver_opts: Option<HashMap<String, String>>,
@@ -2502,7 +2505,7 @@ pub struct NetworkConfig {
     #[serde(rename = "Name")]
     pub name: String,
 
-    /// Check for networks with duplicate names. Since Network is primarily keyed based on a random ID and not on the name, and network name is strictly a user-friendly alias to the network which is uniquely identified using ID, there is no guaranteed way to check for duplicates. CheckDuplicate is there to provide a best effort checking of any networks which has the same name but it is not guaranteed to catch all name collisions.
+    /// Check for networks with duplicate names. Since Network is primarily keyed based on a random ID and not on the name, and network name is strictly a user-friendly alias to the network which is uniquely identified using ID, there is no guaranteed way to check for duplicates. CheckDuplicate is there to provide a best effort checking of any networks which has the same name but it is not guaranteed to catch all name collisions. 
     #[serde(rename = "CheckDuplicate")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub check_duplicate: Option<bool>,
@@ -2517,12 +2520,12 @@ pub struct NetworkConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub internal: Option<bool>,
 
-    /// Globally scoped network is manually attachable by regular containers from workers in swarm mode.
+    /// Globally scoped network is manually attachable by regular containers from workers in swarm mode. 
     #[serde(rename = "Attachable")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub attachable: Option<bool>,
 
-    /// Ingress network is the network which provides the routing-mesh in swarm mode.
+    /// Ingress network is the network which provides the routing-mesh in swarm mode. 
     #[serde(rename = "Ingress")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub ingress: Option<bool>,
@@ -2686,6 +2689,16 @@ pub struct NetworkSettings {
     #[serde(rename = "Networks")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub networks: Option<HashMap<String, EndpointSettings>>,
+
+}
+
+/// NetworkingConfig represents the container's networking configuration for each of its interfaces. It is used for the networking configs specified in the `docker create` and `docker network connect` commands. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct NetworkingConfig {
+    /// A mapping of network name to endpoint configuration for that network. 
+    #[serde(rename = "EndpointsConfig")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub endpoints_config: Option<HashMap<String, EndpointSettings>>,
 
 }
 
@@ -2929,7 +2942,7 @@ pub struct NodeStatus {
 
 }
 
-/// The version number of the object such as node, service, etc. This is needed to avoid conflicting writes. The client must send the version number along with the modified specification when updating these objects. This approach ensures safe concurrency and determinism in that the change on the object may not be applied if the version number has changed from the last read. In other words, if two update requests specify the same base version, only one of the requests can succeed. As a result, two separate update requests that happen at the same time will not unintentionally overwrite each other. 
+/// The version number of the object such as node, service, etc. This is needed to avoid conflicting writes. The client must send the version number along with the modified specification when updating these objects.  This approach ensures safe concurrency and determinism in that the change on the object may not be applied if the version number has changed from the last read. In other words, if two update requests specify the same base version, only one of the requests can succeed. As a result, two separate update requests that happen at the same time will not unintentionally overwrite each other. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ObjectVersion {
     #[serde(rename = "Index")]
@@ -3249,7 +3262,7 @@ pub struct PluginMount {
 
 }
 
-/// Describes a permission the user has to accept upon installing the plugin.
+/// Describes a permission the user has to accept upon installing the plugin. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PluginPrivilegeItem {
     #[serde(rename = "Name")]
@@ -3527,7 +3540,7 @@ pub struct RegistryServiceConfig {
 
 }
 
-/// An object describing the resources which can be advertised by a node and requested by a task
+/// An object describing the resources which can be advertised by a node and requested by a task. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ResourceObject {
     #[serde(rename = "NanoCPUs")]
@@ -3547,7 +3560,7 @@ pub struct ResourceObject {
 /// A container's resources (cgroups config, ulimits, etc)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Resources {
-    /// An integer value representing this container's relative CPU weight versus other containers.
+    /// An integer value representing this container's relative CPU weight versus other containers. 
     #[serde(rename = "CpuShares")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_shares: Option<i64>,
@@ -3557,7 +3570,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory: Option<i64>,
 
-    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist. 
     #[serde(rename = "CgroupParent")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cgroup_parent: Option<String>,
@@ -3567,27 +3580,27 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_weight: Option<u16>,
 
-    /// Block IO weight (relative device weight) in the form `[{\"Path\": \"device_path\", \"Weight\": weight}]`. 
+    /// Block IO weight (relative device weight) in the form:  ``` [{\"Path\": \"device_path\", \"Weight\": weight}] ``` 
     #[serde(rename = "BlkioWeightDevice")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_weight_device: Option<Vec<ResourcesBlkioWeightDevice>>,
 
-    /// Limit read rate (bytes per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit read rate (bytes per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadBps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_read_bps: Option<Vec<ThrottleDevice>>,
 
-    /// Limit write rate (bytes per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit write rate (bytes per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteBps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_write_bps: Option<Vec<ThrottleDevice>>,
 
-    /// Limit read rate (IO per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit read rate (IO per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
 
-    /// Limit write rate (IO per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit write rate (IO per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
@@ -3597,27 +3610,27 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_period: Option<i64>,
 
-    /// Microseconds of CPU time that the container can get in a CPU period.
+    /// Microseconds of CPU time that the container can get in a CPU period. 
     #[serde(rename = "CpuQuota")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_quota: Option<i64>,
 
-    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks. 
     #[serde(rename = "CpuRealtimePeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_realtime_period: Option<i64>,
 
-    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks. 
     #[serde(rename = "CpuRealtimeRuntime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_realtime_runtime: Option<i64>,
 
-    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`). 
     #[serde(rename = "CpusetCpus")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpuset_cpus: Option<String>,
 
-    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems.
+    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems. 
     #[serde(rename = "CpusetMems")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpuset_mems: Option<String>,
@@ -3632,7 +3645,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_cgroup_rules: Option<Vec<String>>,
 
-    /// a list of requests for devices to be sent to device drivers
+    /// A list of requests for devices to be sent to device drivers. 
     #[serde(rename = "DeviceRequests")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
@@ -3652,12 +3665,12 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_reservation: Option<i64>,
 
-    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
+    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap. 
     #[serde(rename = "MemorySwap")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_swap: Option<i64>,
 
-    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
+    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100. 
     #[serde(rename = "MemorySwappiness")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_swappiness: Option<i64>,
@@ -3672,7 +3685,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub oom_kill_disable: Option<bool>,
 
-    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used.
+    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used. 
     #[serde(rename = "Init")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub init: Option<bool>,
@@ -3682,7 +3695,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub pids_limit: Option<i64>,
 
-    /// A list of resource limits to set in the container. For example: `{\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048}`\" 
+    /// A list of resource limits to set in the container. For example:  ``` {\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048} ``` 
     #[serde(rename = "Ulimits")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub ulimits: Option<Vec<ResourcesUlimits>>,
@@ -3702,7 +3715,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub io_maximum_i_ops: Option<i64>,
 
-    /// Maximum IO in bytes per second for the container system drive (Windows only)
+    /// Maximum IO in bytes per second for the container system drive (Windows only). 
     #[serde(rename = "IOMaximumBandwidth")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub io_maximum_bandwidth: Option<i64>,
@@ -3748,7 +3761,7 @@ pub struct RestartPolicy {
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<RestartPolicyNameEnum>,
 
-    /// If `on-failure` is used, the number of times to retry before giving up
+    /// If `on-failure` is used, the number of times to retry before giving up. 
     #[serde(rename = "MaximumRetryCount")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub maximum_retry_count: Option<i64>,
@@ -3860,12 +3873,12 @@ pub struct SecretSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
 
-    /// Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-3.2)) data to store as secret.  This field is only used to _create_ a secret, and is not returned by other endpoints. 
+    /// Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-5)) data to store as secret.  This field is only used to _create_ a secret, and is not returned by other endpoints. 
     #[serde(rename = "Data")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data: Option<String>,
 
-    /// Name of the secrets driver used to fetch the secret's value from an external secret store
+    /// Name of the secrets driver used to fetch the secret's value from an external secret store. 
     #[serde(rename = "Driver")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver: Option<Driver>,
@@ -4015,32 +4028,32 @@ pub struct ServiceSpecModeReplicated {
 /// Specification for the rollback strategy of the service.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ServiceSpecRollbackConfig {
-    /// Maximum number of tasks to be rolled back in one iteration (0 means unlimited parallelism).
+    /// Maximum number of tasks to be rolled back in one iteration (0 means unlimited parallelism). 
     #[serde(rename = "Parallelism")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub parallelism: Option<i64>,
 
-    /// Amount of time between rollback iterations, in nanoseconds.
+    /// Amount of time between rollback iterations, in nanoseconds. 
     #[serde(rename = "Delay")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub delay: Option<i64>,
 
-    /// Action to take if an rolled back task fails to run, or stops running during the rollback.
+    /// Action to take if an rolled back task fails to run, or stops running during the rollback. 
     #[serde(rename = "FailureAction")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub failure_action: Option<ServiceSpecRollbackConfigFailureActionEnum>,
 
-    /// Amount of time to monitor each rolled back task for failures, in nanoseconds.
+    /// Amount of time to monitor each rolled back task for failures, in nanoseconds. 
     #[serde(rename = "Monitor")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub monitor: Option<i64>,
 
-    /// The fraction of tasks that may fail during a rollback before the failure action is invoked, specified as a floating point number between 0 and 1.
+    /// The fraction of tasks that may fail during a rollback before the failure action is invoked, specified as a floating point number between 0 and 1. 
     #[serde(rename = "MaxFailureRatio")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub max_failure_ratio: Option<f64>,
 
-    /// The order of operations when rolling back a task. Either the old task is shut down before the new task is started, or the new task is started before the old task is shut down.
+    /// The order of operations when rolling back a task. Either the old task is shut down before the new task is started, or the new task is started before the old task is shut down. 
     #[serde(rename = "Order")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub order: Option<ServiceSpecRollbackConfigOrderEnum>,
@@ -4138,7 +4151,7 @@ impl ::std::convert::AsRef<str> for ServiceSpecRollbackConfigOrderEnum {
 /// Specification for the update strategy of the service.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ServiceSpecUpdateConfig {
-    /// Maximum number of tasks to be updated in one iteration (0 means unlimited parallelism).
+    /// Maximum number of tasks to be updated in one iteration (0 means unlimited parallelism). 
     #[serde(rename = "Parallelism")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub parallelism: Option<i64>,
@@ -4148,22 +4161,22 @@ pub struct ServiceSpecUpdateConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub delay: Option<i64>,
 
-    /// Action to take if an updated task fails to run, or stops running during the update.
+    /// Action to take if an updated task fails to run, or stops running during the update. 
     #[serde(rename = "FailureAction")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub failure_action: Option<ServiceSpecUpdateConfigFailureActionEnum>,
 
-    /// Amount of time to monitor each updated task for failures, in nanoseconds.
+    /// Amount of time to monitor each updated task for failures, in nanoseconds. 
     #[serde(rename = "Monitor")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub monitor: Option<i64>,
 
-    /// The fraction of tasks that may fail during an update before the failure action is invoked, specified as a floating point number between 0 and 1.
+    /// The fraction of tasks that may fail during an update before the failure action is invoked, specified as a floating point number between 0 and 1. 
     #[serde(rename = "MaxFailureRatio")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub max_failure_ratio: Option<f64>,
 
-    /// The order of operations when rolling out an updated task. Either the old task is shut down before the new task is started, or the new task is started before the old task is shut down.
+    /// The order of operations when rolling out an updated task. Either the old task is shut down before the new task is started, or the new task is started before the old task is shut down. 
     #[serde(rename = "Order")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub order: Option<ServiceSpecUpdateConfigOrderEnum>,
@@ -4450,22 +4463,22 @@ pub struct SwarmSpecCaConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub node_cert_expiry: Option<i64>,
 
-    /// Configuration for forwarding signing requests to an external certificate authority.
+    /// Configuration for forwarding signing requests to an external certificate authority. 
     #[serde(rename = "ExternalCAs")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub external_c_as: Option<Vec<SwarmSpecCaConfigExternalCAs>>,
 
-    /// The desired signing CA certificate for all swarm node TLS leaf certificates, in PEM format.
+    /// The desired signing CA certificate for all swarm node TLS leaf certificates, in PEM format. 
     #[serde(rename = "SigningCACert")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub signing_ca_cert: Option<String>,
 
-    /// The desired signing CA key for all swarm node TLS leaf certificates, in PEM format.
+    /// The desired signing CA key for all swarm node TLS leaf certificates, in PEM format. 
     #[serde(rename = "SigningCAKey")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub signing_ca_key: Option<String>,
 
-    /// An integer whose purpose is to force swarm to generate a new signing CA certificate and key, if none have been specified in `SigningCACert` and `SigningCAKey`
+    /// An integer whose purpose is to force swarm to generate a new signing CA certificate and key, if none have been specified in `SigningCACert` and `SigningCAKey` 
     #[serde(rename = "ForceRotate")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub force_rotate: Option<u64>,
@@ -4474,22 +4487,22 @@ pub struct SwarmSpecCaConfig {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SwarmSpecCaConfigExternalCAs {
-    /// Protocol for communication with the external CA (currently only `cfssl` is supported).
+    /// Protocol for communication with the external CA (currently only `cfssl` is supported). 
     #[serde(rename = "Protocol")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub protocol: Option<SwarmSpecCaConfigExternalCAsProtocolEnum>,
 
-    /// URL where certificate signing requests should be sent.
+    /// URL where certificate signing requests should be sent. 
     #[serde(rename = "URL")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub url: Option<String>,
 
-    /// An object with key/value pairs that are interpreted as protocol-specific options for the external CA driver.
+    /// An object with key/value pairs that are interpreted as protocol-specific options for the external CA driver. 
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub options: Option<HashMap<String, String>>,
 
-    /// The root CA certificate (in PEM format) this external CA uses to issue TLS certificates (assumed to be to the current swarm root CA certificate if not provided).
+    /// The root CA certificate (in PEM format) this external CA uses to issue TLS certificates (assumed to be to the current swarm root CA certificate if not provided). 
     #[serde(rename = "CACert")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub ca_cert: Option<String>,
@@ -4538,7 +4551,7 @@ impl ::std::convert::AsRef<str> for SwarmSpecCaConfigExternalCAsProtocolEnum {
 /// Dispatcher configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SwarmSpecDispatcher {
-    /// The delay for an agent to send a heartbeat to the dispatcher.
+    /// The delay for an agent to send a heartbeat to the dispatcher. 
     #[serde(rename = "HeartbeatPeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub heartbeat_period: Option<i64>,
@@ -4548,7 +4561,7 @@ pub struct SwarmSpecDispatcher {
 /// Parameters related to encryption-at-rest.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SwarmSpecEncryptionConfig {
-    /// If set, generate a key and use it to lock data stored on the managers.
+    /// If set, generate a key and use it to lock data stored on the managers. 
     #[serde(rename = "AutoLockManagers")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub auto_lock_managers: Option<bool>,
@@ -4558,7 +4571,7 @@ pub struct SwarmSpecEncryptionConfig {
 /// Orchestration configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SwarmSpecOrchestration {
-    /// The number of historic tasks to keep per instance or node. If negative, never remove completed or failed tasks.
+    /// The number of historic tasks to keep per instance or node. If negative, never remove completed or failed tasks. 
     #[serde(rename = "TaskHistoryRetentionLimit")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub task_history_retention_limit: Option<i64>,
@@ -4573,12 +4586,12 @@ pub struct SwarmSpecRaft {
     #[serde(skip_serializing_if="Option::is_none")]
     pub snapshot_interval: Option<u64>,
 
-    /// The number of snapshots to keep beyond the current snapshot.
+    /// The number of snapshots to keep beyond the current snapshot. 
     #[serde(rename = "KeepOldSnapshots")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub keep_old_snapshots: Option<u64>,
 
-    /// The number of log entries to keep around to sync up slow followers after a snapshot is created.
+    /// The number of log entries to keep around to sync up slow followers after a snapshot is created. 
     #[serde(rename = "LogEntriesForSlowFollowers")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub log_entries_for_slow_followers: Option<u64>,
@@ -4769,17 +4782,17 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_memory: Option<bool>,
 
-    /// Indicates if CPU CFS(Completely Fair Scheduler) period is supported by the host.
+    /// Indicates if CPU CFS(Completely Fair Scheduler) period is supported by the host. 
     #[serde(rename = "CpuCfsPeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_cfs_period: Option<bool>,
 
-    /// Indicates if CPU CFS(Completely Fair Scheduler) quota is supported by the host.
+    /// Indicates if CPU CFS(Completely Fair Scheduler) quota is supported by the host. 
     #[serde(rename = "CpuCfsQuota")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_cfs_quota: Option<bool>,
 
-    /// Indicates if CPU Shares limiting is supported by the host.
+    /// Indicates if CPU Shares limiting is supported by the host. 
     #[serde(rename = "CPUShares")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_shares: Option<bool>,
@@ -4814,7 +4827,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub bridge_nf_ip6tables: Option<bool>,
 
-    /// Indicates if the daemon is running in debug-mode / with debug-level logging enabled.
+    /// Indicates if the daemon is running in debug-mode / with debug-level logging enabled. 
     #[serde(rename = "Debug")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub debug: Option<bool>,
@@ -5093,52 +5106,64 @@ impl ::std::convert::AsRef<str> for SystemInfoIsolationEnum {
     }
 }
 
+/// Response of Engine API: GET \"/version\" 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SystemVersionResponse {
+pub struct SystemVersion {
     #[serde(rename = "Platform")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub platform: Option<SystemVersionResponsePlatform>,
+    pub platform: Option<SystemVersionPlatform>,
 
+    /// Information about system components 
     #[serde(rename = "Components")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub components: Option<Vec<SystemVersionResponseComponents>>,
+    pub components: Option<Vec<SystemVersionComponents>>,
 
+    /// The version of the daemon
     #[serde(rename = "Version")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub version: Option<String>,
 
+    /// The default (and highest) API version that is supported by the daemon 
     #[serde(rename = "ApiVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub api_version: Option<String>,
 
+    /// The minimum API version that is supported by the daemon 
     #[serde(rename = "MinAPIVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub min_api_version: Option<String>,
 
+    /// The Git commit of the source code that was used to build the daemon 
     #[serde(rename = "GitCommit")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub git_commit: Option<String>,
 
+    /// The version Go used to compile the daemon, and the version of the Go runtime in use. 
     #[serde(rename = "GoVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub go_version: Option<String>,
 
+    /// The operating system that the daemon is running on (\"linux\" or \"windows\") 
     #[serde(rename = "Os")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub os: Option<String>,
 
+    /// The architecture that the daemon is running on 
     #[serde(rename = "Arch")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub arch: Option<String>,
 
+    /// The kernel version (`uname -r`) that the daemon is running on.  This field is omitted when empty. 
     #[serde(rename = "KernelVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_version: Option<String>,
 
+    /// Indicates if the daemon is started with experimental features enabled.  This field is omitted when empty / false. 
     #[serde(rename = "Experimental")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub experimental: Option<bool>,
 
+    /// The date and time that the daemon was compiled. 
     #[serde(rename = "BuildTime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub build_time: Option<String>,
@@ -5146,13 +5171,16 @@ pub struct SystemVersionResponse {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SystemVersionResponseComponents {
+pub struct SystemVersionComponents {
+    /// Name of the component 
     #[serde(rename = "Name")]
     pub name: String,
 
+    /// Version of the component 
     #[serde(rename = "Version")]
     pub version: String,
 
+    /// Key/value pairs of strings with additional information about the component. These values are intended for informational purposes only, and their content is not defined, and not part of the API specification.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Details")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub details: Option<HashMap<(), ()>>,
@@ -5160,7 +5188,7 @@ pub struct SystemVersionResponseComponents {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SystemVersionResponsePlatform {
+pub struct SystemVersionPlatform {
     #[serde(rename = "Name")]
     pub name: String,
 
@@ -5254,12 +5282,12 @@ pub struct TaskSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub placement: Option<TaskSpecPlacement>,
 
-    /// A counter that triggers an update even if no relevant parameters have been changed.
+    /// A counter that triggers an update even if no relevant parameters have been changed. 
     #[serde(rename = "ForceUpdate")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub force_update: Option<i64>,
 
-    /// Runtime is the type of runtime specified for the task executor.
+    /// Runtime is the type of runtime specified for the task executor. 
     #[serde(rename = "Runtime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub runtime: Option<String>,
@@ -5298,12 +5326,12 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub args: Option<Vec<String>>,
 
-    /// The hostname to use for the container, as a valid RFC 1123 hostname.
+    /// The hostname to use for the container, as a valid [RFC 1123](https://tools.ietf.org/html/rfc1123) hostname. 
     #[serde(rename = "Hostname")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub hostname: Option<String>,
 
-    /// A list of environment variables in the form `VAR=value`.
+    /// A list of environment variables in the form `VAR=value`. 
     #[serde(rename = "Env")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub env: Option<Vec<String>>,
@@ -5318,7 +5346,7 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub user: Option<String>,
 
-    /// A list of additional groups that the container process will run as.
+    /// A list of additional groups that the container process will run as. 
     #[serde(rename = "Groups")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub groups: Option<Vec<String>>,
@@ -5342,7 +5370,7 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub read_only: Option<bool>,
 
-    /// Specification for mounts to be added to containers created as part of the service.
+    /// Specification for mounts to be added to containers created as part of the service. 
     #[serde(rename = "Mounts")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub mounts: Option<Vec<Mount>>,
@@ -5352,7 +5380,7 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub stop_signal: Option<String>,
 
-    /// Amount of time to wait for the container to terminate before forcefully killing it.
+    /// Amount of time to wait for the container to terminate before forcefully killing it. 
     #[serde(rename = "StopGracePeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub stop_grace_period: Option<i64>,
@@ -5370,22 +5398,22 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if="Option::is_none")]
     pub dns_config: Option<TaskSpecContainerSpecDnsConfig>,
 
-    /// Secrets contains references to zero or more secrets that will be exposed to the service.
+    /// Secrets contains references to zero or more secrets that will be exposed to the service. 
     #[serde(rename = "Secrets")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub secrets: Option<Vec<TaskSpecContainerSpecSecrets>>,
 
-    /// Configs contains references to zero or more configs that will be exposed to the service.
+    /// Configs contains references to zero or more configs that will be exposed to the service. 
     #[serde(rename = "Configs")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub configs: Option<Vec<TaskSpecContainerSpecConfigs>>,
 
-    /// Isolation technology of the containers running the service. (Windows only)
+    /// Isolation technology of the containers running the service. (Windows only) 
     #[serde(rename = "Isolation")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub isolation: Option<TaskSpecContainerSpecIsolationEnum>,
 
-    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used.
+    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used. 
     #[serde(rename = "Init")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub init: Option<bool>,
@@ -5452,12 +5480,12 @@ pub struct TaskSpecContainerSpecConfigs {
     #[serde(skip_serializing_if="Option::is_none")]
     pub file: Option<TaskSpecContainerSpecFile1>,
 
-    /// Runtime represents a target that is not mounted into the container but is used by the task  <p><br /><p>  > **Note**: `Configs.File` and `Configs.Runtime` are mutually exclusive 
+    /// Runtime represents a target that is not mounted into the container but is used by the task  <p><br /><p>  > **Note**: `Configs.File` and `Configs.Runtime` are mutually > exclusive 
     #[serde(rename = "Runtime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub runtime: Option<HashMap<(), ()>>,
 
-    /// ConfigID represents the ID of the specific config that we're referencing.
+    /// ConfigID represents the ID of the specific config that we're referencing. 
     #[serde(rename = "ConfigID")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub config_id: Option<String>,
@@ -5469,7 +5497,7 @@ pub struct TaskSpecContainerSpecConfigs {
 
 }
 
-/// Specification for DNS related configurations in resolver configuration file (`resolv.conf`).
+/// Specification for DNS related configurations in resolver configuration file (`resolv.conf`). 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecContainerSpecDnsConfig {
     /// The IP addresses of the name servers.
@@ -5482,17 +5510,17 @@ pub struct TaskSpecContainerSpecDnsConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub search: Option<Vec<String>>,
 
-    /// A list of internal resolver variables to be modified (e.g., `debug`, `ndots:3`, etc.).
+    /// A list of internal resolver variables to be modified (e.g., `debug`, `ndots:3`, etc.). 
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub options: Option<Vec<String>>,
 
 }
 
-/// File represents a specific target that is backed by a file.
+/// File represents a specific target that is backed by a file. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecContainerSpecFile {
-    /// Name represents the final filename in the filesystem.
+    /// Name represents the final filename in the filesystem. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<String>,
@@ -5517,7 +5545,7 @@ pub struct TaskSpecContainerSpecFile {
 /// File represents a specific target that is backed by a file.  <p><br /><p>  > **Note**: `Configs.File` and `Configs.Runtime` are mutually exclusive 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecContainerSpecFile1 {
-    /// Name represents the final filename in the filesystem.
+    /// Name represents the final filename in the filesystem. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<String>,
@@ -5555,17 +5583,17 @@ pub struct TaskSpecContainerSpecPrivileges {
 /// CredentialSpec for managed service account (Windows only)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecContainerSpecPrivilegesCredentialSpec {
-    /// Load credential spec from a Swarm Config with the given ID. The specified config must also be present in the Configs field with the Runtime property set.  <p><br /></p>   > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, and `CredentialSpec.Config` are mutually exclusive. 
+    /// Load credential spec from a Swarm Config with the given ID. The specified config must also be present in the Configs field with the Runtime property set.  <p><br /></p>   > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, > and `CredentialSpec.Config` are mutually exclusive. 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub config: Option<String>,
 
-    /// Load credential spec from this file. The file is read by the daemon, and must be present in the `CredentialSpecs` subdirectory in the docker data directory, which defaults to `C:\\ProgramData\\Docker\\` on Windows.  For example, specifying `spec.json` loads `C:\\ProgramData\\Docker\\CredentialSpecs\\spec.json`.  <p><br /></p>  > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, and `CredentialSpec.Config` are mutually exclusive. 
+    /// Load credential spec from this file. The file is read by the daemon, and must be present in the `CredentialSpecs` subdirectory in the docker data directory, which defaults to `C:\\ProgramData\\Docker\\` on Windows.  For example, specifying `spec.json` loads `C:\\ProgramData\\Docker\\CredentialSpecs\\spec.json`.  <p><br /></p>  > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, > and `CredentialSpec.Config` are mutually exclusive. 
     #[serde(rename = "File")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub file: Option<String>,
 
-    /// Load credential spec from this value in the Windows registry. The specified registry value must be located in:  `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Virtualization\\Containers\\CredentialSpecs`  <p><br /></p>   > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, and `CredentialSpec.Config` are mutually exclusive. 
+    /// Load credential spec from this value in the Windows registry. The specified registry value must be located in:  `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Virtualization\\Containers\\CredentialSpecs`  <p><br /></p>   > **Note**: `CredentialSpec.File`, `CredentialSpec.Registry`, > and `CredentialSpec.Config` are mutually exclusive. 
     #[serde(rename = "Registry")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub registry: Option<String>,
@@ -5608,7 +5636,7 @@ pub struct TaskSpecContainerSpecSecrets {
     #[serde(skip_serializing_if="Option::is_none")]
     pub file: Option<TaskSpecContainerSpecFile>,
 
-    /// SecretID represents the ID of the specific secret that we're referencing.
+    /// SecretID represents the ID of the specific secret that we're referencing. 
     #[serde(rename = "SecretID")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub secret_id: Option<String>,
@@ -5620,7 +5648,7 @@ pub struct TaskSpecContainerSpecSecrets {
 
 }
 
-/// Specifies the log driver to use for tasks created from this spec. If not present, the default one for the swarm will be used, finally falling back to the engine default if not specified.
+/// Specifies the log driver to use for tasks created from this spec. If not present, the default one for the swarm will be used, finally falling back to the engine default if not specified. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecLogDriver {
     #[serde(rename = "Name")]
@@ -5650,12 +5678,12 @@ pub struct TaskSpecPlacement {
     #[serde(skip_serializing_if="Option::is_none")]
     pub constraints: Option<Vec<String>>,
 
-    /// Preferences provide a way to make the scheduler aware of factors such as topology. They are provided in order from highest to lowest precedence.
+    /// Preferences provide a way to make the scheduler aware of factors such as topology. They are provided in order from highest to lowest precedence. 
     #[serde(rename = "Preferences")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub preferences: Option<Vec<TaskSpecPlacementPreferences>>,
 
-    /// Maximum number of replicas for per node (default value is 0, which is unlimited)
+    /// Maximum number of replicas for per node (default value is 0, which is unlimited) 
     #[serde(rename = "MaxReplicas")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub max_replicas: Option<i64>,
@@ -5677,7 +5705,7 @@ pub struct TaskSpecPlacementPreferences {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecPlacementSpread {
-    /// label descriptor, such as engine.labels.az
+    /// label descriptor, such as `engine.labels.az`. 
     #[serde(rename = "SpreadDescriptor")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub spread_descriptor: Option<String>,
@@ -5708,7 +5736,7 @@ pub struct TaskSpecPluginSpec {
 
 }
 
-/// Resource requirements which apply to each individual container created as part of the service.
+/// Resource requirements which apply to each individual container created as part of the service. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecResources {
     /// Define resources limits.
@@ -5723,7 +5751,7 @@ pub struct TaskSpecResources {
 
 }
 
-/// Specification for the restart policy which applies to containers created as part of this service.
+/// Specification for the restart policy which applies to containers created as part of this service. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecRestartPolicy {
     /// Condition for restart.
@@ -5736,12 +5764,12 @@ pub struct TaskSpecRestartPolicy {
     #[serde(skip_serializing_if="Option::is_none")]
     pub delay: Option<i64>,
 
-    /// Maximum attempts to restart a given container before giving up (default value is 0, which is ignored).
+    /// Maximum attempts to restart a given container before giving up (default value is 0, which is ignored). 
     #[serde(rename = "MaxAttempts")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub max_attempts: Option<i64>,
 
-    /// Windows is the time window used to evaluate the restart policy (default value is 0, which is unbounded).
+    /// Windows is the time window used to evaluate the restart policy (default value is 0, which is unbounded). 
     #[serde(rename = "Window")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub window: Option<i64>,
@@ -5936,20 +5964,20 @@ pub struct ThrottleDevice {
 
 }
 
-/// Information about the issuer of leaf TLS certificates and the trusted root CA certificate
+/// Information about the issuer of leaf TLS certificates and the trusted root CA certificate. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TlsInfo {
-    /// The root CA certificate(s) that are used to validate leaf TLS certificates
+    /// The root CA certificate(s) that are used to validate leaf TLS certificates. 
     #[serde(rename = "TrustRoot")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub trust_root: Option<String>,
 
-    /// The base64-url-safe-encoded raw subject bytes of the issuer
+    /// The base64-url-safe-encoded raw subject bytes of the issuer.
     #[serde(rename = "CertIssuerSubject")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cert_issuer_subject: Option<String>,
 
-    /// The base64-url-safe-encoded raw public key bytes of the issuer
+    /// The base64-url-safe-encoded raw public key bytes of the issuer. 
     #[serde(rename = "CertIssuerPublicKey")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cert_issuer_public_key: Option<String>,
@@ -5994,13 +6022,13 @@ pub struct Volume {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]
     pub labels: HashMap<String, String>,
 
-    /// The level at which the volume exists. Either `global` for cluster-wide, or `local` for machine level.
+    /// The level at which the volume exists. Either `global` for cluster-wide, or `local` for machine level. 
     #[serde(rename = "Scope")]
     #[serde(skip_serializing_if="Option::is_none")]
     #[serde(with = "serde_with::rust::string_empty_as_none")]
     pub scope: Option<VolumeScopeEnum>,
 
-    /// The driver specific options used when creating the volume.
+    /// The driver specific options used when creating the volume. 
     #[serde(rename = "Options")]
     #[serde(deserialize_with = "deserialize_nonoptional_map")]
     pub options: HashMap<String, String>,
@@ -6058,7 +6086,7 @@ impl ::std::convert::AsRef<str> for VolumeScopeEnum {
 /// Volume configuration
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VolumeConfig {
-    /// The new volume's name. If not specified, Docker generates a name.
+    /// The new volume's name. If not specified, Docker generates a name. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<String>,
@@ -6068,7 +6096,7 @@ pub struct VolumeConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver: Option<String>,
 
-    /// A mapping of driver options and values. These options are passed directly to the driver and are driver specific.
+    /// A mapping of driver options and values. These options are passed directly to the driver and are driver specific. 
     #[serde(rename = "DriverOpts")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver_opts: Option<HashMap<String, String>>,
@@ -6088,7 +6116,7 @@ pub struct VolumeListResponse {
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub volumes: Vec<Volume>,
 
-    /// Warnings that occurred when fetching the list of volumes
+    /// Warnings that occurred when fetching the list of volumes. 
     #[serde(rename = "Warnings")]
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub warnings: Vec<String>,
@@ -6125,7 +6153,7 @@ pub struct VolumeUsageData {
 /// Container configuration that depends on the host we are running on
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HostConfig {
-    /// An integer value representing this container's relative CPU weight versus other containers.
+    /// An integer value representing this container's relative CPU weight versus other containers. 
     #[serde(rename = "CpuShares")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_shares: Option<i64>,
@@ -6135,7 +6163,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory: Option<i64>,
 
-    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist. 
     #[serde(rename = "CgroupParent")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cgroup_parent: Option<String>,
@@ -6145,27 +6173,27 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_weight: Option<u16>,
 
-    /// Block IO weight (relative device weight) in the form `[{\"Path\": \"device_path\", \"Weight\": weight}]`. 
+    /// Block IO weight (relative device weight) in the form:  ``` [{\"Path\": \"device_path\", \"Weight\": weight}] ``` 
     #[serde(rename = "BlkioWeightDevice")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_weight_device: Option<Vec<ResourcesBlkioWeightDevice>>,
 
-    /// Limit read rate (bytes per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit read rate (bytes per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadBps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_read_bps: Option<Vec<ThrottleDevice>>,
 
-    /// Limit write rate (bytes per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit write rate (bytes per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteBps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_write_bps: Option<Vec<ThrottleDevice>>,
 
-    /// Limit read rate (IO per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit read rate (IO per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
 
-    /// Limit write rate (IO per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`. 
+    /// Limit write rate (IO per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
@@ -6175,27 +6203,27 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_period: Option<i64>,
 
-    /// Microseconds of CPU time that the container can get in a CPU period.
+    /// Microseconds of CPU time that the container can get in a CPU period. 
     #[serde(rename = "CpuQuota")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_quota: Option<i64>,
 
-    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks. 
     #[serde(rename = "CpuRealtimePeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_realtime_period: Option<i64>,
 
-    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks. 
     #[serde(rename = "CpuRealtimeRuntime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpu_realtime_runtime: Option<i64>,
 
-    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`). 
     #[serde(rename = "CpusetCpus")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpuset_cpus: Option<String>,
 
-    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems.
+    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems. 
     #[serde(rename = "CpusetMems")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cpuset_mems: Option<String>,
@@ -6210,7 +6238,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_cgroup_rules: Option<Vec<String>>,
 
-    /// a list of requests for devices to be sent to device drivers
+    /// A list of requests for devices to be sent to device drivers. 
     #[serde(rename = "DeviceRequests")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
@@ -6230,12 +6258,12 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_reservation: Option<i64>,
 
-    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
+    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap. 
     #[serde(rename = "MemorySwap")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_swap: Option<i64>,
 
-    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
+    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100. 
     #[serde(rename = "MemorySwappiness")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub memory_swappiness: Option<i64>,
@@ -6250,7 +6278,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub oom_kill_disable: Option<bool>,
 
-    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used.
+    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used. 
     #[serde(rename = "Init")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub init: Option<bool>,
@@ -6260,7 +6288,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub pids_limit: Option<i64>,
 
-    /// A list of resource limits to set in the container. For example: `{\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048}`\" 
+    /// A list of resource limits to set in the container. For example:  ``` {\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048} ``` 
     #[serde(rename = "Ulimits")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub ulimits: Option<Vec<ResourcesUlimits>>,
@@ -6280,7 +6308,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub io_maximum_i_ops: Option<i64>,
 
-    /// Maximum IO in bytes per second for the container system drive (Windows only)
+    /// Maximum IO in bytes per second for the container system drive (Windows only). 
     #[serde(rename = "IOMaximumBandwidth")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub io_maximum_bandwidth: Option<i64>,
@@ -6299,7 +6327,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub log_config: Option<HostConfigLogConfig>,
 
-    /// Network mode to use for this container. Supported standard values are: `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to which this container should connect to.
+    /// Network mode to use for this container. Supported standard values are: `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to which this container should connect to. 
     #[serde(rename = "NetworkMode")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub network_mode: Option<String>,
@@ -6312,7 +6340,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub restart_policy: Option<RestartPolicy>,
 
-    /// Automatically remove the container when the container's process exits. This has no effect if `RestartPolicy` is set.
+    /// Automatically remove the container when the container's process exits. This has no effect if `RestartPolicy` is set. 
     #[serde(rename = "AutoRemove")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub auto_remove: Option<bool>,
@@ -6322,12 +6350,12 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub volume_driver: Option<String>,
 
-    /// A list of volumes to inherit from another container, specified in the form `<container name>[:<ro|rw>]`.
+    /// A list of volumes to inherit from another container, specified in the form `<container name>[:<ro|rw>]`. 
     #[serde(rename = "VolumesFrom")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub volumes_from: Option<Vec<String>>,
 
-    /// Specification for mounts to be added to the container.
+    /// Specification for mounts to be added to the container. 
     #[serde(rename = "Mounts")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub mounts: Option<Vec<Mount>>,
@@ -6337,12 +6365,12 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub capabilities: Option<Vec<String>>,
 
-    /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'
+    /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapAdd")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cap_add: Option<Vec<String>>,
 
-    /// A list of kernel capabilities to drop from the container. Conflicts with option 'Capabilities'
+    /// A list of kernel capabilities to drop from the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapDrop")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cap_drop: Option<Vec<String>>,
@@ -6367,7 +6395,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub extra_hosts: Option<Vec<String>>,
 
-    /// A list of additional groups that the container process will run as.
+    /// A list of additional groups that the container process will run as. 
     #[serde(rename = "GroupAdd")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub group_add: Option<Vec<String>>,
@@ -6382,12 +6410,12 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub cgroup: Option<String>,
 
-    /// A list of links for the container in the form `container_name:alias`.
+    /// A list of links for the container in the form `container_name:alias`. 
     #[serde(rename = "Links")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub links: Option<Vec<String>>,
 
-    /// An integer value containing the score given to the container in order to tune OOM killer preferences.
+    /// An integer value containing the score given to the container in order to tune OOM killer preferences. 
     #[serde(rename = "OomScoreAdj")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub oom_score_adj: Option<i64>,
@@ -6422,7 +6450,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub storage_opt: Option<HashMap<String, String>>,
 
-    /// A map of container directories which should be replaced by tmpfs mounts, and their corresponding mount options. For example: `{ \"/run\": \"rw,noexec,nosuid,size=65536k\" }`. 
+    /// A map of container directories which should be replaced by tmpfs mounts, and their corresponding mount options. For example:  ``` { \"/run\": \"rw,noexec,nosuid,size=65536k\" } ``` 
     #[serde(rename = "Tmpfs")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub tmpfs: Option<HashMap<String, String>>,
@@ -6432,17 +6460,17 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub uts_mode: Option<String>,
 
-    /// Sets the usernamespace mode for the container when usernamespace remapping option is enabled.
+    /// Sets the usernamespace mode for the container when usernamespace remapping option is enabled. 
     #[serde(rename = "UsernsMode")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub userns_mode: Option<String>,
 
-    /// Size of `/dev/shm` in bytes. If omitted, the system uses 64MB.
+    /// Size of `/dev/shm` in bytes. If omitted, the system uses 64MB. 
     #[serde(rename = "ShmSize")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub shm_size: Option<usize>,
 
-    /// A list of kernel parameters (sysctls) to set in the container. For example: `{\"net.ipv4.ip_forward\": \"1\"}` 
+    /// A list of kernel parameters (sysctls) to set in the container. For example:  ``` {\"net.ipv4.ip_forward\": \"1\"} ``` 
     #[serde(rename = "Sysctls")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub sysctls: Option<HashMap<String, String>>,
@@ -6452,22 +6480,22 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub runtime: Option<String>,
 
-    /// Initial console size, as an `[height, width]` array. (Windows only)
+    /// Initial console size, as an `[height, width]` array. (Windows only) 
     #[serde(rename = "ConsoleSize")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub console_size: Option<Vec<i32>>,
 
-    /// Isolation technology of the container. (Windows only)
+    /// Isolation technology of the container. (Windows only) 
     #[serde(rename = "Isolation")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub isolation: Option<HostConfigIsolationEnum>,
 
-    /// The list of paths to be masked inside the container (this overrides the default set of paths)
+    /// The list of paths to be masked inside the container (this overrides the default set of paths). 
     #[serde(rename = "MaskedPaths")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub masked_paths: Option<Vec<String>>,
 
-    /// The list of paths to be set as read-only inside the container (this overrides the default set of paths)
+    /// The list of paths to be set as read-only inside the container (this overrides the default set of paths). 
     #[serde(rename = "ReadonlyPaths")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub readonly_paths: Option<Vec<String>>,
@@ -6552,7 +6580,7 @@ pub struct Swarm {
     #[serde(skip_serializing_if="Option::is_none")]
     pub tls_info: Option<TlsInfo>,
 
-    /// Whether there is currently a root CA rotation in progress for the swarm
+    /// Whether there is currently a root CA rotation in progress for the swarm 
     #[serde(rename = "RootRotationInProgress")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub root_rotation_in_progress: Option<bool>,
@@ -6567,7 +6595,7 @@ pub struct Swarm {
     #[serde(skip_serializing_if="Option::is_none")]
     pub default_addr_pool: Option<Vec<String>>,
 
-    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool 
+    /// SubnetSize specifies the subnet size of the networks created from the default subnet pool. 
     #[serde(rename = "SubnetSize")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub subnet_size: Option<u32>,
