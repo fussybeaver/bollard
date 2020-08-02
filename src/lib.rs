@@ -33,7 +33,10 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`
+//! The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`. The
+//! library also supports [version
+//! negotiation](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.negotiate_version),
+//! to allow downgrading to an older API version.
 //!
 //! # Usage
 //!
