@@ -239,9 +239,7 @@ pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Re
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
-        .remove_container(container_name, None::<RemoveContainerOptions>)
-        .await?;
+    &docker.remove_container(container_name, None).await?;
 
     Ok(())
 }
@@ -270,12 +268,10 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    match result.get(0).unwrap() {
-        CreateImageResults::CreateImageProgressResponse {
-            id: Some(ref id), ..
-        } => assert_eq!(id, if cfg!(windows) { "nanoserver" } else { "linux" }),
-        _ => panic!(),
-    };
+    assert_eq!(
+        result.get(0).unwrap().id.as_ref().unwrap(),
+        if cfg!(windows) { "nanoserver" } else { "linux" }
+    );
 
     Ok(())
 }

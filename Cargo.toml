@@ -41,12 +41,13 @@ pin-project = "0.4.20"
 serde = "1.0.111"
 serde_derive = "1.0.111"
 serde_json = "1.0.55"
+serde_urlencoded = "0.6.1"
 tokio = { version = "0.2.17", features = ["time", "fs"] }
 url = "2.1.1"
 futures-core = "0.3.4"
 futures-util = "0.3.4"
 tokio-util = { version = "0.3.1", features = ["codec"] }
-bollard-stubs = { version = "1.40.2" }
+bollard-stubs = { version = "1.40.3", path = "codegen/target/generated-sources" }
 
 [dev-dependencies]
 tokio-executor = "0.2.0-alpha.6"

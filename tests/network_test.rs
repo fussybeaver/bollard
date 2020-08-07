@@ -4,6 +4,7 @@ extern crate tokio;
 
 use bollard::container::*;
 use bollard::errors::Error;
+use bollard::models::*;
 use bollard::network::*;
 use bollard::Docker;
 
@@ -16,10 +17,8 @@ pub mod common;
 use crate::common::*;
 
 async fn create_network_test(docker: Docker) -> Result<(), Error> {
-    let ipam_config = IPAMConfig {
-        subnet: Some("10.10.10.10/24"),
-        ..Default::default()
-    };
+    let mut ipam_config = HashMap::new();
+    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
 
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_create_network",
@@ -29,8 +28,8 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
         } else {
             "bridge"
         },
-        ipam: IPAM {
-            config: vec![ipam_config],
+        ipam: Ipam {
+            config: Some(vec![ipam_config]),
             ..Default::default()
         },
         ..Default::default()
@@ -39,19 +38,24 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
     let result = &docker
         .inspect_network(
-            &result.id,
+            result.id.as_ref().unwrap(),
             Some(InspectNetworkOptions::<&str> {
                 verbose: true,
                 ..Default::default()
             }),
         )
         .await?;
+
     assert!(result
         .ipam
+        .as_ref()
+        .unwrap()
         .config
+        .as_ref()
+        .unwrap()
         .iter()
         .take(1)
-        .any(|i| i.subnet.as_ref().unwrap() == "10.10.10.10/24"));
+        .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
 
     &docker
         .remove_network("integration_test_create_network")
@@ -61,10 +65,8 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn list_networks_test(docker: Docker) -> Result<(), Error> {
-    let ipam_config = IPAMConfig {
-        subnet: Some("10.10.10.10/24"),
-        ..Default::default()
-    };
+    let mut ipam_config = HashMap::new();
+    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
 
     let mut create_network_filters = HashMap::new();
     create_network_filters.insert("maintainer", "bollard-maintainer");
@@ -77,8 +79,8 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         } else {
             "bridge"
         },
-        ipam: IPAM {
-            config: vec![ipam_config],
+        ipam: Ipam {
+            config: Some(vec![ipam_config]),
             ..Default::default()
         },
         labels: create_network_filters,
@@ -100,9 +102,13 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
 
     assert!(v
         .ipam
+        .as_ref()
+        .unwrap()
         .config
+        .as_ref()
+        .unwrap()
         .iter()
-        .any(|i| i.subnet.as_ref().unwrap() == "10.10.10.10/24"));
+        .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
 
     &docker
         .remove_network("integration_test_list_network")
@@ -112,16 +118,14 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn connect_network_test(docker: Docker) -> Result<(), Error> {
-    let ipam_config = IPAMConfig {
-        subnet: Some("10.10.10.10/24"),
-        ..Default::default()
-    };
+    let mut ipam_config = HashMap::new();
+    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
 
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_connect_network",
         check_duplicate: true,
-        ipam: IPAM {
-            config: vec![ipam_config],
+        ipam: Ipam {
+            config: Some(vec![ipam_config]),
             ..Default::default()
         },
         ..Default::default()
@@ -130,10 +134,10 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let connect_network_options = ConnectNetworkOptions {
         container: "integration_test_connect_network_test",
         endpoint_config: EndpointSettings {
-            ipam_config: EndpointIPAMConfig {
-                ipv4_address: Some("10.10.10.101"),
+            ipam_config: Some(EndpointIpamConfig {
+                ipv4_address: Some(String::from("10.10.10.101")),
                 ..Default::default()
-            },
+            }),
             ..Default::default()
         },
     };
@@ -143,14 +147,14 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
 
     &docker
-        .connect_network(&result.id, connect_network_options)
+        .connect_network(result.id.as_ref().unwrap(), connect_network_options)
         .await?;
 
-    let id = &result.id;
+    let id = result.id.as_ref().unwrap();
 
     let result = &docker
         .inspect_network(
-            &id,
+            id,
             Some(InspectNetworkOptions::<&str> {
                 verbose: true,
                 ..Default::default()
@@ -160,6 +164,8 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
 
     assert!(result
         .containers
+        .as_ref()
+        .unwrap()
         .iter()
         .any(|(_, container)| container.ipv4_address == Some("10.10.10.101/24".into())));
 

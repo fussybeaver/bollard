@@ -138,6 +138,12 @@ pub enum ErrorKind {
         /// The original error emitted.
         err: native_tls::Error,
     },
+    /// Error emitted when serde fails to urlencod a struct of options
+    #[fail(display = "URLEncode error: {:?}", err)]
+    URLEncodedError {
+        /// The original error emitted.
+        err: serde_urlencoded::ser::Error,
+    },
 }
 
 impl Display for Error {

@@ -1,6 +1,5 @@
 //! Exec API: Run new commands inside running containers
 
-use arrayvec::ArrayVec;
 use futures_core::Stream;
 use futures_util::{
     stream,
@@ -16,13 +15,14 @@ use super::Docker;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
+use crate::models::ExecInspectResponse;
 
 /// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateExecOptions<T>
 where
-    T: AsRef<str> + Serialize,
+    T: Into<String> + Serialize,
 {
     /// Attach to `stdin` of the exec command.
     pub attach_stdin: Option<bool>,
@@ -70,36 +70,6 @@ pub enum StartExecResults {
     Detached,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct ExecProcessConfig {
-    pub user: Option<String>,
-    pub privileged: Option<bool>,
-    pub tty: bool,
-    pub entrypoint: String,
-    pub arguments: Vec<String>,
-}
-
-/// Result type for the [Inspect Exec API](../struct.Docker.html#method.inspect_exec)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct ExecInspect {
-    pub can_remove: bool,
-    #[serde(rename = "ContainerID")]
-    pub container_id: String,
-    pub detach_keys: String,
-    pub exit_code: Option<u64>,
-    #[serde(rename = "ID")]
-    pub id: String,
-    pub open_stderr: bool,
-    pub open_stdin: bool,
-    pub open_stdout: bool,
-    pub process_config: ExecProcessConfig,
-    pub running: bool,
-    pub pid: u64,
-}
-
 impl Docker {
     /// ---
     ///
@@ -141,14 +111,14 @@ impl Docker {
         config: CreateExecOptions<T>,
     ) -> Result<CreateExecResults, Error>
     where
-        T: AsRef<str> + Serialize,
+        T: Into<String> + Serialize,
     {
         let url = format!("/containers/{}/exec", container_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Docker::serialize_payload(Some(config)),
         );
 
@@ -200,10 +170,10 @@ impl Docker {
 
         match config {
             Some(StartExecOptions { detach: true, .. }) => {
-                let req = self.build_request::<_, String, String>(
+                let req = self.build_request(
                     &url,
                     Builder::new().method(Method::POST),
-                    Ok(None::<ArrayVec<[(_, _); 0]>>),
+                    None::<String>,
                     Docker::serialize_payload(config),
                 );
 
@@ -215,13 +185,13 @@ impl Docker {
                 .boxed()
             }
             _ => {
-                let req = self.build_request::<_, String, String>(
+                let req = self.build_request(
                     &url,
                     Builder::new()
                         .method(Method::POST)
                         .header(CONNECTION, "Upgrade")
                         .header(UPGRADE, "tcp"),
-                    Ok(None::<ArrayVec<[(_, _); 0]>>),
+                    None::<String>,
                     Docker::serialize_payload(config.or_else(|| {
                         Some(StartExecOptions {
                             ..Default::default()
@@ -248,7 +218,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An [ExecInspect](exec/struct.ExecInspect.html) struct, wrapped in a Future.
+    ///  - An [Exec Inspect Response](models/struct.ExecInspectResponse.html) struct, wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -270,13 +240,13 @@ impl Docker {
     ///     docker.inspect_exec(&message.id);
     /// };
     /// ```
-    pub async fn inspect_exec(&self, exec_id: &str) -> Result<ExecInspect, Error> {
+    pub async fn inspect_exec(&self, exec_id: &str) -> Result<ExecInspectResponse, Error> {
         let url = format!("/exec/{}/json", exec_id);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 

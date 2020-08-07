@@ -114,7 +114,7 @@ async fn run() -> Result<(), failure::Error> {
         .start_container("kafka1", None::<StartContainerOptions<String>>)
         .await?;
 
-    let mut stream1 = sd1.logs(
+    let mut stream1 = sd1.logs::<String>(
         "kafka1",
         Some(LogsOptions {
             follow: true,
@@ -147,7 +147,7 @@ async fn run() -> Result<(), failure::Error> {
         .start_container("kafka2", None::<StartContainerOptions<String>>)
         .await?;
 
-    let mut stream2 = sd2.logs(
+    let mut stream2 = sd2.logs::<String>(
         "kafka2",
         Some(LogsOptions {
             follow: true,

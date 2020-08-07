@@ -1104,11 +1104,11 @@ pub struct Driver {
 pub struct EndpointIpamConfig {
     #[serde(rename = "IPv4Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv4_address: Option<String>,
+    pub ipv4_address: Option<String>,
 
     #[serde(rename = "IPv6Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv6_address: Option<String>,
+    pub ipv6_address: Option<String>,
 
     #[serde(rename = "LinkLocalIPs")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1279,17 +1279,17 @@ pub struct EndpointSettings {
     /// IPv6 gateway address. 
     #[serde(rename = "IPv6Gateway")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv6_gateway: Option<String>,
+    pub ipv6_gateway: Option<String>,
 
     /// Global IPv6 address. 
     #[serde(rename = "GlobalIPv6Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub global_i_pv6_address: Option<String>,
+    pub global_ipv6_address: Option<String>,
 
     /// Mask length of the global IPv6 address. 
     #[serde(rename = "GlobalIPv6PrefixLen")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub global_i_pv6_prefix_len: Option<i64>,
+    pub global_ipv6_prefix_len: Option<i64>,
 
     /// MAC address for the endpoint on this network. 
     #[serde(rename = "MacAddress")]
@@ -2447,7 +2447,7 @@ pub struct Network {
 
     #[serde(rename = "EnableIPv6")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub enable_i_pv6: Option<bool>,
+    pub enable_ipv6: Option<bool>,
 
     #[serde(rename = "IPAM")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -2538,7 +2538,7 @@ pub struct NetworkConfig {
     /// Enable IPv6 on the network.
     #[serde(rename = "EnableIPv6")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub enable_i_pv6: Option<bool>,
+    pub enable_ipv6: Option<bool>,
 
     /// Network specific options to be used by the drivers.
     #[serde(rename = "Options")]
@@ -2568,11 +2568,11 @@ pub struct NetworkContainer {
 
     #[serde(rename = "IPv4Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv4_address: Option<String>,
+    pub ipv4_address: Option<String>,
 
     #[serde(rename = "IPv6Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv6_address: Option<String>,
+    pub ipv6_address: Option<String>,
 
 }
 
@@ -2619,12 +2619,12 @@ pub struct NetworkSettings {
     /// IPv6 unicast address using the link-local prefix.
     #[serde(rename = "LinkLocalIPv6Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub link_local_i_pv6_address: Option<String>,
+    pub link_local_ipv6_address: Option<String>,
 
     /// Prefix length of the IPv6 unicast address.
     #[serde(rename = "LinkLocalIPv6PrefixLen")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub link_local_i_pv6_prefix_len: Option<i64>,
+    pub link_local_ipv6_prefix_len: Option<i64>,
 
     #[serde(rename = "Ports")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -2643,7 +2643,7 @@ pub struct NetworkSettings {
     /// 
     #[serde(rename = "SecondaryIPv6Addresses")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub secondary_i_pv6_addresses: Option<Vec<Address>>,
+    pub secondary_ipv6_addresses: Option<Vec<Address>>,
 
     /// EndpointID uniquely represents a service endpoint in a Sandbox.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "EndpointID")]
@@ -2658,12 +2658,12 @@ pub struct NetworkSettings {
     /// Global IPv6 address for the default \"bridge\" network.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "GlobalIPv6Address")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub global_i_pv6_address: Option<String>,
+    pub global_ipv6_address: Option<String>,
 
     /// Mask length of the global IPv6 address.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "GlobalIPv6PrefixLen")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub global_i_pv6_prefix_len: Option<i64>,
+    pub global_ipv6_prefix_len: Option<i64>,
 
     /// IPv4 address for the default \"bridge\" network.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "IPAddress")]
@@ -2678,7 +2678,7 @@ pub struct NetworkSettings {
     /// IPv6 gateway address for this network.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "IPv6Gateway")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv6_gateway: Option<String>,
+    pub ipv6_gateway: Option<String>,
 
     /// MAC address for the container on the default \"bridge\" network.  <p><br /></p>  > **Deprecated**: This field is only propagated when attached to the > default \"bridge\" network. Use the information from the \"bridge\" > network inside the `Networks` map instead, which contains the same > information. This field was deprecated in Docker 1.9 and is scheduled > to be removed in Docker 17.12.0 
     #[serde(rename = "MacAddress")]
@@ -4815,7 +4815,7 @@ pub struct SystemInfo {
     /// Indicates IPv4 forwarding is enabled.
     #[serde(rename = "IPv4Forwarding")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub i_pv4_forwarding: Option<bool>,
+    pub ipv4_forwarding: Option<bool>,
 
     /// Indicates if `bridge-nf-call-iptables` is available on the host.
     #[serde(rename = "BridgeNfIptables")]
@@ -5183,7 +5183,7 @@ pub struct SystemVersionComponents {
     /// Key/value pairs of strings with additional information about the component. These values are intended for informational purposes only, and their content is not defined, and not part of the API specification.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Details")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub details: Option<HashMap<(), ()>>,
+    pub details: Option<SystemVersion>,
 
 }
 

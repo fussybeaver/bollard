@@ -10,7 +10,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arrayvec::ArrayVec;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
@@ -34,20 +33,19 @@ use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
+#[cfg(any(feature = "ssl", feature = "tls"))]
+use crate::errors::ErrorKind::NoCertPathError;
+#[cfg(feature = "ssl")]
+use crate::errors::ErrorKind::SSLError;
 use crate::errors::ErrorKind::{
     APIVersionParseError, DockerResponseBadParameterError, DockerResponseConflictError,
     DockerResponseNotFoundError, DockerResponseNotModifiedError, DockerResponseServerError,
     HttpClientError, HyperResponseError, JsonDataError, JsonDeserializeError, JsonSerializeError,
     RequestTimeoutError, StrParseError,
 };
-#[cfg(any(feature = "ssl", feature = "tls"))]
-use crate::errors::ErrorKind::NoCertPathError;
-#[cfg(feature = "ssl")]
-use crate::errors::ErrorKind::SSLError;
 #[cfg(windows)]
 use crate::named_pipe::NamedPipeConnector;
 use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
-use crate::system::Version;
 use crate::uri::Uri;
 
 use serde::de::DeserializeOwned;
@@ -73,9 +71,6 @@ pub const API_DEFAULT_VERSION: &'static ClientVersion = &ClientVersion {
     major_version: 1,
     minor_version: 40,
 };
-
-pub(crate) const TRUE_STR: &'static str = "true";
-pub(crate) const FALSE_STR: &'static str = "false";
 
 /// The default directory in which to look for our Docker certificate
 /// files.
@@ -163,9 +158,27 @@ pub(crate) enum MaybeClientVersion {
     None,
 }
 
-impl From<String> for MaybeClientVersion {
-    fn from(s: String) -> MaybeClientVersion {
+//impl From<String> for MaybeClientVersion {
+//    fn from(s: String) -> MaybeClientVersion {
+//        match s
+//            .split(".")
+//            .map(|v| v.parse::<usize>())
+//            .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
+//            .as_slice()
+//        {
+//            [Ok(first), Ok(second)] => MaybeClientVersion::Some(ClientVersion {
+//                major_version: first.to_owned(),
+//                minor_version: second.to_owned(),
+//            }),
+//            _ => MaybeClientVersion::None,
+//        }
+//    }
+//}
+
+impl<T: Into<String>> From<T> for MaybeClientVersion {
+    fn from(s: T) -> MaybeClientVersion {
         match s
+            .into()
             .split(".")
             .map(|v| v.parse::<usize>())
             .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
@@ -202,6 +215,16 @@ impl From<&(AtomicUsize, AtomicUsize)> for ClientVersion {
             minor_version: tpl.1.load(Ordering::Relaxed),
         }
     }
+}
+
+pub(crate) fn serialize_as_json<T, S>(t: &T, s: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize,
+    S: serde::Serializer,
+{
+    s.serialize_str(
+        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
+    )
 }
 
 #[derive(Debug)]
@@ -859,12 +882,6 @@ impl Docker {
             .try_flatten()
     }
 
-    pub(crate) fn transpose_option<T>(
-        option: Option<Result<T, Error>>,
-    ) -> Result<Option<T>, Error> {
-        option.transpose()
-    }
-
     pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
     where
         S: Serialize,
@@ -902,17 +919,19 @@ impl Docker {
     ///     };
     /// ```
     pub async fn negotiate_version(self) -> Result<Self, Error> {
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             "/version",
             Builder::new().method(Method::GET),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 
-        let res = self.process_into_value::<Version>(req).await?;
+        let res = self
+            .process_into_value::<crate::system::Version>(req)
+            .await?;
 
-        let err_api_version = res.api_version.clone();
-        let server_version: ClientVersion = match res.api_version.into() {
+        let err_api_version = res.api_version.as_ref().unwrap().clone();
+        let server_version: ClientVersion = match res.api_version.as_ref().unwrap().into() {
             MaybeClientVersion::Some(client_version) => client_version,
             MaybeClientVersion::None => {
                 return Err(APIVersionParseError {
@@ -921,6 +940,7 @@ impl Docker {
                 .into())
             }
         };
+
         if server_version < self.client_version() {
             self.version
                 .0
@@ -929,6 +949,7 @@ impl Docker {
                 .1
                 .store(server_version.minor_version, Ordering::Relaxed);
         }
+
         Ok(self)
     }
 
@@ -938,6 +959,8 @@ impl Docker {
     ) -> impl Future<Output = Result<Response<Body>, Error>> {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
+
+        debug!("request: {:?}", request.as_ref().unwrap());
 
         async move {
             let request = request?;
@@ -987,43 +1010,37 @@ impl Docker {
         }
     }
 
-    pub(crate) fn build_request<O, K, V>(
+    pub(crate) fn build_request<O>(
         &self,
         path: &str,
         builder: Builder,
-        query: Result<Option<O>, Error>,
+        query: Option<O>,
         payload: Result<Body, Error>,
     ) -> Result<Request<Body>, Error>
     where
-        O: IntoIterator,
-        O::Item: ::std::borrow::Borrow<(K, V)>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        O: Serialize,
     {
-        query
-            .and_then(|q| payload.map(|body| (q, body)))
-            .and_then(|(q, body)| {
-                let uri = Uri::parse(
-                    &self.client_addr,
-                    &self.client_type,
-                    path,
-                    q,
-                    &self.client_version(),
-                )?;
-                let request_uri: hyper::Uri = uri.into();
-                let builder_string = format!("{:?}", builder);
-                Ok(builder
-                    .uri(request_uri)
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .map_err::<Error, _>(|e| {
-                        HttpClientError {
-                            builder: builder_string,
-                            err: e,
-                        }
-                        .into()
-                    })?)
-            })
+        let uri = Uri::parse(
+            &self.client_addr,
+            &self.client_type,
+            path,
+            query,
+            &self.client_version(),
+        )?;
+        let request_uri: hyper::Uri = uri.into();
+        debug!("{}", &request_uri);
+        let builder_string = format!("{:?}", builder);
+        Ok(builder
+            .uri(request_uri)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload?)
+            .map_err::<Error, _>(|e| {
+                HttpClientError {
+                    builder: builder_string,
+                    err: e,
+                }
+                .into()
+            })?)
     }
 
     async fn execute_request(
