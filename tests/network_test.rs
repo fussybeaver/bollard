@@ -237,11 +237,15 @@ async fn prune_networks_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[test]
+#[cfg(unix)]
+// Hangs on Appveyor
 fn integration_test_create_network() {
     connect_to_docker_and_run!(create_network_test);
 }
 
 #[test]
+#[cfg(unix)]
+// Hangs on Appveyor
 fn integration_test_list_networks() {
     connect_to_docker_and_run!(list_networks_test);
 }
@@ -254,6 +258,8 @@ fn integration_test_connect_network() {
 }
 
 #[test]
+#[cfg(unix)]
+// Hangs on Appveyor
 fn integration_test_prune_networks() {
     connect_to_docker_and_run!(prune_networks_test);
 }

@@ -537,11 +537,15 @@ fn integration_test_create_image() {
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_inspect_image() {
     connect_to_docker_and_run!(inspect_image_test);
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_images_list() {
     connect_to_docker_and_run!(list_images_test);
 }
@@ -557,6 +561,8 @@ fn integration_test_prune_images() {
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_remove_image() {
     connect_to_docker_and_run!(remove_image_test);
 }
