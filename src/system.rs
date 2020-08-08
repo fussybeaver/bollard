@@ -5,6 +5,7 @@ use futures_core::Stream;
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
+use serde_json::value::Value;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -69,6 +70,9 @@ pub struct Version {
     /// Indicates if the daemon is started with experimental features enabled.  This field is omitted when empty / false.
     #[serde(rename = "Experimental")]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg(windows)]
+    pub experimental: Option<bool>,
+    #[cfg(not(windows))]
     pub experimental: Option<String>,
 
     /// The date and time that the daemon was compiled.
@@ -77,7 +81,7 @@ pub struct Version {
     pub build_time: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct VersionComponents {
     /// Name of the component
@@ -91,7 +95,7 @@ pub struct VersionComponents {
     /// Key/value pairs of strings with additional information about the component. These values are intended for informational purposes only, and their content is not defined, and not part of the API specification.  These messages can be printed by the client as information to the user.
     #[serde(rename = "Details")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<Version>,
+    pub details: Option<HashMap<String, Value>>,
 }
 
 /// Parameters used in the [Events API](../struct.Docker.html#method.events)

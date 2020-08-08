@@ -8,6 +8,7 @@ mod common;
 #[cfg(windows)]
 #[test]
 fn test_version_named_pipe() {
+    env_logger::init();
     rt_exec!(
         Docker::connect_with_named_pipe_defaults()
             .unwrap()
