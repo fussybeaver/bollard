@@ -158,23 +158,6 @@ pub(crate) enum MaybeClientVersion {
     None,
 }
 
-//impl From<String> for MaybeClientVersion {
-//    fn from(s: String) -> MaybeClientVersion {
-//        match s
-//            .split(".")
-//            .map(|v| v.parse::<usize>())
-//            .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
-//            .as_slice()
-//        {
-//            [Ok(first), Ok(second)] => MaybeClientVersion::Some(ClientVersion {
-//                major_version: first.to_owned(),
-//                minor_version: second.to_owned(),
-//            }),
-//            _ => MaybeClientVersion::None,
-//        }
-//    }
-//}
-
 impl<T: Into<String>> From<T> for MaybeClientVersion {
     fn from(s: T) -> MaybeClientVersion {
         match s
