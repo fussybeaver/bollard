@@ -17,7 +17,6 @@ use std::hash::Hash;
 use super::Docker;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 
 use crate::models::*;
 
@@ -106,7 +105,7 @@ where
             ("size", self.size.to_string()),
             (
                 "filters",
-                serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
+                serde_json::to_string(&self.filters)?,
             ),
         ]))
     }
@@ -1197,8 +1196,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneContainersQueryParams<&'a s
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)
-                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+            serde_json::to_string(&self.filters)?,
         )]))
     }
 }

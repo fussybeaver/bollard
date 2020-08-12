@@ -13,7 +13,6 @@ use std::hash::Hash;
 use super::Docker;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -266,8 +265,7 @@ impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a st
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)
-                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+            serde_json::to_string(&self.filters)?,
         )]))
     }
 }
@@ -410,8 +408,7 @@ impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a 
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)
-                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+            serde_json::to_string(&self.filters)?,
         )]))
     }
 }

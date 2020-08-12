@@ -18,7 +18,7 @@ fn main() {
     rt.block_on(run()).unwrap();
 }
 
-async fn run() -> Result<(), failure::Error> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]

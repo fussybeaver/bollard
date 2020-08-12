@@ -16,7 +16,6 @@ use crate::auth::DockerCredentials;
 use crate::container::Config;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 use crate::models::*;
 
 use std::cmp::Eq;
@@ -199,8 +198,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
             ("all", self.all.to_string()),
             (
                 "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.filters)?,
             ),
             ("digests", self.digests.to_string()),
         ]))
@@ -264,8 +262,7 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneImagesQueryParams<&'a str>
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters)
-                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+            serde_json::to_string(&self.filters)?,
         )]))
     }
 }
@@ -366,8 +363,7 @@ impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<&'a str> {
             ),
             (
                 "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.filters)?,
             ),
         ]))
     }
@@ -384,8 +380,7 @@ impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<String> {
             ),
             (
                 "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.filters)?,
             ),
         ]))
     }
@@ -737,8 +732,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
             ("nocache", self.nocache.to_string()),
             (
                 "cachefrom",
-                serde_json::to_string(&self.cachefrom)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.cachefrom)?,
             ),
             ("pull", self.pull.to_string()),
             ("rm", self.rm.to_string()),
@@ -746,14 +740,12 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
             ("cpusetcpus", self.cpusetcpus.to_string()),
             (
                 "buildargs",
-                serde_json::to_string(&self.buildargs)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.buildargs)?,
             ),
             ("squash", self.squash.to_string()),
             (
                 "labels",
-                serde_json::to_string(&self.labels)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.labels)?,
             ),
             ("networkmode", self.networkmode.to_string()),
             ("platform", self.platform.to_string()),
@@ -786,8 +778,7 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
             ("nocache", self.nocache.to_string()),
             (
                 "cachefrom",
-                serde_json::to_string(&self.cachefrom)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.cachefrom)?,
             ),
             ("pull", self.pull.to_string()),
             ("rm", self.rm.to_string()),
@@ -795,14 +786,12 @@ impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
             ("cpusetcpus", self.cpusetcpus.to_string()),
             (
                 "buildargs",
-                serde_json::to_string(&self.buildargs)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.buildargs)?,
             ),
             ("squash", self.squash.to_string()),
             (
                 "labels",
-                serde_json::to_string(&self.labels)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
+                serde_json::to_string(&self.labels)?,
             ),
             ("networkmode", self.networkmode),
             ("platform", self.platform),
@@ -1048,7 +1037,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(Error::from(e)) }).boxed()
             }
         }
     }
@@ -1287,7 +1276,7 @@ impl Docker {
                 );
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1412,7 +1401,7 @@ impl Docker {
 
                 self.process_into_unit(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1550,7 +1539,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(e.into()) }).boxed()
             }
         }
     }
@@ -1672,7 +1661,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(e.into()) }).boxed()
             }
         }
     }

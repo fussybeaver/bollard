@@ -11,7 +11,6 @@ use std::hash::Hash;
 
 use super::Docker;
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 use crate::models::*;
 
 /// Result type for the [Version API](../struct.Docker.html#method.version)
@@ -109,7 +108,7 @@ where
             ),
             (
                 "filters",
-                serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
+                serde_json::to_string(&self.filters)?,
             ),
         ]))
     }

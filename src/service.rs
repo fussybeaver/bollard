@@ -6,7 +6,6 @@ use super::Docker;
 use crate::auth::DockerCredentials;
 use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 use arrayvec::ArrayVec;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
@@ -69,7 +68,7 @@ where
     fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
         Ok(ArrayVec::from([(
             "filters",
-            serde_json::to_string(&self.filters).map_err(|e| JsonSerializeError { err: e })?,
+            serde_json::to_string(&self.filters)?,
         )]))
     }
 }
@@ -314,7 +313,7 @@ impl Docker {
 
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -492,7 +491,7 @@ impl Docker {
 
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 }
