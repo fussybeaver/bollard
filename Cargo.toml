@@ -40,7 +40,7 @@ url = "2.1.1"
 futures-core = "0.3.4"
 futures-util = "0.3.4"
 tokio-util = { version = "0.3.1", features = ["codec"] }
-bollard-stubs = { version = "1.40.3", path = "codegen/target/generated-sources" }
+bollard-stubs = { version = "1.40.3" }
 rustls = "0.17"
 rustls-native-certs = "0.3.0"
 ct-logs = "0.7.0"
