@@ -18,72 +18,78 @@ use tokio_util::codec::Decoder;
 use crate::container::LogOutput;
 
 use crate::errors::Error;
-use crate::errors::ErrorKind::{JsonDataError, JsonDeserializeError, StrParseError};
+use crate::errors::ErrorKind::{JsonDataError, JsonDeserializeError};
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct NewlineLogOutputDecoder {}
+enum NewlineLogOutputDecoderState {
+    WaitingHeader,
+    WaitingPayload(u8, usize), // StreamType, Length
+}
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct NewlineLogOutputDecoder {
+    state: NewlineLogOutputDecoderState,
+}
 
 impl NewlineLogOutputDecoder {
     pub(crate) fn new() -> NewlineLogOutputDecoder {
-        NewlineLogOutputDecoder {}
+        NewlineLogOutputDecoder {
+            state: NewlineLogOutputDecoderState::WaitingHeader,
+        }
     }
 }
 
 impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
     type Error = Error;
+
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let nl_index = src.iter().position(|b| *b == b'\n');
-
-        if src.len() > 0 {
-            let pos = nl_index.unwrap_or(src.len() - 1);
-
-            let slice = src.split_to(pos + 1);
-            let slice = &slice[..slice.len() - 1];
-
-            if slice.len() == 0 {
-                Ok(Some(LogOutput::Console {
-                    message: String::new(),
-                }))
-            } else {
-                match &slice[0] {
-                    0 if slice.len() <= 8 => Ok(Some(LogOutput::StdIn {
-                        message: String::new(),
-                    })),
-                    0 => Ok(Some(LogOutput::StdIn {
-                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
-                    })),
-                    1 if slice.len() <= 8 => Ok(Some(LogOutput::StdOut {
-                        message: String::new(),
-                    })),
-                    1 => Ok(Some(LogOutput::StdOut {
-                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
-                    })),
-                    2 if slice.len() <= 8 => Ok(Some(LogOutput::StdErr {
-                        message: String::new(),
-                    })),
-                    2 => Ok(Some(LogOutput::StdErr {
-                        message: String::from_utf8_lossy(&slice[8..]).to_string(),
-                    })),
-                    _ =>
+        loop {
+            match self.state {
+                NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
-                    {
-                        Ok(Some(LogOutput::Console {
-                            message: String::from_utf8_lossy(&slice).to_string(),
-                        }))
+                    if src.len() >= 1 && src[0] > 2 {
+                        debug!(
+                            "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
+                        );
+                        return Ok(Some(LogOutput::Console {
+                            message: src.split().freeze(),
+                        }));
+                    }
+
+                    if src.len() < 8 {
+                        debug!("NewlineLogOutputDecoder: not enough data for read header");
+                        return Ok(None);
+                    }
+
+                    let header = src.split_to(8);
+                    let length =
+                        u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
+                    debug!(
+                        "NewlineLogOutputDecoder: read header, type = {}, length = {}",
+                        header[0], length
+                    );
+                    self.state = NewlineLogOutputDecoderState::WaitingPayload(header[0], length);
+                }
+                NewlineLogOutputDecoderState::WaitingPayload(typ, length) => {
+                    if src.len() < length {
+                        debug!("NewlineLogOutputDecoder: not enough data to read");
+                        return Ok(None);
+                    } else {
+                        debug!("NewlineLogOutputDecoder: Reading payload");
+                        let message = src.split_to(length).freeze();
+                        let item = match typ {
+                            0 => LogOutput::StdIn { message },
+                            1 => LogOutput::StdOut { message },
+                            2 => LogOutput::StdErr { message },
+                            _ => unreachable!(),
+                        };
+
+                        self.state = NewlineLogOutputDecoderState::WaitingHeader;
+                        return Ok(Some(item));
                     }
                 }
-                .map_err(|e| {
-                    StrParseError {
-                        content: hex::encode(slice.to_owned()),
-                        err: e,
-                    }
-                    .into()
-                })
             }
-        } else {
-            debug!("NewlineLogOutputDecoder returning due to an empty line");
-            Ok(None)
         }
     }
 }

@@ -200,7 +200,7 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     let value = vec.get(1).unwrap();
 
-    assert_eq!(format!("{}", value), "Hello from Docker!".to_string());
+    assert_eq!(format!("{}", value), "Hello from Docker!\n".to_string());
 
     &docker
         .remove_container("integration_test_logs", None::<RemoveContainerOptions>)
@@ -550,6 +550,13 @@ async fn inspect_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     assert_eq!(None, result.host_config.as_ref().unwrap().capabilities);
+
+    let config: Config<String> = result.config.as_ref().unwrap().to_owned().into();
+
+    assert_eq!(
+        config.image.as_ref().unwrap(),
+        result.config.as_ref().unwrap().image.as_ref().unwrap()
+    );
 
     kill_container(&docker, "integration_test_inspect_container").await?;
 

@@ -40,18 +40,25 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    assert!(vec.iter().take(2).any(|line| {
-        println!("{:?}", line);
-        let expected = if cfg!(windows) {
-            "<configuration>\r"
-        } else {
-            "config uhttpd main"
-        };
-        match line {
-            StartExecResults::Attached { ref log } if format!("{}", log) == expected => true,
-            _ => false,
-        }
-    }));
+    assert!(vec.len() > 0);
+    assert!(match &vec[0] {
+        StartExecResults::Attached { log } => {
+            match log {
+                LogOutput::StdOut { message } => {
+                    let (n, expected) = if cfg!(windows) {
+                        (0, "<configuration>\r")
+                    } else {
+                        (1, "config uhttpd main")
+                    };
+
+                    let s = String::from_utf8_lossy(message);
+                    s.split("\n").skip(n).next().expect("log exists") == expected
+                }
+                _ => false,
+            }
+        },
+        _ => false,
+    });
 
     &docker
         .kill_container(
