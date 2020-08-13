@@ -17,7 +17,7 @@ use common::*;
 
 #[derive(Debug)]
 enum Results {
-    CreateImageResults(CreateImageResults),
+    CreateImageResults(BuildInfo),
     EventsResults(SystemEventsResponse),
 }
 

@@ -117,6 +117,11 @@ public class BollardCodegen extends RustServerCodegen {
         for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
             CodegenModel model = entry.getValue();
             for (CodegenProperty prop : model.vars) {
+                if (prop.name.contains("i_pv6")) {
+                    prop.name = prop.name.replace("i_pv6", "ipv6");
+                } else if (prop.name.contains("i_pv4")) {
+                    prop.name = prop.name.replace("i_pv4", "ipv4");
+                }
                 if (prop.dataFormat != null && prop.dataFormat.equals("dateTime")) {
                     // set DateTime format on properties where appropriate
                     prop.datatype = "DateTime<Utc>";

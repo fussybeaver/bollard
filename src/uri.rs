@@ -21,7 +21,7 @@ impl<'a> Into<HyperUri> for Uri<'a> {
 }
 
 impl<'a> Uri<'a> {
-    pub(crate) fn parse<O, K, V>(
+    pub(crate) fn parse<O>(
         socket: &'a str,
         client_type: &ClientType,
         path: &'a str,
@@ -29,10 +29,7 @@ impl<'a> Uri<'a> {
         client_version: &ClientVersion,
     ) -> Result<Self, Error>
     where
-        O: IntoIterator,
-        O::Item: ::std::borrow::Borrow<(K, V)>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        O: serde::ser::Serialize,
     {
         let host_str = format!(
             "{}://{}/v{}.{}{}",
@@ -46,7 +43,8 @@ impl<'a> Uri<'a> {
         url = url.join(path).unwrap();
 
         if let Some(pairs) = query {
-            url.query_pairs_mut().extend_pairs(pairs);
+            let qs = serde_urlencoded::to_string(pairs)?;
+            url.set_query(Some(&qs));
         }
 
         debug!(
@@ -66,7 +64,6 @@ impl<'a> Uri<'a> {
     {
         match client_type {
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(any(feature = "ssl", feature = "tls"))]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(unix)]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
@@ -78,7 +75,6 @@ impl<'a> Uri<'a> {
     fn socket_scheme(client_type: &ClientType) -> &'a str {
         match client_type {
             ClientType::Http => "http",
-            #[cfg(any(feature = "ssl", feature = "tls"))]
             ClientType::SSL => "https",
             #[cfg(unix)]
             ClientType::Unix => "unix",
@@ -101,9 +97,13 @@ impl<'a> Uri<'a> {
 
     #[cfg(windows)]
     pub(crate) fn socket_path_dest(dest: &HyperUri, client_type: &ClientType) -> Option<String> {
-        format!("{}://{}", Uri::socket_scheme(client_type), dest.host().unwrap_or("UNKNOWN_HOST"))
-            .parse()
-            .ok()
-            .and_then(|uri| Self::socket_path(&uri))
+        format!(
+            "{}://{}",
+            Uri::socket_scheme(client_type),
+            dest.host().unwrap_or("UNKNOWN_HOST")
+        )
+        .parse()
+        .ok()
+        .and_then(|uri| Self::socket_path(&uri))
     }
 }

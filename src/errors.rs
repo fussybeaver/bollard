@@ -1,12 +1,33 @@
 //! Errors for this module.
+use std::path::PathBuf;
 
 /// The type of error embedded in an Error.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
-    #[error("could not find DOCKER_CERT_PATH")]
+    #[error("Could not find DOCKER_CERT_PATH")]
     NoCertPathError,
+    /// Generic error when reading a certificate from the filesystem
+    #[error("Cannot open/read certificate with path: {path}")]
+    CertPathError {
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
+    /// Error emitted when multiple keys are found in a certificate file
+    #[error("Found multiple keys ({count}), expected one: {path}")]
+    CertMultipleKeys {
+        /// Number of keys found in the certificate file
+        count: usize,
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
+    /// Parse error for RSA encrypted keys
+    #[error("Could not parse key: {path}")]
+    CertParseError {
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
     /// Error emitted by the docker server, when it responds with a 404.
     #[error("API responded with a 404 not found: {message}")]
     DockerResponseNotFoundError {
@@ -100,20 +121,11 @@ pub enum Error {
     /// Error emitted when a request times out.
     #[error("Timeout error")]
     RequestTimeoutError,
-    /// Error emitted when an SSL context fails to configure.
-    #[cfg(feature = "openssl")]
+    /// Error emitted when serde fails to urlencod a struct of options
     #[error(transparent)]
-    SSLError {
+    URLEncodedError {
         /// The original error emitted.
         #[from]
-        err: openssl::error::ErrorStack,
-    },
-    /// Error emitted when a TLS context fails to configure.
-    #[cfg(feature = "tls")]
-    #[error(transparent)]
-    TLSError {
-        /// The original error emitted.
-        #[from]
-        err: native_tls::Error,
+        err: serde_urlencoded::ser::Error,
     },
 }

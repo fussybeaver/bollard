@@ -148,7 +148,7 @@ async fn top_processes_test(docker: Docker) -> Result<(), Error> {
     } else if cfg!(target_os = "macos") {
         "PID"
     } else {
-        "USER"
+        "UID"
     };
 
     create_daemon(&docker, "integration_test_top_processes").await?;

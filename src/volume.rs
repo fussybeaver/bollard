@@ -1,92 +1,30 @@
 //! Volume API: Create and manage persistent storage that can be attached to containers.
 
-use arrayvec::ArrayVec;
-use chrono::{DateTime, Utc};
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde::Serialize;
-use serde_json;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
-use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
-
-/// Subresult type for the [List Volumes API](../struct.Docker.html#method.list_volumes)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct VolumesListVolumesResults {
-    pub created_at: DateTime<Utc>,
-    pub name: String,
-    pub driver: String,
-    pub mountpoint: String,
-    pub labels: Option<HashMap<String, String>>,
-    pub scope: String,
-    pub options: Option<HashMap<String, String>>,
-}
-
-/// Result type for the [List Volumes API](../struct.Docker.html#method.list_volumes)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct ListVolumesResults {
-    pub volumes: Vec<VolumesListVolumesResults>,
-    pub warnings: Option<Vec<String>>,
-}
+use crate::models::*;
 
 /// Parameters used in the [List Volume API](../struct.Docker.html#method.list_volumes)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ListVolumesOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// JSON encoded value of the filters (a `map[string][]string`) to process on the volumes list. Available filters:
     ///  - `dangling=<boolean>` When set to `true` (or `1`), returns all volumes that are not in use by a container. When set to `false` (or `0`), only volumes that are in use by one or more containers are returned.
     ///  - `driver=<volume-driver-name>` Matches volumes based on their driver.
     ///  - `label=<key>` or `label=<key>:<value>` Matches volumes based on the presence of a `label` alone or a `label` and a value.
     ///  - `name=<volume-name>` Matches all or part of a volume name.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
-}
-
-#[allow(missing_docs)]
-/// Trait providing implementations for [List Volumes Options](struct.ListVolumesOptions.html)
-/// struct.
-pub trait ListVolumesQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
-}
-
-impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListVolumesQueryParams<&'a str, String>
-    for ListVolumesOptions<T>
-{
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "filters",
-            serde_json::to_string(&self.filters)?,
-        )]))
-    }
-}
-
-/// Result type for the [Inspect Volume API](../struct.Docker.html#method.inspect_volume) and the
-/// [Create Volume API](../struct.Docker.html#method.create_volume)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct VolumeAPI {
-    pub name: String,
-    pub driver: String,
-    pub mountpoint: String,
-    pub labels: HashMap<String, String>,
-    pub scope: String,
-    pub created_at: DateTime<Utc>,
 }
 
 /// Volume configuration used in the [Create Volume
@@ -95,7 +33,7 @@ pub struct VolumeAPI {
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// The new volume's name. If not specified, Docker generates a name.
     pub name: T,
@@ -109,31 +47,11 @@ where
 }
 
 /// Parameters used in the [Remove Volume API](../struct.Docker.html#method.remove_volume)
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoveVolumeOptions {
     /// Force the removal of the volume.
     pub force: bool,
-}
-
-#[allow(missing_docs)]
-/// Trait providing implementations for [Remove Volume Options](struct.RemoveVolumeOptions.html)
-/// struct.
-pub trait RemoveVolumeQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
-}
-
-impl<'a> RemoveVolumeQueryParams<&'a str, &'a str> for RemoveVolumeOptions {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "force",
-            if self.force { TRUE_STR } else { FALSE_STR },
-        )]))
-    }
 }
 
 /// Parameters used in the [Prune Volumes API](../struct.Docker.html#method.prune_volumes)
@@ -161,45 +79,17 @@ impl<'a> RemoveVolumeQueryParams<&'a str, &'a str> for RemoveVolumeOptions {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct PruneVolumesOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
     ///  `label!=<key>=<value>`) Prune volumes with (or without, in case `label!=...` is used) the
     ///  specified labels.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
-}
-
-/// Trait providing implementations for [Prune Volumes Options](struct.PruneVolumesOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait PruneVolumesQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
-}
-
-impl<'a> PruneVolumesQueryParams<&'a str, String> for PruneVolumesOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "filters",
-            serde_json::to_string(&self.filters)?,
-        )]))
-    }
-}
-
-/// Result type for the [Prune Volumes API](../struct.Docker.html#method.prune_volumes)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct PruneVolumesResults {
-    pub volumes_deleted: Option<Vec<String>>,
-    pub space_reclaimed: u64,
 }
 
 impl Docker {
@@ -213,7 +103,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [List Volumes Results](volume/struct.ListVolumesResults.html) struct, wrapped in a
+    ///  - A [Volume List Response](models/struct.VolumeListResponse.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -238,16 +128,16 @@ impl Docker {
     pub async fn list_volumes<T>(
         &self,
         options: Option<ListVolumesOptions<T>>,
-    ) -> Result<ListVolumesResults, Error>
+    ) -> Result<VolumeListResponse, Error>
     where
-        T: AsRef<str> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/volumes";
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -266,7 +156,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Volume Api](volume/struct.VolumeAPI.html) struct, wrapped in a
+    ///  - A [Volume](models/struct.Volume.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -286,16 +176,16 @@ impl Docker {
     ///
     /// docker.create_volume(config);
     /// ```
-    pub async fn create_volume<T>(&self, config: CreateVolumeOptions<T>) -> Result<VolumeAPI, Error>
+    pub async fn create_volume<T>(&self, config: CreateVolumeOptions<T>) -> Result<Volume, Error>
     where
-        T: AsRef<str> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/volumes/create";
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Docker::serialize_payload(Some(config)),
         );
 
@@ -312,7 +202,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Volume API](volume/struct.VolumeAPI.html) struct, wrapped in a
+    ///  - A [Volume](models/struct.Volume.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -323,13 +213,13 @@ impl Docker {
     ///
     /// docker.inspect_volume("my_volume_name");
     /// ```
-    pub async fn inspect_volume(&self, volume_name: &str) -> Result<VolumeAPI, Error> {
+    pub async fn inspect_volume(&self, volume_name: &str) -> Result<Volume, Error> {
         let url = format!("/volumes/{}", volume_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 
@@ -376,7 +266,7 @@ impl Docker {
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -395,7 +285,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Prune Volumes Results](volume/struct.PruneVolumesResults.html) struct.
+    ///  - A [Volume Prune Response](models/struct.VolumePruneResponse.html) struct.
     ///
     /// # Examples
     ///
@@ -416,21 +306,19 @@ impl Docker {
     ///
     /// docker.prune_volumes(Some(options));
     /// ```
-    pub async fn prune_volumes<T, K, V>(
+    pub async fn prune_volumes<T>(
         &self,
-        options: Option<T>,
-    ) -> Result<PruneVolumesResults, Error>
+        options: Option<PruneVolumesOptions<T>>,
+    ) -> Result<VolumePruneResponse, Error>
     where
-        T: PruneVolumesQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/volumes/prune";
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 

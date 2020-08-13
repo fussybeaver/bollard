@@ -1,25 +1,24 @@
 //! Network API: Networks are user-defined networks that containers can be attached to.
 
-use arrayvec::ArrayVec;
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
-use serde_json;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
-use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
+
+use crate::models::*;
 
 /// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash,
 {
     /// The network's name.
     pub name: T,
@@ -39,7 +38,7 @@ where
     pub ingress: bool,
     /// Controls IP address management when creating a network.
     #[serde(rename = "IPAM")]
-    pub ipam: IPAM<T>,
+    pub ipam: Ipam,
     /// Enable IPv6 on the network.
     #[serde(rename = "EnableIPv6")]
     pub enable_ipv6: bool,
@@ -47,46 +46,6 @@ where
     pub options: HashMap<T, T>,
     /// User-defined key/value metadata.
     pub labels: HashMap<T, T>,
-}
-
-/// IPAM represents IP Address Management
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct IPAM<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// Name of the IPAM driver to use.
-    pub driver: T,
-    /// List of IPAM configuration options, specified as a map: {"Subnet": <CIDR>, "IPRange": <CIDR>, "Gateway": <IP address>, "AuxAddress": <device_name:IP address>}
-    pub config: Vec<IPAMConfig<T>>,
-    /// Driver-specific options, specified as a map.
-    pub options: Option<HashMap<T, T>>,
-}
-
-/// IPAMConfig represents IPAM configurations
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct IPAMConfig<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    pub subnet: Option<T>,
-    #[serde(rename = "IPRange")]
-    pub ip_range: Option<T>,
-    pub gateway: Option<T>,
-    pub aux_address: Option<HashMap<T, T>>,
-}
-
-/// Result type for the [Create Network API](../struct.Docker.html#method.create_network)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct CreateNetworkResults {
-    pub id: String,
-    pub warning: String,
 }
 
 /// Parameters used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
@@ -109,104 +68,15 @@ pub struct CreateNetworkResults {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct InspectNetworkOptions<T> {
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct InspectNetworkOptions<T>
+where
+    T: Into<String> + Serialize,
+{
     /// Detailed inspect output for troubleshooting.
     pub verbose: bool,
     /// Filter the network by scope (swarm, global, or local)
     pub scope: T,
-}
-
-#[allow(missing_docs)]
-/// Trait providing implementations for [Inspect Network Options](struct.InspectNetworkOptions.html)
-/// struct.
-pub trait InspectNetworkQueryParams<'a, V>
-where
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, V); 2]>, Error>;
-}
-
-impl<'a> InspectNetworkQueryParams<'a, &'a str> for InspectNetworkOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 2]>, Error> {
-        Ok(ArrayVec::from([
-            ("verbose", if self.verbose { TRUE_STR } else { FALSE_STR }),
-            ("scope", self.scope),
-        ]))
-    }
-}
-
-impl<'a> InspectNetworkQueryParams<'a, String> for InspectNetworkOptions<String> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 2]>, Error> {
-        Ok(ArrayVec::from([
-            ("verbose", self.verbose.to_string()),
-            ("scope", self.scope),
-        ]))
-    }
-}
-
-/// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct InspectNetworkResults {
-    pub name: String,
-    pub id: String,
-    pub created: String,
-    pub scope: String,
-    pub driver: String,
-    #[serde(rename = "EnableIPv6")]
-    pub enable_ipv6: bool,
-    #[serde(rename = "IPAM")]
-    pub ipam: IPAM<String>,
-    pub internal: bool,
-    pub attachable: bool,
-    pub ingress: bool,
-    pub containers: HashMap<String, InspectNetworkResultsContainers>,
-    pub options: HashMap<String, String>,
-    pub labels: HashMap<String, String>,
-    pub config_from: HashMap<String, String>,
-    pub config_only: bool,
-}
-
-/// Result type for the [Inspect Network API](../struct.Docker.html#method.inspect_network)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct InspectNetworkResultsContainers {
-    pub name: String,
-    #[serde(rename = "EndpointID")]
-    pub endpoint_id: Option<String>,
-    pub mac_address: Option<String>,
-    #[serde(rename = "IPv4Address")]
-    pub ipv4_address: Option<String>,
-    #[serde(rename = "IPv6Address")]
-    pub ipv6_address: Option<String>,
-}
-
-/// Result type for the [List Networks API](../struct.Docker.html#method.list_networks)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct ListNetworksResults {
-    pub name: String,
-    pub id: String,
-    pub created: String,
-    pub scope: String,
-    pub driver: String,
-    #[serde(rename = "EnableIPv6")]
-    pub enable_ipv6: bool,
-    pub internal: bool,
-    pub attachable: bool,
-    pub ingress: bool,
-    #[serde(rename = "IPAM")]
-    pub ipam: IPAM<String>,
-    pub options: HashMap<String, String>,
-    pub config_from: HashMap<String, String>,
-    pub config_only: bool,
-    pub containers: HashMap<String, InspectNetworkResultsContainers>,
-    pub labels: HashMap<String, String>,
 }
 
 /// Parameters used in the [List Networks API](../struct.Docker.html#method.list_networks)
@@ -234,11 +104,10 @@ pub struct ListNetworksResults {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ListNetworksOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// JSON encoded value of the filters (a `map[string][]string`) to process on the networks list. Available filters:
     ///  - `driver=<driver-name>` Matches a network's driver.
@@ -247,106 +116,29 @@ where
     ///  - `name=<network-name>` Matches all or part of a network name.
     ///  - `scope=["swarm"|"global"|"local"]` Filters networks by scope (`swarm`, `global`, or `local`).
     ///  - `type=["custom"|"builtin"]` Filters networks by type. The `custom` keyword returns all user-defined networks.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
 
-#[allow(missing_docs)]
-/// Trait providing implementations for [List Networks Options](struct.ListNetworksOptions.html)
-/// struct.
-pub trait ListNetworksQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
-}
-
-impl<'a> ListNetworksQueryParams<&'a str, String> for ListNetworksOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "filters",
-            serde_json::to_string(&self.filters)?,
-        )]))
-    }
-}
-
 /// Network configuration used in the [Connect Network API](../struct.Docker.html#method.connect_network)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// The ID or name of the container to connect to the network.
     pub container: T,
     /// Configuration for a network endpoint.
-    pub endpoint_config: EndpointSettings<T>,
-}
-
-/// Configuration for a network endpoint.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct EndpointSettings<T>
-where
-    T: AsRef<str> + Eq + Hash,
-{
-    /// EndpointIPAMConfig represents an endpoint's IPAM configuration.
-    #[serde(rename = "IPAMConfig")]
-    pub ipam_config: EndpointIPAMConfig<T>,
-    #[allow(missing_docs)]
-    pub links: Vec<T>,
-    #[allow(missing_docs)]
-    pub aliases: Vec<T>,
-    /// Unique ID of the network.
-    #[serde(rename = "NetworkID")]
-    pub network_id: T,
-    /// Unique ID for the service endpoint in a Sandbox.
-    #[serde(rename = "EndpointID")]
-    pub endpoint_id: T,
-    /// Gateway address for this network.
-    pub gateway: T,
-    /// IPv4 address.
-    #[serde(rename = "IPAddress")]
-    pub ip_address: T,
-    /// Mask length of the IPv4 address.
-    #[serde(rename = "IPPrefixLen")]
-    pub ip_prefix_len: isize,
-    /// IPv6 gateway address.
-    #[serde(rename = "IPv6Gateway")]
-    pub ipv6_gateway: T,
-    /// Global IPv6 address.
-    #[serde(rename = "GlobalIPv6Address")]
-    pub global_ipv6_address: T,
-    /// Mask length of the global IPv6 address.
-    #[serde(rename = "GlobalIPv6PrefixLen")]
-    pub global_ipv6_prefix_len: i64,
-    /// MAC address for the endpoint on this network.
-    pub mac_address: T,
-    /// DriverOpts is a mapping of driver options and values. These options are passed directly to
-    /// the driver and are driver specific.
-    pub driver_opts: Option<HashMap<T, T>>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct EndpointIPAMConfig<T>
-where
-    T: AsRef<str>,
-{
-    #[serde(rename = "IPv4Address")]
-    pub ipv4_address: Option<T>,
-    #[serde(rename = "IPv6Address")]
-    pub ipv6_address: Option<T>,
-    #[serde(rename = "LinkLocalIPs")]
-    pub link_local_ips: Option<Vec<T>>,
+    pub endpoint_config: EndpointSettings,
 }
 
 /// Network configuration used in the [Disconnect Network API](../struct.Docker.html#method.disconnect_network)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
-    T: AsRef<str>,
+    T: Into<String> + Serialize,
 {
     /// The ID or name of the container to disconnect from the network.
     pub container: T,
@@ -379,10 +171,10 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct PruneNetworksOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
@@ -390,35 +182,8 @@ where
     ///  computed relative to the daemon machine’s time.
     ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`)
     ///  Prune networks with (or without, in case `label!=...` is used) the specified labels.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
-}
-
-/// Trait providing implementations for [Prune Networks Options](struct.PruneNetworksOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait PruneNetworksQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
-}
-
-impl<'a> PruneNetworksQueryParams<&'a str, String> for PruneNetworksOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "filters",
-            serde_json::to_string(&self.filters)?,
-        )]))
-    }
-}
-
-/// Result type for the [Prune Networks API](../struct.Docker.html#method.prune_networks)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct PruneNetworksResults {
-    pub networks_deleted: Option<Vec<String>>,
 }
 
 impl Docker {
@@ -434,7 +199,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Create Network Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A [Network Create Response](models/struct.NetworkCreateResponse.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -457,16 +222,16 @@ impl Docker {
     pub async fn create_network<T>(
         &self,
         config: CreateNetworkOptions<T>,
-    ) -> Result<CreateNetworkResults, Error>
+    ) -> Result<NetworkCreateResponse, Error>
     where
-        T: AsRef<str> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/networks/create";
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Docker::serialize_payload(Some(config)),
         );
 
@@ -496,10 +261,10 @@ impl Docker {
     pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
         let url = format!("/networks/{}", network_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 
@@ -516,7 +281,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Inspect Network Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A [Models](models/struct.Network.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -536,21 +301,20 @@ impl Docker {
     ///
     /// docker.inspect_network("my_network_name", Some(config));
     /// ```
-    pub async fn inspect_network<'a, T, V>(
+    pub async fn inspect_network<T>(
         &self,
         network_name: &str,
-        options: Option<T>,
-    ) -> Result<InspectNetworkResults, Error>
+        options: Option<InspectNetworkOptions<T>>,
+    ) -> Result<Network, Error>
     where
-        T: InspectNetworkQueryParams<'a, V>,
-        V: AsRef<str>,
+        T: Into<String> + Serialize,
     {
         let url = format!("/networks/{}", network_name);
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -567,7 +331,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A vector of [List Networks Results](network/struct.CreateNetworkResults.html) struct, wrapped in a
+    ///  - A vector of [Network](models/struct.Network.html) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -589,21 +353,19 @@ impl Docker {
     ///
     /// docker.list_networks(Some(config));
     /// ```
-    pub async fn list_networks<T, K, V>(
+    pub async fn list_networks<T>(
         &self,
-        options: Option<T>,
-    ) -> Result<Vec<ListNetworksResults>, Error>
+        options: Option<ListNetworksOptions<T>>,
+    ) -> Result<Vec<Network>, Error>
     where
-        T: ListNetworksQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/networks";
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -628,18 +390,19 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::{EndpointSettings, EndpointIPAMConfig, ConnectNetworkOptions};
+    /// use bollard::network::ConnectNetworkOptions;
+    /// use bollard::models::{EndpointSettings, EndpointIpamConfig};
     ///
     /// use std::default::Default;
     ///
     /// let config = ConnectNetworkOptions {
     ///     container: "3613f73ba0e4",
     ///     endpoint_config: EndpointSettings {
-    ///         ipam_config: EndpointIPAMConfig {
-    ///             ipv4_address: Some("172.24.56.89"),
-    ///             ipv6_address: Some("2001:db8::5689"),
+    ///         ipam_config: Some(EndpointIpamConfig {
+    ///             ipv4_address: Some(String::from("172.24.56.89")),
+    ///             ipv6_address: Some(String::from("2001:db8::5689")),
     ///             ..Default::default()
-    ///         },
+    ///         }),
     ///         ..Default::default()
     ///     }
     /// };
@@ -652,14 +415,14 @@ impl Docker {
         config: ConnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: AsRef<str> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = format!("/networks/{}/connect", network_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Docker::serialize_payload(Some(config)),
         );
 
@@ -701,14 +464,14 @@ impl Docker {
         config: DisconnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: AsRef<str> + Serialize,
+        T: Into<String> + Serialize,
     {
         let url = format!("/networks/{}/disconnect", network_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Docker::serialize_payload(Some(config)),
         );
 
@@ -727,7 +490,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Prune Networks Results](network/struct.PruneNetworksResults.html) struct.
+    ///  - A [Network Prune Response](models/struct.NetworkPruneResponse.html) struct.
     ///
     /// # Examples
     ///
@@ -748,21 +511,19 @@ impl Docker {
     ///
     /// docker.prune_networks(Some(options));
     /// ```
-    pub async fn prune_networks<T, K, V>(
+    pub async fn prune_networks<T>(
         &self,
-        options: Option<T>,
-    ) -> Result<PruneNetworksResults, Error>
+        options: Option<PruneNetworksOptions<T>>,
+    ) -> Result<NetworkPruneResponse, Error>
     where
-        T: PruneNetworksQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/networks/prune";
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
