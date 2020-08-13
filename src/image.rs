@@ -1,8 +1,4 @@
 //! Image API: creating, manipulating and pushing docker images
-use arrayvec::ArrayVec;
-use base64;
-use chrono::serde::ts_seconds;
-use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
@@ -14,7 +10,6 @@ use serde_json;
 use super::Docker;
 use crate::auth::DockerCredentials;
 use crate::container::Config;
-use crate::docker::{FALSE_STR, TRUE_STR};
 use crate::errors::Error;
 use crate::errors::ErrorKind::JsonSerializeError;
 use crate::models::*;
@@ -46,10 +41,11 @@ use std::hash::Hash;
 ///   ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateImageOptions<T>
 where
-    T: AsRef<str>,
+    T: Into<String> + Serialize,
 {
     /// Name of the image to pull. The name may include a tag or digest. This parameter may only be
     /// used when pulling an image. The pull is cancelled if the HTTP connection is closed.
@@ -66,73 +62,6 @@ where
     pub tag: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
-}
-
-/// Trait providing implementations for [Create Image Options](struct.CreateImageOptions.html)
-#[allow(missing_docs)]
-pub trait CreateImageQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 5]>, Error>;
-}
-
-impl<'a> CreateImageQueryParams<&'a str, &'a str> for CreateImageOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 5]>, Error> {
-        Ok(ArrayVec::from([
-            ("fromImage", self.from_image),
-            ("fromSrc", self.from_src),
-            ("repo", self.repo),
-            ("tag", self.tag),
-            ("platform", self.platform),
-        ]))
-    }
-}
-
-impl<'a> CreateImageQueryParams<&'a str, String> for CreateImageOptions<String> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 5]>, Error> {
-        Ok(ArrayVec::from([
-            ("fromImage", self.from_image),
-            ("fromSrc", self.from_src),
-            ("repo", self.repo),
-            ("tag", self.tag),
-            ("platform", self.platform),
-        ]))
-    }
-}
-
-/// Subtype for the [Create Image Results](enum.CreateImageResults.html) type.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct CreateImageProgressDetail {
-    pub current: Option<u64>,
-    pub total: Option<u64>,
-}
-
-/// Subtype for the [Create Image Results](enum.CreateImageResults.html) type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateImageErrorDetail {
-    message: String,
-}
-
-/// Result type for the [Create Image API](../struct.Docker.html#method.create_image)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-#[allow(missing_docs)]
-pub enum CreateImageResults {
-    #[serde(rename_all = "camelCase")]
-    CreateImageProgressResponse {
-        status: String,
-        progress_detail: Option<CreateImageProgressDetail>,
-        id: Option<String>,
-        progress: Option<String>,
-    },
-    #[serde(rename_all = "camelCase")]
-    CreateImageError {
-        error_detail: CreateImageErrorDetail,
-        error: String,
-    },
 }
 
 /// Parameters to the [List Images
@@ -164,10 +93,10 @@ pub enum CreateImageResults {
 /// };
 /// ```
 ///
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ListImagesOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Show all images. Only images from a final layer (no children) are shown by default.
     pub all: bool,
@@ -177,34 +106,10 @@ where
     ///  - `label`=`key` or `label`=`"key=value"` of an image label
     ///  - `reference`=(`<image-name>[:<tag>]`)
     ///  - `since`=(`<image-name>[:<tag>]`, `<image id>` or `<image@digest>`)
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
     /// Show digest information as a RepoDigests field on each image.
     pub digests: bool,
-}
-
-/// Trait providing implementations for [List Images Options](struct.ListImagesOptions.html).
-#[allow(missing_docs)]
-pub trait ListImagesQueryParams<K>
-where
-    K: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 3]>, Error>;
-}
-
-impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
-    for ListImagesOptions<T>
-{
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
-        Ok(ArrayVec::from([
-            ("all", self.all.to_string()),
-            (
-                "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("digests", self.digests.to_string()),
-        ]))
-    }
 }
 
 /// Parameters to the [Prune Images API](../struct.Docker.html#method.prune_images)
@@ -232,10 +137,10 @@ impl<'a, T: AsRef<str> + Eq + Hash + Serialize> ListImagesQueryParams<&'a str>
 /// };
 /// ```
 ///
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct PruneImagesOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON. Available filters:
     ///  - `dangling=<boolean>` When set to `true` (or `1`), prune only unused *and* untagged
@@ -246,60 +151,8 @@ where
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
     ///  `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
     ///  specified labels.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
-}
-
-/// Trait providing implementations for [Prune Images Options](struct.PruneImagesOptions.html).
-#[allow(missing_docs)]
-pub trait PruneImagesQueryParams<K>
-where
-    K: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 1]>, Error>;
-}
-
-impl<'a, T: AsRef<str> + Eq + Hash + Serialize> PruneImagesQueryParams<&'a str>
-    for PruneImagesOptions<T>
-{
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "filters",
-            serde_json::to_string(&self.filters)
-                .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-        )]))
-    }
-}
-
-/// Subtype for the [Prune Image Results](struct.PruneImagesResults.html) type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct PruneImagesImagesDeleted {
-    pub untagged: Option<String>,
-    pub deleted: Option<String>,
-}
-
-/// Result type for the [Prune Images API](../struct.Docker.html#method.prune_images)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct PruneImagesResults {
-    pub images_deleted: Option<Vec<PruneImagesImagesDeleted>>,
-    pub space_reclaimed: u64,
-}
-
-/// Result type for the [Image History API](../struct.Docker.html#method.image_history)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct ImageHistory {
-    pub id: String,
-    #[serde(with = "ts_seconds")]
-    pub created: DateTime<Utc>,
-    pub created_by: String,
-    pub tags: Option<Vec<String>>,
-    pub size: u64,
-    pub comment: String,
 }
 
 /// Parameters to the [Search Images API](../struct.Docker.html#method.search_images)
@@ -328,10 +181,10 @@ pub struct ImageHistory {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SearchImagesOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Term to search (required)
     pub term: T,
@@ -341,65 +194,8 @@ where
     ///  - `is-automated=(true|false)`
     ///  - `is-official=(true|false)`
     ///  - `stars=<number>` Matches images that has at least 'number' stars.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, T>,
-}
-
-/// Trait providing implementations for [Search Images Options](struct.SearchImagesOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait SearchImagesQueryParams<K>
-where
-    K: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, String); 3]>, Error>;
-}
-
-impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<&'a str> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
-        Ok(ArrayVec::from([
-            ("term", self.term.to_string()),
-            (
-                "limit",
-                self.limit
-                    .map(|limit| limit.to_string())
-                    .unwrap_or_else(String::new),
-            ),
-            (
-                "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-        ]))
-    }
-}
-impl<'a> SearchImagesQueryParams<&'a str> for SearchImagesOptions<String> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, String); 3]>, Error> {
-        Ok(ArrayVec::from([
-            ("term", self.term),
-            (
-                "limit",
-                self.limit
-                    .map(|limit| limit.to_string())
-                    .unwrap_or_else(String::new),
-            ),
-            (
-                "filters",
-                serde_json::to_string(&self.filters)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-        ]))
-    }
-}
-
-/// Result type for the [Image Search API](../struct.Docker.html#method.image_search)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct APIImageSearch {
-    pub description: String,
-    pub is_official: bool,
-    pub is_automated: bool,
-    pub name: String,
-    pub star_count: u64,
 }
 
 /// Parameters to the [Remove Image API](../struct.Docker.html#method.remove_image)
@@ -415,43 +211,12 @@ pub struct APIImageSearch {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, Serialize)]
 pub struct RemoveImageOptions {
     /// Remove the image even if it is being used by stopped containers or has other tags.
     pub force: bool,
     /// Do not delete untagged parent images.
     pub noprune: bool,
-}
-
-/// Trait providing implementations for [Remove Image Options](struct.RemoveImageOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait RemoveImageQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
-}
-
-impl<'a> RemoveImageQueryParams<&'a str, &'a str> for RemoveImageOptions {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 2]>, Error> {
-        Ok(ArrayVec::from([
-            ("force", if self.force { TRUE_STR } else { FALSE_STR }),
-            ("noprune", if self.noprune { TRUE_STR } else { FALSE_STR }),
-        ]))
-    }
-}
-
-/// Result type for the [Remove Image API](../struct.Docker.html#method.remove_image)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-#[allow(missing_docs)]
-pub enum RemoveImageResults {
-    #[serde(rename_all = "PascalCase")]
-    RemoveImageUntagged { untagged: String },
-    #[serde(rename_all = "PascalCase")]
-    RemoveImageDeleted { deleted: String },
 }
 
 /// Parameters to the [Tag Image API](../struct.Docker.html#method.tag_image)
@@ -475,29 +240,15 @@ pub enum RemoveImageResults {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct TagImageOptions<T> {
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TagImageOptions<T>
+where
+    T: Into<String> + Serialize,
+{
     /// The repository to tag in. For example, `someuser/someimage`.
     pub repo: T,
     /// The name of the new tag.
     pub tag: T,
-}
-
-/// Trait providing implementations for [Tag Image Options](struct.TagImageOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait TagImageQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 2]>, Error>;
-}
-
-impl<'a, T: AsRef<str>> TagImageQueryParams<&'a str, T> for TagImageOptions<T> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 2]>, Error> {
-        Ok(ArrayVec::from([("repo", self.repo), ("tag", self.tag)]))
-    }
 }
 
 /// Parameters to the [Push Image API](../struct.Docker.html#method.push_image)
@@ -519,27 +270,13 @@ impl<'a, T: AsRef<str>> TagImageQueryParams<&'a str, T> for TagImageOptions<T> {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct PushImageOptions<T> {
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PushImageOptions<T>
+where
+    T: Into<String> + Serialize,
+{
     /// The tag to associate with the image on the registry.
     pub tag: T,
-}
-
-/// Trait providing implementations for [Push Image Options](struct.PushImageOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait PushImageQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
-}
-
-impl<'a, T: AsRef<str>> PushImageQueryParams<&'a str, T> for PushImageOptions<T> {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, T); 1]>, Error> {
-        Ok(ArrayVec::from([("tag", self.tag)]))
-    }
 }
 
 /// Parameters to the [Commit Container API](../struct.Docker.html#method.commit_container)
@@ -563,8 +300,11 @@ impl<'a, T: AsRef<str>> PushImageQueryParams<&'a str, T> for PushImageOptions<T>
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct CommitContainerOptions<T> {
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CommitContainerOptions<T>
+where
+    T: Into<String> + Serialize,
+{
     /// The ID or name of the container to commit.
     pub container: T,
     /// Repository name for the created image.
@@ -579,59 +319,6 @@ pub struct CommitContainerOptions<T> {
     pub pause: bool,
     /// `Dockerfile` instructions to apply while committing
     pub changes: Option<T>,
-}
-
-/// Trait providing implementations for [Commit Container Options](struct.CommitContainerOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait CommitContainerQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<Vec<(K, V)>, Error>;
-}
-
-impl<'a> CommitContainerQueryParams<&'a str, &'a str> for CommitContainerOptions<&'a str> {
-    fn into_array(self) -> Result<Vec<(&'a str, &'a str)>, Error> {
-        let mut res = vec![
-            ("container", self.container),
-            ("repo", self.repo),
-            ("tag", self.tag),
-            ("comment", self.comment),
-            ("author", self.author),
-            ("pause", if self.pause { TRUE_STR } else { FALSE_STR }),
-        ];
-        if let Some(c) = self.changes {
-            res.push(("changes", c));
-        }
-        Ok(res)
-    }
-}
-
-impl<'a> CommitContainerQueryParams<&'a str, String> for CommitContainerOptions<String> {
-    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
-        let mut res = vec![
-            ("container", self.container),
-            ("repo", self.repo),
-            ("tag", self.tag),
-            ("comment", self.comment),
-            ("author", self.author),
-            ("pause", self.pause.to_string()),
-        ];
-        if let Some(c) = self.changes {
-            res.push(("changes", c));
-        }
-        Ok(res)
-    }
-}
-
-/// Result type for the [Commit Container API](../struct.Docker.html#method.commit_container)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[allow(missing_docs)]
-pub struct CommitContainerResults {
-    pub id: String,
 }
 
 /// Parameters to the [Build Image API](../struct.Docker.html#method.build_image)
@@ -655,10 +342,10 @@ pub struct CommitContainerResults {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct BuildImageOptions<T>
 where
-    T: AsRef<str> + Eq + Hash,
+    T: Into<String> + Eq + Hash + Serialize,
 {
     /// Path within the build context to the `Dockerfile`. This is ignored if `remote` is specified and
     /// points to an external `Dockerfile`.
@@ -680,6 +367,7 @@ where
     /// Do not use the cache when building the image.
     pub nocache: bool,
     /// JSON array of images used for build cache resolution.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub cachefrom: Vec<T>,
     /// Attempt to pull the image even if an older image exists locally.
     pub pull: bool,
@@ -702,12 +390,14 @@ where
     /// JSON map of string pairs for build-time variables. Users pass these values at build-time.
     /// Docker uses the buildargs as the environment context for commands run via the `Dockerfile`
     /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub buildargs: HashMap<T, T>,
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
     pub shmsize: Option<u64>,
     /// Squash the resulting images layers into a single layer.
     pub squash: bool,
     /// Arbitrary key/value labels to set on the image, as a JSON map of string pairs.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub labels: HashMap<T, T>,
     /// Sets the networking mode for the run commands during build. Supported standard values are:
     /// `bridge`, `host`, `none`, and `container:<name|id>`. Any other value is taken as a custom network's
@@ -715,164 +405,6 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
-}
-
-/// Trait providing implementations for [Build Image Options](struct.BuildImageOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait BuildImageQueryParams<K>
-where
-    K: AsRef<str>,
-{
-    fn into_array(self) -> Result<Vec<(K, String)>, Error>;
-}
-
-impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<&'a str> {
-    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
-        let mut output = vec![
-            ("dockerfile", self.dockerfile.to_string()),
-            ("t", self.t.to_string()),
-            ("remote", self.remote.to_string()),
-            ("q", self.q.to_string()),
-            ("nocache", self.nocache.to_string()),
-            (
-                "cachefrom",
-                serde_json::to_string(&self.cachefrom)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("pull", self.pull.to_string()),
-            ("rm", self.rm.to_string()),
-            ("forcerm", self.forcerm.to_string()),
-            ("cpusetcpus", self.cpusetcpus.to_string()),
-            (
-                "buildargs",
-                serde_json::to_string(&self.buildargs)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("squash", self.squash.to_string()),
-            (
-                "labels",
-                serde_json::to_string(&self.labels)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("networkmode", self.networkmode.to_string()),
-            ("platform", self.platform.to_string()),
-        ];
-
-        output.extend(
-            vec![
-                self.extrahosts.map(|v| ("extrahosts", v.to_string())),
-                self.memory.map(|v| ("memory", v.to_string())),
-                self.cpushares.map(|v| ("cpushares", v.to_string())),
-                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
-                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
-                self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
-            .flatten(),
-        );
-
-        Ok(output)
-    }
-}
-
-impl<'a> BuildImageQueryParams<&'a str> for BuildImageOptions<String> {
-    fn into_array(self) -> Result<Vec<(&'a str, String)>, Error> {
-        let mut output = vec![
-            ("dockerfile", self.dockerfile),
-            ("t", self.t),
-            ("remote", self.remote),
-            ("q", self.q.to_string()),
-            ("nocache", self.nocache.to_string()),
-            (
-                "cachefrom",
-                serde_json::to_string(&self.cachefrom)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("pull", self.pull.to_string()),
-            ("rm", self.rm.to_string()),
-            ("forcerm", self.forcerm.to_string()),
-            ("cpusetcpus", self.cpusetcpus.to_string()),
-            (
-                "buildargs",
-                serde_json::to_string(&self.buildargs)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("squash", self.squash.to_string()),
-            (
-                "labels",
-                serde_json::to_string(&self.labels)
-                    .map_err::<Error, _>(|e| JsonSerializeError { err: e }.into())?,
-            ),
-            ("networkmode", self.networkmode),
-            ("platform", self.platform),
-        ];
-
-        output.extend(
-            vec![
-                self.extrahosts.map(|v| ("extrahosts", v)),
-                self.memory.map(|v| ("memory", v.to_string())),
-                self.cpushares.map(|v| ("cpushares", v.to_string())),
-                self.cpuperiod.map(|v| ("cpuperiod", v.to_string())),
-                self.cpuquota.map(|v| ("cpuperiod", v.to_string())),
-                self.shmsize.map(|v| ("shmsize", v.to_string())),
-            ]
-            .into_iter()
-            .flatten(),
-        );
-
-        Ok(output)
-    }
-}
-
-/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct BuildImageAuxDetail {
-    #[serde(rename = "ID")]
-    pub id: String,
-}
-
-/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct BuildImageErrorDetail {
-    pub code: Option<u64>,
-    pub message: String,
-}
-
-/// Subtype for the [Build Image Results](enum.BuildImageResults.html) type.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct BuildImageProgressDetail {
-    pub current: Option<u64>,
-    pub total: Option<u64>,
-}
-
-/// Result type for the [Build Image API](../struct.Docker.html#method.build_image)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-#[allow(missing_docs)]
-pub enum BuildImageResults {
-    BuildImageStream {
-        stream: String,
-    },
-    BuildImageAux {
-        aux: BuildImageAuxDetail,
-    },
-    #[serde(rename_all = "camelCase")]
-    BuildImageError {
-        error_detail: BuildImageErrorDetail,
-        error: String,
-    },
-    #[serde(rename_all = "camelCase")]
-    BuildImageStatus {
-        status: String,
-        progress_detail: Option<BuildImageProgressDetail>,
-        progress: Option<String>,
-        id: Option<String>,
-    },
-    BuildImageNone {},
 }
 
 /// Parameters to the [Import Image API](../struct.Docker.html#method.import_image)
@@ -888,39 +420,10 @@ pub enum BuildImageResults {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, Serialize)]
 pub struct ImportImageOptions {
     /// Suppress progress details during load.
     pub quiet: bool,
-}
-
-/// Trait providing implementations for [Import Image Options](struct.ImportImageOptions.html)
-/// struct.
-#[allow(missing_docs)]
-pub trait ImportImageQueryParams<K, V>
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn into_array(self) -> Result<ArrayVec<[(K, V); 1]>, Error>;
-}
-
-impl<'a> ImportImageQueryParams<&'a str, &'a str> for ImportImageOptions {
-    fn into_array(self) -> Result<ArrayVec<[(&'a str, &'a str); 1]>, Error> {
-        Ok(ArrayVec::from([(
-            "quiet",
-            if self.quiet { TRUE_STR } else { FALSE_STR },
-        )]))
-    }
-}
-
-/// Result type for the [Import Image API](../struct.Docker.html#method.import_image)
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-#[allow(missing_docs)]
-pub enum ImportImageResults {
-    #[serde(rename_all = "camelCase")]
-    ImportImageStream { stream: String },
 }
 
 impl Docker {
@@ -960,17 +463,19 @@ impl Docker {
     ///
     /// docker.list_images(options);
     /// ```
-    pub async fn list_images<T, K>(&self, options: Option<T>) -> Result<Vec<ImageSummary>, Error>
+    pub async fn list_images<T>(
+        &self,
+        options: Option<ListImagesOptions<T>>,
+    ) -> Result<Vec<ImageSummary>, Error>
     where
-        T: ListImagesQueryParams<K>,
-        K: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/images/json";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -991,7 +496,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Create Image Results](image/enum.CreateImageResults.html), wrapped in an asynchronous
+    ///  - [Build Info](models/struct.BuildInfo.html), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples
@@ -1017,16 +522,14 @@ impl Docker {
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image<T, K, V>(
+    pub fn create_image<T>(
         &self,
-        options: Option<T>,
+        options: Option<CreateImageOptions<T>>,
         root_fs: Option<Body>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = Result<CreateImageResults, Error>>
+    ) -> impl Stream<Item = Result<BuildInfo, Error>>
     where
-        T: CreateImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Serialize,
     {
         let url = "/images/create";
 
@@ -1039,7 +542,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::transpose_option(options.map(|o| o.into_array())),
+                    options,
                     match root_fs {
                         Some(body) => Ok(body),
                         None => Ok(Body::empty()),
@@ -1080,10 +583,10 @@ impl Docker {
     pub async fn inspect_image(&self, image_name: &str) -> Result<Image, Error> {
         let url = format!("/images/{}/json", image_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 
@@ -1102,7 +605,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - a [Prune Images Results](image/struct.PruneImagesResults.html), wrapped in a Future.
+    ///  - a [Prune Image Response](models/struct.ImagePruneResponse.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1122,17 +625,19 @@ impl Docker {
     ///
     /// docker.prune_images(options);
     /// ```
-    pub async fn prune_images<T, K>(&self, options: Option<T>) -> Result<PruneImagesResults, Error>
+    pub async fn prune_images<T>(
+        &self,
+        options: Option<PruneImagesOptions<T>>,
+    ) -> Result<ImagePruneResponse, Error>
     where
-        T: PruneImagesQueryParams<K>,
-        K: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/images/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -1151,7 +656,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image History Results](image/struct.ImageHistory.html), wrapped in a
+    ///  - Vector of [History Response Item](models/struct.HistoryResponseItem.html), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1162,13 +667,13 @@ impl Docker {
     ///
     /// docker.image_history("hello-world");
     /// ```
-    pub async fn image_history(&self, image_name: &str) -> Result<Vec<ImageHistory>, Error> {
+    pub async fn image_history(&self, image_name: &str) -> Result<Vec<HistoryResponseItem>, Error> {
         let url = format!("/images/{}/history", image_name);
 
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
 
@@ -1187,7 +692,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [API Image Search](image/struct.APIImageSearch.html) results, wrapped in a
+    ///  - Vector of [Image Search Response Item](models/struct.ImageSearchResponseItem.html) results, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1211,17 +716,19 @@ impl Docker {
     ///
     /// docker.search_images(search_options);
     /// ```
-    pub async fn search_images<T, K>(&self, options: T) -> Result<Vec<APIImageSearch>, Error>
+    pub async fn search_images<T>(
+        &self,
+        options: SearchImagesOptions<T>,
+    ) -> Result<Vec<ImageSearchResponseItem>, Error>
     where
-        T: SearchImagesQueryParams<K>,
-        K: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/images/search";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Docker::transpose_option(Some(options.into_array())),
+            Some(options),
             Ok(Body::empty()),
         );
 
@@ -1241,7 +748,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [Remove Image Results](image/enum.RemoveImageResults.html), wrapped in a
+    ///  - Vector of [Image Delete Response Item](models/struct.ImageDeleteResponseItem.html), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1260,17 +767,12 @@ impl Docker {
     ///
     /// docker.remove_image("hello-world", remove_options, None);
     /// ```
-    pub async fn remove_image<T, K, V>(
+    pub async fn remove_image(
         &self,
         image_name: &str,
-        options: Option<T>,
+        options: Option<RemoveImageOptions>,
         credentials: Option<DockerCredentials>,
-    ) -> Result<Vec<RemoveImageResults>, Error>
-    where
-        T: RemoveImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
+    ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
         let url = format!("/images/{}", image_name);
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
@@ -1282,7 +784,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::DELETE)
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::transpose_option(options.map(|o| o.into_array())),
+                    options,
                     Ok(Body::empty()),
                 );
                 self.process_into_value(req).await
@@ -1322,22 +824,20 @@ impl Docker {
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
-    pub async fn tag_image<T, K, V>(
+    pub async fn tag_image<T>(
         &self,
         image_name: &str,
-        options: Option<T>,
+        options: Option<TagImageOptions<T>>,
     ) -> Result<(), Error>
     where
-        T: TagImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Serialize,
     {
         let url = format!("/images/{}/tag", image_name);
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Docker::transpose_option(options.map(|o| o.into_array())),
+            options,
             Ok(Body::empty()),
         );
 
@@ -1383,16 +883,14 @@ impl Docker {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub async fn push_image<T, K, V>(
+    pub async fn push_image<T>(
         &self,
         image_name: &str,
-        options: Option<T>,
+        options: Option<PushImageOptions<T>>,
         credentials: Option<DockerCredentials>,
     ) -> Result<(), Error>
     where
-        T: PushImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Serialize,
     {
         let url = format!("/images/{}/push", image_name);
 
@@ -1406,7 +904,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-Registry-Auth", base64::encode(&ser_cred)),
-                    Docker::transpose_option(options.map(|o| o.into_array())),
+                    options,
                     Ok(Body::empty()),
                 );
 
@@ -1429,7 +927,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Commit Container Results](image/struct.CommitContainerResults.html), wrapped in a Future.
+    ///  - [Commit](models/struct.Commit.html), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1453,15 +951,13 @@ impl Docker {
     ///
     /// docker.commit_container(options, config);
     /// ```
-    pub async fn commit_container<T, K, V, Z>(
+    pub async fn commit_container<T, Z>(
         &self,
-        options: T,
+        options: CommitContainerOptions<T>,
         config: Config<Z>,
-    ) -> Result<CommitContainerResults, Error>
+    ) -> Result<Commit, Error>
     where
-        T: CommitContainerQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
+        T: Into<String> + Serialize,
         Z: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/commit";
@@ -1469,7 +965,7 @@ impl Docker {
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options.into_array().map(|v| Some(v)),
+            Some(options),
             Docker::serialize_payload(Some(config)),
         );
 
@@ -1495,7 +991,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Build Image Results](image/enum.BuildImageResults.html), wrapped in an asynchronous
+    ///  - [Create Image Info](models/struct.CreateImageInfo.html), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples
@@ -1523,15 +1019,14 @@ impl Docker {
     ///
     /// docker.build_image(options, None, Some(contents.into()));
     /// ```
-    pub fn build_image<T, K>(
+    pub fn build_image<T>(
         &self,
-        options: T,
+        options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
-    ) -> impl Stream<Item = Result<BuildImageResults, Error>>
+    ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
-        T: BuildImageQueryParams<K>,
-        K: AsRef<str>,
+        T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/build";
 
@@ -1543,7 +1038,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar")
                         .header("X-Registry-Config", base64::encode(&ser_cred)),
-                    options.into_array().map(|v| Some(v)),
+                    Some(options),
                     Ok(tar.unwrap_or_else(|| Body::empty())),
                 );
 
@@ -1577,12 +1072,12 @@ impl Docker {
     ///  - An uncompressed TAR archive
     pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
         let url = format!("/images/{}/get", image_name);
-        let req = self.build_request::<_, String, String>(
+        let req = self.build_request(
             &url,
             Builder::new()
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
-            Ok(None::<ArrayVec<[(_, _); 0]>>),
+            None::<String>,
             Ok(Body::empty()),
         );
         self.process_into_body(req)
@@ -1602,7 +1097,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Import Image Results](./image/enum.ImportImageResults.html), wrapped in an asynchronous
+    ///  - [Build Info](models/struct.BuildInfo.html), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples
@@ -1647,17 +1142,12 @@ impl Docker {
     ///     }
     /// };
     /// ```
-    pub fn import_image<K, V, T>(
+    pub fn import_image(
         &self,
-        options: T,
+        options: ImportImageOptions,
         root_fs: Body,
         credentials: Option<HashMap<String, DockerCredentials>>,
-    ) -> impl Stream<Item = Result<ImportImageResults, Error>>
-    where
-        T: ImportImageQueryParams<K, V>,
-        K: AsRef<str>,
-        V: AsRef<str>,
-    {
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> {
         match serde_json::to_string(&credentials.unwrap_or_else(|| HashMap::new())) {
             Ok(ser_cred) => {
                 let req = self.build_request(
@@ -1666,7 +1156,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-Registry-Config", base64::encode(&ser_cred)),
-                    options.into_array().map(|v| Some(v)),
+                    Some(options),
                     Ok(root_fs),
                 );
                 self.process_into_stream(req).boxed()

@@ -56,7 +56,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
                 }
                 _ => false,
             }
-        },
+        }
         _ => false,
     });
 
@@ -116,12 +116,14 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
     let exec_process = &docker.inspect_exec(&message.id).await?;
 
     assert_eq!(
-        if cfg!(windows) {
-            "cmd.exe".to_string()
-        } else {
-            "/bin/cat".to_string()
-        },
-        exec_process.process_config.entrypoint
+        if cfg!(windows) { "cmd.exe" } else { "/bin/cat" },
+        exec_process
+            .process_config
+            .as_ref()
+            .unwrap()
+            .entrypoint
+            .as_ref()
+            .unwrap()
     );
 
     &docker

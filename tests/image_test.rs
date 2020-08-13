@@ -37,7 +37,7 @@ async fn search_images_test(docker: Docker) -> Result<(), Error> {
 
     assert!(result
         .into_iter()
-        .any(|api_image| &api_image.name == "hello-world"));
+        .any(|api_image| &api_image.name.as_ref().unwrap()[..] == "hello-world"));
 
     Ok::<_, Error>(())
 }
@@ -100,12 +100,10 @@ async fn image_history_test(docker: Docker) -> Result<(), Error> {
 
     let result = &docker.image_history(&image).await?;
 
-    assert!(result.iter().take(1).any(|history| history
-        .tags
-        .as_ref()
-        .unwrap_or(&vec![String::new()])
+    assert!(result
         .iter()
-        .any(|tag| tag == &image)));
+        .take(1)
+        .any(|history| history.tags.iter().any(|tag| tag == &image)));
 
     Ok(())
 }
@@ -144,10 +142,11 @@ async fn remove_image_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert!(result.iter().any(|s| match s {
-        RemoveImageResults::RemoveImageUntagged { untagged } => untagged == &image,
-        _ => false,
-    }));
+    assert!(result.iter().any(|s| s
+        .untagged
+        .as_ref()
+        .map(|untagged| untagged == &image)
+        .unwrap_or(false)));
 
     Ok(())
 }
@@ -364,10 +363,7 @@ RUN touch bollard.txt
     }
     assert_eq!(first.status_code, 0);
     &docker
-        .remove_container(
-            "integration_test_build_image",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_image", None)
         .await?;
 
     &docker
@@ -541,11 +537,15 @@ fn integration_test_create_image() {
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_inspect_image() {
     connect_to_docker_and_run!(inspect_image_test);
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_images_list() {
     connect_to_docker_and_run!(list_images_test);
 }
@@ -561,6 +561,8 @@ fn integration_test_prune_images() {
 }
 
 #[test]
+// ND - Test sometimes hangs on appveyor.
+#[cfg(not(windows))]
 fn integration_test_remove_image() {
     connect_to_docker_and_run!(remove_image_test);
 }
