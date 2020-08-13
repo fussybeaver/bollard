@@ -145,6 +145,12 @@ pub enum ErrorKind {
     /// Error emitted when a request times out.
     #[fail(display = "Timeout error")]
     RequestTimeoutError,
+    /// Error emitted when serde fails to urlencod a struct of options
+    #[fail(display = "URLEncode error: {:?}", err)]
+    URLEncodedError {
+        /// The original error emitted.
+        err: serde_urlencoded::ser::Error,
+    },
 }
 
 impl Display for Error {

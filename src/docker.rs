@@ -59,9 +59,6 @@ pub const API_DEFAULT_VERSION: &'static ClientVersion = &ClientVersion {
     minor_version: 40,
 };
 
-pub(crate) const TRUE_STR: &'static str = "true";
-pub(crate) const FALSE_STR: &'static str = "false";
-
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
     #[cfg(unix)]
