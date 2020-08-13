@@ -66,7 +66,6 @@ impl<'a> Uri<'a> {
     {
         match client_type {
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(any(feature = "ssl", feature = "tls"))]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(unix)]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
@@ -78,7 +77,6 @@ impl<'a> Uri<'a> {
     fn socket_scheme(client_type: &ClientType) -> &'a str {
         match client_type {
             ClientType::Http => "http",
-            #[cfg(any(feature = "ssl", feature = "tls"))]
             ClientType::SSL => "https",
             #[cfg(unix)]
             ClientType::Unix => "unix",
@@ -101,9 +99,13 @@ impl<'a> Uri<'a> {
 
     #[cfg(windows)]
     pub(crate) fn socket_path_dest(dest: &HyperUri, client_type: &ClientType) -> Option<String> {
-        format!("{}://{}", Uri::socket_scheme(client_type), dest.host().unwrap_or("UNKNOWN_HOST"))
-            .parse()
-            .ok()
-            .and_then(|uri| Self::socket_path(&uri))
+        format!(
+            "{}://{}",
+            Uri::socket_scheme(client_type),
+            dest.host().unwrap_or("UNKNOWN_HOST")
+        )
+        .parse()
+        .ok()
+        .and_then(|uri| Self::socket_path(&uri))
     }
 }

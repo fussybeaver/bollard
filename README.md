@@ -91,9 +91,7 @@ use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
 
-#### SSL via openssl
-
-Openssl is switched off by default, and can be enabled through the `ssl` cargo feature.
+#### SSL via Rustls
 
 The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
 `localhost:2375` if missing.
@@ -109,26 +107,6 @@ to parameterise the interface.
 use bollard::Docker;
 #[cfg(feature = "ssl")]
 Docker::connect_with_ssl_defaults();
-```
-
-#### TLS
-
-Native TLS allows you to avoid the SSL bindings.
-
-The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
-`localhost:2375` if missing.
-
-The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
-certificates - `identity.pfx` for the PKCS #12 archive and `ca.pem` for the certificate
-authority chain.
-
-Use the `Docker::connect_with_ssl` method API
-to parameterise the interface.
-
-```rust
-use bollard::Docker;
-#[cfg(feature = "tls")]
-Docker::connect_with_tls_defaults();
 ```
 
 ### Examples
@@ -264,10 +242,9 @@ mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile gener
 
 ## History
 
-This library stems from the [boondock rust library](https://github.com/faradayio/boondock),
-which in turn originates from the [rust-docker library](https://github.com/ghmlee/rust-docker), but
-most parts were rewritten to adobt the new functionality provided by tokio. Many thanks to the
-original authors for the initial code and inspiration.
+This library was originally forked from the [boondock rust
+library](https://github.com/faradayio/boondock).  Many thanks to the original authors for the
+initial code and inspiration.
 
 ## Integration tests
 

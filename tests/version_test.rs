@@ -16,7 +16,7 @@ fn test_version_named_pipe() {
     )
 }
 
-#[cfg(all(unix, not(feature = "test_http"), not(feature = "ssl")))]
+#[cfg(all(unix, not(feature = "test_http")))]
 #[test]
 fn test_version_unix() {
     rt_exec!(
@@ -25,7 +25,7 @@ fn test_version_unix() {
     )
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "test_ssl")]
 #[test]
 fn test_version_ssl() {
     rt_exec!(
@@ -46,15 +46,6 @@ fn test_version_http() {
     rt_exec!(
         Docker::connect_with_http_defaults().unwrap().version(),
         |version: Version| assert_eq!(version.os, "windows")
-    )
-}
-
-#[cfg(feature = "test_tls")]
-#[test]
-fn test_version_tls() {
-    rt_exec!(
-        Docker::connect_with_tls_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os, "linux")
     )
 }
 

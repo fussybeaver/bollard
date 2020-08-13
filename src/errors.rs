@@ -1,6 +1,7 @@
 //! Errors for this module.
 use std::cmp;
 use std::fmt::{Display, Formatter, Result};
+use std::path::PathBuf;
 
 use failure::Context;
 
@@ -17,6 +18,26 @@ pub enum ErrorKind {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
     NoCertPathError,
+    #[fail(display = "Cannot open/read certificate with path {:?}", path)]
+    /// Generic error when reading a certificate from the filesystem
+    CertPathError {
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
+    #[fail(display = "Found multiple keys ({}), expected one: {:?}", count, path)]
+    /// Error generated when parsing a key file containing multiple keys
+    CertMultipleKeys {
+        /// Number of keys found in the certificate file
+        count: usize,
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
+    /// Parse error for RSA encrypted keys
+    #[fail(display = "Could not parse key: {:?}", path)]
+    CertParseError {
+        /// Path for the failing certificate file
+        path: PathBuf,
+    },
     #[fail(display = "API responded with a 404 not found: {}", message)]
     /// Error emitted by the docker server, when it responds with a 404.
     DockerResponseNotFoundError {
@@ -124,20 +145,6 @@ pub enum ErrorKind {
     /// Error emitted when a request times out.
     #[fail(display = "Timeout error")]
     RequestTimeoutError,
-    /// Error emitted when an SSL context fails to configure.
-    #[cfg(feature = "openssl")]
-    #[fail(display = "SSL error: {:?}", err)]
-    SSLError {
-        /// The original error emitted.
-        err: openssl::error::ErrorStack,
-    },
-    /// Error emitted when a TLS context fails to configure.
-    #[cfg(feature = "tls")]
-    #[fail(display = "TLS error: {:?}", err)]
-    TLSError {
-        /// The original error emitted.
-        err: native_tls::Error,
-    },
 }
 
 impl Display for Error {
