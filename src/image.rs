@@ -11,7 +11,6 @@ use super::Docker;
 use crate::auth::DockerCredentials;
 use crate::container::Config;
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
 use crate::models::*;
 
 use std::cmp::Eq;
@@ -551,7 +550,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(Error::from(e)) }).boxed()
             }
         }
     }
@@ -789,7 +788,7 @@ impl Docker {
                 );
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -910,7 +909,7 @@ impl Docker {
 
                 self.process_into_unit(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1045,7 +1044,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(e.into()) }).boxed()
             }
         }
     }
@@ -1162,7 +1161,7 @@ impl Docker {
                 self.process_into_stream(req).boxed()
             }
             Err(e) => {
-                stream::once(async move { Err(JsonSerializeError { err: e }.into()) }).boxed()
+                stream::once(async move { Err(e.into()) }).boxed()
             }
         }
     }

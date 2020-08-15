@@ -49,7 +49,7 @@ impl Stream for FileStreamer {
     }
 }
 
-async fn run(file: File) -> Result<(), failure::Error> {
+async fn run(file: File) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]

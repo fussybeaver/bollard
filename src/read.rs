@@ -18,7 +18,7 @@ use tokio_util::codec::Decoder;
 use crate::container::LogOutput;
 
 use crate::errors::Error;
-use crate::errors::ErrorKind::{JsonDataError, JsonDeserializeError};
+use crate::errors::Error::JsonDataError;
 
 #[derive(Debug, Copy, Clone)]
 enum NewlineLogOutputDecoderState {
@@ -134,11 +134,7 @@ where
                         contents: String::from_utf8_lossy(&slice).to_string(),
                     }
                     .into()),
-                    Err(e) => Err(JsonDeserializeError {
-                        content: String::from_utf8_lossy(slice).to_string(),
-                        err: e,
-                    }
-                    .into()),
+                    Err(e) => Err(e.into()),
                 }
             } else {
                 Ok(None)

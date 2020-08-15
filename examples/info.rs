@@ -11,7 +11,7 @@ use futures_util::stream;
 use futures_util::stream::StreamExt;
 use tokio::runtime::Runtime;
 
-async fn run() -> Result<(), failure::Error> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
     #[cfg(windows)]

@@ -43,8 +43,7 @@ impl<'a> Uri<'a> {
         url = url.join(path).unwrap();
 
         if let Some(pairs) = query {
-            let qs = serde_urlencoded::to_string(pairs)
-                .map_err(|e| crate::errors::ErrorKind::URLEncodedError { err: e })?;
+            let qs = serde_urlencoded::to_string(pairs)?;
             url.set_query(Some(&qs));
         }
 

@@ -5,8 +5,6 @@ pub use crate::models::*;
 use super::Docker;
 use crate::auth::DockerCredentials;
 use crate::errors::Error;
-use crate::errors::ErrorKind::JsonSerializeError;
-
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{Body, Method};
@@ -230,7 +228,7 @@ impl Docker {
 
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -399,7 +397,7 @@ impl Docker {
 
                 self.process_into_value(req).await
             }
-            Err(e) => Err(JsonSerializeError { err: e }.into()),
+            Err(e) => Err(e.into()),
         }
     }
 }

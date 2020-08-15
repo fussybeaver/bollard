@@ -24,7 +24,6 @@ bytes = "0.5.5"
 chrono = { version = "0.4.11", features = ["serde"] }
 dirs = "3.0.0"
 env_logger = "0.7.1"
-failure = "0.1.7"
 hex = "0.4.2"
 http = "0.2.1"
 hyper = "0.13.6"
@@ -41,6 +40,7 @@ futures-core = "0.3.4"
 futures-util = "0.3.4"
 tokio-util = { version = "0.3.1", features = ["codec"] }
 bollard-stubs = { version = "1.40.3" }
+thiserror = "1.0"
 rustls = "0.17"
 rustls-native-certs = "0.3.0"
 ct-logs = "0.7.0"
