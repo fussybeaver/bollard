@@ -38,6 +38,14 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti --rm bollard cargo test --target x86_64-unknown-linux-gnu --doc
+  test_clippy:
+    docker:
+      - image: docker:19.03.12
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
 
 workflows:
   version: 2
@@ -47,3 +55,4 @@ workflows:
       - test_http
       - test_unix
       - test_doc
+      - test_clippy
