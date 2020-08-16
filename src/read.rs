@@ -3,7 +3,6 @@ use futures_core::Stream;
 use hyper::body::Bytes;
 use pin_project::pin_project;
 use serde::de::DeserializeOwned;
-use serde_json;
 use std::pin::Pin;
 use std::string::String;
 use std::task::{Context, Poll};
@@ -48,7 +47,7 @@ impl Decoder for NewlineLogOutputDecoder {
             match self.state {
                 NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
-                    if src.len() >= 1 && src[0] > 2 {
+                    if !src.is_empty() && src[0] > 2 {
                         debug!(
                             "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
                         );
@@ -116,7 +115,7 @@ where
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let nl_index = src.iter().position(|b| *b == b'\n');
 
-        if src.len() > 0 {
+        if !src.is_empty() {
             if let Some(pos) = nl_index {
                 let slice = src.split_to(pos + 1);
                 let slice = &slice[..slice.len() - 1];
@@ -132,8 +131,7 @@ where
                         message: e.to_string(),
                         column: e.column(),
                         contents: String::from_utf8_lossy(&slice).to_string(),
-                    }
-                    .into()),
+                    }),
                     Err(e) => Err(e.into()),
                 }
             } else {

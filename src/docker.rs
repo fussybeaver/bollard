@@ -36,24 +36,23 @@ use crate::uri::Uri;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use serde_json;
 
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
-pub const DEFAULT_SOCKET: &'static str = "unix:///var/run/docker.sock";
+pub const DEFAULT_SOCKET: &str = "unix:///var/run/docker.sock";
 
 /// The default `DOCKER_NAMED_PIPE` address that a windows client will try to connect to.
 #[cfg(windows)]
-pub const DEFAULT_NAMED_PIPE: &'static str = "npipe:////./pipe/docker_engine";
+pub const DEFAULT_NAMED_PIPE: &str = "npipe:////./pipe/docker_engine";
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
-pub const DEFAULT_DOCKER_HOST: &'static str = "tcp://localhost:2375";
+pub const DEFAULT_DOCKER_HOST: &str = "tcp://localhost:2375";
 
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
 
 /// Default Client Version to communicate with the server.
-pub const API_DEFAULT_VERSION: &'static ClientVersion = &ClientVersion {
+pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
     minor_version: 40,
 };
@@ -126,7 +125,7 @@ impl<T: Into<String>> From<T> for MaybeClientVersion {
     fn from(s: T) -> MaybeClientVersion {
         match s
             .into()
-            .split(".")
+            .split('.')
             .map(|v| v.parse::<usize>())
             .collect::<Vec<Result<usize, std::num::ParseIntError>>>()
             .as_slice()
@@ -413,7 +412,7 @@ impl Docker {
         let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::SSL,
-            client_addr: client_addr.to_owned(),
+            client_addr,
             client_timeout: timeout,
             version: Arc::new((
                 AtomicUsize::new(client_version.major_version),
@@ -448,7 +447,7 @@ impl Docker {
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
-        let host = env::var("DOCKER_HOST").unwrap_or(DEFAULT_DOCKER_HOST.to_string());
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
         Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
@@ -489,7 +488,7 @@ impl Docker {
         let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::Http,
-            client_addr: client_addr.to_owned(),
+            client_addr,
             client_timeout: timeout,
             version: Arc::new((
                 AtomicUsize::new(client_version.major_version),
@@ -560,7 +559,7 @@ impl Docker {
         let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::Unix,
-            client_addr: client_addr.to_owned(),
+            client_addr,
             client_timeout: timeout,
             version: Arc::new((
                 AtomicUsize::new(client_version.major_version),
@@ -636,7 +635,7 @@ impl Docker {
         let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
-            client_addr: client_addr.to_owned(),
+            client_addr,
             client_timeout: timeout,
             version: Arc::new((
                 AtomicUsize::new(client_version.major_version),
@@ -754,7 +753,7 @@ impl Docker {
         )
     }
 
-    pub(crate) fn process_upgraded_stream_string<'a>(
+    pub(crate) fn process_upgraded_stream_string(
         &self,
         req: Result<Request<Body>, Error>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
@@ -776,7 +775,7 @@ impl Docker {
             debug!("{}", payload.clone().unwrap_or_else(String::new));
             payload
                 .map(|content| content.into())
-                .unwrap_or(Body::empty())
+                .unwrap_or_else(Body::empty)
         })
     }
 
