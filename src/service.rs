@@ -9,7 +9,6 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
-use serde_json;
 
 use std::{collections::HashMap, hash::Hash};
 
@@ -92,6 +91,7 @@ pub struct UpdateServiceOptions {
     pub rollback: bool,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn serialize_rollback<S>(rollback: &bool, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
