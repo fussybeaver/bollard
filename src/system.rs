@@ -110,21 +110,23 @@ pub struct VersionComponents {
 ///
 /// # fn main() {
 /// EventsOptions::<String>{
-///     since: Utc::now() - Duration::minutes(20),
-///     until: Utc::now(),
+///     since: Some(Utc::now() - Duration::minutes(20)),
+///     until: Some(Utc::now()),
 ///     filters: HashMap::new()
 /// };
 /// # }
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct EventsOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
 {
     /// Show events created since this timestamp then stream new events.
-    pub since: DateTime<Utc>,
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub since: Option<DateTime<Utc>>,
     /// Show events created until this timestamp then stop streaming.
-    pub until: DateTime<Utc>,
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub until: Option<DateTime<Utc>>,
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
     ///  - `config=<string>` config name or ID
     ///  - `container=<string>` container name or ID
@@ -227,8 +229,8 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.events(Some(EventsOptions::<String> {
-    ///     since: Utc::now() - Duration::minutes(20),
-    ///     until: Utc::now(),
+    ///     since: Some(Utc::now() - Duration::minutes(20)),
+    ///     until: Some(Utc::now()),
     ///     filters: HashMap::new(),
     /// }));
     /// ```
