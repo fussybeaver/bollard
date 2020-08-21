@@ -10,6 +10,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
@@ -171,6 +172,22 @@ where
     s.serialize_str(
         &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
     )
+}
+
+pub(crate) fn serialize_as_timestamp<S>(opt: &Option<DateTime<Utc>>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match opt {
+        Some(t) => s.serialize_str(
+            &format!(
+                "{}.{}",
+                t.timestamp(),
+                t.timestamp_subsec_nanos()
+                )
+            ),
+        None => s.serialize_str("")
+    }
 }
 
 #[derive(Debug)]
