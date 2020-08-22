@@ -18,36 +18,34 @@ test_http = []
 test_ssl = []
 
 [dependencies]
-arrayvec = "0.5.1"
 base64 = "0.12.3"
+bollard-stubs = { version = "1.40.5" }
 bytes = "0.5.5"
 chrono = { version = "0.4.11", features = ["serde"] }
+ct-logs = "0.7.0"
 dirs = "3.0.0"
-env_logger = "0.7.1"
+futures-core = "0.3.4"
+futures-util = "0.3.4"
 hex = "0.4.2"
 http = "0.2.1"
 hyper = "0.13.6"
 hyper-rustls = "0.21.0"
 log = "0.4.8"
 pin-project = "0.4.22"
+rustls = "0.18.0"
+rustls-native-certs = "0.4.0"
 serde = "1.0.114"
 serde_derive = "1.0.114"
 serde_json = "1.0.55"
 serde_urlencoded = "0.6.1"
 tokio = { version = "0.2.17", features = ["time", "fs"] }
-url = "2.1.1"
-futures-core = "0.3.4"
-futures-util = "0.3.4"
-tokio-util = { version = "0.3.1", features = ["codec"] }
-bollard-stubs = { version = "1.40.4" }
 thiserror = "1.0"
-rustls = "0.18.0"
-rustls-native-certs = "0.4.0"
-ct-logs = "0.7.0"
+tokio-util = { version = "0.3.1", features = ["codec"] }
+url = "2.1.1"
 webpki-roots = "0.20.0"
 
 [dev-dependencies]
-tokio-executor = "0.2.0-alpha.6"
+env_logger = "0.7.1"
 flate2 = "1.0.14"
 tar = "0.4.29"
 

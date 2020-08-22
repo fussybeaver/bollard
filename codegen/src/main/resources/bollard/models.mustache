@@ -1,5 +1,6 @@
 #![allow(unused_imports, unused_qualifications, unused_extern_crates)]
 
+use serde::{Deserialize, Serialize};
 use serde::ser::Serializer;
 use serde::de::{DeserializeOwned, Deserializer};
 
