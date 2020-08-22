@@ -5,7 +5,7 @@ use bollard::models::*;
 use bollard::system::*;
 use bollard::Docker;
 
-use chrono::{Utc};
+use chrono::Utc;
 use futures_util::future;
 use futures_util::stream::select;
 use futures_util::stream::StreamExt;
@@ -128,7 +128,6 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
             Results::EventsResults(SystemEventsResponse { _type: _, .. }) => true,
             _ => false,
         }));
-
 
     Ok(())
 }

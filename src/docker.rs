@@ -174,19 +174,16 @@ where
     )
 }
 
-pub(crate) fn serialize_as_timestamp<S>(opt: &Option<DateTime<Utc>>, s: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_as_timestamp<S>(
+    opt: &Option<DateTime<Utc>>,
+    s: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     match opt {
-        Some(t) => s.serialize_str(
-            &format!(
-                "{}.{}",
-                t.timestamp(),
-                t.timestamp_subsec_nanos()
-                )
-            ),
-        None => s.serialize_str("")
+        Some(t) => s.serialize_str(&format!("{}.{}", t.timestamp(), t.timestamp_subsec_nanos())),
+        None => s.serialize_str(""),
     }
 }
 
@@ -408,7 +405,8 @@ impl Docker {
             .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
         config
             .root_store
-            .add_pem_file(&mut ca_pem).map_err(|_| CertParseError {
+            .add_pem_file(&mut ca_pem)
+            .map_err(|_| CertParseError {
                 path: ssl_ca.to_owned(),
             })?;
 
@@ -761,10 +759,7 @@ impl Docker {
     ) -> impl Stream<Item = Result<Bytes, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
-                .map_ok(|response| {
-                    response
-                        .into_body().map_err(Error::from)
-                })
+                .map_ok(|response| response.into_body().map_err(Error::from))
                 .into_stream()
                 .try_flatten(),
         )
@@ -955,9 +950,7 @@ impl Docker {
         T: DeserializeOwned,
     {
         FramedRead::new(
-            StreamReader::new(
-                res.into_body().map_err(Error::from),
-            ),
+            StreamReader::new(res.into_body().map_err(Error::from)),
             JsonLineDecoder::new(),
         )
     }
@@ -966,9 +959,7 @@ impl Docker {
         res: Response<Body>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
         FramedRead::new(
-            StreamReader::new(
-                res.into_body().map_err(Error::from),
-            ),
+            StreamReader::new(res.into_body().map_err(Error::from)),
             NewlineLogOutputDecoder::new(),
         )
     }
