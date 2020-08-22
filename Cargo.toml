@@ -1,7 +1,7 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.7.2"
+version = "0.8.0"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
@@ -39,7 +39,7 @@ url = "2.1.1"
 futures-core = "0.3.4"
 futures-util = "0.3.4"
 tokio-util = { version = "0.3.1", features = ["codec"] }
-bollard-stubs = { version = "1.40.3" }
+bollard-stubs = { version = "1.40.4" }
 thiserror = "1.0"
 rustls = "0.18.0"
 rustls-native-certs = "0.4.0"
