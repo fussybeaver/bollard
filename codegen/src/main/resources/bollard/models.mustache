@@ -1,15 +1,8 @@
 #![allow(unused_imports, unused_qualifications, unused_extern_crates)]
 
-use serde::{Serializer, Deserializer, de::DeserializeOwned, Serialize, Deserialize};
-
-use std::{
-    cmp::Eq,
-    collections::HashMap,
-    default::Default,
-    hash::Hash
-};
-
 use chrono::{DateTime, Utc};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use std::{cmp::Eq, collections::HashMap, default::Default, hash::Hash};
 
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
@@ -66,11 +59,11 @@ pub struct {{classname}} {
     #[serde(serialize_with = "wrap_in_{{itemXmlName}}")]{{/itemXmlName}}{{/vendorExtensions}}{{#required}}{{#isContainer}}{{^isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
-    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
-    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub {{name}}: Option<{{#isEnum}}{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}}>,
 {{/required}}
 
