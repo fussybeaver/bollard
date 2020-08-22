@@ -591,7 +591,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             } else {
                 String::from("/tmp")
             }),
-            _type: Some(MountTypeEnum::BIND),
+            typ: Some(MountTypeEnum::BIND),
             consistency: Some(String::from("default")),
             ..Default::default()
         }]),

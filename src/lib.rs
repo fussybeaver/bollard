@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.7"
+//! bollard = "0.8"
 //! ```
 //!
 //! # API
@@ -28,8 +28,9 @@
 //! [API docs](https://docs.rs/bollard/).
 //!
 //! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
-//! Swagger OpenAPI specification. The generated models are committed to this repository, but
-//! packaged in a separate crate [bollard-stubs](https://crates.io/crates/bollard-stubs).
+//! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.40.yaml). The generated
+//! models are committed to this repository, but packaged in a separate crate
+//! [bollard-stubs](https://crates.io/crates/bollard-stubs).
 //!
 //! ## Version
 //!
@@ -47,8 +48,7 @@
 //! ### Unix socket
 //!
 //! The client will connect to the standard unix socket location `/var/run/docker.sock`. Use the
-//! `Docker::connect_with_unix` method API to parameterise the
-//! interface.
+//! `Docker::connect_with_unix` method API to parameterise the interface.
 //!
 //! ```rust
 //! use bollard::Docker;
@@ -112,14 +112,13 @@
 //! ## Examples
 //!
 //! Note: all these examples need a [Tokio
-//! Runtime](https://tokio.rs/docs/getting-started/runtime/). A small example about how to use
-//! Tokio is further below.
+//! Runtime](https://tokio.rs/). 
 //!
 //! ### Version
 //!
 //! First, check that the API is working with your server:
 //!
-//! ```rust, no_run
+//! ```rust,no_run
 //! use bollard::Docker;
 //!
 //! use futures_util::future::FutureExt;
@@ -195,62 +194,13 @@
 //!
 //! # Examples
 //!
-//! Further examples are available in the examples folder, or the integration/unit tests.
+//! Further examples are available in the [examples
+//! folder](https://github.com/fussybeaver/bollard/tree/master/examples), or the [integration/unit
+//! tests](https://github.com/fussybeaver/bollard/tree/master/tests).
 //!
-//! ## A Primer on the Tokio Runtime
+//! # Development
 //!
-//! In order to use the API effectively, you will need to be familiar with the [Tokio
-//! Runtime](https://tokio.rs/docs/getting-started/runtime/).
-//!
-//! Create a Tokio Runtime:
-//!
-//! ```rust
-//! use tokio::runtime::Runtime;
-//!
-//! let rt = Runtime::new().unwrap();
-//! ```
-//!
-//! Subsequently, use the docker API:
-//!
-//! ```rust,no_run
-//! # use bollard::Docker;
-//! # use bollard::image::ListImagesOptions;
-//! # use futures_util::future::FutureExt;
-//! // Use a connection function described above
-//! // let docker = Docker::connect_...;
-//! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! let future = async move {
-//!     &docker.list_images(None::<ListImagesOptions<String>>).await;
-//! };
-//! ```
-//!
-//! Execute the future aynchronously:
-//!
-//! ```rust,no_run
-//! # use bollard::Docker;
-//! # use bollard::image::ListImagesOptions;
-//! # use tokio::runtime::Runtime;
-//! # use futures_util::future::FutureExt;
-//! # let mut rt = Runtime::new().unwrap();
-//! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = async move {
-//! #   docker.list_images(None::<ListImagesOptions<String>>).map(|_| ());
-//! # };
-//! rt.spawn(future);
-//! ```
-//!
-//! Or, to execute and receive the result:
-//!
-//! ```rust,no_run
-//! # use bollard::Docker;
-//! # use bollard::image::ListImagesOptions;
-//! # use tokio::runtime::Runtime;
-//! # use futures_util::future::FutureExt;
-//! # let mut rt = Runtime::new().unwrap();
-//! # let docker = Docker::connect_with_local_defaults().unwrap();
-//! # let future = docker.list_images(None::<ListImagesOptions<String>>);
-//! let result = rt.block_on(future);
-//! ```
+//! Contributions are welcome, please observe the following advice.
 //!
 //! # Building the stubs
 //!

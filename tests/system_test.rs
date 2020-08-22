@@ -67,7 +67,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             value
         })
         .any(|value| match value {
-            Results::EventsResults(SystemEventsResponse { _type: _, .. }) => true,
+            Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
             _ => false,
         }));
 
@@ -125,7 +125,7 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
             value
         })
         .any(|value| match value {
-            Results::EventsResults(SystemEventsResponse { _type: _, .. }) => true,
+            Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
             _ => false,
         }));
 
@@ -156,6 +156,7 @@ fn integration_test_events() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn integration_test_events_until_forever() {
     connect_to_docker_and_run!(events_until_forever_test);
 }

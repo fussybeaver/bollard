@@ -85,10 +85,21 @@ pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.
     pub version: u64,
     /// If the X-Registry-Auth header is not specified, this parameter indicates whether to use registry authorization credentials from the current or the previous spec.
-    pub registry_auth_from_previous: bool,
+    #[serde(serialize_with = "serialize_registry_auth_from")]
+    pub registry_auth_from: bool,
     /// Set to this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
     #[serde(serialize_with = "serialize_rollback")]
     pub rollback: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(crate) fn serialize_registry_auth_from<S>(registry_auth_from: &bool, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_str(
+        if *registry_auth_from { "previous-spec" } else { "spec" }
+    )
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
