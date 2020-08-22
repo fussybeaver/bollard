@@ -1,15 +1,15 @@
 #![allow(unused_imports, unused_qualifications, unused_extern_crates)]
 
-use serde::ser::Serializer;
-use serde::de::{DeserializeOwned, Deserializer};
+use serde::{Serializer, Deserializer, de::DeserializeOwned, Serialize, Deserialize};
 
-use std::cmp::Eq;
-use std::collections::HashMap;
-use std::default::Default;
-use std::hash::Hash;
+use std::{
+    cmp::Eq,
+    collections::HashMap,
+    default::Default,
+    hash::Hash
+};
 
-use chrono::DateTime;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
