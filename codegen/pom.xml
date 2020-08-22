@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>bollard</groupId>
     <artifactId>bollard-codegen</artifactId>
-    <version>0.1.1-SNAPSHOT</version>
+    <version>0.1.2-SNAPSHOT</version>
     <name>bollard</name>
 
     <!-- build with: mvn clean compiler:compile generate-resources -->
@@ -27,7 +27,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>3</packageVersion>
+                  <packageVersion>4</packageVersion>
                 </configOptions>
               </configuration>
             </execution>
@@ -36,7 +36,7 @@
               <dependency>
                   <groupId>bollard</groupId>
                   <artifactId>bollard-codegen</artifactId>
-                  <version>0.1.1-SNAPSHOT</version>
+                  <version>0.1.2-SNAPSHOT</version>
               </dependency>
           </dependencies>
         </plugin>

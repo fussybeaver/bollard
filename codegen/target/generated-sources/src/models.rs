@@ -169,7 +169,7 @@ pub struct BuildCache {
 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     #[serde(rename = "Description")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1383,7 +1383,7 @@ pub struct EngineDescription {
 pub struct EngineDescriptionPlugins {
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1739,7 +1739,7 @@ pub struct HistoryResponseItem {
 pub struct HostConfigLogConfig {
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<HostConfigLogConfigTypeEnum>,
+    pub typ: Option<HostConfigLogConfigTypeEnum>,
 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1950,7 +1950,7 @@ pub struct ImagePruneResponse {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageRootFs {
     #[serde(rename = "Type")]
-    pub _type: String,
+    pub typ: String,
 
     #[serde(rename = "Layers")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -2178,7 +2178,7 @@ pub struct Mount {
     /// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs. - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container. 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<MountTypeEnum>,
+    pub typ: Option<MountTypeEnum>,
 
     /// Whether the mount should be read-only.
     #[serde(rename = "ReadOnly")]
@@ -2342,7 +2342,7 @@ impl ::std::convert::AsRef<str> for MountBindOptionsPropagationEnum {
 pub struct MountPoint {
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -3160,7 +3160,7 @@ pub struct PluginConfigLinux {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PluginConfigNetwork {
     #[serde(rename = "Type")]
-    pub _type: String,
+    pub typ: String,
 
 }
 
@@ -3168,7 +3168,7 @@ pub struct PluginConfigNetwork {
 pub struct PluginConfigRootfs {
     #[serde(rename = "type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     #[serde(rename = "diff_ids")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -3254,7 +3254,7 @@ pub struct PluginMount {
     pub destination: String,
 
     #[serde(rename = "Type")]
-    pub _type: String,
+    pub typ: String,
 
     #[serde(rename = "Options")]
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
@@ -3345,7 +3345,7 @@ pub struct Port {
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
     #[serde(with = "serde_with::rust::string_empty_as_none")]
-    pub _type: Option<PortTypeEnum>,
+    pub typ: Option<PortTypeEnum>,
 
 }
 
@@ -4674,7 +4674,7 @@ pub struct SystemEventsResponse {
     /// The type of object emitting the event
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     /// The type of event
     #[serde(rename = "Action")]
@@ -5183,7 +5183,7 @@ pub struct SystemVersionComponents {
     /// Key/value pairs of strings with additional information about the component. These values are intended for informational purposes only, and their content is not defined, and not part of the API specification.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Details")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub details: Option<SystemVersion>,
+    pub details: Option<HashMap<(), ()>>,
 
 }
 
@@ -5621,7 +5621,7 @@ pub struct TaskSpecContainerSpecPrivilegesSeLinuxContext {
     /// SELinux type label
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub _type: Option<String>,
+    pub typ: Option<String>,
 
     /// SELinux level label
     #[serde(rename = "Level")]
