@@ -63,3 +63,4 @@ workflows:
       - test_unix
       - test_doc
       - test_clippy
+      - test_audit
