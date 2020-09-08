@@ -46,7 +46,14 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
-
+  test_audit:
+    docker:
+      - image: docker:19.03.12
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit"
 workflows:
   version: 2
   test-image:
