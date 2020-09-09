@@ -53,7 +53,9 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit"
+        # RUSTSEC-2019-0031: https://github.com/briansmith/ring/issues/921
+        # RUSTSEC-2020-0016: https://github.com/tokio-rs/mio/issues/1319
+      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny-warnings --ignore=RUSTSEC-2019-0031 --ignore=RUSTSEC-2020-0016"
 workflows:
   version: 2
   test-image:
