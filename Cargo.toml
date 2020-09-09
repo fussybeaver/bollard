@@ -50,7 +50,7 @@ flate2 = "1.0.14"
 tar = "0.4.29"
 
 [target.'cfg(unix)'.dependencies]
-hyperlocal =  { version = "0.1.4", package = "hyper-unix-connector" }
+hyperlocal =  { version = "0.1.5", package = "hyper-unix-connector" }
 
 [target.'cfg(windows)'.dependencies]
 mio-named-pipes = "0.1.6"
