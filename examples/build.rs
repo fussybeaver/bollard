@@ -1,7 +1,7 @@
 //! Builds a container with a bunch of extra options for testing
 
 use bollard::image::BuildImageOptions;
-use bollard::models::CreateImageInfo;
+use bollard::models::BuildInfo;
 use bollard::Docker;
 
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ async fn run<'a>(
             println!("{:?}", e);
             e
         })
-        .collect::<Vec<Result<CreateImageInfo, bollard::errors::Error>>>()
+        .collect::<Vec<Result<BuildInfo, bollard::errors::Error>>>()
         .await;
     Ok(())
 }

@@ -1,4 +1,4 @@
-use bollard::models::BuildInfo;
+use bollard::models::CreateImageInfo;
 /// Example of creating an image from scratch with a file system in a raw Tar (or tar.gz) archive.
 /// Run with `cargo run --example image_from_scratch <path to archive>.tar.gz
 /// This implementation streams the archive file piece by piece to the Docker daemon,
@@ -67,7 +67,7 @@ async fn run(file: File) -> Result<(), Box<dyn std::error::Error>> {
     let req_body: Body = Body::wrap_stream(reader);
 
     // Finally, call Docker::create_image with the options and the body
-    let result: Vec<BuildInfo> = docker
+    let result: Vec<CreateImageInfo> = docker
         .create_image(Some(options), Some(req_body), None)
         .try_collect()
         .await?;
@@ -88,4 +88,3 @@ fn main() {
     let mut rt = Runtime::new().unwrap();
     rt.block_on(run(archive)).unwrap();
 }
-
