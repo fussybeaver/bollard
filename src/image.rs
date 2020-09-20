@@ -525,7 +525,7 @@ impl Docker {
         options: Option<CreateImageOptions<T>>,
         root_fs: Option<Body>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = Result<BuildInfo, Error>>
+    ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
         T: Into<String> + Serialize,
     {
@@ -1022,7 +1022,7 @@ impl Docker {
         options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
-    ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
+    ) -> impl Stream<Item = Result<BuildInfo, Error>>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
