@@ -201,7 +201,6 @@ where
 ///  - [`Docker::connect_with_named_pipe_defaults`](struct.Docker.html#method.connect_with_pipe_defaults)
 ///  - [`Docker::connect_with_ssl_defaults`](struct.Docker.html#method.connect_with_ssl_defaults)
 ///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
-///  - [`Docker::connect_with_tls_defaults`](struct.Docker.html#method.connect_with_tls_defaults)
 ///  - [`Docker::connect_with_local_defaults`](struct.Docker.html#method.connect_with_local_defaults)
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
