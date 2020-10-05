@@ -93,6 +93,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
                 Some(integration_test_registry_credentials())
             },
         )
+        .try_collect::<Vec<_>>()
         .await?;
 
     Ok(())

@@ -881,12 +881,12 @@ impl Docker {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub async fn push_image<T>(
+    pub fn push_image<T>(
         &self,
         image_name: &str,
         options: Option<PushImageOptions<T>>,
         credentials: Option<DockerCredentials>,
-    ) -> Result<(), Error>
+    ) -> impl Stream<Item = Result<PushImageInfo, Error>>
     where
         T: Into<String> + Serialize,
     {
@@ -906,9 +906,11 @@ impl Docker {
                     Ok(Body::empty()),
                 );
 
-                self.process_into_unit(req).await
+                self.process_into_stream(req).boxed()
             }
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                stream::once(async move { Err(e.into()) }).boxed()
+            },
         }
     }
 
