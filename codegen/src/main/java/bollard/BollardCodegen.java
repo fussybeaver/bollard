@@ -58,6 +58,12 @@ public class BollardCodegen extends RustServerCodegen {
         patchEnumValues.put("RestartPolicyNameEnum", enumValues);
     }
 
+    private static ArrayList<String> enumToString;
+    static {
+        enumToString = new ArrayList();
+        enumToString.add("HostConfigLogConfig");
+    }
+
     @Override
     public void preprocessSwagger(Swagger swagger) {
         Info info = swagger.getInfo();
@@ -123,12 +129,15 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.name = prop.name.replace("i_pv4", "ipv4");
                 } else if (prop.name.equals("_type")) {
                     prop.name = "typ";
-                }
+                } 
                 if (prop.dataFormat != null && prop.dataFormat.equals("dateTime")) {
                     // set DateTime format on properties where appropriate
                     prop.datatype = "DateTime<Utc>";
                 }
                 if (prop.isEnum) {
+                    if (enumToString.contains(model.classname)) {
+                        prop.isEnum = false;
+                    }
                     ArrayList<HashMap<String, String>> vars = (ArrayList<HashMap<String, String>>) prop.allowableValues
                             .get("enumVars");
                     for (HashMap<String, String> enumVar : vars) {
