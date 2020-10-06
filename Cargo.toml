@@ -19,7 +19,7 @@ test_ssl = []
 
 [dependencies]
 base64 = "0.12.3"
-bollard-stubs = { version = "1.40.5" }
+bollard-stubs = { version = "1.40.6" }
 bytes = "0.5.5"
 chrono = { version = "0.4.11", features = ["serde"] }
 ct-logs = "0.7.0"
