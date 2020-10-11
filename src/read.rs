@@ -135,7 +135,11 @@ where
                     Err(e) => Err(e.into()),
                 }
             } else {
-                Ok(None)
+                // OSX will not send a newline for some API endpoints (`/events`)
+                match serde_json::from_slice(&src) {
+                    Ok(json) => Ok(json),
+                    Err(_) => Ok(None),
+                }
             }
         } else {
             Ok(None)
