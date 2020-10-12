@@ -106,6 +106,23 @@ impl<T> JsonLineDecoder<T> {
     }
 }
 
+fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<T, Error> {
+    debug!(
+        "Decoding JSON line from stream: {}",
+        String::from_utf8_lossy(slice).to_string()
+    );
+
+    match serde_json::from_slice(slice) {
+        Ok(json) => Ok(json),
+        Err(ref e) if e.is_data() => Err(JsonDataError {
+            message: e.to_string(),
+            column: e.column(),
+            contents: String::from_utf8_lossy(slice).to_string(),
+        }),
+        Err(e) => Err(e.into()),
+    }
+}
+
 impl<T> Decoder for JsonLineDecoder<T>
 where
     T: DeserializeOwned,
@@ -120,25 +137,13 @@ where
                 let slice = src.split_to(pos + 1);
                 let slice = &slice[..slice.len() - 1];
 
-                debug!(
-                    "Decoding JSON line from stream: {}",
-                    String::from_utf8_lossy(&slice).to_string()
-                );
-
-                match serde_json::from_slice(slice) {
-                    Ok(json) => Ok(json),
-                    Err(ref e) if e.is_data() => Err(JsonDataError {
-                        message: e.to_string(),
-                        column: e.column(),
-                        contents: String::from_utf8_lossy(&slice).to_string(),
-                    }),
-                    Err(e) => Err(e.into()),
-                }
+                decode_json_from_slice(&slice)
             } else {
-                // OSX will not send a newline for some API endpoints (`/events`)
-                match serde_json::from_slice(&src) {
-                    Ok(json) => Ok(json),
-                    Err(_) => Ok(None),
+                // OSX will not send a newline for some API endpoints (`/events`),
+                if src[src.len()-1] == b'}' {
+                    decode_json_from_slice(&src)
+                } else {
+                    Ok(None)
                 }
             }
         } else {
