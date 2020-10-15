@@ -1740,91 +1740,12 @@ pub struct HistoryResponseItem {
 pub struct HostConfigLogConfig {
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub typ: Option<HostConfigLogConfigTypeEnum>,
+    pub typ: Option<String>,
 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub config: Option<HashMap<String, String>>,
 
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
-pub enum HostConfigLogConfigTypeEnum { 
-    #[serde(rename = "")]
-    EMPTY,
-    #[serde(rename = "json-file")]
-    JSON_FILE,
-    #[serde(rename = "syslog")]
-    SYSLOG,
-    #[serde(rename = "journald")]
-    JOURNALD,
-    #[serde(rename = "gelf")]
-    GELF,
-    #[serde(rename = "fluentd")]
-    FLUENTD,
-    #[serde(rename = "awslogs")]
-    AWSLOGS,
-    #[serde(rename = "splunk")]
-    SPLUNK,
-    #[serde(rename = "etwlogs")]
-    ETWLOGS,
-    #[serde(rename = "none")]
-    NONE,
-}
-
-impl ::std::fmt::Display for HostConfigLogConfigTypeEnum {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self { 
-            HostConfigLogConfigTypeEnum::EMPTY => write!(f, ""),
-            HostConfigLogConfigTypeEnum::JSON_FILE => write!(f, "{}", "json-file"),
-            HostConfigLogConfigTypeEnum::SYSLOG => write!(f, "{}", "syslog"),
-            HostConfigLogConfigTypeEnum::JOURNALD => write!(f, "{}", "journald"),
-            HostConfigLogConfigTypeEnum::GELF => write!(f, "{}", "gelf"),
-            HostConfigLogConfigTypeEnum::FLUENTD => write!(f, "{}", "fluentd"),
-            HostConfigLogConfigTypeEnum::AWSLOGS => write!(f, "{}", "awslogs"),
-            HostConfigLogConfigTypeEnum::SPLUNK => write!(f, "{}", "splunk"),
-            HostConfigLogConfigTypeEnum::ETWLOGS => write!(f, "{}", "etwlogs"),
-            HostConfigLogConfigTypeEnum::NONE => write!(f, "{}", "none"),
-
-        }
-    }
-}
-
-impl ::std::str::FromStr for HostConfigLogConfigTypeEnum {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { 
-            "" => Ok(HostConfigLogConfigTypeEnum::EMPTY),
-            "json-file" => Ok(HostConfigLogConfigTypeEnum::JSON_FILE),
-            "syslog" => Ok(HostConfigLogConfigTypeEnum::SYSLOG),
-            "journald" => Ok(HostConfigLogConfigTypeEnum::JOURNALD),
-            "gelf" => Ok(HostConfigLogConfigTypeEnum::GELF),
-            "fluentd" => Ok(HostConfigLogConfigTypeEnum::FLUENTD),
-            "awslogs" => Ok(HostConfigLogConfigTypeEnum::AWSLOGS),
-            "splunk" => Ok(HostConfigLogConfigTypeEnum::SPLUNK),
-            "etwlogs" => Ok(HostConfigLogConfigTypeEnum::ETWLOGS),
-            "none" => Ok(HostConfigLogConfigTypeEnum::NONE),
-            x => Err(format!("Invalid enum type: {}", x)),
-        }
-    }
-}
-
-impl ::std::convert::AsRef<str> for HostConfigLogConfigTypeEnum {
-    fn as_ref(&self) -> &str {
-        match self { 
-            HostConfigLogConfigTypeEnum::EMPTY => "",
-            HostConfigLogConfigTypeEnum::JSON_FILE => "json-file",
-            HostConfigLogConfigTypeEnum::SYSLOG => "syslog",
-            HostConfigLogConfigTypeEnum::JOURNALD => "journald",
-            HostConfigLogConfigTypeEnum::GELF => "gelf",
-            HostConfigLogConfigTypeEnum::FLUENTD => "fluentd",
-            HostConfigLogConfigTypeEnum::AWSLOGS => "awslogs",
-            HostConfigLogConfigTypeEnum::SPLUNK => "splunk",
-            HostConfigLogConfigTypeEnum::ETWLOGS => "etwlogs",
-            HostConfigLogConfigTypeEnum::NONE => "none",
-        }
-    }
 }
 
 /// Response to an API call that returns just an Id
@@ -4888,7 +4809,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub ncpu: Option<i64>,
 
-    /// Total amount of physical memory available on the host, in kilobytes (kB). 
+    /// Total amount of physical memory available on the host, in bytes. 
     #[serde(rename = "MemTotal")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub mem_total: Option<i64>,
