@@ -121,7 +121,6 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     assert!(vec
         .iter()
         .map(|value| {
-            println!("{:?}", value);
             value
         })
         .any(|value| match value {
