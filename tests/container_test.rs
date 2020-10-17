@@ -96,6 +96,23 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
+    let new_image_url = format!("{}my-hello-world", registry_http_addr());
+    &docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: &new_image_url[..],
+                ..Default::default()
+            }),
+            None,
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
     Ok(())
 }
 
