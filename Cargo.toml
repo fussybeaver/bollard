@@ -23,7 +23,7 @@ bollard-stubs = { version = "1.40.6" }
 bytes = "0.5.5"
 chrono = { version = "0.4.11", features = ["serde"] }
 ct-logs = "0.7.0"
-dirs = "3.0.0"
+dirs-next = "1.0.2"
 futures-core = "0.3.4"
 futures-util = "0.3.4"
 hex = "0.4.2"
