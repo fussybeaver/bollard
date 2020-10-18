@@ -427,7 +427,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
         result
             .into_iter()
             .filter(
-                |r| vec!["bollard", "registry:2", "stefanscherer/registry-windows"]
+                |r| vec!["bollard", "registry:2", "stefanscherer/registry-windows", "moby/buildkit:master"]
                     .into_iter()
                     .all(|v| v != r.image.as_ref().unwrap())
             )

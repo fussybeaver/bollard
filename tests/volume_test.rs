@@ -103,13 +103,37 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
     };
 
     let result = &docker.prune_volumes(Some(prune_volumes_options)).await?;
+    if cfg!(not(feature = "test_macos")) {
+        assert!(result
+            .volumes_deleted
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|v| v == "integration_test_prune_volumes_1"));
+    }
 
-    assert!(result
-        .volumes_deleted
-        .as_ref()
-        .unwrap()
-        .iter()
-        .any(|v| v == "integration_test_prune_volumes_1"));
+    let mut list_volumes_filters = HashMap::new();
+    list_volumes_filters.insert("label", vec!["maintainer=shiplift-maintainer"]);
+
+    let results = &docker
+        .list_volumes(Some(ListVolumesOptions {
+            filters: list_volumes_filters,
+        }))
+        .await?;
+
+    assert_eq!(results.volumes.len(), 0);
+
+    let mut list_volumes_filters = HashMap::new();
+    list_volumes_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
+
+    let results = &docker
+        .list_volumes(Some(ListVolumesOptions {
+            filters: list_volumes_filters,
+        }))
+        .await?;
+
+    assert_eq!(results.volumes.len(), 1);
+    assert_eq!(results.volumes[0].name, "integration_test_prune_volumes_2");
 
     let results = &docker.list_volumes::<String>(None).await?;
 

@@ -16,6 +16,8 @@ edition = "2018"
 test_http = []
 # Enable tests specifically for rustls
 test_ssl = []
+# Enable tests specifically for macos
+test_macos = []
 
 [dependencies]
 base64 = "0.12.3"

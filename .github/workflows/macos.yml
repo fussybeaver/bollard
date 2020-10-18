@@ -1,0 +1,47 @@
+on: [push]
+
+jobs:
+  test:
+    name: bollard macos test
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Docker
+        uses: docker-practice/actions-setup-docker@master
+        with:
+          docker_channel: nightly
+          docker_nightly_version: snapshot-20201008
+          docker_buildx: false
+          docker_cli_experimental: disabled
+
+      - name: Bootstrap Bollard integration tests
+        run: |
+          docker run -d --restart always --name registry -p 5000:5000 registry:2
+          docker pull hello-world:linux
+          docker pull fussybeaver/uhttpd
+          docker pull alpine
+          docker tag hello-world:linux localhost:5000/hello-world:linux
+          docker tag fussybeaver/uhttpd localhost:5000/fussybeaver/uhttpd
+          docker tag alpine localhost:5000/alpine
+          docker push localhost:5000/hello-world:linux
+          docker push localhost:5000/fussybeaver/uhttpd
+          docker push localhost:5000/alpine
+          docker swarm init
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_LOG: debug
+          REGISTRY_HTTP_ADDR: localhost:5000
+        with:
+          command: test
+          args: --features test_macos -- --test-threads 1
