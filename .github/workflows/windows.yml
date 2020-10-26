@@ -1,0 +1,25 @@
+on: [push]
+
+jobs:
+  test:
+    name: bollard windows test
+    runs-on: windows-2016
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_LOG: debug
+          DISABLE_REGISTRY: true
+        with:
+          command: test
+          args: --verbose -- --nocapture --test-threads 1

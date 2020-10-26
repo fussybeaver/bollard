@@ -155,7 +155,6 @@ fn integration_test_events() {
 }
 
 #[test]
-#[cfg(not(windows))]
 fn integration_test_events_until_forever() {
     connect_to_docker_and_run!(events_until_forever_test);
 }
