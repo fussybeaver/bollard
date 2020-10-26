@@ -39,6 +39,30 @@ library also supports [version
 negotiation](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.negotiate_version),
 to allow downgrading to an older API version.
 
+### Mapping Docker Client to Docker Engine API
+
+The [Docker Engine API](https://docs.docker.com/engine/api/v1.40/) provides a
+low-level interface to the Docker server, but Docker users may be more familiar
+with the [Docker command
+line](https://docs.docker.com/engine/reference/commandline/cli/) interface.
+
+Bollard's API is aligned with the underlying docker engine API, not the CLI, so
+understanding how to map between the two can be useful. This mapping can be
+accomplished with the following command:
+
+```bash
+$ strace -fe trace=open,read,write -v -s 2048 -- <Docker CLI Command>
+
+# Example:
+$ strace -fe trace=open,read,write -v -s 2048 -- docker run --rm hello-world
+```
+
+Requests are made as HTTP requests, with a visible endpoint, such as:
+
+```
+write(3, "POST /v1.40/containers/create ... (args to Docker server)")
+```
+
 ## Usage
 
 ### Connecting with the docker daemon
