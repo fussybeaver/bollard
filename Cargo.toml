@@ -15,9 +15,11 @@ edition = "2018"
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
-test_ssl = []
+test_ssl = ["ssl"]
 # Enable tests specifically for macos
 test_macos = []
+# Enable rustls / ssl
+ssl = ["rustls", "rustls-native-certs"]
 
 [dependencies]
 base64 = "0.12.3"
@@ -34,8 +36,8 @@ hyper = "0.13.6"
 hyper-rustls = "0.21.0"
 log = "0.4.8"
 pin-project = "0.4.22"
-rustls = "0.18.0"
-rustls-native-certs = "0.4.0"
+rustls = { version = "0.18.0", optional = true }
+rustls-native-certs = { version = "0.4.0", optional = true }
 serde = "1.0.114"
 serde_derive = "1.0.114"
 serde_json = "1.0.55"

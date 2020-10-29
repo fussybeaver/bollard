@@ -1,9 +1,12 @@
 use std::cmp;
 use std::env;
 use std::fmt;
+#[cfg(feature = "ssl")]
 use std::fs;
 use std::future::Future;
+#[cfg(feature = "ssl")]
 use std::io;
+#[cfg(feature = "ssl")]
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -20,10 +23,13 @@ use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::client::HttpConnector;
 use hyper::{self, body::Bytes, Body, Client, Method, Request, Response, StatusCode};
+#[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
 use hyperlocal::UnixClient as UnixConnector;
+#[cfg(feature = "ssl")]
 use rustls::internal::pemfile;
+#[cfg(feature = "ssl")]
 use rustls::sign::{CertifiedKey, RSASigningKey};
 use tokio_util::codec::FramedRead;
 
@@ -63,6 +69,7 @@ pub(crate) enum ClientType {
     #[cfg(unix)]
     Unix,
     Http,
+    #[cfg(feature = "ssl")]
     SSL,
     #[cfg(windows)]
     NamedPipe,
@@ -77,6 +84,7 @@ pub(crate) enum Transport {
     Http {
         client: Client<HttpConnector>,
     },
+    #[cfg(feature = "ssl")]
     Https {
         client: Client<HttpsConnector<HttpConnector>>,
     },
@@ -94,6 +102,7 @@ impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Transport::Http { .. } => write!(f, "HTTP"),
+            #[cfg(feature = "ssl")]
             Transport::Https { .. } => write!(f, "HTTPS(rustls)"),
             #[cfg(unix)]
             Transport::Unix { .. } => write!(f, "Unix"),
@@ -222,11 +231,13 @@ impl Clone for Docker {
     }
 }
 
+#[cfg(feature = "ssl")]
 struct DockerClientCertResolver {
     ssl_key: PathBuf,
     ssl_cert: PathBuf,
 }
 
+#[cfg(feature = "ssl")]
 impl DockerClientCertResolver {
     /// The default directory in which to look for our Docker certificate
     /// files.
@@ -285,6 +296,7 @@ impl DockerClientCertResolver {
     }
 }
 
+#[cfg(feature = "ssl")]
 impl rustls::ResolvesClientCert for DockerClientCertResolver {
     fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<CertifiedKey> {
         self.docker_client_key().ok()
@@ -295,8 +307,9 @@ impl rustls::ResolvesClientCert for DockerClientCertResolver {
     }
 }
 
-/// A Docker implementation typed to connect to a secure HTTPS connection using the `openssl`
+/// A Docker implementation typed to connect to a secure HTTPS connection using the `rustls`
 /// library.
+#[cfg(feature = "ssl")]
 impl Docker {
     /// Connect using secure HTTPS using defaults that are signalled by environment variables.
     ///
@@ -936,6 +949,7 @@ impl Docker {
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
             Transport::Http { ref client } => client.request(req),
+            #[cfg(feature = "ssl")]
             Transport::Https { ref client } => client.request(req),
             #[cfg(unix)]
             Transport::Unix { ref client } => client.request(req),

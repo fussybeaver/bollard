@@ -64,6 +64,7 @@ impl<'a> Uri<'a> {
     {
         match client_type {
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
+            #[cfg(feature = "ssl")]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(unix)]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
@@ -75,6 +76,7 @@ impl<'a> Uri<'a> {
     fn socket_scheme(client_type: &ClientType) -> &'a str {
         match client_type {
             ClientType::Http => "http",
+            #[cfg(feature = "ssl")]
             ClientType::SSL => "https",
             #[cfg(unix)]
             ClientType::Unix => "unix",
