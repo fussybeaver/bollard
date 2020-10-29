@@ -585,6 +585,8 @@ fn integration_test_export_image() {
 
 #[test]
 #[cfg(unix)]
+// Flaky 
+#[ignore]
 fn integration_test_issue_55() {
     connect_to_docker_and_run!(issue_55_test);
 }
