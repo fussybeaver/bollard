@@ -3,7 +3,7 @@ version: 2
 jobs:
   test_ssl:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker
@@ -15,7 +15,7 @@ jobs:
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl -- --test test_version_ssl
   test_http:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker
@@ -24,7 +24,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
   test_unix:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker
@@ -32,7 +32,7 @@ jobs:
       - run: dockerfiles/bin/run_integration_tests.sh
   test_doc:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker
@@ -40,7 +40,7 @@ jobs:
       - run: docker run -ti --rm bollard cargo test --target x86_64-unknown-linux-gnu --doc
   test_clippy:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker
@@ -48,7 +48,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
   test_audit:
     docker:
-      - image: docker:19.03.13
+      - image: docker:20.10.0-rc1
     steps:
       - checkout
       - setup_remote_docker

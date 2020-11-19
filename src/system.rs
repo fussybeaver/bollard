@@ -178,6 +178,34 @@ impl Docker {
 
     /// ---
     ///
+    /// # Info
+    ///
+    /// Returns Docker client and server information that is running.
+    ///
+    /// # Returns
+    ///
+    ///  - [Info](system/struct.Info.html), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// docker.info();
+    /// ```
+    pub async fn info(&self) -> Result<SystemInfo, Error> {
+        let req = self.build_request(
+            "/info",
+            Builder::new().method(Method::GET),
+            None::<String>,
+            Ok(Body::empty()),
+        );
+
+        self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
     /// # Ping
     ///
     /// This is a dummy endpoint you can use to test if the server is accessible.
