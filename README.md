@@ -11,7 +11,7 @@ Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 futures, streams and the async/await paradigm.
 
 The library also features Windows support through Named Pipes and HTTPS support through
-optional SSL bindings or a native TLS implementation.
+optional rustls bindings.
 
 ## Install
 
@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.8"
+bollard = "0.9"
 ```
 
 ## API
