@@ -93,13 +93,18 @@ pub struct UpdateServiceOptions {
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
-pub(crate) fn serialize_registry_auth_from<S>(registry_auth_from: &bool, s: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_registry_auth_from<S>(
+    registry_auth_from: &bool,
+    s: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    s.serialize_str(
-        if *registry_auth_from { "previous-spec" } else { "spec" }
-    )
+    s.serialize_str(if *registry_auth_from {
+        "previous-spec"
+    } else {
+        "spec"
+    })
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
