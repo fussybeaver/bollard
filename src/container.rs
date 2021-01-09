@@ -181,8 +181,7 @@ where
 
     /// The name of the image to use when creating the container
     #[serde(rename = "Image")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<T>,
+    pub image: T,
 
     /// An object mapping mount point paths inside the container to empty objects.
     #[serde(rename = "Volumes")]
