@@ -5,7 +5,7 @@ use bollard::models::*;
 use bollard::system::*;
 use bollard::Docker;
 
-use chrono::{Utc};
+use chrono::Utc;
 use futures_util::future;
 use futures_util::stream::select;
 use futures_util::stream::StreamExt;
@@ -118,16 +118,10 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     .try_collect::<Vec<_>>()
     .await?;
 
-    assert!(vec
-        .iter()
-        .map(|value| {
-            value
-        })
-        .any(|value| match value {
-            Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
-            _ => false,
-        }));
-
+    assert!(vec.iter().map(|value| { value }).any(|value| match value {
+        Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
+        _ => false,
+    }));
 
     Ok(())
 }
@@ -151,13 +145,8 @@ async fn df_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn info_test(docker: Docker) -> Result<(), Error> {
-
     let res = &docker.info().await?;
-    let os_type = if cfg!(windows) {
-        "windows"
-    } else {
-        "linux"
-    };
+    let os_type = if cfg!(windows) { "windows" } else { "linux" };
 
     assert_eq!(os_type, res.os_type.as_ref().unwrap());
 

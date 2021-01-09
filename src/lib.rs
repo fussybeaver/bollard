@@ -112,7 +112,7 @@
 //! ## Examples
 //!
 //! Note: all these examples need a [Tokio
-//! Runtime](https://tokio.rs/). 
+//! Runtime](https://tokio.rs/).
 //!
 //! ### Version
 //!

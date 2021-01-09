@@ -4,8 +4,8 @@ use futures_core::ready;
 use hyper::client::connect::Connected;
 use mio_named_pipes::NamedPipe;
 use pin_project::pin_project;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::io::PollEvented;
+use tokio::io::{AsyncRead, AsyncWrite};
 use winapi::um::winbase::*;
 
 use std::fmt;
@@ -24,7 +24,7 @@ use crate::uri::Uri;
 
 #[pin_project]
 pub struct NamedPipeStream {
-    //#[pin] 
+    //#[pin]
     io: PollEvented<NamedPipe>,
 }
 
@@ -176,7 +176,8 @@ pub struct NamedPipeConnector;
 impl hyper::service::Service<hyper::Uri> for NamedPipeConnector {
     type Response = NamedPipeStream;
     type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -239,9 +240,9 @@ impl Future for NamedPipeConnecting {
                     };
 
                     NamedPipeConnecting {
-                        state: NamedPipeConnectingState::Connect(Box::pin(NamedPipeStream::connect(
-                            &path,
-                        ))),
+                        state: NamedPipeConnectingState::Connect(Box::pin(
+                            NamedPipeStream::connect(&path),
+                        )),
                     }
                 }
 

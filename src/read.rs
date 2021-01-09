@@ -140,7 +140,7 @@ where
                 decode_json_from_slice(&slice)
             } else {
                 // OSX will not send a newline for some API endpoints (`/events`),
-                if src[src.len()-1] == b'}' {
+                if src[src.len() - 1] == b'}' {
                     decode_json_from_slice(&src)
                 } else {
                     Ok(None)

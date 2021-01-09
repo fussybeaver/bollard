@@ -548,9 +548,7 @@ impl Docker {
                 );
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => {
-                stream::once(async move { Err(Error::from(e)) }).boxed()
-            }
+            Err(e) => stream::once(async move { Err(Error::from(e)) }).boxed(),
         }
     }
 
@@ -908,9 +906,7 @@ impl Docker {
 
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => {
-                stream::once(async move { Err(e.into()) }).boxed()
-            },
+            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
     }
 
@@ -1044,9 +1040,7 @@ impl Docker {
 
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => {
-                stream::once(async move { Err(e.into()) }).boxed()
-            }
+            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
     }
 
@@ -1161,9 +1155,7 @@ impl Docker {
                 );
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => {
-                stream::once(async move { Err(e.into()) }).boxed()
-            }
+            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
     }
 }
