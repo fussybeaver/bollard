@@ -818,7 +818,7 @@ impl Docker {
     ///
     /// # Examples:
     ///
-    /// ```rust,norun
+    /// ```rust,no_run
     ///     use bollard::Docker;
     ///
     ///     let docker = Docker::connect_with_http_defaults().unwrap();
