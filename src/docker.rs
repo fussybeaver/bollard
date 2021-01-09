@@ -395,7 +395,7 @@ impl Docker {
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
-        let client_addr = addr.replacen("tcp://", "", 1);
+        let client_addr = addr.replacen("tcp://", "", 1).replacen("https://", "", 1);
 
         let mut config = rustls::ClientConfig::new();
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -507,7 +507,7 @@ impl Docker {
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         // This ensures that using docker-machine-esque addresses work with Hyper.
-        let client_addr = addr.replacen("tcp://", "", 1);
+        let client_addr = addr.replacen("tcp://", "", 1).replacen("http://", "", 1);
 
         let http_connector = HttpConnector::new();
 
