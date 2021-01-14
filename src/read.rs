@@ -141,7 +141,8 @@ where
             } else {
                 // OSX will not send a newline for some API endpoints (`/events`),
                 if src[src.len() - 1] == b'}' {
-                    decode_json_from_slice(&src)
+                    let slice = src.split_to(src.len());
+                    decode_json_from_slice(&slice)
                 } else {
                     Ok(None)
                 }
