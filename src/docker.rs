@@ -117,8 +117,8 @@ impl fmt::Debug for Transport {
 /// a higher client version is used than is compatible with the server. Beware also, that the
 /// docker server will return stubs for a higher version than the version set when communicating.
 ///
-/// See also [negotiate_version](struct.Docker.html#method.negotiate_version), and the `client_version` argument when instantiating the
-/// [Docker](struct.Docker.html) client instance.
+/// See also [negotiate_version](Docker::negotiate_version()), and the `client_version` argument when instantiating the
+/// [Docker] client instance.
 pub struct ClientVersion {
     /// The major version number.
     pub major_version: usize,
@@ -203,11 +203,11 @@ where
 ///
 /// The main interface for calling the Docker API. Construct a new Docker instance using one of the
 /// connect methods:
-///  - [`Docker::connect_with_http_defaults`](struct.Docker.html#method.connect_with_http_defaults)
-///  - [`Docker::connect_with_named_pipe_defaults`](struct.Docker.html#method.connect_with_pipe_defaults)
-///  - [`Docker::connect_with_ssl_defaults`](struct.Docker.html#method.connect_with_ssl_defaults)
-///  - [`Docker::connect_with_unix_defaults`](struct.Docker.html#method.connect_with_unix_defaults)
-///  - [`Docker::connect_with_local_defaults`](struct.Docker.html#method.connect_with_local_defaults)
+///  - [`Docker::connect_with_http_defaults`](Docker::connect_with_http_defaults())
+///  - [`Docker::connect_with_named_pipe_defaults`](Docker::connect_with_named_pipe_defaults())
+///  - [`Docker::connect_with_ssl_defaults`](Docker::connect_with_ssl_defaults())
+///  - [`Docker::connect_with_unix_defaults`](Docker::connect_with_unix_defaults())
+///  - [`Docker::connect_with_local_defaults`](Docker::connect_with_local_defaults())
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
@@ -683,8 +683,8 @@ impl Docker {
     ///  * Unix: [`Docker::connect_with_unix_defaults`]
     ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
     ///
-    /// [`Docker::connect_with_unix_defaults`]: struct.Docker.html#method.connect_with_unix_defaults
-    /// [`Docker::connect_with_named_pipe_defaults`]: struct.Docker.html#method.connect_with_named_pipe_defaults
+    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
+    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
     pub fn connect_with_local_defaults() -> Result<Docker, Error> {
         #[cfg(unix)]
         return Docker::connect_with_unix_defaults();
@@ -698,8 +698,8 @@ impl Docker {
     ///  * Unix: [`Docker::connect_with_unix`]
     ///  * Windows: [`Docker::connect_with_named_pipe`]
     ///
-    /// [`Docker::connect_with_unix`]: struct.Docker.html#method.connect_with_unix
-    /// [`Docker::connect_with_named_pipe`]: struct.Docker.html#method.connect_with_named_pipe
+    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
+    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
     pub fn connect_with_local(
         addr: &str,
         timeout: u64,

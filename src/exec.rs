@@ -17,7 +17,7 @@ use crate::container::LogOutput;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
 
-/// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
+/// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateExecOptions<T>
@@ -48,7 +48,7 @@ where
     pub working_dir: Option<T>,
 }
 
-/// Result type for the [Create Exec API](../struct.Docker.html#method.create_exec)
+/// Result type for the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
@@ -56,7 +56,7 @@ pub struct CreateExecResults {
     pub id: String,
 }
 
-/// Exec configuration used in the [Create Exec API](../struct.Docker.html#method.create_exec)
+/// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct StartExecOptions {
@@ -64,7 +64,7 @@ pub struct StartExecOptions {
     pub detach: bool,
 }
 
-/// Result type for the [Start Exec API](../struct.Docker.html#method.start_exec)
+/// Result type for the [Start Exec API](Docker::start_exec())
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum StartExecResults {
@@ -82,11 +82,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Create Exec Options](exec/struct.CreateExecOptions.html) struct.
+    ///  - [Create Exec Options](CreateExecOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Create Exec Results](exec/struct.CreateExecResults.html) struct, wrapped in a
+    ///  - A [Create Exec Results](CreateExecResults) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -140,7 +140,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Log Output](container/enum.LogOutput.html) enum, wrapped in a Stream.
+    ///  - [Log Output](LogOutput) enum, wrapped in a Stream.
     ///
     /// # Examples
     ///
@@ -220,7 +220,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An [Exec Inspect Response](models/struct.ExecInspectResponse.html) struct, wrapped in a Future.
+    ///  - An [Exec Inspect Response](ExecInspectResponse) struct, wrapped in a Future.
     ///
     /// # Examples
     ///

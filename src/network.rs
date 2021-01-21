@@ -13,7 +13,7 @@ use crate::errors::Error;
 
 use crate::models::*;
 
-/// Network configuration used in the [Create Network API](../struct.Docker.html#method.create_network)
+/// Network configuration used in the [Create Network API](Docker::create_network())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
@@ -48,7 +48,7 @@ where
     pub labels: HashMap<T, T>,
 }
 
-/// Parameters used in the [Inspect Network API](../struct.Docker.html#method.inspect_network)
+/// Parameters used in the [Inspect Network API](super::Docker::inspect_network())
 ///
 /// ## Examples
 ///
@@ -79,7 +79,7 @@ where
     pub scope: T,
 }
 
-/// Parameters used in the [List Networks API](../struct.Docker.html#method.list_networks)
+/// Parameters used in the [List Networks API](super::Docker::list_networks())
 ///
 /// ## Examples
 ///
@@ -120,7 +120,7 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
-/// Network configuration used in the [Connect Network API](../struct.Docker.html#method.connect_network)
+/// Network configuration used in the [Connect Network API](Docker::connect_network())
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
@@ -133,7 +133,7 @@ where
     pub endpoint_config: EndpointSettings,
 }
 
-/// Network configuration used in the [Disconnect Network API](../struct.Docker.html#method.disconnect_network)
+/// Network configuration used in the [Disconnect Network API](Docker::disconnect_network())
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
@@ -146,7 +146,7 @@ where
     pub force: bool,
 }
 
-/// Parameters used in the [Prune Networks API](../struct.Docker.html#method.prune_networks)
+/// Parameters used in the [Prune Networks API](Docker::prune_networks())
 ///
 /// ## Examples
 ///
@@ -195,11 +195,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Create Network Options](network/struct.CreateNetworkOptions.html) struct.
+    ///  - [Create Network Options](CreateNetworkOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Network Create Response](models/struct.NetworkCreateResponse.html) struct, wrapped in a
+    ///  - A [Network Create Response](NetworkCreateResponse) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -281,7 +281,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Models](models/struct.Network.html) struct, wrapped in a
+    ///  - A [Models](Network) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -327,11 +327,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [List Network Options](network/struct.ListNetworksOptions.html) struct.
+    ///  - Optional [List Network Options](ListNetworksOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A vector of [Network](models/struct.Network.html) struct, wrapped in a
+    ///  - A vector of [Network](Network) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -378,7 +378,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - A [Connect Network Options](network/struct.ConnectNetworkOptions.html) struct.
+    ///  - A [Connect Network Options](ConnectNetworkOptions) struct.
     ///
     /// # Returns
     ///
@@ -435,7 +435,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - A [Disconnect Network Options](network/struct.DisconnectNetworkOptions.html) struct.
+    ///  - A [Disconnect Network Options](DisconnectNetworkOptions) struct.
     ///
     /// # Returns
     ///
@@ -486,11 +486,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - A [Prune Networks Options](network/struct.PruneNetworksOptions.html) struct.
+    ///  - A [Prune Networks Options](PruneNetworksOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Network Prune Response](models/struct.NetworkPruneResponse.html) struct.
+    ///  - A [Network Prune Response](NetworkPruneResponse) struct.
     ///
     /// # Examples
     ///

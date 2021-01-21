@@ -25,7 +25,7 @@
 //! # API
 //! ## Documentation
 //!
-//! [API docs](https://docs.rs/bollard/).
+//! [API docs](crate).
 //!
 //! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
 //! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.40.yaml). The generated

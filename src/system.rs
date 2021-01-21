@@ -98,7 +98,7 @@ pub struct VersionComponents {
     pub details: Option<HashMap<String, Value>>,
 }
 
-/// Parameters used in the [Events API](../struct.Docker.html#method.events)
+/// Parameters used in the [Events API](Docker::events())
 ///
 /// ## Examples
 ///
@@ -156,7 +156,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Version](system/struct.Version.html), wrapped in a Future.
+    ///  - [Version](Version), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -184,7 +184,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Info](system/struct.Info.html), wrapped in a Future.
+    ///  - [Info](SystemInfo), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -212,7 +212,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A String, wrapped in a Future.
+    ///  - A [String](std::string::String), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -243,7 +243,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [System Events Response](models/struct.SystemEventsResponse.html),
+    ///  - [System Events Response](SystemEventsResponse),
     ///  wrapped in a Stream.
     ///
     /// # Examples
@@ -290,7 +290,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [System Data Usage
-    ///  Response](models/struct.SystemDataUsageResponse.html), wrapped in a
+    ///  Response](SystemDataUsageResponse), wrapped in a
     ///  Future.
     ///
     /// # Examples

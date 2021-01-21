@@ -17,7 +17,7 @@ use crate::errors::Error;
 
 use crate::models::*;
 
-/// Parameters used in the [List Container API](../struct.Docker.html#method.list_containers)
+/// Parameters used in the [List Container API](Docker::list_containers())
 ///
 /// ## Examples
 ///
@@ -75,7 +75,7 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
-/// Parameters used in the [Create Container API](../struct.Docker.html#method.create_container)
+/// Parameters used in the [Create Container API](Docker::create_container())
 ///
 /// ## Examples
 ///
@@ -280,7 +280,7 @@ impl From<ContainerConfig> for Config<String> {
     }
 }
 
-/// Parameters used in the [Stop Container API](../struct.Docker.html#method.stop_container)
+/// Parameters used in the [Stop Container API](Docker::stop_container())
 ///
 /// ## Examples
 ///
@@ -295,7 +295,7 @@ pub struct StopContainerOptions {
     pub t: i64,
 }
 
-/// Parameters used in the [Start Container API](../struct.Docker.html#method.start_container)
+/// Parameters used in the [Start Container API](Docker::start_container())
 ///
 /// ## Examples
 ///
@@ -317,7 +317,7 @@ where
     pub detach_keys: T,
 }
 
-/// Parameters used in the [Remove Container API](../struct.Docker.html#method.remove_container)
+/// Parameters used in the [Remove Container API](Docker::remove_container())
 ///
 /// ## Examples
 ///
@@ -341,7 +341,7 @@ pub struct RemoveContainerOptions {
     pub link: bool,
 }
 
-/// Parameters used in the [Wait Container API](../struct.Docker.html#method.wait_container)
+/// Parameters used in the [Wait Container API](Docker::wait_container())
 ///
 /// ## Examples
 ///
@@ -362,7 +362,7 @@ where
     pub condition: T,
 }
 
-/// Parameters used in the [Restart Container API](../struct.Docker.html#method.restart_container)
+/// Parameters used in the [Restart Container API](Docker::restart_container())
 ///
 /// ## Example
 ///
@@ -379,7 +379,7 @@ pub struct RestartContainerOptions {
     pub t: isize,
 }
 
-/// Parameters used in the [Inspect Container API](../struct.Docker.html#method.inspect_container)
+/// Parameters used in the [Inspect Container API](Docker::inspect_container())
 ///
 /// ## Examples
 ///
@@ -396,7 +396,7 @@ pub struct InspectContainerOptions {
     pub size: bool,
 }
 
-/// Parameters used in the [Top Processes API](../struct.Docker.html#method.top_processes)
+/// Parameters used in the [Top Processes API](Docker::top_processes())
 ///
 /// ## Examples
 ///
@@ -417,7 +417,7 @@ where
     pub ps_args: T,
 }
 
-/// Parameters used in the [Logs API](../struct.Docker.html#method.logs)
+/// Parameters used in the [Logs API](Docker::logs())
 ///
 /// ## Examples
 ///
@@ -453,7 +453,7 @@ where
     pub tail: T,
 }
 
-/// Result type for the [Logs API](../struct.Docker.html#method.logs)
+/// Result type for the [Logs API](Docker::logs())
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum LogOutput {
@@ -475,7 +475,7 @@ impl fmt::Display for LogOutput {
     }
 }
 
-/// Parameters used in the [Stats API](../struct.Docker.html#method.stats)
+/// Parameters used in the [Stats API](super::Docker::stats())
 ///
 /// ## Examples
 ///
@@ -649,7 +649,7 @@ pub struct BlkioStatsEntry {
     pub value: u64,
 }
 
-/// Parameters used in the [Kill Container API](../struct.Docker.html#method.kill_container)
+/// Parameters used in the [Kill Container API](Docker::kill_container())
 ///
 /// ## Examples
 ///
@@ -669,7 +669,7 @@ where
     pub signal: T,
 }
 
-/// Configuration for the [Update Container API](../struct.Docker.html#method.update_container)
+/// Configuration for the [Update Container API](Docker::update_container())
 ///
 /// ## Examples
 ///
@@ -856,7 +856,7 @@ where
     pub restart_policy: Option<RestartPolicy>,
 }
 
-/// Parameters used in the [Rename Container API](../struct.Docker.html#method.rename_container)
+/// Parameters used in the [Rename Container API](Docker::rename_container())
 ///
 /// ## Examples
 ///
@@ -876,7 +876,7 @@ where
     pub name: T,
 }
 
-/// Parameters used in the [Prune Containers API](../struct.Docker.html#method.prune_containers)
+/// Parameters used in the [Prune Containers API](Docker::prune_containers())
 ///
 /// ## Examples
 ///
@@ -907,7 +907,7 @@ where
 }
 
 /// Parameters used in the [Upload To Container
-/// API](../struct.Docker.html#method.upload_to_container)
+/// API](Docker::upload_to_container)
 ///
 /// ## Examples
 ///
@@ -935,7 +935,7 @@ where
 }
 
 /// Parameters used in the [Download From Container
-/// API](../struct.Docker.html#method.download_from_container)
+/// API](Docker::download_from_container())
 ///
 /// ## Examples
 ///
@@ -964,11 +964,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListContainersOptions](container/struct.ListContainersOptions.html) struct.
+    ///  - Optional [ListContainersOptions](ListContainersOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [ContainerSummaryInner](models/struct.ContainerSummaryInner.html), wrapped in a Future.
+    ///  - Vector of [ContainerSummaryInner](ContainerSummaryInner), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1018,12 +1018,12 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Create Container Options](container/struct.CreateContainerOptions.html) struct.
-    ///  - Container [Config](container/struct.Config.html) struct.
+    ///  - Optional [Create Container Options](CreateContainerOptions) struct.
+    ///  - Container [Config](Config) struct.
     ///
     /// # Returns
     ///
-    ///  - [ContainerCreateResponse](models/struct.ContainerCreateResponse.html), wrapped in a Future.
+    ///  - [ContainerCreateResponse](ContainerCreateResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1076,7 +1076,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Start Container Options](container/struct.StartContainerOptions.html) struct.
+    ///  - Optional [Start Container Options](StartContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1120,7 +1120,7 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stop Container Options](container/struct.StopContainerOptions.html) struct.
+    /// - Optional [Stop Container Options](StopContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1165,7 +1165,7 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as a string slice.
-    /// - Optional [Remove Container Options](container/struct.RemoveContainerOptions.html) struct.
+    /// - Optional [Remove Container Options](RemoveContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1215,11 +1215,11 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Wait Container Options](container/struct.WaitContainerOptions.html) struct.
+    /// - Optional [Wait Container Options](WaitContainerOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [ContainerWaitResponse](models/struct.ContainerWaitResponse.html), wrapped in a
+    ///  - [ContainerWaitResponse](ContainerWaitResponse), wrapped in a
     ///  Stream.
     ///
     /// # Examples
@@ -1265,7 +1265,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Restart Container Options](container/struct.RestartContainerOptions.html) struct.
+    ///  - Optional [Restart Container Options](RestartContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1311,11 +1311,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](container/struct.InspectContainerOptions.html) struct.
+    ///  - Optional [Inspect Container Options](InspectContainerOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [ContainerInspectResponse](models/struct.ContainerInspectResponse.html), wrapped in a Future.
+    ///  - [ContainerInspectResponse](ContainerInspectResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1356,11 +1356,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Top Options](container/struct.TopOptions.html) struct.
+    ///  - Optional [Top Options](TopOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [ContainerTopResponse](models/struct.ContainerTopResponse.html), wrapped in a Future.
+    ///  - [ContainerTopResponse](ContainerTopResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1404,11 +1404,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Logs Options](container/struct.LogsOptions.html) struct.
+    ///  - Optional [Logs Options](LogsOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Log Output](container/enum.LogOutput.html) enum, wrapped in a
+    ///  - [Log Output](LogOutput) enum, wrapped in a
     ///  Stream.
     ///
     /// # Examples
@@ -1460,7 +1460,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An Option of Vector of [Container Change Response Item](models/struct.ContainerChangeResponseItem.html) structs, wrapped in a
+    ///  - An Option of Vector of [Container Change Response Item](ContainerChangeResponseItem) structs, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1496,11 +1496,11 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stats Options](container/struct.StatsOptions.html) struct.
+    /// - Optional [Stats Options](StatsOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Stats](container/struct.Stats.html) struct, wrapped in a
+    ///  - [Stats](Stats) struct, wrapped in a
     ///  Stream.
     ///
     /// # Examples
@@ -1543,7 +1543,7 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Kill Container Options](container/struct.KillContainerOptions.html) struct.
+    /// - Optional [Kill Container Options](KillContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1592,7 +1592,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Update Container Options](container/struct.UpdateContainerOptions.html) struct.
+    ///  - [Update Container Options](UpdateContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1644,7 +1644,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Rename Container Options](container/struct.RenameContainerOptions.html) struct
+    ///  - [Rename Container Options](RenameContainerOptions) struct
     ///
     /// # Returns
     ///
@@ -1762,11 +1762,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Prune Containers Options](container/struct.PruneContainersOptions.html) struct.
+    ///  - Optional [Prune Containers Options](PruneContainersOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Container Prune Response](models/struct.ContainerPruneResponse.html) struct, wrapped in a Future.
+    ///  - [Container Prune Response](ContainerPruneResponse) struct, wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1813,7 +1813,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Upload To Container Options](container/struct.UploadToContainerOptions.html) struct.
+    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
     ///
     /// # Returns
     ///
@@ -1872,12 +1872,12 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Download From Container Options](container/struct.DownloadFromContainerOptions.html) struct.
+    ///  - [Download From Container Options](DownloadFromContainerOptions) struct.
     ///
     /// # Returns
     ///
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
-    ///    gzip, bzip2, xz. [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///    gzip, bzip2, xz. [Hyper Body](hyper::body::Body).
     ///
     /// # Examples
     ///

@@ -12,7 +12,7 @@ use serde::ser::Serialize;
 
 use std::{collections::HashMap, hash::Hash};
 
-/// Parameters used in the [List Service API](../struct.Docker.html#method.list_services)
+/// Parameters used in the [List Service API](super::Docker::list_services())
 ///
 /// ## Examples
 ///
@@ -49,7 +49,7 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
-/// Parameters used in the [Inspect Service API](../struct.Docker.html#method.inspect_service)
+/// Parameters used in the [Inspect Service API](Docker::inspect_service())
 ///
 /// ## Examples
 ///
@@ -67,7 +67,7 @@ pub struct InspectServiceOptions {
     pub insert_defaults: bool,
 }
 
-/// Parameters used in the [Update Service API](../struct.Docker.html#method.update_service)
+/// Parameters used in the [Update Service API](Docker::update_service())
 ///
 /// ## Examples
 ///
@@ -124,11 +124,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListServicesOptions](service/struct.ListServicesOptions.html) struct.
+    ///  - Optional [ListServicesOptions](ListServicesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [Services](models/struct.Service.html), wrapped in a Future.
+    ///  - Vector of [Services](Service), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -177,12 +177,12 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [ServiceSpec](models/struct.ServiceSpec.html) struct.
-    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - [ServiceSpec](ServiceSpec) struct.
+    ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Service Create Response](models/struct.ServiceCreateResponse.html) struct,
+    ///  - A [Service Create Response](ServiceCreateResponse) struct,
     ///  wrapped in a Future.
     ///
     /// # Examples
@@ -257,11 +257,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Service name or id as a string slice.
-    ///  - Optional [Inspect Service Options](service/struct.InspectServiceOptions.html) struct.
+    ///  - Optional [Inspect Service Options](InspectServiceOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Service](models/struct.Service.html), wrapped in a Future.
+    ///  - [Service](Service), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -337,13 +337,13 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Service name or id as a string slice.
-    ///  - [ServiceSpec](models/struct.ServiceSpec.html) struct.
-    ///  - [UpdateServiceOptions](service/struct.UpdateServiceOptions.html) struct.
-    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - [ServiceSpec](ServiceSpec) struct.
+    ///  - [UpdateServiceOptions](UpdateServiceOptions) struct.
+    ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Service Update Response](models/struct.ServiceUpdateResponse.html) struct,
+    ///  - A [Service Update Response](ServiceUpdateResponse) struct,
     ///  wrapped in a Future.
     ///
     /// # Examples
