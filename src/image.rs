@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 /// Parameters available for pulling an image, used in the [Create Image
-/// API](../struct.Docker.html#method.create_image)
+/// API](Docker::create_image)
 ///
 /// ## Examples
 ///
@@ -63,7 +63,7 @@ where
 }
 
 /// Parameters to the [List Images
-/// API](../struct.Docker.html#method.list_images)
+/// API](Docker::list_images())
 ///
 /// ## Examples
 ///
@@ -110,7 +110,7 @@ where
     pub digests: bool,
 }
 
-/// Parameters to the [Prune Images API](../struct.Docker.html#method.prune_images)
+/// Parameters to the [Prune Images API](Docker::prune_images())
 ///
 /// ## Examples
 ///
@@ -153,7 +153,7 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
-/// Parameters to the [Search Images API](../struct.Docker.html#method.search_images)
+/// Parameters to the [Search Images API](Docker::search_images())
 ///
 /// ## Example
 ///
@@ -196,7 +196,7 @@ where
     pub filters: HashMap<T, T>,
 }
 
-/// Parameters to the [Remove Image API](../struct.Docker.html#method.remove_image)
+/// Parameters to the [Remove Image API](Docker::remove_image())
 ///
 /// ## Examples
 ///
@@ -217,7 +217,7 @@ pub struct RemoveImageOptions {
     pub noprune: bool,
 }
 
-/// Parameters to the [Tag Image API](../struct.Docker.html#method.tag_image)
+/// Parameters to the [Tag Image API](Docker::tag_image())
 ///
 /// ## Examples
 ///
@@ -249,7 +249,7 @@ where
     pub tag: T,
 }
 
-/// Parameters to the [Push Image API](../struct.Docker.html#method.push_image)
+/// Parameters to the [Push Image API](Docker::push_image())
 ///
 /// ## Examples
 ///
@@ -277,7 +277,7 @@ where
     pub tag: T,
 }
 
-/// Parameters to the [Commit Container API](../struct.Docker.html#method.commit_container)
+/// Parameters to the [Commit Container API](Docker::commit_container())
 ///
 /// ## Examples
 ///
@@ -319,7 +319,7 @@ where
     pub changes: Option<T>,
 }
 
-/// Parameters to the [Build Image API](../struct.Docker.html#method.build_image)
+/// Parameters to the [Build Image API](Docker::build_image())
 ///
 /// ## Examples
 ///
@@ -405,7 +405,7 @@ where
     pub platform: T,
 }
 
-/// Parameters to the [Import Image API](../struct.Docker.html#method.import_image)
+/// Parameters to the [Import Image API](Docker::import_image())
 ///
 /// ## Examples
 ///
@@ -434,11 +434,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [List Images Options](image/struct.ListImagesOptions.html) struct.
+    ///  - An optional [List Images Options](ListImagesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [API Images](models/struct.ImageSummary.html), wrapped in a Future.
+    ///  - Vector of [API Images](ImageSummary), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -488,13 +488,13 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [Create Image Options](image/struct.CreateImageOptions.html) struct.
+    ///  - An optional [Create Image Options](CreateImageOptions) struct.
     ///  - An optional request body consisting of a tar or tar.gz archive with the root file system
     ///    for the image. If this argument is used, the value of the `from_src` option must be "-".
     ///
     /// # Returns
     ///
-    ///  - [Build Info](models/struct.BuildInfo.html), wrapped in an asynchronous
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples
@@ -564,7 +564,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Image](models/struct.Image.html), wrapped in a Future.
+    ///  - [Image](Image), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -597,11 +597,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    /// - An optional [Prune Images Options](image/struct.PruneImagesOptions.html) struct.
+    /// - An optional [Prune Images Options](PruneImagesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - a [Prune Image Response](models/struct.ImagePruneResponse.html), wrapped in a Future.
+    ///  - a [Prune Image Response](ImagePruneResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -652,7 +652,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [History Response Item](models/struct.HistoryResponseItem.html), wrapped in a
+    ///  - Vector of [History Response Item](HistoryResponseItem), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -684,11 +684,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Search Image Options](image/struct.SearchImagesOptions.html) struct.
+    ///  - [Search Image Options](SearchImagesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image Search Response Item](models/struct.ImageSearchResponseItem.html) results, wrapped in a
+    ///  - Vector of [Image Search Response Item](ImageSearchResponseItem) results, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -740,11 +740,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - An optional [Remove Image Options](image/struct.RemoveImageOptions.html) struct.
+    ///  - An optional [Remove Image Options](RemoveImageOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image Delete Response Item](models/struct.ImageDeleteResponseItem.html), wrapped in a
+    ///  - Vector of [Image Delete Response Item](ImageDeleteResponseItem), wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -798,7 +798,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Tag Image Options](image/struct.TagImageOptions.html) struct.
+    ///  - Optional [Tag Image Options](TagImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -849,8 +849,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Push Image Options](image/struct.PushImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - Optional [Push Image Options](PushImageOptions) struct.
+    ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///
     /// # Returns
     ///
@@ -918,12 +918,12 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Commit Container Options](image/struct.CommitContainerOptions.html) struct.
-    ///  - Container [Config](container/struct.Config.html) struct.
+    ///  - [Commit Container Options](CommitContainerOptions) struct.
+    ///  - Container [Config](Config) struct.
     ///
     /// # Returns
     ///
-    ///  - [Commit](models/struct.Commit.html), wrapped in a Future.
+    ///  - [Commit](Commit), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -980,14 +980,14 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Build Image Options](image/struct.BuildImageOptions.html) struct.
-    ///  - Optional [Docker Credentials](auth/struct.DockerCredentials.html) struct.
+    ///  - [Build Image Options](BuildImageOptions) struct.
+    ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
-    ///    gzip, bzip2, xz. Optional [Hyper Body](https://hyper.rs/hyper/master/hyper/struct.Body.html).
+    ///    gzip, bzip2, xz. Optional [Hyper Body](hyper::body::Body).
     ///
     /// # Returns
     ///
-    ///  - [Create Image Info](models/struct.CreateImageInfo.html), wrapped in an asynchronous
+    ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples
@@ -1087,11 +1087,11 @@ impl Docker {
     /// endpoint](struct.Docker.html#method.export_image).
     ///
     /// # Arguments
-    ///  - [Image Import Options](./image/struct.ImportImageOptions.html) struct.
+    ///  - [Image Import Options](ImportImageOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Build Info](models/struct.BuildInfo.html), wrapped in an asynchronous
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples

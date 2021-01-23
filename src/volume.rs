@@ -12,7 +12,7 @@ use super::Docker;
 use crate::errors::Error;
 use crate::models::*;
 
-/// Parameters used in the [List Volume API](../struct.Docker.html#method.list_volumes)
+/// Parameters used in the [List Volume API](Docker::list_volumes())
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ListVolumesOptions<T>
 where
@@ -28,7 +28,7 @@ where
 }
 
 /// Volume configuration used in the [Create Volume
-/// API](../struct.Docker.html#method.create_volume)
+/// API](Docker::create_volume())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
@@ -46,7 +46,7 @@ where
     pub labels: HashMap<T, T>,
 }
 
-/// Parameters used in the [Remove Volume API](../struct.Docker.html#method.remove_volume)
+/// Parameters used in the [Remove Volume API](super::Docker::remove_volume())
 #[derive(Debug, Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveVolumeOptions {
@@ -54,7 +54,7 @@ pub struct RemoveVolumeOptions {
     pub force: bool,
 }
 
-/// Parameters used in the [Prune Volumes API](../struct.Docker.html#method.prune_volumes)
+/// Parameters used in the [Prune Volumes API](Docker::prune_volumes())
 ///
 /// ## Examples
 ///
@@ -99,11 +99,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [List Volumes Options](volume/struct.ListVolumesOptions.html) struct.
+    ///  - [List Volumes Options](ListVolumesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Volume List Response](models/struct.VolumeListResponse.html) struct, wrapped in a
+    ///  - A [Volume List Response]VolumeListResponse) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -152,11 +152,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Create Volume Options](volume/struct.CreateVolumeOptions.html) struct.
+    ///  - [Create Volume Options](CreateVolumeOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Volume](models/struct.Volume.html) struct, wrapped in a
+    ///  - A [Volume](Volume) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -202,7 +202,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Volume](models/struct.Volume.html) struct, wrapped in a
+    ///  - A [Volume](Volume) struct, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -236,7 +236,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Remove Volume Options](volume/struct.RemoveVolumeOptions.html) struct.
+    ///  - [Remove Volume Options](RemoveVolumeOptions) struct.
     ///
     /// # Returns
     ///
@@ -281,11 +281,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - A [Prune Volumes Options](volume/struct.PruneVolumesOptions.html) struct.
+    ///  - A [Prune Volumes Options](PruneVolumesOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - A [Volume Prune Response](models/struct.VolumePruneResponse.html) struct.
+    ///  - A [Volume Prune Response](VolumePruneResponse) struct.
     ///
     /// # Examples
     ///

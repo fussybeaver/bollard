@@ -3,7 +3,7 @@
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[allow(missing_docs)]
 /// DockerCredentials credentials and server URI to push images using the [Push Image
-/// API](../struct.Docker.html#method.push_image) or the [Build Image
+/// API](crate::Docker::push_image()) or the [Build Image
 /// API](../struct.Docker.html#method.build_image).
 pub struct DockerCredentials {
     pub username: Option<String>,
