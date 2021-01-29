@@ -25,7 +25,7 @@ use hyper::{self, body::Bytes, Body, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
-use hyperlocal::UnixClient as UnixConnector;
+use hyperlocal::UnixConnector;
 #[cfg(feature = "ssl")]
 use rustls::internal::pemfile;
 #[cfg(feature = "ssl")]
