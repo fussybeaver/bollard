@@ -1103,10 +1103,10 @@ impl Docker {
     /// use bollard::errors::Error;
     ///
     /// use std::default::Default;
+    /// use futures_util::stream::StreamExt;
     /// use tokio::fs::File;
     /// use tokio::io::AsyncWriteExt;
     /// use tokio_util::codec;
-    /// use tokio::stream::StreamExt;
     ///
     /// let options = ImportImageOptions{
     ///     ..Default::default()

@@ -8,10 +8,10 @@ use std::string::String;
 use std::task::{Context, Poll};
 use std::{
     cmp,
-    io::{self},
+    io,
     marker::PhantomData,
 };
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, ReadBuf};
 use tokio_util::codec::Decoder;
 
 use crate::container::LogOutput;
@@ -187,8 +187,8 @@ where
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        read_buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         let mut this = self.project();
         loop {
             let ret;
@@ -196,16 +196,18 @@ where
             match this.state {
                 ReadState::Ready(ref mut chunk, ref mut pos) => {
                     let chunk_start = *pos;
+                    let buf = read_buf.initialize_unfilled();
                     let len = cmp::min(buf.len(), chunk.len() - chunk_start);
                     let chunk_end = chunk_start + len;
 
                     buf[..len].copy_from_slice(&chunk[chunk_start..chunk_end]);
                     *pos += len;
+                    read_buf.advance(len);
 
                     if *pos == chunk.len() {
                         ret = len;
                     } else {
-                        return Poll::Ready(Ok(len));
+                        return Poll::Ready(Ok(()));
                     }
                 }
 
@@ -215,7 +217,7 @@ where
 
                         continue;
                     }
-                    Poll::Ready(None) => return Poll::Ready(Ok(0)),
+                    Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         return Poll::Pending;
                     }
@@ -230,7 +232,7 @@ where
 
             *this.state = ReadState::NotReady;
 
-            return Poll::Ready(Ok(ret));
+            return Poll::Ready(Ok(()));
         }
     }
 }

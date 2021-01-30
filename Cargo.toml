@@ -24,7 +24,7 @@ ssl = ["hyper-rustls", "rustls", "rustls-native-certs", "webpki-roots"]
 [dependencies]
 base64 = "0.12.3"
 bollard-stubs = { version = "1.40.6" }
-bytes = "0.5.5"
+bytes = "1"
 chrono = { version = "0.4.11", features = ["serde"] }
 ct-logs = "0.7.0"
 dirs-next = "1.0.2"
@@ -32,21 +32,24 @@ futures-core = "0.3.4"
 futures-util = "0.3.4"
 hex = "0.4.2"
 http = "0.2.1"
-hyper = "0.13.6"
-hyper-rustls = { version = "0.21.0", optional = true }
+hyper = { version = "0.14.2", features = ["client", "tcp", "http1", "http2", "stream"] }
+hyper-rustls = { version = "0.22.1", optional = true }
 log = "0.4.8"
-pin-project = "0.4.22"
+pin-project = "1.0.2"
 rustls = { version = "0.18.0", optional = true }
 rustls-native-certs = { version = "0.4.0", optional = true }
 serde = "1.0.114"
 serde_derive = "1.0.114"
 serde_json = "1.0.55"
 serde_urlencoded = "0.6.1"
-tokio = { version = "0.2.17", features = ["time", "fs"] }
+tokio = { version = "1.0.1", features = ["time", "fs", "net", "rt", "rt-multi-thread"] }
 thiserror = "1.0"
-tokio-util = { version = "0.3.1", features = ["codec"] }
+tokio-util = { version = "0.6.2", features = ["codec"] }
 url = "2.1.1"
 webpki-roots = { version = "0.20.0", optional = true }
+
+[replace]
+"tokio:1.1.1" = { git = "https://github.com/fussybeaver/tokio", branch = "ND-named-pipes" }
 
 [dev-dependencies]
 env_logger = "0.7.1"
@@ -57,7 +60,6 @@ tar = "0.4.29"
 hyperlocal =  { version = "0.1.5", package = "hyper-unix-connector" }
 
 [target.'cfg(windows)'.dependencies]
-mio-named-pipes = "0.1.6"
 winapi = "0.3.9"
 
 [package.metadata.docs.rs]
