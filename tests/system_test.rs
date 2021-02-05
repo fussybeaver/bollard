@@ -165,6 +165,7 @@ fn integration_test_events_until_forever() {
 }
 
 #[test]
+#[cfg(not(feature = "test_macos"))]
 fn integration_test_df() {
     connect_to_docker_and_run!(df_test);
 }
