@@ -659,7 +659,7 @@ impl Docker {
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
         let transport = Transport::NamedPipe { client };
-        let docker = Docker {
+        let _docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
             client_addr,
@@ -670,7 +670,7 @@ impl Docker {
             )),
         };
 
-        Ok(docker)
+        Err(NamedPipeDisabled {}.into())
     }
 }
 

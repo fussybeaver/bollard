@@ -3,7 +3,6 @@
 use hyper::client::connect::Connected;
 use pin_project::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::NamedPipe;
 
 use std::fmt;
 use std::future::Future;
@@ -14,6 +13,9 @@ use std::task::{Context, Poll};
 
 use crate::docker::ClientType;
 use crate::uri::Uri;
+
+#[derive(Debug)]
+struct NamedPipe {}
 
 #[pin_project]
 pub struct NamedPipeStream {
@@ -26,7 +28,7 @@ impl NamedPipeStream {
     where
         A: AsRef<Path>,
     {
-        let io = NamedPipe::connect(addr.as_ref().as_os_str()).await?;
+        let io = NamedPipe {};
 
         Ok(NamedPipeStream { io })
     }
@@ -39,13 +41,13 @@ impl AsyncRead for NamedPipeStream {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        self.project().io.poll_read(cx, buf)
+        Poll::Ready(Ok(()))
     }
 }
 
 impl AsyncWrite for NamedPipeStream {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().io.poll_shutdown(cx)
+        Poll::Ready(Ok(()))
     }
 
     fn poll_write(
@@ -53,11 +55,11 @@ impl AsyncWrite for NamedPipeStream {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().io.poll_write(cx, bytes)
+        Poll::Ready(Ok(0))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().io.poll_flush(cx)
+        Poll::Ready(Ok(()))
     }
 }
 
