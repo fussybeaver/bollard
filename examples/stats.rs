@@ -6,15 +6,12 @@ use bollard::Docker;
 
 use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
-use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 
-async fn run<'a>() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(unix)]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let docker = Docker::connect_with_unix_defaults().unwrap();
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     loop {
         let mut filter = HashMap::new();
@@ -32,31 +29,17 @@ async fn run<'a>() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             for container in containers {
                 let container_id = container.id.as_ref().unwrap();
-                &docker
+                let stream = &mut docker
                     .stats(container_id, Some(StatsOptions { stream: false }))
-                    .take(1)
-                    .map(|value| match value {
-                        Ok(stats) => {
-                            println!(
-                                "{} - {:?}: {:?} {:?}",
-                                container_id, &container.names, container.image, stats
-                            );
-                            Ok(())
-                        }
-                        Err(e) => {
-                            return Err(e);
-                        }
-                    })
-                    .try_collect::<Vec<()>>()
-                    .await?;
+                    .take(1);
+
+                while let Some(Ok(stats)) = stream.next().await {
+                    println!(
+                        "{} - {:?}: {:?} {:?}",
+                        container_id, &container.names, container.image, stats
+                    );
+                }
             }
         }
     }
-}
-
-fn main() {
-    env_logger::init();
-
-    let mut rt = Runtime::new().unwrap();
-    rt.block_on(run()).unwrap();
 }

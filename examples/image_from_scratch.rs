@@ -11,7 +11,6 @@ use std::env::args;
 use std::fs::File;
 use std::io::{Read, Result as IOResult};
 use std::pin::Pin;
-use tokio::runtime::Runtime;
 
 /*
   Image file system archives can be very large, so we don't want to load the entire thing
@@ -49,11 +48,17 @@ impl Stream for FileStreamer {
     }
 }
 
-async fn run(file: File) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(unix)]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
+    let arguments: Vec<String> = args().collect();
+    if arguments.len() == 1 || arguments.len() > 2 {
+        println!("Usage: image_from_scratch <path to tar archive>");
+        return Ok(());
+    }
+
+    let file = File::open(&arguments[1]).expect("Could not find archive.");
+
     let docker = Docker::connect_with_unix_defaults().unwrap();
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     let options = CreateImageOptions {
         from_src: "-", // from_src must be "-" when sending the archive in the request body
@@ -73,18 +78,6 @@ async fn run(file: File) -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     // If all went well, the ID of the new image will be printed
     dbg!(&result[0]);
+
     Ok(())
-}
-
-fn main() {
-    let arguments: Vec<String> = args().collect();
-    if arguments.len() == 1 || arguments.len() > 2 {
-        println!("Usage: image_from_scratch <path to tar archive>");
-        return;
-    }
-
-    let archive = File::open(&arguments[1]).expect("Could not find archive.");
-
-    let mut rt = Runtime::new().unwrap();
-    rt.block_on(run(archive)).unwrap();
 }

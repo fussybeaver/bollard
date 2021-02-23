@@ -1,21 +1,15 @@
 //! Builds a container with a bunch of extra options for testing
 
 use bollard::image::BuildImageOptions;
-use bollard::models::BuildInfo;
 use bollard::Docker;
 
 use std::collections::HashMap;
 
 use futures_util::stream::StreamExt;
-use futures_util::stream::TryStreamExt;
-use tokio::runtime::Runtime;
 
-fn main() {
-    let mut rt = Runtime::new().unwrap();
-    #[cfg(unix)]
+#[tokio::main]
+async fn main() {
     let docker = Docker::connect_with_unix_defaults().unwrap();
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     let mut build_image_args = HashMap::new();
     build_image_args.insert("dummy", "value");
@@ -49,26 +43,10 @@ fn main() {
         platform: "linux/x86_64",
     };
 
-    let future = run(docker, build_image_options);
+    let mut image_build_stream = docker
+        .build_image(build_image_options, None, None);
 
-    rt.block_on(future).unwrap();
-}
-
-async fn run<'a>(
-    docker: Docker,
-    build_image_options: BuildImageOptions<&'a str>,
-) -> Result<(), bollard::errors::Error> {
-    docker
-        .build_image(build_image_options, None, None)
-        .map(|v| {
-            println!("{:?}", v);
-            v
-        })
-        .map_err(|e| {
-            println!("{:?}", e);
-            e
-        })
-        .collect::<Vec<Result<BuildInfo, bollard::errors::Error>>>()
-        .await;
-    Ok(())
+    while let Some(msg) = image_build_stream.next().await {
+        println!("Message: {:?}", msg);
+    }
 }

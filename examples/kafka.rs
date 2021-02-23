@@ -6,23 +6,16 @@ use bollard::models::*;
 use bollard::Docker;
 
 use futures_util::stream::select;
+use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
-use tokio::runtime::Runtime;
 
 const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
 const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
-fn main() {
-    let mut rt = Runtime::new().unwrap();
-
-    rt.block_on(run()).unwrap();
-}
-
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(unix)]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let docker = Docker::connect_with_unix_defaults().unwrap();
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
+
     let sd1 = docker.clone();
     let sd2 = docker.clone();
 
@@ -157,14 +150,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }),
     );
 
-    let stream = select(&mut stream1, &mut stream2);
+    let mut stream = select(&mut stream1, &mut stream2);
 
-    stream
-        .map_err(|e| println!("{:?}", e))
-        .map_ok(|x| println!("{:?}", x))
-        .try_collect::<Vec<_>>()
-        .await
-        .unwrap();
+    while let Some(msg) = stream.next().await {
+        println!("Message: {:?}", msg);
+    }
 
     Ok(())
 }
