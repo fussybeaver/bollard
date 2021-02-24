@@ -191,8 +191,6 @@ where
     ) -> Poll<io::Result<()>> {
         let mut this = self.project();
         loop {
-            let ret;
-
             match this.state {
                 ReadState::Ready(ref mut chunk, ref mut pos) => {
                     let chunk_start = *pos;
@@ -204,9 +202,7 @@ where
                     *pos += len;
                     read_buf.advance(len);
 
-                    if *pos == chunk.len() {
-                        ret = len;
-                    } else {
+                    if *pos != chunk.len() {
                         return Poll::Ready(Ok(()));
                     }
                 }

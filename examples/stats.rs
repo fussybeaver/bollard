@@ -5,7 +5,6 @@ use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
 
 use futures_util::stream::StreamExt;
-use futures_util::stream::TryStreamExt;
 
 use std::collections::HashMap;
 

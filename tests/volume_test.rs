@@ -102,7 +102,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         filters: prune_volumes_filters,
     };
 
-    let result = &docker.prune_volumes(Some(prune_volumes_options)).await?;
+    let _ = &docker.prune_volumes(Some(prune_volumes_options)).await?;
 
     // Varying Result objects depending on platform / Docker server version
     // - the volumes are still pruned though
