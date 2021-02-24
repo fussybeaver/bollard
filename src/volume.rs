@@ -64,10 +64,10 @@ pub struct RemoveVolumeOptions {
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("label!", vec!("maintainer=some_maintainer"));
+/// filters.insert("label!", vec!["maintainer=some_maintainer"]);
 ///
 /// PruneVolumesOptions{
-///     filters: filters
+///     filters
 /// };
 /// ```
 ///
@@ -120,7 +120,7 @@ impl Docker {
     /// filters.insert("dangling", vec!("1"));
     ///
     /// let options = ListVolumesOptions {
-    ///     filters: filters,
+    ///     filters,
     /// };
     ///
     /// docker.list_volumes(Some(options));
@@ -298,10 +298,10 @@ impl Docker {
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("label", vec!("maintainer=some_maintainer"));
+    /// filters.insert("label", vec!["maintainer=some_maintainer"]);
     ///
     /// let options = PruneVolumesOptions {
-    ///     filters: filters,
+    ///     filters,
     /// };
     ///
     /// docker.prune_volumes(Some(options));

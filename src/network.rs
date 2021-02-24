@@ -89,10 +89,10 @@ where
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("label", vec!("maintainer=some_maintainer"));
+/// filters.insert("label", vec!["maintainer=some_maintainer"]);
 ///
 /// ListNetworksOptions{
-///     filters: filters
+///     filters
 /// };
 /// ```
 ///
@@ -156,10 +156,10 @@ where
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("label!", vec!("maintainer=some_maintainer"));
+/// filters.insert("label!", vec!["maintainer=some_maintainer"]);
 ///
 /// PruneNetworksOptions{
-///     filters: filters
+///     filters
 /// };
 /// ```
 ///
@@ -503,10 +503,10 @@ impl Docker {
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("label", vec!("maintainer=some_maintainer"));
+    /// filters.insert("label", vec!["maintainer=some_maintainer"]);
     ///
     /// let options = PruneNetworksOptions {
-    ///     filters: filters,
+    ///     filters,
     /// };
     ///
     /// docker.prune_networks(Some(options));

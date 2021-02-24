@@ -78,7 +78,7 @@ where
 ///
 /// ListImagesOptions{
 ///   all: true,
-///   filters: filters,
+///   filters,
 ///   ..Default::default()
 /// };
 /// ```
@@ -123,7 +123,7 @@ where
 /// filters.insert("until", vec!["10m"]);
 ///
 /// PruneImagesOptions{
-///   filters: filters,
+///   filters,
 /// };
 /// ```
 ///
@@ -163,11 +163,11 @@ where
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("until", "10m");
+/// filters.insert("until", vec!["10m"]);
 ///
 /// SearchImagesOptions {
 ///     term: "hello-world",
-///     filters: filters,
+///     filters,
 ///     ..Default::default()
 /// };
 /// ```
@@ -193,7 +193,7 @@ where
     ///  - `is-official=(true|false)`
     ///  - `stars=<number>` Matches images that has at least 'number' stars.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, T>,
+    pub filters: HashMap<T, Vec<T>>,
 }
 
 /// Parameters to the [Remove Image API](Docker::remove_image())
@@ -455,7 +455,7 @@ impl Docker {
     ///
     /// let options = Some(ListImagesOptions{
     ///   all: true,
-    ///   filters: filters,
+    ///   filters,
     ///   ..Default::default()
     /// });
     ///
@@ -616,7 +616,7 @@ impl Docker {
     /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneImagesOptions {
-    ///   filters: filters
+    ///   filters
     /// });
     ///
     /// docker.prune_images(options);
@@ -701,12 +701,12 @@ impl Docker {
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", "10m");
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let search_options = SearchImagesOptions {
     ///     term: "hello-world",
-    ///     filters: filters,
+    ///     filters,
     ///     ..Default::default()
     /// };
     ///

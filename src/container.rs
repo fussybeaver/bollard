@@ -28,11 +28,11 @@ use crate::models::*;
 /// use std::default::Default;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("health", vec!("unhealthy"));
+/// filters.insert("health", vec!["unhealthy"]);
 ///
 /// ListContainersOptions{
 ///     all: true,
-///     filters: filters,
+///     filters,
 ///     ..Default::default()
 /// };
 /// ```
@@ -886,10 +886,10 @@ where
 /// use std::collections::HashMap;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("until", vec!("10m"));
+/// filters.insert("until", vec!["10m"]);
 ///
 /// PruneContainersOptions{
-///     filters: filters
+///     filters
 /// };
 /// ```
 #[derive(Debug, Clone, Default, Serialize)]
@@ -975,17 +975,17 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::{ListContainersOptions};
+    /// use bollard::container::ListContainersOptions;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("health", vec!("unhealthy"));
+    /// filters.insert("health", vec!["unhealthy"]);
     ///
     /// let options = Some(ListContainersOptions{
     ///     all: true,
-    ///     filters: filters,
+    ///     filters,
     ///     ..Default::default()
     /// });
     ///
@@ -1778,10 +1778,10 @@ impl Docker {
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("until", vec!("10m"));
+    /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneContainersOptions{
-    ///     filters: filters
+    ///     filters
     /// });
     ///
     /// docker.prune_containers(options);
