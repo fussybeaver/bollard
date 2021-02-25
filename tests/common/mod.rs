@@ -15,7 +15,7 @@ use bollard::Docker;
 #[allow(unused_macros)]
 macro_rules! rt_exec {
     ($docker_call:expr, $assertions:expr) => {{
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         let res = $assertions(rt.block_on($docker_call).unwrap());
         res
     }};
@@ -24,7 +24,7 @@ macro_rules! rt_exec {
 #[allow(unused_macros)]
 macro_rules! rt_stream {
     ($docker_call:expr, $assertions:expr) => {{
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         let call = $docker_call.fold(vec![], |mut v, line| {
             v.push(line);
             future::ok::<_, Error>(v)
@@ -44,7 +44,7 @@ macro_rules! rt_stream {
 #[allow(unused_macros)]
 macro_rules! rt_exec_ignore_error {
     ($docker_call:expr, $assertions:expr) => {{
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         let call = $docker_call;
         $assertions(rt.block_on(call).unwrap_or_else(|_| ()));
         rt.shutdown_now().wait().unwrap();
@@ -87,7 +87,7 @@ pub(crate) fn registry_http_addr() -> String {
 }
 
 #[allow(dead_code)]
-pub(crate) fn run_runtime<T>(mut rt: Runtime, future: T)
+pub(crate) fn run_runtime<T>(rt: Runtime, future: T)
 where
     T: Future<Output = Result<(), Error>>,
 {

@@ -39,4 +39,4 @@ test_script:
   - ps: Set-Item -path env:RUST_BACKTRACE -value 1
   - ps: Set-Item -path env:RUST_LOG -value "hyper=trace,bollard=debug"
   - ps: Set-Item -path env:REGISTRY_HTTP_ADDR -value localhost:5000
-  - cargo test --verbose -- --nocapture --test-threads 1
+  # - cargo test --verbose -- --nocapture --test-threads 1

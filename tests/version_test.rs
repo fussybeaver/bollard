@@ -53,8 +53,7 @@ fn test_version_http() {
 #[cfg(unix)]
 #[test]
 fn test_downversioning() {
-    env_logger::init();
-    let mut rt = Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
 
     let docker = Docker::connect_with_unix(
         "unix:///var/run/docker.sock",

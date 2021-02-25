@@ -1,6 +1,5 @@
 //! Run top asynchronously across several docker containers
 use bollard::container::{ListContainersOptions, TopOptions};
-use bollard::errors::Error;
 use bollard::models::*;
 use bollard::Docker;
 
@@ -10,21 +9,11 @@ use std::default::Default;
 use futures_util::future::TryFutureExt;
 use futures_util::stream::FuturesUnordered;
 use futures_util::stream::StreamExt;
-use tokio::runtime::Runtime;
 
-fn main() {
-    env_logger::init();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
+    let docker = Docker::connect_with_unix_defaults()?;
 
-    let mut rt = Runtime::new().unwrap();
-    #[cfg(unix)]
-    let docker = Docker::connect_with_unix_defaults().unwrap();
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
-
-    rt.block_on(run(docker)).unwrap();
-}
-
-async fn run(docker: Docker) -> Result<(), Error> {
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);
 
@@ -36,31 +25,30 @@ async fn run(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    containers
-        .iter()
-        .map(|container| {
-            let name = container.id.as_ref().unwrap();
-            docker
-                .top_processes(name, Some(TopOptions { ps_args: "aux" }))
-                .map_ok(move |result| {
-                    Some((name.to_owned(), result))})
-        })
-        .collect::<FuturesUnordered<_>>()
-        .fold(Ok(HashMap::new()), |hashmap, res| match (hashmap, res) {
-            (Ok(mut hashmap), Ok(opt)) => {
-                if let Some((name, ContainerTopResponse{ processes: Some(p), .. })) = opt {
-                    hashmap.insert(name, p.get(0).unwrap().to_vec());
-                }
-                futures_util::future::ok::<_, Error>(hashmap)
-            }
-            (Err(e), _) => futures_util::future::err(e),
-            (_, Err(e)) => futures_util::future::err(e),
-        })
-    .map_ok(|hsh| {
-        println!("                                                                \tPID\tUSER\tTIME\tCOMMAND");
-        for (name, result) in hsh {
+    let mut futures = FuturesUnordered::new();
+    let iter = containers.iter();
+
+    for container in iter {
+        if let Some(ref name) = container.id {
+            futures.push(
+                docker
+                    .top_processes(name, Some(TopOptions { ps_args: "aux" }))
+                    .map_ok(move |result| (name.to_owned(), result)),
+            )
+        }
+    }
+
+    println!("                                                                \tPID\tUSER\tTIME\tCOMMAND");
+    while let Some(Ok((
+        name,
+        ContainerTopResponse {
+            processes: Some(p), ..
+        },
+    ))) = futures.next().await
+    {
+        if let Some(p) = p.get(0) {
             print!("{}", name);
-            for mut v in result {
+            for mut v in p.to_vec() {
                 if v.len() > 30 {
                     v.truncate(30);
                 }
@@ -68,7 +56,7 @@ async fn run(docker: Docker) -> Result<(), Error> {
             }
             print!("\n");
         }
-    }).await?;
+    }
 
     Ok(())
 }

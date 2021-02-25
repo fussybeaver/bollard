@@ -21,8 +21,8 @@ use futures_util::stream;
 use futures_util::stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::client::HttpConnector;
-use hyper::{self, body::Bytes, Body, Client, Method, Request, Response, StatusCode};
+use hyper::client::{Client, HttpConnector};
+use hyper::{self, body::Bytes, Body, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
@@ -659,7 +659,7 @@ impl Docker {
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
         let transport = Transport::NamedPipe { client };
-        let docker = Docker {
+        let _docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
             client_addr,
@@ -670,7 +670,7 @@ impl Docker {
             )),
         };
 
-        Ok(docker)
+        Err(NamedPipeDisabled {}.into())
     }
 }
 
@@ -980,8 +980,7 @@ impl Docker {
     fn decode_into_upgraded_stream_string(
         res: Response<Body>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        res.into_body()
-            .on_upgrade()
+        hyper::upgrade::on(res)
             .into_stream()
             .map_ok(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
             .try_flatten()

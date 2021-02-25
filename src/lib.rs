@@ -10,8 +10,8 @@
 //! [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
 //! futures, streams and the async/await paradigm.
 //!
-//! The library also features Windows support through Named Pipes and HTTPS support through
-//! optional rustls bindings.
+//! The library also features Windows support through Named Pipes (disabled in 0.10, see below) and
+//! HTTPS support through optional rustls bindings.
 //!
 //! # Install
 //!
@@ -26,6 +26,10 @@
 //! ## Documentation
 //!
 //! [API docs](crate).
+//!
+//! Version 0.10 disables Named Pipe Windows support until the upstream Tokio project re-adds
+//! support for Named Pipes. Please follow the [tracking
+//! issue](https://github.com/tokio-rs/tokio/issues/3511) for updates on this.
 //!
 //! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
 //! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.40.yaml). The generated

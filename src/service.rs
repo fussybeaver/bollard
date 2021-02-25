@@ -22,10 +22,10 @@ use std::{collections::HashMap, hash::Hash};
 /// use bollard::service::ListServicesOptions;
 ///
 /// let mut filters = HashMap::new();
-/// filters.insert("mode", vec!("global"));
+/// filters.insert("mode", vec!["global"]);
 ///
 /// ListServicesOptions{
-///     filters: filters,
+///     filters,
 /// };
 /// ```
 ///
@@ -141,10 +141,10 @@ impl Docker {
     /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
-    /// filters.insert("mode", vec!("global"));
+    /// filters.insert("mode", vec!["global"]);
     ///
     /// let options = Some(ListServicesOptions{
-    ///     filters: filters,
+    ///     filters,
     ///     ..Default::default()
     /// });
     ///
