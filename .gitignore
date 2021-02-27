@@ -3,3 +3,5 @@ Cargo.lock
 /target
 doc
 main.rs
+.metals
+codegen/target/generated-sources/target
