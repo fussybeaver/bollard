@@ -127,6 +127,12 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.name = prop.name.replace("i_pv6", "ipv6");
                 } else if (prop.name.contains("i_pv4")) {
                     prop.name = prop.name.replace("i_pv4", "ipv4");
+                } else if (prop.name.contains("_i_ops")) {
+                    prop.name = prop.name.replace("_i_ops", "_iops");
+                } else if (prop.name.contains("_i_ds")) {
+                    prop.name = prop.name.replace("_i_ds", "_ids");
+                } else if (prop.name.contains("_c_as")) {
+                    prop.name = prop.name.replace("_c_as", "_cas");
                 } else if (prop.name.equals("_type")) {
                     prop.name = "typ";
                 } 

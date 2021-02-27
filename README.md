@@ -60,18 +60,6 @@ use bollard::Docker;
 Docker::connect_with_unix_defaults();
 ```
 
-#### Windows named pipe
-
-The client will connect to the standard windows pipe location `\\.\pipe\docker_engine`. Use the
-`Docker::connect_with_name_pipe` method API
-to parameterise the interface.
-
-```rust
-use bollard::Docker;
-#[cfg(windows)]
-Docker::connect_with_named_pipe_defaults();
-```
-
 #### Local
 
 The client will connect to the OS specific handler it is compiled for.

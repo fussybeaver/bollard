@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>bollard</groupId>
     <artifactId>bollard-codegen</artifactId>
-    <version>0.1.3-SNAPSHOT</version>
+    <version>0.1.4-SNAPSHOT</version>
     <name>bollard</name>
 
     <!-- build with: mvn clean compiler:compile generate-resources -->
@@ -19,7 +19,7 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <inputSpec>https://docs.docker.com/engine/api/v1.40.yaml</inputSpec>
+                <inputSpec>https://docs.docker.com/engine/api/v1.41.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.build.directory}/generated-sources</output>
                 <generateApis>true</generateApis>
@@ -27,7 +27,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>6</packageVersion>
+                  <packageVersion>0</packageVersion>
                 </configOptions>
               </configuration>
             </execution>
@@ -36,7 +36,7 @@
               <dependency>
                   <groupId>bollard</groupId>
                   <artifactId>bollard-codegen</artifactId>
-                  <version>0.1.3-SNAPSHOT</version>
+                  <version>0.1.4-SNAPSHOT</version>
               </dependency>
           </dependencies>
         </plugin>
