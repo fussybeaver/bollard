@@ -558,7 +558,7 @@ async fn inspect_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert_eq!(None, result.host_config.as_ref().unwrap().capabilities);
+    assert_eq!(None, result.host_config.as_ref().unwrap().cap_add);
 
     let config: Config<String> = result.config.as_ref().unwrap().to_owned().into();
 

@@ -23,7 +23,7 @@ ssl = ["hyper-rustls", "rustls", "rustls-native-certs", "webpki-roots"]
 
 [dependencies]
 base64 = "0.12.3"
-bollard-stubs = { version = "1.40.6" }
+bollard-stubs = { version = "1.41.0" }
 bytes = "1"
 chrono = { version = "0.4.11", features = ["serde"] }
 ct-logs = "0.7.0"

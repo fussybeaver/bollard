@@ -599,11 +599,6 @@ pub struct ContainerInspectResponse {
     #[serde(skip_serializing_if="Option::is_none")]
     pub log_path: Option<String>,
 
-    /// TODO
-    #[serde(rename = "Node")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub node: Option<HashMap<(), ()>>,
-
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<String>,
@@ -635,7 +630,7 @@ pub struct ContainerInspectResponse {
     /// IDs of exec instances that are running in the container.
     #[serde(rename = "ExecIDs")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub exec_i_ds: Option<Vec<String>>,
+    pub exec_ids: Option<Vec<String>>,
 
     #[serde(rename = "HostConfig")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1011,7 +1006,7 @@ pub struct DeviceRequest {
 
     #[serde(rename = "DeviceIDs")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub device_i_ds: Option<Vec<String>>,
+    pub device_ids: Option<Vec<String>>,
 
     /// A list of capabilities; an OR list of AND lists of capabilities. 
     #[serde(rename = "Capabilities")]
@@ -2014,6 +2009,24 @@ pub struct JoinTokens {
     #[serde(rename = "Manager")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub manager: Option<String>,
+
+}
+
+/// An object describing a limit on resources which can be requested by a task. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Limit {
+    #[serde(rename = "NanoCPUs")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub nano_cp_us: Option<i64>,
+
+    #[serde(rename = "MemoryBytes")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub memory_bytes: Option<i64>,
+
+    /// Limits the maximum number of PIDs in the container. Set `0` for unlimited. 
+    #[serde(rename = "Pids")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub pids: Option<i64>,
 
 }
 
@@ -3520,12 +3533,12 @@ pub struct Resources {
     /// Limit read rate (IO per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
+    pub blkio_device_read_iops: Option<Vec<ThrottleDevice>>,
 
     /// Limit write rate (IO per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
+    pub blkio_device_write_iops: Option<Vec<ThrottleDevice>>,
 
     /// The length of a CPU period in microseconds.
     #[serde(rename = "CpuPeriod")]
@@ -3572,7 +3585,7 @@ pub struct Resources {
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.
+    /// Kernel memory limit in bytes.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
     #[serde(rename = "KernelMemory")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_memory: Option<i64>,
@@ -3598,9 +3611,9 @@ pub struct Resources {
     pub memory_swappiness: Option<i64>,
 
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    #[serde(rename = "NanoCPUs")]
+    #[serde(rename = "NanoCpus")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     /// Disable OOM Killer for the container.
     #[serde(rename = "OomKillDisable")]
@@ -3635,7 +3648,7 @@ pub struct Resources {
     /// Maximum IOps for the container system drive (Windows only)
     #[serde(rename = "IOMaximumIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub io_maximum_i_ops: Option<i64>,
+    pub io_maximum_iops: Option<i64>,
 
     /// Maximum IO in bytes per second for the container system drive (Windows only). 
     #[serde(rename = "IOMaximumBandwidth")]
@@ -3842,6 +3855,14 @@ pub struct Service {
     #[serde(skip_serializing_if="Option::is_none")]
     pub update_status: Option<ServiceUpdateStatus>,
 
+    #[serde(rename = "ServiceStatus")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub service_status: Option<ServiceServiceStatus>,
+
+    #[serde(rename = "JobStatus")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub job_status: Option<ServiceJobStatus>,
+
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -3883,6 +3904,41 @@ pub struct ServiceEndpointVirtualIPs {
     #[serde(rename = "Addr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub addr: Option<String>,
+
+}
+
+/// The status of the service when it is in one of ReplicatedJob or GlobalJob modes. Absent on Replicated and Global mode services. The JobIteration is an ObjectVersion, but unlike the Service's version, does not need to be sent with an update request. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceJobStatus {
+    /// JobIteration is a value increased each time a Job is executed, successfully or otherwise. \"Executed\", in this case, means the job as a whole has been started, not that an individual Task has been launched. A job is \"Executed\" when its ServiceSpec is updated. JobIteration can be used to disambiguate Tasks belonging to different executions of a job.  Though JobIteration will increase with each subsequent execution, it may not necessarily increase by 1, and so JobIteration should not be used to 
+    #[serde(rename = "JobIteration")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub job_iteration: Option<ObjectVersion>,
+
+    /// The last time, as observed by the server, that this job was started. 
+    #[serde(rename = "LastExecution")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub last_execution: Option<DateTime<Utc>>,
+
+}
+
+/// The status of the service's tasks. Provided only when requested as part of a ServiceList operation. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceServiceStatus {
+    /// The number of tasks for the service currently in the Running state. 
+    #[serde(rename = "RunningTasks")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub running_tasks: Option<u64>,
+
+    /// The number of tasks for the service desired to be running. For replicated services, this is the replica count from the service spec. For global services, this is computed by taking count of all tasks for the service with a Desired State other than Shutdown. 
+    #[serde(rename = "DesiredTasks")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub desired_tasks: Option<u64>,
+
+    /// The number of tasks for a job that are in the Completed state. This field must be cross-referenced with the service type, as the value of 0 may mean the service is not in a job mode, or it may mean the job-mode service has no tasks yet Completed. 
+    #[serde(rename = "CompletedTasks")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub completed_tasks: Option<u64>,
 
 }
 
@@ -3937,6 +3993,15 @@ pub struct ServiceSpecMode {
     #[serde(skip_serializing_if="Option::is_none")]
     pub global: Option<HashMap<(), ()>>,
 
+    #[serde(rename = "ReplicatedJob")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub replicated_job: Option<ServiceSpecModeReplicatedJob>,
+
+    /// The mode used for services which run a task to the completed state on each valid node. 
+    #[serde(rename = "GlobalJob")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub global_job: Option<HashMap<(), ()>>,
+
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -3944,6 +4009,21 @@ pub struct ServiceSpecModeReplicated {
     #[serde(rename = "Replicas")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub replicas: Option<i64>,
+
+}
+
+/// The mode used for services with a finite number of tasks that run to a completed state. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceSpecModeReplicatedJob {
+    /// The maximum number of replicas to run simultaneously. 
+    #[serde(rename = "MaxConcurrent")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub max_concurrent: Option<i64>,
+
+    /// The total number of replicas desired to reach the Completed state. If unset, will default to the value of `MaxConcurrent` 
+    #[serde(rename = "TotalCompletions")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub total_completions: Option<i64>,
 
 }
 
@@ -4388,7 +4468,7 @@ pub struct SwarmSpecCaConfig {
     /// Configuration for forwarding signing requests to an external certificate authority. 
     #[serde(rename = "ExternalCAs")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub external_c_as: Option<Vec<SwarmSpecCaConfigExternalCAs>>,
+    pub external_cas: Option<Vec<SwarmSpecCaConfigExternalCAs>>,
 
     /// The desired signing CA certificate for all swarm node TLS leaf certificates, in PEM format. 
     #[serde(rename = "SigningCACert")]
@@ -4680,11 +4760,6 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub docker_root_dir: Option<String>,
 
-    /// Status information about this node (standalone Swarm API).  <p><br /></p>  > **Note**: The information returned in this field is only propagated > by the Swarm standalone API, and is empty (`null`) when using > built-in swarm mode. 
-    #[serde(rename = "SystemStatus")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub system_status: Option<Vec<Vec<String>>>,
-
     #[serde(rename = "Plugins")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub plugins: Option<PluginsInfo>,
@@ -4699,7 +4774,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub swap_limit: Option<bool>,
 
-    /// Indicates if the host has kernel memory limit support enabled.
+    /// Indicates if the host has kernel memory limit support enabled.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
     #[serde(rename = "KernelMemory")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_memory: Option<bool>,
@@ -4779,6 +4854,11 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub cgroup_driver: Option<SystemInfoCgroupDriverEnum>,
 
+    /// The version of the cgroup. 
+    #[serde(rename = "CgroupVersion")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub cgroup_version: Option<SystemInfoCgroupVersionEnum>,
+
     /// Number of event listeners subscribed.
     #[serde(rename = "NEventsListener")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -4793,6 +4873,11 @@ pub struct SystemInfo {
     #[serde(rename = "OperatingSystem")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub operating_system: Option<String>,
+
+    /// Version of the host's operating system  <p><br /></p>  > **Note**: The information returned in this field, including its > very existence, and the formatting of values, should not be considered > stable, and may change without notice. 
+    #[serde(rename = "OSVersion")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub os_version: Option<String>,
 
     /// Generic type of the operating system of the host, as returned by the Go runtime (`GOOS`).  Currently returned values are \"linux\" and \"windows\". A full list of possible values can be found in the [Go documentation](https://golang.org/doc/install/source#environment). 
     #[serde(rename = "OSType")]
@@ -4862,12 +4947,12 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub server_version: Option<String>,
 
-    /// URL of the distributed storage backend.   The storage backend is used for multihost networking (to store network and endpoint information) and by the node discovery mechanism.  <p><br /></p>  > **Note**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
+    /// URL of the distributed storage backend.   The storage backend is used for multihost networking (to store network and endpoint information) and by the node discovery mechanism.  <p><br /></p>  > **Deprecated**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
     #[serde(rename = "ClusterStore")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cluster_store: Option<String>,
 
-    /// The network endpoint that the Engine advertises for the purpose of node discovery. ClusterAdvertise is a `host:port` combination on which the daemon is reachable by other hosts.  <p><br /></p>  > **Note**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
+    /// The network endpoint that the Engine advertises for the purpose of node discovery. ClusterAdvertise is a `host:port` combination on which the daemon is reachable by other hosts.  <p><br /></p>  > **Deprecated**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
     #[serde(rename = "ClusterAdvertise")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cluster_advertise: Option<String>,
@@ -4922,6 +5007,11 @@ pub struct SystemInfo {
     #[serde(rename = "ProductLicense")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub product_license: Option<String>,
+
+    /// List of custom default address pools for local networks, which can be specified in the daemon.json file or dockerd option.  Example: a Base \"10.10.0.0/16\" with Size 24 will define the set of 256 10.10.[0-255].0/24 address pools. 
+    #[serde(rename = "DefaultAddressPools")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub default_address_pools: Option<Vec<SystemInfoDefaultAddressPools>>,
 
     /// List of warnings / informational messages about missing features, or issues related to the daemon configuration.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Warnings")]
@@ -4981,6 +5071,50 @@ impl ::std::convert::AsRef<str> for SystemInfoCgroupDriverEnum {
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum SystemInfoCgroupVersionEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "1")]
+    _1,
+    #[serde(rename = "2")]
+    _2,
+}
+
+impl ::std::fmt::Display for SystemInfoCgroupVersionEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            SystemInfoCgroupVersionEnum::EMPTY => write!(f, ""),
+            SystemInfoCgroupVersionEnum::_1 => write!(f, "{}", "1"),
+            SystemInfoCgroupVersionEnum::_2 => write!(f, "{}", "2"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for SystemInfoCgroupVersionEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(SystemInfoCgroupVersionEnum::EMPTY),
+            "1" => Ok(SystemInfoCgroupVersionEnum::_1),
+            "2" => Ok(SystemInfoCgroupVersionEnum::_2),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for SystemInfoCgroupVersionEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            SystemInfoCgroupVersionEnum::EMPTY => "",
+            SystemInfoCgroupVersionEnum::_1 => "1",
+            SystemInfoCgroupVersionEnum::_2 => "2",
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
 pub enum SystemInfoIsolationEnum { 
     #[serde(rename = "")]
     EMPTY,
@@ -5026,6 +5160,20 @@ impl ::std::convert::AsRef<str> for SystemInfoIsolationEnum {
             SystemInfoIsolationEnum::PROCESS => "process",
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SystemInfoDefaultAddressPools {
+    /// The network address in CIDR format
+    #[serde(rename = "Base")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub base: Option<String>,
+
+    /// The network pool size
+    #[serde(rename = "Size")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub size: Option<i64>,
+
 }
 
 /// Response of Engine API: GET \"/version\" 
@@ -5174,6 +5322,11 @@ pub struct Task {
     #[serde(rename = "DesiredState")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub desired_state: Option<TaskState>,
+
+    /// If the Service this Task belongs to is a job-mode service, contains the JobIteration of the Service this Task was created for. Absent if the Task was created for a Replicated or Global Service. 
+    #[serde(rename = "JobIteration")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub job_iteration: Option<ObjectVersion>,
 
 }
 
@@ -5344,6 +5497,21 @@ pub struct TaskSpecContainerSpec {
     #[serde(rename = "Sysctls")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub sysctls: Option<HashMap<String, String>>,
+
+    /// A list of kernel capabilities to add to the default set for the container. 
+    #[serde(rename = "CapabilityAdd")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub capability_add: Option<Vec<String>>,
+
+    /// A list of kernel capabilities to drop from the default set for the container. 
+    #[serde(rename = "CapabilityDrop")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub capability_drop: Option<Vec<String>>,
+
+    /// A list of resource limits to set in the container. For example: `{\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048}`\" 
+    #[serde(rename = "Ulimits")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub ulimits: Option<Vec<ResourcesUlimits>>,
 
 }
 
@@ -5664,7 +5832,7 @@ pub struct TaskSpecResources {
     /// Define resources limits.
     #[serde(rename = "Limits")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub limits: Option<ResourceObject>,
+    pub limits: Option<Limit>,
 
     /// Define resources reservation.
     #[serde(rename = "Reservation")]
@@ -6113,12 +6281,12 @@ pub struct HostConfig {
     /// Limit read rate (IO per second) from a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceReadIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
+    pub blkio_device_read_iops: Option<Vec<ThrottleDevice>>,
 
     /// Limit write rate (IO per second) to a device, in the form:  ``` [{\"Path\": \"device_path\", \"Rate\": rate}] ``` 
     #[serde(rename = "BlkioDeviceWriteIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
+    pub blkio_device_write_iops: Option<Vec<ThrottleDevice>>,
 
     /// The length of a CPU period in microseconds.
     #[serde(rename = "CpuPeriod")]
@@ -6165,7 +6333,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.
+    /// Kernel memory limit in bytes.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
     #[serde(rename = "KernelMemory")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_memory: Option<i64>,
@@ -6191,9 +6359,9 @@ pub struct HostConfig {
     pub memory_swappiness: Option<i64>,
 
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    #[serde(rename = "NanoCPUs")]
+    #[serde(rename = "NanoCpus")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     /// Disable OOM Killer for the container.
     #[serde(rename = "OomKillDisable")]
@@ -6228,7 +6396,7 @@ pub struct HostConfig {
     /// Maximum IOps for the container system drive (Windows only)
     #[serde(rename = "IOMaximumIOps")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub io_maximum_i_ops: Option<i64>,
+    pub io_maximum_iops: Option<i64>,
 
     /// Maximum IO in bytes per second for the container system drive (Windows only). 
     #[serde(rename = "IOMaximumBandwidth")]
@@ -6282,11 +6450,6 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub mounts: Option<Vec<Mount>>,
 
-    /// A list of kernel capabilities to be available for container (this overrides the default set).  Conflicts with options 'CapAdd' and 'CapDrop'\" 
-    #[serde(rename = "Capabilities")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub capabilities: Option<Vec<String>>,
-
     /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapAdd")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -6296,6 +6459,11 @@ pub struct HostConfig {
     #[serde(rename = "CapDrop")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub cap_drop: Option<Vec<String>>,
+
+    /// cgroup namespace mode for the container. Possible values are:  - `\"private\"`: the container runs in its own private cgroup namespace - `\"host\"`: use the host system's cgroup namespace  If not specified, the daemon default is used, which can either be `\"private\"` or `\"host\"`, depending on daemon version, kernel support and configuration. 
+    #[serde(rename = "CgroupnsMode")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub cgroupns_mode: Option<HostConfigCgroupnsModeEnum>,
 
     /// A list of DNS servers for the container to use.
     #[serde(rename = "Dns")]
@@ -6422,6 +6590,50 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub readonly_paths: Option<Vec<String>>,
 
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum HostConfigCgroupnsModeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "private")]
+    PRIVATE,
+    #[serde(rename = "host")]
+    HOST,
+}
+
+impl ::std::fmt::Display for HostConfigCgroupnsModeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            HostConfigCgroupnsModeEnum::EMPTY => write!(f, ""),
+            HostConfigCgroupnsModeEnum::PRIVATE => write!(f, "{}", "private"),
+            HostConfigCgroupnsModeEnum::HOST => write!(f, "{}", "host"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for HostConfigCgroupnsModeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(HostConfigCgroupnsModeEnum::EMPTY),
+            "private" => Ok(HostConfigCgroupnsModeEnum::PRIVATE),
+            "host" => Ok(HostConfigCgroupnsModeEnum::HOST),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for HostConfigCgroupnsModeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            HostConfigCgroupnsModeEnum::EMPTY => "",
+            HostConfigCgroupnsModeEnum::PRIVATE => "private",
+            HostConfigCgroupnsModeEnum::HOST => "host",
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]
