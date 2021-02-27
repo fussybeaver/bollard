@@ -9,7 +9,10 @@ use futures_util::stream::StreamExt;
 
 #[tokio::main]
 async fn main() {
+    #[cfg(unix)]
     let docker = Docker::connect_with_unix_defaults().unwrap();
+    #[cfg(windows)]
+    let docker = Docker::connect_with_named_pipe_defaults().unwrap();
 
     let mut build_image_args = HashMap::new();
     build_image_args.insert("dummy", "value");
