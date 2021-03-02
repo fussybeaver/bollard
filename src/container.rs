@@ -495,7 +495,19 @@ pub struct StatsOptions {
 /// Granular memory statistics for the container.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[allow(missing_docs)]
-pub struct MemoryStatsStats {
+#[serde(untagged)]
+pub enum MemoryStatsStats {
+    V1(MemoryStatsStatsV1),
+    V2(MemoryStatsStatsV2),
+}
+
+/// Granular memory statistics for the container, v1 cgroups.
+///
+/// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1436).
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[allow(missing_docs)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryStatsStatsV1 {
     pub cache: u64,
     pub dirty: u64,
     pub mapped_file: u64,
@@ -528,6 +540,46 @@ pub struct MemoryStatsStats {
     pub total_pgmajfault: u64,
     pub total_pgpgin: u64,
     pub hierarchical_memsw_limit: Option<u64>,
+}
+
+/// Granular memory statistics for the container, v2 cgroups.
+///
+/// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1542).
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[allow(missing_docs)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryStatsStatsV2 {
+    pub anon: u64,
+    pub file: u64,
+    pub kernel_stack: u64,
+    pub slab: u64,
+    pub sock: u64,
+    pub shmem: u64,
+    pub file_mapped: u64,
+    pub file_dirty: u64,
+    pub file_writeback: u64,
+    pub anon_thp: u64,
+    pub inactive_anon: u64,
+    pub active_anon: u64,
+    pub inactive_file: u64,
+    pub active_file: u64,
+    pub unevictable: u64,
+    pub slab_reclaimable: u64,
+    pub slab_unreclaimable: u64,
+    pub pgfault: u64,
+    pub pgmajfault: u64,
+    pub workingset_refault: u64,
+    pub workingset_activate: u64,
+    pub workingset_nodereclaim: u64,
+    pub pgrefill: u64,
+    pub pgscan: u64,
+    pub pgsteal: u64,
+    pub pgactivate: u64,
+    pub pgdeactivate: u64,
+    pub pglazyfree: u64,
+    pub pglazyfreed: u64,
+    pub thp_fault_alloc: u64,
+    pub thp_collapse_alloc: u64,
 }
 
 /// General memory statistics for the container.
