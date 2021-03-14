@@ -130,5 +130,5 @@ pub enum Error {
     },
     /// Disable NamedPipe support until tokio#3511 is resolved
     #[error("Named Pipe support is disabled until tokio#3511 is resolved")]
-    NamedPipeDisabled { }
+    NamedPipeDisabled {},
 }

@@ -35,15 +35,15 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let vec = &docker
-        .start_exec(&message.id, None::<StartExecOptions>)
-        .try_collect::<Vec<_>>()
+    let results = docker
+        .start_exec(&message.id, None::<StartExecOptions>, false)
         .await?;
 
-    assert!(vec.len() > 0);
-    assert!(match &vec[0] {
-        StartExecResults::Attached { log } => {
-            match log {
+    assert!(match results {
+        StartExecResults::Attached { output, .. } => {
+            let log: Vec<_> = output.try_collect().await?;
+            assert!(log.len() > 0);
+            match &log[0] {
                 LogOutput::StdOut { message } => {
                     let (n, expected) = if cfg!(windows) {
                         (0, "<configuration>\r")
@@ -108,9 +108,8 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
-        .start_exec(&message.id, Some(StartExecOptions { detach: true }))
-        .try_collect::<Vec<_>>()
+    docker
+        .start_exec(&message.id, Some(StartExecOptions { detach: true }), false)
         .await?;
 
     let exec_process = &docker.inspect_exec(&message.id).await?;

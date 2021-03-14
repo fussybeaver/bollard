@@ -1,10 +1,5 @@
 //! Exec API: Run new commands inside running containers
 
-use futures_core::Stream;
-use futures_util::{
-    stream,
-    stream::{StreamExt, TryStreamExt},
-};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
 use hyper::Body;
@@ -16,6 +11,12 @@ use super::Docker;
 use crate::container::LogOutput;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
+use crate::read::NewlineLogOutputDecoder;
+use futures_core::Stream;
+use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_util::codec::FramedRead;
 
 /// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -65,11 +66,27 @@ pub struct StartExecOptions {
 }
 
 /// Result type for the [Start Exec API](Docker::start_exec())
-#[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum StartExecResults {
-    Attached { log: LogOutput },
+    Attached {
+        output: Pin<Box<dyn Stream<Item = Result<LogOutput, Error>> + Send>>,
+        input: Pin<Box<dyn AsyncWrite + Send>>,
+    },
+    AttachedTTY {
+        output: Pin<Box<dyn AsyncRead + Send>>,
+        input: Pin<Box<dyn AsyncWrite + Send>>,
+    },
     Detached,
+}
+
+impl Debug for StartExecResults {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StartExecResults::Attached { .. } => write!(f, "StartExecResults::Attached"),
+            StartExecResults::AttachedTTY { .. } => write!(f, "StartExecResults::AttachedTTY"),
+            StartExecResults::Detached => write!(f, "StartExecResults::Detached"),
+        }
+    }
 }
 
 impl Docker {
@@ -160,14 +177,15 @@ impl Docker {
     /// async {
     ///     let message = docker.create_exec("hello-world", config).await.unwrap();
     ///     use bollard::exec::StartExecOptions;
-    ///     docker.start_exec(&message.id, None::<StartExecOptions>);
+    ///     docker.start_exec(&message.id, None::<StartExecOptions>, false);
     /// };
     /// ```
-    pub fn start_exec(
+    pub async fn start_exec(
         &self,
         exec_id: &str,
         config: Option<StartExecOptions>,
-    ) -> impl Stream<Item = Result<StartExecResults, Error>> {
+        tty: bool,
+    ) -> Result<StartExecResults, Error> {
         let url = format!("/exec/{}/start", exec_id);
 
         match config {
@@ -179,12 +197,8 @@ impl Docker {
                     Docker::serialize_payload(config),
                 );
 
-                let fut = self.process_into_unit(req);
-                stream::once(async move {
-                    fut.await?;
-                    Ok(StartExecResults::Detached)
-                })
-                .boxed()
+                self.process_into_unit(req).await?;
+                Ok(StartExecResults::Detached)
             }
             _ => {
                 let req = self.build_request(
@@ -201,9 +215,20 @@ impl Docker {
                     })),
                 );
 
-                self.process_upgraded_stream_string(req)
-                    .map_ok(|s| StartExecResults::Attached { log: s })
-                    .boxed()
+                let (read, write) = self.process_upgraded(req).await?;
+
+                if tty {
+                    Ok(StartExecResults::AttachedTTY {
+                        output: Box::pin(read),
+                        input: Box::pin(write),
+                    })
+                } else {
+                    let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+                    Ok(StartExecResults::Attached {
+                        output: Box::pin(log),
+                        input: Box::pin(write),
+                    })
+                }
             }
         }
     }

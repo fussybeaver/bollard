@@ -17,7 +17,6 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
-use futures_util::stream;
 use futures_util::stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
@@ -31,6 +30,7 @@ use hyperlocal::UnixClient as UnixConnector;
 use rustls::internal::pemfile;
 #[cfg(feature = "ssl")]
 use rustls::sign::{CertifiedKey, RSASigningKey};
+use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
@@ -777,13 +777,13 @@ impl Docker {
         )
     }
 
-    pub(crate) fn process_upgraded_stream_string(
+    pub(crate) async fn process_upgraded(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let fut = self.process_request(req);
-        stream::once(async move { fut.await.map(Docker::decode_into_upgraded_stream_string) })
-            .try_flatten()
+    ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
+        let res = self.process_request(req).await?;
+        let upgraded = hyper::upgrade::on(res).await?;
+        Ok(split(upgraded))
     }
 
     pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
@@ -839,7 +839,7 @@ impl Docker {
             MaybeClientVersion::None => {
                 return Err(APIVersionParseError {
                     api_version: err_api_version,
-                })
+                });
             }
         };
 
@@ -975,15 +975,6 @@ impl Docker {
             StreamReader::new(res.into_body().map_err(Error::from)),
             NewlineLogOutputDecoder::new(),
         )
-    }
-
-    fn decode_into_upgraded_stream_string(
-        res: Response<Body>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        hyper::upgrade::on(res)
-            .into_stream()
-            .map_ok(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
-            .try_flatten()
     }
 
     async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {
