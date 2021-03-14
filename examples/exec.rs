@@ -4,13 +4,27 @@ use bollard::container::{Config, RemoveContainerOptions};
 use bollard::Docker;
 
 use bollard::exec::{CreateExecOptions, StartExecResults};
+use bollard::image::CreateImageOptions;
 use futures_util::stream::StreamExt;
+use futures_util::TryStreamExt;
 
 const IMAGE: &'static str = "alpine:3";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let docker = Docker::connect_with_unix_defaults().unwrap();
+
+    docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: IMAGE,
+                ..Default::default()
+            }),
+            None,
+            None,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
 
     let alpine_config = Config {
         image: Some(IMAGE),
