@@ -1569,6 +1569,7 @@ impl Docker {
     ///
     /// let options = Some(StatsOptions{
     ///     stream: false,
+    ///     one_shot: true,
     /// });
     ///
     /// docker.stats("hello-world", options);
