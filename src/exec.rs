@@ -15,7 +15,7 @@ use crate::read::NewlineLogOutputDecoder;
 use futures_core::Stream;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::AsyncWrite;
 use tokio_util::codec::FramedRead;
 
 /// Exec configuration used in the [Create Exec API](Docker::create_exec())
@@ -72,10 +72,6 @@ pub enum StartExecResults {
         output: Pin<Box<dyn Stream<Item = Result<LogOutput, Error>> + Send>>,
         input: Pin<Box<dyn AsyncWrite + Send>>,
     },
-    AttachedTTY {
-        output: Pin<Box<dyn AsyncRead + Send>>,
-        input: Pin<Box<dyn AsyncWrite + Send>>,
-    },
     Detached,
 }
 
@@ -83,7 +79,6 @@ impl Debug for StartExecResults {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             StartExecResults::Attached { .. } => write!(f, "StartExecResults::Attached"),
-            StartExecResults::AttachedTTY { .. } => write!(f, "StartExecResults::AttachedTTY"),
             StartExecResults::Detached => write!(f, "StartExecResults::Detached"),
         }
     }
@@ -189,14 +184,13 @@ impl Docker {
     /// async {
     ///     let message = docker.create_exec("hello-world", config).await.unwrap();
     ///     use bollard::exec::StartExecOptions;
-    ///     docker.start_exec(&message.id, None::<StartExecOptions>, false);
+    ///     docker.start_exec(&message.id, None::<StartExecOptions>);
     /// };
     /// ```
     pub async fn start_exec(
         &self,
         exec_id: &str,
         config: Option<StartExecOptions>,
-        tty: bool,
     ) -> Result<StartExecResults, Error> {
         let url = format!("/exec/{}/start", exec_id);
 
@@ -229,18 +223,11 @@ impl Docker {
 
                 let (read, write) = self.process_upgraded(req).await?;
 
-                if tty {
-                    Ok(StartExecResults::AttachedTTY {
-                        output: Box::pin(read),
-                        input: Box::pin(write),
-                    })
-                } else {
-                    let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
-                    Ok(StartExecResults::Attached {
-                        output: Box::pin(log),
-                        input: Box::pin(write),
-                    })
-                }
+                let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+                Ok(StartExecResults::Attached {
+                    output: Box::pin(log),
+                    input: Box::pin(write),
+                })
             }
         }
     }

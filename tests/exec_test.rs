@@ -36,7 +36,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let results = docker
-        .start_exec(&message.id, None::<StartExecOptions>, false)
+        .start_exec(&message.id, None::<StartExecOptions>)
         .await?;
 
     assert!(match results {
@@ -109,7 +109,7 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     docker
-        .start_exec(&message.id, Some(StartExecOptions { detach: true }), false)
+        .start_exec(&message.id, Some(StartExecOptions { detach: true }))
         .await?;
 
     let exec_process = &docker.inspect_exec(&message.id).await?;
