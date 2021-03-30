@@ -89,6 +89,18 @@ impl Debug for StartExecResults {
     }
 }
 
+/// Resize configuration used in the [Resize Exec API](Docker::resize_exec())
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ResizeExecOptions {
+    /// Height of the TTY session in characters
+    #[serde(rename = "h")]
+    pub height: u16,
+    /// Width of the TTY session in characters
+    #[serde(rename = "w")]
+    pub width: u16,
+}
+
 impl Docker {
     /// ---
     ///
@@ -278,5 +290,56 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Resize Exec
+    ///
+    /// Resize the TTY session used by an exec instance. This endpoint only works if `tty` was specified as part of creating and starting the exec instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - The ID of the previously created exec configuration.
+    ///  - [Resize Exec Options](ResizeExecOptions) struct.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// #
+    /// # use bollard::exec::{CreateExecOptions, ResizeExecOptions};
+    /// # use std::default::Default;
+    /// #
+    /// # let config = CreateExecOptions {
+    /// #     cmd: Some(vec!["ps", "-ef"]),
+    /// #     attach_stdout: Some(true),
+    /// #     ..Default::default()
+    /// # };
+    /// #
+    /// async {
+    ///     let message = docker.create_exec("hello-world", config).await.unwrap();
+    ///     docker.resize_exec(&message.id, ResizeExecOptions {
+    ///         width: 80,
+    ///         height: 60
+    ///     });
+    /// };
+    /// ```
+    pub async fn resize_exec(
+        &self,
+        exec_id: &str,
+        options: ResizeExecOptions,
+    ) -> Result<(), Error> {
+        let url = format!("/exec/{}/resize", exec_id);
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::POST),
+            Some(options),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req).await
     }
 }
