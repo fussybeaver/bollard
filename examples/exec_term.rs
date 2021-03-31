@@ -4,13 +4,13 @@
 use bollard::container::{Config, RemoveContainerOptions};
 use bollard::Docker;
 
-use bollard::exec::{CreateExecOptions, StartExecResults};
+use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
 use bollard::image::CreateImageOptions;
 use futures_util::TryStreamExt;
 use std::io::{stdout, Read, Write};
 use std::time::Duration;
-use termion::async_stdin;
 use termion::raw::IntoRawMode;
+use termion::{async_stdin, terminal_size};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task::spawn;
 use tokio::time::sleep;
@@ -20,6 +20,7 @@ const IMAGE: &'static str = "alpine:3";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let docker = Docker::connect_with_unix_defaults().unwrap();
+    let tty_size = terminal_size()?;
 
     docker
         .create_image(
@@ -75,6 +76,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
                 }
             }
         });
+
+        docker
+            .resize_exec(
+                &exec,
+                ResizeExecOptions {
+                    height: tty_size.1,
+                    width: tty_size.0,
+                },
+            )
+            .await?;
 
         // set stdout in raw mode so we can do tty stuff
         let stdout = stdout();
