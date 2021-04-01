@@ -244,7 +244,10 @@ async fn stats_test(docker: Docker) -> Result<(), Error> {
     let vec = &docker
         .stats(
             "integration_test_stats",
-            Some(StatsOptions { stream: false }),
+            Some(StatsOptions {
+                stream: false,
+                ..Default::default()
+            }),
         )
         .try_collect::<Vec<_>>()
         .await?;

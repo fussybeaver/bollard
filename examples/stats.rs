@@ -29,7 +29,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for container in containers {
                 let container_id = container.id.as_ref().unwrap();
                 let stream = &mut docker
-                    .stats(container_id, Some(StatsOptions { stream: false }))
+                    .stats(
+                        container_id,
+                        Some(StatsOptions {
+                            stream: false,
+                            ..Default::default()
+                        }),
+                    )
                     .take(1);
 
                 while let Some(Ok(stats)) = stream.next().await {
