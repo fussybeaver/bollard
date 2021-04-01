@@ -475,6 +475,18 @@ impl fmt::Display for LogOutput {
     }
 }
 
+impl LogOutput {
+    /// Get the raw bytes of the output
+    pub fn into_bytes(self) -> Bytes {
+        match self {
+            LogOutput::StdErr { message } => message,
+            LogOutput::StdOut { message } => message,
+            LogOutput::StdIn { message } => message,
+            LogOutput::Console { message } => message,
+        }
+    }
+}
+
 /// Parameters used in the [Stats API](super::Docker::stats())
 ///
 /// ## Examples

@@ -51,9 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         )
         .await?
         .id;
-    if let StartExecResults::Attached { mut output, .. } =
-        docker.start_exec(&exec, None, false).await?
-    {
+    if let StartExecResults::Attached { mut output, .. } = docker.start_exec(&exec, None).await? {
         while let Some(Ok(msg)) = output.next().await {
             print!("{}", msg);
         }
