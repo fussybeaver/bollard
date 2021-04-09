@@ -6,3 +6,4 @@ main.rs
 .metals
 codegen/target/generated-sources/target
 /.idea
+.vscode/

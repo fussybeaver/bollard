@@ -187,7 +187,12 @@ async move {
 
 Further examples are available in the [examples
 folder](https://github.com/fussybeaver/bollard/tree/master/examples), or the [integration/unit
-tests](https://github.com/fussybeaver/bollard/tree/master/tests).
+tests](https://github.com/fussybeaver/bollard/tree/master/tests). To run:
+```bash
+cargo build --examples
+# ./target/debug/examples/<base_filename>
+./target/debug/examples/build
+```
 
 ## Development
 
@@ -201,6 +206,14 @@ following in the `codegen` folder:
 
 ```bash
 mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile generate-resources
+```
+
+## Submodules
+```
+git clone git@github.com:user/project.git --recursive
+```
+```
+git submodule update --init
 ```
 
 ## History

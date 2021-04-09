@@ -1,19 +1,36 @@
 //! Image API: creating, manipulating and pushing docker images
 use futures_core::Stream;
 use futures_util::{stream, stream::StreamExt};
+use futures_executor::block_on;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
+use serde_repr::*;
+#[cfg(feature = "buildkit")]
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "buildkit")]
+use tokio::net::UnixStream;
+#[cfg(feature = "buildkit")]
+use tower::service_fn;
+#[cfg(feature = "buildkit")]
+use tonic::transport::{Endpoint, Uri};
 
 use super::Docker;
 use crate::auth::{base64_url_encode, DockerCredentials};
 use crate::container::Config;
 use crate::errors::Error;
 use crate::models::*;
+#[cfg(feature = "buildkit")]
+use crate::buildkit_secrets::{GetSecretRequest, GetSecretResponse};
+#[cfg(feature = "buildkit")]
+use crate::buildkit_secrets::secrets_client::SecretsClient;
+#[cfg(feature = "buildkit")]
+use crate::buildkit_ssh::ssh_client::SshClient;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::hash::Hash;
 
 /// Parameters available for pulling an image, used in the [Create Image
@@ -390,6 +407,9 @@ where
     /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub buildargs: HashMap<T, T>,
+    #[cfg(feature = "buildkit")]
+    /// Session ID
+    pub sessionid: Option<String>,
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
     pub shmsize: Option<u64>,
     /// Squash the resulting images layers into a single layer.
@@ -403,6 +423,24 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// Builder version to use
+    pub version: BuilderVersion,
+}
+
+/// Builder Version to use
+#[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub enum BuilderVersion {
+    /// BuilderV1 is the first generation builder in docker daemon
+    BuilderV1 = 1,
+    /// BuilderBuildKit is builder based on moby/buildkit project
+    BuilderBuildKit = 2,
+}
+
+impl Default for BuilderVersion {
+    fn default() -> Self {
+        BuilderVersion::BuilderV1
+    }
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -998,6 +1036,8 @@ impl Docker {
     /// the archive's root, but can be at a different path or have a different name by specifying
     /// the `dockerfile` parameter.
     ///
+    /// By default, the call to build specifies using BuilderV1, the first generation builder in docker daemon.
+    ///
     /// # Arguments
     ///
     ///  - [Build Image Options](BuildImageOptions) struct.
@@ -1045,6 +1085,10 @@ impl Docker {
         T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/build";
+        #[cfg(feature = "buildkit")]
+        if options.version == BuilderVersion::BuilderBuildKit {
+            block_on(self.start_session()).unwrap();
+        }
 
         match serde_json::to_string(&credentials.unwrap_or_default()) {
             Ok(ser_cred) => {
@@ -1072,6 +1116,27 @@ impl Docker {
                 res
             }
         })
+    }
+
+    #[cfg(feature = "buildkit")]
+    async fn start_session(&self) -> Result<(), Error> {
+        let url = "/session";
+        let opt: Option<serde_json::Value> = None;
+        let req = self.build_request(
+            &url,
+            Builder::new()
+            .method(Method::POST)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "h2c")
+            .header("X-Docker-Expose-Session-Uuid", "colin-1"),
+            opt,
+            Ok(Body::empty())
+        );
+        let (mut r, mut w) = self.process_upgraded(req).await?;
+        let mut buf = String::new();
+        r.read_to_string(&mut buf).await?;
+        dbg!("client[foobar] recv: {:?}", buf);
+        Ok(())
     }
 
     /// ---
