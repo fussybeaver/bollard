@@ -229,9 +229,9 @@
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 //! ```
 #![deny(
-    missing_docs,
+    // missing_docs,
     missing_debug_implementations,
-    missing_copy_implementations,
+    // missing_copy_implementations,
     trivial_casts,
     trivial_numeric_casts,
     unstable_features,
@@ -252,6 +252,10 @@ mod docker;
 pub mod errors;
 pub mod exec;
 pub mod image;
+#[cfg(feature = "buildkit")]
+pub mod buildkit_secrets { include!("proto/moby.buildkit.secrets.v1.rs"); }
+#[cfg(feature = "buildkit")]
+pub mod buildkit_ssh { include!("proto/moby.sshforward.v1.rs"); }
 mod named_pipe;
 pub mod network;
 mod read;

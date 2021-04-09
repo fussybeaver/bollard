@@ -1,0 +1,3 @@
+[submodule "codegen/buildkit"]
+	path = codegen/buildkit
+	url = https://github.com/moby/buildkit
