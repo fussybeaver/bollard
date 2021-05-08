@@ -153,6 +153,13 @@ async fn info_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn ping_test(docker: Docker) -> Result<(), Error> {
+    let res = &docker.ping().await?;
+    assert_eq!("OK", res);
+
+    Ok(())
+}
+
 #[test]
 fn integration_test_events() {
     connect_to_docker_and_run!(events_test);
@@ -173,4 +180,9 @@ fn integration_test_df() {
 #[test]
 fn integration_test_info() {
     connect_to_docker_and_run!(info_test);
+}
+
+#[test]
+fn integration_test_ping() {
+    connect_to_docker_and_run!(ping_test);
 }

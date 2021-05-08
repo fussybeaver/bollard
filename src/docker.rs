@@ -777,6 +777,17 @@ impl Docker {
         )
     }
 
+    pub(crate) fn process_into_string(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> impl Future<Output = Result<String, Error>> {
+        let fut = self.process_request(req);
+        async move {
+            let response = fut.await?;
+            Docker::decode_into_string(response).await
+        }
+    }
+
     pub(crate) async fn process_upgraded(
         &self,
         req: Result<Request<Body>, Error>,

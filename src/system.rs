@@ -232,7 +232,7 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_value(req).await
+        self.process_into_string(req).await
     }
 
     /// ---
