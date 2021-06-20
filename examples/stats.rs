@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     loop {
         let mut filter = HashMap::new();

@@ -12,7 +12,7 @@ const IMAGE: &'static str = "alpine:3";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     docker
         .create_image(

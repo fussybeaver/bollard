@@ -9,7 +9,9 @@ use bollard::image::CreateImageOptions;
 use futures_util::{StreamExt, TryStreamExt};
 use std::io::{stdout, Read, Write};
 use std::time::Duration;
+#[cfg(not(windows))]
 use termion::raw::IntoRawMode;
+#[cfg(not(windows))]
 use termion::{async_stdin, terminal_size};
 use tokio::io::AsyncWriteExt;
 use tokio::task::spawn;
@@ -19,7 +21,9 @@ const IMAGE: &'static str = "alpine:3";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
+
+    #[cfg(not(windows))]
     let tty_size = terminal_size()?;
 
     docker
@@ -60,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         )
         .await?
         .id;
+    #[cfg(not(windows))]
     if let StartExecResults::Attached {
         mut output,
         mut input,

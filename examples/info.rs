@@ -26,7 +26,7 @@ async fn conc(arg: (Docker, &ContainerSummary)) -> () {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);
