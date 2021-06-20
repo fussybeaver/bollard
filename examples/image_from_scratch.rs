@@ -58,10 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let file = File::open(&arguments[1]).expect("Could not find archive.");
 
-    #[cfg(unix)]
-    let docker = Docker::connect_with_unix_defaults()?;
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults()?;
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let options = CreateImageOptions {
         from_src: "-", // from_src must be "-" when sending the archive in the request body

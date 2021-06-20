@@ -14,10 +14,7 @@ const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    #[cfg(unix)]
-    let docker = Docker::connect_with_unix_defaults()?;
-    #[cfg(windows)]
-    let docker = Docker::connect_with_named_pipe_defaults()?;
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let sd1 = docker.clone();
     let sd2 = docker.clone();
