@@ -10,8 +10,8 @@
 //! [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
 //! futures, streams and the async/await paradigm.
 //!
-//! The library also features Windows support through Named Pipes (disabled in 0.10, see below) and
-//! HTTPS support through optional rustls bindings.
+//! The library also features Windows support through Named Pipes and HTTPS support through
+//! optional rustls bindings.
 //!
 //! # Install
 //!
@@ -19,7 +19,7 @@
 //!
 //! ```nocompile
 //! [dependencies]
-//! bollard = "0.9"
+//! bollard = "0.11"
 //! ```
 //!
 //! # API
@@ -27,18 +27,16 @@
 //!
 //! [API docs](crate).
 //!
-//! Version 0.10 disables Named Pipe Windows support until the upstream Tokio project re-adds
-//! support for Named Pipes. Please follow the [tracking
-//! issue](https://github.com/tokio-rs/tokio/issues/3511) for updates on this.
-//!
+//! Version 0.11 re-enables Windows Named Pipe support.
+//! 
 //! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
-//! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.40.yaml). The generated
+//! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.41.yaml). The generated
 //! models are committed to this repository, but packaged in a separate crate
 //! [bollard-stubs](https://crates.io/crates/bollard-stubs).
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.40/) is pegged at version `1.40`. The
+//! The [Docker API](https://docs.docker.com/engine/api/v1.41/) is pegged at version `1.41`. The
 //! library also supports [version
 //! negotiation](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.negotiate_version),
 //! to allow downgrading to an older API version.
@@ -49,15 +47,16 @@
 //!
 //! Connect to the docker server according to your architecture and security remit.
 //!
-//! ### Unix socket
+//! ### Socket
 //!
-//! The client will connect to the standard unix socket location `/var/run/docker.sock`. Use the
-//! `Docker::connect_with_unix` method API to parameterise the interface.
+//! The client will connect to the standard unix socket location `/var/run/docker.sock` or windows
+//! named pipe location `//./pipe/docker_engine`. Use the `Docker::connect_with_socket` method API
+//! to parameterise the interface.
 //!
 //! ```rust
 //! use bollard::Docker;
 //! #[cfg(unix)]
-//! Docker::connect_with_unix_defaults();
+//! Docker::connect_with_socket_defaults();
 //! ```
 //!
 //! ### Local
