@@ -417,6 +417,10 @@ where
     pub ps_args: T,
 }
 
+fn is_zero(val: &i64) -> bool {
+    val == &0i64
+}
+
 /// Parameters used in the [Logs API](Docker::logs())
 ///
 /// ## Examples
@@ -445,6 +449,8 @@ where
     /// Only return logs since this time, as a UNIX timestamp.
     pub since: i64,
     /// Only return logs before this time, as a UNIX timestamp.
+    #[serde(skip_serializing_if = "is_zero")]
+    // workaround for https://github.com/containers/podman/issues/10859
     pub until: i64,
     /// Add timestamps to every log line.
     pub timestamps: bool,
