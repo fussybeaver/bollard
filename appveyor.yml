@@ -10,9 +10,10 @@ install:
   - cargo -V
 
 build_script:
+  - ver
+  - ps: systeminfo /fo csv | ConvertFrom-Csv | select OS*, System*, Hotfix* | Format-List
   - ps: Get-VMNetworkAdapter -VMName *
   - ps: Get-VMNetworkAdapter -All
-  - ps: Get-VMNetworkAdapter -VMName MobyLinuxVM | Set-VMNetworkAdapter -MacAddressSpoofing On
   - ps: Get-NetAdapter
   - ps: |
       $ipv4 = (Test-Connection -ComputerName $env:ComputerName -Count 1).IPV4Address.IPAddressToString
@@ -26,10 +27,10 @@ build_script:
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
   - docker pull hello-world:nanoserver-sac2016
   - docker pull nanoserver/iis
-  - docker pull microsoft/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
+  - docker pull mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
   - docker tag hello-world:nanoserver-sac2016 localhost:5000/hello-world:nanoserver
   - docker tag nanoserver/iis localhost:5000/nanoserver/iis
-  - docker tag microsoft/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2 localhost:5000/microsoft/nanoserver
+  - docker tag mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2 localhost:5000/microsoft/nanoserver
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
   - docker push localhost:5000/microsoft/nanoserver
