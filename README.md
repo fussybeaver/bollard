@@ -25,7 +25,7 @@ bollard = "0.11"
 ## API
 ### Documentation
 
-[API docs](crate).
+[API docs](https://docs.rs/bollard/).
 
 Version 0.11 re-enables Windows Named Pipe support.
 
