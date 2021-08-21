@@ -589,7 +589,8 @@ impl Docker {
     ///
     /// # Defaults
     ///
-    ///  - The socket location defaults to `/var/run/docker.sock`.
+    ///  - The socket location defaults to the value of `DEFAULT_SOCKET` env if its set and the URL
+    ///    has `unix` scheme; otherwise `/var/run/docker.sock`.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
@@ -603,7 +604,17 @@ impl Docker {
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix_defaults() -> Result<Docker, Error> {
-        Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+        // Using 3 variables to not have to copy/allocate `DEFAULT_SOCKET`.
+        let socket_path = env::var("DOCKER_HOST").ok().and_then(|p| {
+            if p.starts_with("unix://") {
+                Some(p)
+            } else {
+                None
+            }
+        });
+        let path = socket_path.as_deref();
+        let path_ref: &str = path.unwrap_or_else(|| DEFAULT_SOCKET);
+        Docker::connect_with_unix(path_ref, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using a Unix socket.
