@@ -7,7 +7,7 @@ use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
 
 use super::Docker;
-use crate::auth::DockerCredentials;
+use crate::auth::{base64_url_encode, DockerCredentials};
 use crate::container::Config;
 use crate::errors::Error;
 use crate::models::*;
@@ -539,7 +539,7 @@ impl Docker {
                     url,
                     Builder::new()
                         .method(Method::POST)
-                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
                     match root_fs {
                         Some(body) => Ok(body),
@@ -779,7 +779,7 @@ impl Docker {
                     &url,
                     Builder::new()
                         .method(Method::DELETE)
-                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
                     Ok(Body::empty()),
                 );
@@ -899,7 +899,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
                     Ok(Body::empty()),
                 );
@@ -1033,7 +1033,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar")
-                        .header("X-Registry-Config", base64::encode(&ser_cred)),
+                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
                     Some(options),
                     Ok(tar.unwrap_or_else(Body::empty)),
                 );
@@ -1149,7 +1149,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Config", base64::encode(&ser_cred)),
+                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
                     Some(options),
                     Ok(root_fs),
                 );
