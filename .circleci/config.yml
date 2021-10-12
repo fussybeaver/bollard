@@ -1,27 +1,27 @@
 version: 2
 
 jobs:
-  test_ssl:
-    docker:
-      - image: docker:20.10.9
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker create -v /certs --name certs alpine:3.4 /bin/true
-      - run: docker run --rm -e SSL_SUBJECT=test.example.com -e SSL_DNS=test.example.com --volumes-from certs paulczar/omgwtfssl
-      - run: docker run -h test.example.com --volumes-from certs -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay --tlsverify --tlscacert=/certs/ca.pem --tlscert=/certs/cert.pem --tlskey=/certs/key.pem
-      - run: docker run --rm --volumes-from certs --privileged --rm --entrypoint=chmod docker:stable-dind 644 /certs/key.pem /certs/ca-key.pem
-      - run: docker build -t bollard .
-      - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl -- --test test_version_ssl
-  test_http:
-    docker:
-      - image: docker:20.10.9
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay
-      - run: docker build -t bollard .
-      - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
+  #test_ssl:
+  #  docker:
+  #    - image: docker:20.10.9
+  #  steps:
+  #    - checkout
+  #    - setup_remote_docker
+  #    - run: docker create -v /certs --name certs alpine:3.4 /bin/true
+  #    - run: docker run --rm -e SSL_SUBJECT=test.example.com -e SSL_DNS=test.example.com --volumes-from certs paulczar/omgwtfssl
+  #    - run: docker run -h test.example.com --volumes-from certs -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay --tlsverify --tlscacert=/certs/ca.pem --tlscert=/certs/cert.pem --tlskey=/certs/key.pem
+  #    - run: docker run --rm --volumes-from certs --privileged --rm --entrypoint=chmod docker:stable-dind 644 /certs/key.pem /certs/ca-key.pem
+  #    - run: docker build -t bollard .
+  #    - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl -- --test test_version_ssl
+  #test_http:
+  #  docker:
+  #    - image: docker:20.10.9
+  #  steps:
+  #    - checkout
+  #    - setup_remote_docker
+  #    - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay
+  #    - run: docker build -t bollard .
+  #    - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
   test_unix:
     docker:
       - image: docker:20.10.9
@@ -30,39 +30,39 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: dockerfiles/bin/run_integration_tests.sh
-  test_doc:
-    docker:
-      - image: docker:20.10.9
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard cargo test --target x86_64-unknown-linux-gnu --doc
-  test_clippy:
-    docker:
-      - image: docker:20.10.9
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
-  test_audit:
-    docker:
-      - image: docker:20.10.9
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker build -t bollard .
-        # RUSTSEC-2019-0031: https://github.com/briansmith/ring/issues/921
-        # RUSTSEC-2020-0016: https://github.com/tokio-rs/mio/issues/1319
-      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny-warnings --ignore=RUSTSEC-2019-0031 --ignore=RUSTSEC-2020-0016"
+  #test_doc:
+  #  docker:
+  #    - image: docker:20.10.9
+  #  steps:
+  #    - checkout
+  #    - setup_remote_docker
+  #    - run: docker build -t bollard .
+  #    - run: docker run -ti --rm bollard cargo test --target x86_64-unknown-linux-gnu --doc
+  #test_clippy:
+  #  docker:
+  #    - image: docker:20.10.9
+  #  steps:
+  #    - checkout
+  #    - setup_remote_docker
+  #    - run: docker build -t bollard .
+  #    - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
+  #test_audit:
+  #  docker:
+  #    - image: docker:20.10.9
+  #  steps:
+  #    - checkout
+  #    - setup_remote_docker
+  #    - run: docker build -t bollard .
+  #      # RUSTSEC-2019-0031: https://github.com/briansmith/ring/issues/921
+  #      # RUSTSEC-2020-0016: https://github.com/tokio-rs/mio/issues/1319
+  #    - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny-warnings --ignore=RUSTSEC-2019-0031 --ignore=RUSTSEC-2020-0016"
 workflows:
   version: 2
   test-image:
     jobs:
-      - test_ssl
-      - test_http
+      #- test_ssl
+      #- test_http
       - test_unix
-      - test_doc
-      - test_clippy
-      - test_audit
+      #- test_doc
+      #- test_clippy
+      #- test_audit
