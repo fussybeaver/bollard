@@ -562,6 +562,8 @@ pub struct MemoryStatsStatsV1 {
     pub total_pgmajfault: u64,
     pub total_pgpgin: u64,
     pub hierarchical_memsw_limit: Option<u64>,
+    pub shmem: u64,
+    pub total_shmem: u64,
 }
 
 /// Granular memory statistics for the container, v2 cgroups.
