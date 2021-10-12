@@ -239,6 +239,8 @@ async fn container_changes_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn stats_test(docker: Docker) -> Result<(), Error> {
+    env_logger::init();
+
     create_daemon(&docker, "integration_test_stats").await?;
 
     let vec = &docker
