@@ -111,7 +111,7 @@ async fn image_history_test(docker: Docker) -> Result<(), Error> {
 async fn prune_images_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
-    &docker
+    let _ = &docker
         .prune_images(Some(PruneImagesOptions { filters }))
         .await?;
 
@@ -166,7 +166,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
 
     create_image_hello_world(&docker).await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_commit_container",
@@ -179,14 +179,14 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container(
             "integration_test_commit_container",
             None::<StartContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_commit_container",
             None::<WaitContainerOptions<String>>,
@@ -194,7 +194,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .commit_container(
             CommitContainerOptions {
                 container: "integration_test_commit_container",
@@ -208,7 +208,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_commit_container_next",
@@ -225,7 +225,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container(
             "integration_test_commit_container_next",
             None::<StartContainerOptions<String>>,
@@ -246,14 +246,14 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     }
     assert_eq!(first.status_code, 0);
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_commit_container_next",
             None::<RemoveContainerOptions>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_image(
             "integration_test_commit_container_next",
             None::<RemoveImageOptions>,
@@ -265,7 +265,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_commit_container",
             None::<RemoveContainerOptions>,
@@ -310,7 +310,7 @@ RUN touch bollard.txt
         integration_test_registry_credentials(),
     );
 
-    &docker
+    let _ = &docker
         .build_image(
             BuildImageOptions {
                 dockerfile: "Dockerfile".to_string(),
@@ -325,7 +325,7 @@ RUN touch bollard.txt
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_build_image",
@@ -342,7 +342,7 @@ RUN touch bollard.txt
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container(
             "integration_test_build_image",
             None::<StartContainerOptions<String>>,
@@ -362,11 +362,11 @@ RUN touch bollard.txt
         println!("{}", error.message.as_ref().unwrap());
     }
     assert_eq!(first.status_code, 0);
-    &docker
+    let _ = &docker
         .remove_container("integration_test_build_image", None)
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_image(
             "integration_test_build_image",
             None::<RemoveImageOptions>,

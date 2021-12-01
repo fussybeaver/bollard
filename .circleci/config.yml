@@ -45,7 +45,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy"
+      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy -- -Dwarnings -Aclippy::upper_case_acronyms"
   test_audit:
     docker:
       - image: docker:20.10.9

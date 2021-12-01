@@ -226,7 +226,7 @@ impl Docker {
         let url = "/_ping";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::GET),
             None::<String>,
             Ok(Body::empty()),

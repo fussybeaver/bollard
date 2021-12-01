@@ -229,7 +229,7 @@ impl Docker {
         let url = "/networks/create";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             None::<String>,
             Docker::serialize_payload(Some(config)),
@@ -363,7 +363,7 @@ impl Docker {
         let url = "/networks";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::GET),
             options,
             Ok(Body::empty()),
@@ -521,7 +521,7 @@ impl Docker {
         let url = "/networks/prune";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             options,
             Ok(Body::empty()),

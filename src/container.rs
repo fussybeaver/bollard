@@ -477,7 +477,7 @@ impl fmt::Display for LogOutput {
             LogOutput::StdIn { message } => message,
             LogOutput::Console { message } => message,
         };
-        write!(f, "{}", String::from_utf8_lossy(&message))
+        write!(f, "{}", String::from_utf8_lossy(message))
     }
 }
 
@@ -1873,7 +1873,7 @@ impl Docker {
         let url = "/containers/prune";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             options,
             Ok(Body::empty()),

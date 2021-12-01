@@ -60,14 +60,14 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         _ => false,
     });
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_start_exec_test",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_start_exec_test",
             None::<WaitContainerOptions<String>>,
@@ -75,7 +75,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_start_exec_test",
             None::<RemoveContainerOptions>,
@@ -125,14 +125,14 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
             .unwrap()
     );
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_inspect_exec_test",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_inspect_exec_test",
             None::<WaitContainerOptions<String>>,
@@ -140,7 +140,7 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_inspect_exec_test",
             None::<RemoveContainerOptions>,

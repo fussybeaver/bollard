@@ -40,7 +40,7 @@ async fn list_containers_test(docker: Docker) -> Result<(), Error> {
         .iter()
         .any(|container| container.image.as_ref().unwrap() == &image));
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_list_containers",
             None::<RemoveContainerOptions>,
@@ -57,7 +57,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: &image[..],
@@ -73,7 +73,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .tag_image(
             &image,
             Some(TagImageOptions {
@@ -83,7 +83,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .push_image(
             format!("{}my-hello-world", registry_http_addr()).as_ref(),
             None::<PushImageOptions<String>>,
@@ -97,7 +97,7 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let new_image_url = format!("{}my-hello-world", registry_http_addr());
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: &new_image_url[..],
@@ -128,7 +128,7 @@ async fn container_restart_test(docker: Docker) -> Result<(), Error> {
 
     let started_at = result.state.as_ref().unwrap().started_at.as_ref();
 
-    &docker
+    let _ = &docker
         .restart_container(
             "integration_test_restart_container",
             None::<RestartContainerOptions>,
@@ -208,7 +208,7 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     assert_eq!(format!("{}", value), "Hello from Docker!\n".to_string());
 
-    &docker
+    let _ = &docker
         .remove_container("integration_test_logs", None::<RemoveContainerOptions>)
         .await?;
 
@@ -228,7 +228,7 @@ async fn container_changes_test(docker: Docker) -> Result<(), Error> {
         assert!(result.is_none())
     };
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_container_changes",
             None::<RemoveContainerOptions>,
@@ -267,10 +267,10 @@ async fn kill_container_test(docker: Docker) -> Result<(), Error> {
 
     create_daemon(&docker, "integration_test_kill_container").await?;
 
-    &docker
+    let _ = &docker
         .kill_container("integration_test_kill_container", kill_options)
         .await?;
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_kill_container",
             None::<RemoveContainerOptions>,
@@ -288,7 +288,7 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
     };
 
     create_daemon(&docker, "integration_test_update_container").await?;
-    &docker
+    let _ = &docker
         .update_container("integration_test_update_container", update_options)
         .await?;
     let result = &docker
@@ -303,14 +303,14 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
         result.host_config.as_ref().unwrap().memory.unwrap()
     );
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_update_container",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_update_container",
             None::<WaitContainerOptions<String>>,
@@ -330,7 +330,7 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
         result.state.as_ref().unwrap().status.unwrap()
     );
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_update_container",
             None::<RemoveContainerOptions>,
@@ -342,7 +342,7 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
 
 async fn rename_container_test(docker: Docker) -> Result<(), Error> {
     create_container_hello_world(&docker, "integration_test_rename_container").await?;
-    &docker
+    let _ = &docker
         .rename_container(
             "integration_test_rename_container",
             RenameContainerOptions {
@@ -351,7 +351,7 @@ async fn rename_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_rename_container_renamed",
             None::<RemoveContainerOptions>,
@@ -364,7 +364,7 @@ async fn rename_container_test(docker: Docker) -> Result<(), Error> {
 async fn pause_container_test(docker: Docker) -> Result<(), Error> {
     create_daemon(&docker, "integration_test_pause_container").await?;
 
-    &docker
+    let _ = &docker
         .pause_container("integration_test_pause_container")
         .await?;
 
@@ -380,7 +380,7 @@ async fn pause_container_test(docker: Docker) -> Result<(), Error> {
         result.state.as_ref().unwrap().status.unwrap()
     );
 
-    &docker
+    let _ = &docker
         .unpause_container("integration_test_pause_container")
         .await?;
 
@@ -402,7 +402,7 @@ async fn pause_container_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
-    &docker
+    let _ = &docker
         .prune_containers(None::<PruneContainersOptions<String>>)
         .await?;
 
@@ -454,7 +454,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
     c.write_all(&uncompressed).unwrap();
     let payload = c.finish().unwrap();
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: &image[..],
@@ -470,7 +470,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_archive_container",
@@ -482,7 +482,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .upload_to_container(
             "integration_test_archive_container",
             Some(UploadToContainerOptions {
@@ -542,7 +542,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
 
     assert_eq!("Hello from Bollard!", files.first().unwrap());
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_archive_container",
             None::<RemoveContainerOptions>,
@@ -611,7 +611,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    &docker.create_image(
+    let _ = &docker.create_image(
         Some(CreateImageOptions {
             from_image: &image[..],
             ..Default::default()
@@ -624,7 +624,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         },
     );
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_mount_volume_container",
@@ -684,7 +684,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             .unwrap()
     );
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_mount_volume_container",
             None::<RemoveContainerOptions>,

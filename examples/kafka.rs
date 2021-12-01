@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         ..Default::default()
     };
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: ZOOKEEPER_IMAGE,
@@ -73,18 +73,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions { name: "zookeeper" }),
             zookeeper_config,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container("zookeeper", None::<StartContainerOptions<String>>)
         .await?;
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: KAFKA_IMAGE,
@@ -96,14 +96,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions { name: "kafka1" }),
             broker1_config,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container("kafka1", None::<StartContainerOptions<String>>)
         .await?;
 
@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         }),
     );
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: KAFKA_IMAGE,
@@ -129,14 +129,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .create_container(
             Some(CreateContainerOptions { name: "kafka2" }),
             broker2_config,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .start_container("kafka2", None::<StartContainerOptions<String>>)
         .await?;
 
