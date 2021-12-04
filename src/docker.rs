@@ -613,7 +613,7 @@ impl Docker {
             }
         });
         let path = socket_path.as_deref();
-        let path_ref: &str = path.unwrap_or_else(|| DEFAULT_SOCKET);
+        let path_ref: &str = path.unwrap_or(DEFAULT_SOCKET);
         Docker::connect_with_unix(path_ref, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 

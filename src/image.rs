@@ -1029,7 +1029,7 @@ impl Docker {
         match serde_json::to_string(&credentials.unwrap_or_else(HashMap::new)) {
             Ok(ser_cred) => {
                 let req = self.build_request(
-                    &url,
+                    url,
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar")

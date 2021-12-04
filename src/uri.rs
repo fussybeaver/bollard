@@ -14,9 +14,9 @@ pub struct Uri<'a> {
     encoded: Cow<'a, str>,
 }
 
-impl<'a> Into<HyperUri> for Uri<'a> {
-    fn into(self) -> HyperUri {
-        self.encoded.as_ref().parse().unwrap()
+impl<'a> From<Uri<'a>> for HyperUri {
+    fn from(uri: Uri<'a>) -> Self {
+        uri.encoded.as_ref().parse().unwrap()
     }
 }
 

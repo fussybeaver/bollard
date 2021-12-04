@@ -68,7 +68,7 @@ fn test_downversioning() {
     let fut = async move {
         let docker = &docker.negotiate_version().await.unwrap();
 
-        &docker.version().await.unwrap();
+        let _ = &docker.version().await.unwrap();
 
         assert_eq!(
             format!("{}", &docker.client_version()),
