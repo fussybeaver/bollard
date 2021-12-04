@@ -3,69 +3,84 @@
 use hyper::client::connect::Connected;
 use pin_project::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
+use tokio::time;
 
-use std::fmt;
+use std::ffi::OsStr;
 use std::future::Future;
 use std::io;
 use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
+
+use winapi::shared::winerror;
 
 use crate::docker::ClientType;
 use crate::uri::Uri;
 
-#[derive(Debug)]
-struct NamedPipe {}
+
 
 #[pin_project]
 pub struct NamedPipeStream {
     #[pin]
-    io: NamedPipe
+    io: NamedPipeClient
 }
 
 impl NamedPipeStream {
     pub async fn connect<A>(addr: A) -> Result<NamedPipeStream, io::Error>
     where
-        A: AsRef<Path>,
+        A: AsRef<Path> + AsRef<OsStr>,
     {
-        let io = NamedPipe {};
+        let opts = ClientOptions::new();
 
-        Ok(NamedPipeStream { io })
+        let client = loop {
+            match opts.open(&addr) {
+                Ok(client) => break client,
+                Err(e) if e.raw_os_error() == Some(winerror::ERROR_PIPE_BUSY as i32) => (),
+                Err(e) => return Err(e),
+            };
+
+            time::sleep(Duration::from_millis(50)).await;
+        };
+
+        Ok(NamedPipeStream{ io: client })
     }
 }
 
 impl AsyncRead for NamedPipeStream {
-
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
-    ) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_read(cx, buf)
     }
 }
 
 impl AsyncWrite for NamedPipeStream {
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        bytes: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        Poll::Ready(Ok(0))
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.io).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.io).poll_write_vectored(cx, bufs)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
     }
-}
 
-impl fmt::Debug for NamedPipeStream {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.io.fmt(f)
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_flush(cx)
     }
 }
 

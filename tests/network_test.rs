@@ -57,7 +57,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
         .take(1)
         .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
 
-    &docker
+    let _ = &docker
         .remove_network("integration_test_create_network")
         .await?;
 
@@ -90,7 +90,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
 
-    &docker.create_network(create_network_options).await?;
+    let _ = &docker.create_network(create_network_options).await?;
 
     let results = &docker
         .list_networks(Some(ListNetworksOptions {
@@ -110,7 +110,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         .iter()
         .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
 
-    &docker
+    let _ = &docker
         .remove_network("integration_test_list_network")
         .await?;
 
@@ -146,7 +146,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
 
     let result = &docker.create_network(create_network_options).await?;
 
-    &docker
+    let _ = &docker
         .connect_network(result.id.as_ref().unwrap(), connect_network_options)
         .await?;
 
@@ -169,7 +169,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         .iter()
         .any(|(_, container)| container.ipv4_address == Some("10.10.10.101/24".into())));
 
-    &docker
+    let _ = &docker
         .disconnect_network(
             &id,
             DisconnectNetworkOptions {
@@ -179,16 +179,16 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker.remove_network(&id).await?;
+    let _ = &docker.remove_network(&id).await?;
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_connect_network_test",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_connect_network_test",
             None::<RemoveContainerOptions>,
@@ -214,7 +214,7 @@ async fn prune_networks_test(docker: Docker) -> Result<(), Error> {
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("scope", vec!["global"]);
 
-    &docker.create_network(create_network_options).await?;
+    let _ = &docker.create_network(create_network_options).await?;
 
     let result = &docker
         .prune_networks(None::<PruneNetworksOptions<&str>>)

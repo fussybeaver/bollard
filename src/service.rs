@@ -3,7 +3,7 @@
 pub use crate::models::*;
 
 use super::Docker;
-use crate::auth::DockerCredentials;
+use crate::auth::{base64_url_encode, DockerCredentials};
 use crate::errors::Error;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
@@ -237,7 +237,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     None::<String>,
                     Docker::serialize_payload(Some(service_spec)),
                 );
@@ -406,7 +406,7 @@ impl Docker {
                     Builder::new()
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64::encode(&ser_cred)),
+                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     Some(options),
                     Docker::serialize_payload(Some(service_spec)),
                 );

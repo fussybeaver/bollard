@@ -120,7 +120,7 @@ pub async fn create_container_hello_world(
         Some(vec!["/hello".to_string()])
     };
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: &image[..],
@@ -151,7 +151,7 @@ pub async fn create_container_hello_world(
 
     assert_ne!(result.id.len(), 0);
 
-    &docker
+    let _ = &docker
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await?;
 
@@ -190,7 +190,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
         ])
     };
 
-    &docker
+    let _ = &docker
         .create_image(
             Some(CreateImageOptions {
                 from_image: &image[..],
@@ -221,7 +221,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
     assert_ne!(result.id.len(), 0);
 
-    &docker
+    let _ = &docker
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await?;
 
@@ -230,16 +230,16 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
 #[allow(dead_code)]
 pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Result<(), Error> {
-    &docker
+    let _ = &docker
         .kill_container(container_name, None::<KillContainerOptions<String>>)
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(container_name, None::<WaitContainerOptions<String>>)
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker.remove_container(container_name, None).await?;
+    let _ = &docker.remove_container(container_name, None).await?;
 
     Ok(())
 }

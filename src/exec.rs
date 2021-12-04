@@ -1,10 +1,5 @@
 //! Exec API: Run new commands inside running containers
 
-use futures_core::Stream;
-use futures_util::{
-    stream,
-    stream::{StreamExt, TryStreamExt},
-};
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
 use hyper::Body;
@@ -16,6 +11,12 @@ use super::Docker;
 use crate::container::LogOutput;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
+use crate::read::NewlineLogOutputDecoder;
+use futures_core::Stream;
+use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
+use tokio::io::AsyncWrite;
+use tokio_util::codec::FramedRead;
 
 /// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -65,11 +66,34 @@ pub struct StartExecOptions {
 }
 
 /// Result type for the [Start Exec API](Docker::start_exec())
-#[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum StartExecResults {
-    Attached { log: LogOutput },
+    Attached {
+        output: Pin<Box<dyn Stream<Item = Result<LogOutput, Error>> + Send>>,
+        input: Pin<Box<dyn AsyncWrite + Send>>,
+    },
     Detached,
+}
+
+impl Debug for StartExecResults {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StartExecResults::Attached { .. } => write!(f, "StartExecResults::Attached"),
+            StartExecResults::Detached => write!(f, "StartExecResults::Detached"),
+        }
+    }
+}
+
+/// Resize configuration used in the [Resize Exec API](Docker::resize_exec())
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ResizeExecOptions {
+    /// Height of the TTY session in characters
+    #[serde(rename = "h")]
+    pub height: u16,
+    /// Width of the TTY session in characters
+    #[serde(rename = "w")]
+    pub width: u16,
 }
 
 impl Docker {
@@ -163,11 +187,11 @@ impl Docker {
     ///     docker.start_exec(&message.id, None::<StartExecOptions>);
     /// };
     /// ```
-    pub fn start_exec(
+    pub async fn start_exec(
         &self,
         exec_id: &str,
         config: Option<StartExecOptions>,
-    ) -> impl Stream<Item = Result<StartExecResults, Error>> {
+    ) -> Result<StartExecResults, Error> {
         let url = format!("/exec/{}/start", exec_id);
 
         match config {
@@ -179,12 +203,8 @@ impl Docker {
                     Docker::serialize_payload(config),
                 );
 
-                let fut = self.process_into_unit(req);
-                stream::once(async move {
-                    fut.await?;
-                    Ok(StartExecResults::Detached)
-                })
-                .boxed()
+                self.process_into_unit(req).await?;
+                Ok(StartExecResults::Detached)
             }
             _ => {
                 let req = self.build_request(
@@ -201,9 +221,13 @@ impl Docker {
                     })),
                 );
 
-                self.process_upgraded_stream_string(req)
-                    .map_ok(|s| StartExecResults::Attached { log: s })
-                    .boxed()
+                let (read, write) = self.process_upgraded(req).await?;
+
+                let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+                Ok(StartExecResults::Attached {
+                    output: Box::pin(log),
+                    input: Box::pin(write),
+                })
             }
         }
     }
@@ -253,5 +277,56 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Resize Exec
+    ///
+    /// Resize the TTY session used by an exec instance. This endpoint only works if `tty` was specified as part of creating and starting the exec instance.
+    ///
+    /// # Arguments
+    ///
+    ///  - The ID of the previously created exec configuration.
+    ///  - [Resize Exec Options](ResizeExecOptions) struct.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// #
+    /// # use bollard::exec::{CreateExecOptions, ResizeExecOptions};
+    /// # use std::default::Default;
+    /// #
+    /// # let config = CreateExecOptions {
+    /// #     cmd: Some(vec!["ps", "-ef"]),
+    /// #     attach_stdout: Some(true),
+    /// #     ..Default::default()
+    /// # };
+    /// #
+    /// async {
+    ///     let message = docker.create_exec("hello-world", config).await.unwrap();
+    ///     docker.resize_exec(&message.id, ResizeExecOptions {
+    ///         width: 80,
+    ///         height: 60
+    ///     });
+    /// };
+    /// ```
+    pub async fn resize_exec(
+        &self,
+        exec_id: &str,
+        options: ResizeExecOptions,
+    ) -> Result<(), Error> {
+        let url = format!("/exec/{}/resize", exec_id);
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::POST),
+            Some(options),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req).await
     }
 }

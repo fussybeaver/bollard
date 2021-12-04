@@ -417,6 +417,10 @@ where
     pub ps_args: T,
 }
 
+fn is_zero(val: &i64) -> bool {
+    val == &0i64
+}
+
 /// Parameters used in the [Logs API](Docker::logs())
 ///
 /// ## Examples
@@ -445,6 +449,8 @@ where
     /// Only return logs since this time, as a UNIX timestamp.
     pub since: i64,
     /// Only return logs before this time, as a UNIX timestamp.
+    #[serde(skip_serializing_if = "is_zero")]
+    // workaround for https://github.com/containers/podman/issues/10859
     pub until: i64,
     /// Add timestamps to every log line.
     pub timestamps: bool,
@@ -471,7 +477,19 @@ impl fmt::Display for LogOutput {
             LogOutput::StdIn { message } => message,
             LogOutput::Console { message } => message,
         };
-        write!(f, "{}", String::from_utf8_lossy(&message))
+        write!(f, "{}", String::from_utf8_lossy(message))
+    }
+}
+
+impl LogOutput {
+    /// Get the raw bytes of the output
+    pub fn into_bytes(self) -> Bytes {
+        match self {
+            LogOutput::StdErr { message } => message,
+            LogOutput::StdOut { message } => message,
+            LogOutput::StdIn { message } => message,
+            LogOutput::Console { message } => message,
+        }
     }
 }
 
@@ -484,12 +502,16 @@ impl fmt::Display for LogOutput {
 ///
 /// StatsOptions{
 ///     stream: false,
+///     one_shot: false,
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, Serialize)]
 pub struct StatsOptions {
     /// Stream the output. If false, the stats will be output once and then it will disconnect.
     pub stream: bool,
+    /// Only get a single stat instead of waiting for 2 cycles. Must be used with `stream = false`.
+    #[serde(rename = "one-shot")]
+    pub one_shot: bool,
 }
 
 /// Granular memory statistics for the container.
@@ -539,7 +561,9 @@ pub struct MemoryStatsStatsV1 {
     pub inactive_file: u64,
     pub total_pgmajfault: u64,
     pub total_pgpgin: u64,
-    pub hierarchical_memsw_limit: Option<u64>,
+    pub hierarchical_memsw_limit: Option<u64>, // only on OSX
+    pub shmem: Option<u64>, // only on linux kernel > 4.15.0-1106
+    pub total_shmem: Option<u64>, // only on linux kernel > 4.15.0-1106
 }
 
 /// Granular memory statistics for the container, v2 cgroups.
@@ -1565,6 +1589,7 @@ impl Docker {
     ///
     /// let options = Some(StatsOptions{
     ///     stream: false,
+    ///     one_shot: true,
     /// });
     ///
     /// docker.stats("hello-world", options);
@@ -1848,7 +1873,7 @@ impl Docker {
         let url = "/containers/prune";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             options,
             Ok(Body::empty()),

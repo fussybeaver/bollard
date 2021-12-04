@@ -35,15 +35,15 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let vec = &docker
+    let results = docker
         .start_exec(&message.id, None::<StartExecOptions>)
-        .try_collect::<Vec<_>>()
         .await?;
 
-    assert!(vec.len() > 0);
-    assert!(match &vec[0] {
-        StartExecResults::Attached { log } => {
-            match log {
+    assert!(match results {
+        StartExecResults::Attached { output, .. } => {
+            let log: Vec<_> = output.try_collect().await?;
+            assert!(log.len() > 0);
+            match &log[0] {
                 LogOutput::StdOut { message } => {
                     let (n, expected) = if cfg!(windows) {
                         (0, "<configuration>\r")
@@ -60,14 +60,14 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         _ => false,
     });
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_start_exec_test",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_start_exec_test",
             None::<WaitContainerOptions<String>>,
@@ -75,7 +75,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_start_exec_test",
             None::<RemoveContainerOptions>,
@@ -108,9 +108,8 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    &docker
+    docker
         .start_exec(&message.id, Some(StartExecOptions { detach: true }))
-        .try_collect::<Vec<_>>()
         .await?;
 
     let exec_process = &docker.inspect_exec(&message.id).await?;
@@ -126,14 +125,14 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
             .unwrap()
     );
 
-    &docker
+    let _ = &docker
         .kill_container(
             "integration_test_inspect_exec_test",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
-    &docker
+    let _ = &docker
         .wait_container(
             "integration_test_inspect_exec_test",
             None::<WaitContainerOptions<String>>,
@@ -141,7 +140,7 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await;
 
-    &docker
+    let _ = &docker
         .remove_container(
             "integration_test_inspect_exec_test",
             None::<RemoveContainerOptions>,

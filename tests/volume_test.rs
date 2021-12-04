@@ -27,7 +27,7 @@ async fn list_volumes_test(docker: Docker) -> Result<(), Error> {
     let mut list_volumes_filters = HashMap::new();
     list_volumes_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
 
-    &docker.create_volume(create_volume_options).await?;
+    let _ = &docker.create_volume(create_volume_options).await?;
 
     let results = &docker
         .list_volumes(Some(ListVolumesOptions {
@@ -39,7 +39,7 @@ async fn list_volumes_test(docker: Docker) -> Result<(), Error> {
     assert_eq!(results.volumes[0].name, "integration_test_list_volumes");
 
     let remove_volume_options = RemoveVolumeOptions { force: true };
-    &docker
+    let _ = &docker
         .remove_volume("integration_test_list_volumes", Some(remove_volume_options))
         .await?;
 
@@ -58,7 +58,7 @@ async fn create_volume_test(docker: Docker) -> Result<(), Error> {
     assert_eq!(inspect_result.name, "integration_test_create_volume");
 
     let remove_volume_options = RemoveVolumeOptions { force: true };
-    &docker
+    let _ = &docker
         .remove_volume(
             "integration_test_create_volume",
             Some(remove_volume_options),
@@ -78,7 +78,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    &docker.create_volume(create_volume_options).await?;
+    let _ = &docker.create_volume(create_volume_options).await?;
 
     // --
 
@@ -91,7 +91,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    &docker.create_volume(create_volume_options).await?;
+    let _ = &docker.create_volume(create_volume_options).await?;
 
     // --
 
@@ -160,7 +160,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
     );
 
     let remove_volume_options = RemoveVolumeOptions { force: true };
-    &docker
+    let _ = &docker
         .remove_volume(
             "integration_test_prune_volumes_2",
             Some(remove_volume_options),

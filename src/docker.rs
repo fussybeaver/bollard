@@ -17,7 +17,6 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
-use futures_util::stream;
 use futures_util::stream::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
@@ -26,11 +25,12 @@ use hyper::{self, body::Bytes, Body, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
-use hyperlocal::UnixClient as UnixConnector;
+use hyperlocal::UnixConnector;
 #[cfg(feature = "ssl")]
 use rustls::internal::pemfile;
 #[cfg(feature = "ssl")]
 use rustls::sign::{CertifiedKey, RSASigningKey};
+use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
@@ -525,16 +525,72 @@ impl Docker {
 
         Ok(docker)
     }
+
+    /// Connect using to either a Unix socket or a Windows named pipe using defaults common to the
+    /// standard docker configuration.
+    ///
+    /// # Defaults
+    ///
+    ///  - The unix socket location defaults to `/var/run/docker.sock`. The windows named pipe
+    ///  location defaults to `//./pipe/docker_engine`.
+    ///  - The request timeout defaults to 2 minutes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_socket_defaults().unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_socket_defaults() -> Result<Docker, Error> {
+        #[cfg(unix)]
+        let path = DEFAULT_SOCKET;
+        #[cfg(windows)]
+        let path = DEFAULT_NAMED_PIPE;
+
+        Docker::connect_with_socket(path, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+    }
+
+    /// Connect using a Unix socket or a Windows named pipe.
+    ///
+    /// # Arguments
+    ///
+    ///  - `path`: connection unix socket path or windows named pipe path.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_socket("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_socket(path: &str, timeout: u64, client_version: &ClientVersion) -> Result<Docker, Error> {
+        #[cfg(unix)]
+        let docker = Docker::connect_with_unix(path, timeout, client_version);
+        #[cfg(windows)]
+        let docker = Docker::connect_with_named_pipe(path, timeout, client_version);
+       
+        docker
+    }
 }
 
 #[cfg(unix)]
 /// A Docker implementation typed to connect to a Unix socket.
 impl Docker {
-    /// Connect using a Unix socket using defaults that are signalled by environment variables.
+    /// Connect using a Unix socket using defaults common to the standard docker configuration.
     ///
     /// # Defaults
     ///
-    ///  - The socket location defaults to `/var/run/docker.sock`.
+    ///  - The socket location defaults to the value of `DEFAULT_SOCKET` env if its set and the URL
+    ///    has `unix` scheme; otherwise `/var/run/docker.sock`.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
@@ -548,7 +604,17 @@ impl Docker {
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix_defaults() -> Result<Docker, Error> {
-        Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+        // Using 3 variables to not have to copy/allocate `DEFAULT_SOCKET`.
+        let socket_path = env::var("DOCKER_HOST").ok().and_then(|p| {
+            if p.starts_with("unix://") {
+                Some(p)
+            } else {
+                None
+            }
+        });
+        let path = socket_path.as_deref();
+        let path_ref: &str = path.unwrap_or(DEFAULT_SOCKET);
+        Docker::connect_with_unix(path_ref, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using a Unix socket.
@@ -570,11 +636,11 @@ impl Docker {
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix(
-        addr: &str,
+        path: &str,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        let client_addr = addr.replacen("unix://", "", 1);
+        let client_addr = path.replacen("unix://", "", 1);
 
         let unix_connector = UnixConnector;
 
@@ -602,8 +668,8 @@ impl Docker {
 /// A Docker implementation typed to connect to a Windows Named Pipe, exclusive to the windows
 /// target.
 impl Docker {
-    /// Connect using a Windows Named Pipe using defaults that are signalled by environment
-    /// variables.
+    /// Connect using a Windows Named Pipe using defaults that are common to the standard docker
+    /// configuration.
     ///
     /// # Defaults
     ///
@@ -646,11 +712,11 @@ impl Docker {
     ///
     /// ```
     pub fn connect_with_named_pipe(
-        addr: &str,
+        path: &str,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        let client_addr = addr.replacen("npipe://", "", 1);
+        let client_addr = path.replacen("npipe://", "", 1);
 
         let named_pipe_connector = NamedPipeConnector;
 
@@ -659,7 +725,7 @@ impl Docker {
         client_builder.http1_title_case_headers(true);
         let client = client_builder.build(named_pipe_connector);
         let transport = Transport::NamedPipe { client };
-        let _docker = Docker {
+        let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
             client_addr,
@@ -670,7 +736,7 @@ impl Docker {
             )),
         };
 
-        Err(NamedPipeDisabled {}.into())
+        Ok(docker)
     }
 }
 
@@ -777,13 +843,24 @@ impl Docker {
         )
     }
 
-    pub(crate) fn process_upgraded_stream_string(
+    pub(crate) fn process_into_string(
         &self,
         req: Result<Request<Body>, Error>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>> {
+    ) -> impl Future<Output = Result<String, Error>> {
         let fut = self.process_request(req);
-        stream::once(async move { fut.await.map(Docker::decode_into_upgraded_stream_string) })
-            .try_flatten()
+        async move {
+            let response = fut.await?;
+            Docker::decode_into_string(response).await
+        }
+    }
+
+    pub(crate) async fn process_upgraded(
+        &self,
+        req: Result<Request<Body>, Error>,
+    ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
+        let res = self.process_request(req).await?;
+        let upgraded = hyper::upgrade::on(res).await?;
+        Ok(split(upgraded))
     }
 
     pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
@@ -839,7 +916,7 @@ impl Docker {
             MaybeClientVersion::None => {
                 return Err(APIVersionParseError {
                     api_version: err_api_version,
-                })
+                });
             }
         };
 
@@ -975,15 +1052,6 @@ impl Docker {
             StreamReader::new(res.into_body().map_err(Error::from)),
             NewlineLogOutputDecoder::new(),
         )
-    }
-
-    fn decode_into_upgraded_stream_string(
-        res: Response<Body>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        hyper::upgrade::on(res)
-            .into_stream()
-            .map_ok(|r| FramedRead::new(r, NewlineLogOutputDecoder::new()))
-            .try_flatten()
     }
 
     async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {

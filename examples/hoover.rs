@@ -10,7 +10,7 @@ const THRESHOLD_DAYS: i64 = 90;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let docker = Docker::connect_with_unix_defaults()?;
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let date = Utc::now() - Duration::days(THRESHOLD_DAYS);
     let timestamp = &date.timestamp().to_string()[..];

@@ -106,7 +106,7 @@ impl<T> JsonLineDecoder<T> {
     }
 }
 
-fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<T, Error> {
+fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<Option<T>, Error> {
     debug!(
         "Decoding JSON line from stream: {}",
         String::from_utf8_lossy(slice).to_string()
@@ -119,6 +119,7 @@ fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<T, Error>
             column: e.column(),
             contents: String::from_utf8_lossy(slice).to_string(),
         }),
+        Err(e) if e.is_eof() => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
@@ -137,7 +138,7 @@ where
                 let slice = src.split_to(pos + 1);
                 let slice = &slice[..slice.len() - 1];
 
-                decode_json_from_slice(&slice)
+                decode_json_from_slice(slice)
             } else {
                 // OSX will not send a newline for some API endpoints (`/events`),
                 if src[src.len() - 1] == b'}' {
@@ -230,5 +231,61 @@ where
 
             return Poll::Ready(Ok(()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use bytes::{BufMut, BytesMut};
+    use tokio_util::codec::Decoder;
+
+    use super::JsonLineDecoder;
+
+    #[test]
+    fn json_decode_empty() {
+        let mut buf = BytesMut::from(&b""[..]);
+        let mut codec: JsonLineDecoder<()> = JsonLineDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+    }
+
+    #[test]
+    fn json_decode() {
+        let mut buf = BytesMut::from(&b"{}\n{}\n\n{}\n"[..]);
+        let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert!(buf.is_empty());
+    }
+    
+    #[test]
+    fn json_partial_decode() {
+        let mut buf = BytesMut::from(&b"{}\n{}\n\n{"[..]);
+        let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(buf, &b"{"[..]);
+        buf.put(&b"}"[..]);
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert!(buf.is_empty());
+    }
+    
+    #[test]
+    fn json_decode_lacking_newline() {
+        env_logger::try_init().unwrap();
+        let mut buf = BytesMut::from(&b"{}"[..]);
+        let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert!(buf.is_empty());
     }
 }

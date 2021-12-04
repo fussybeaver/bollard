@@ -14,7 +14,7 @@ use std::env::args;
 
 #[tokio::main]
 async fn main() {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let image_options = BuildImageOptions {
         dockerfile: "Dockerfile",
