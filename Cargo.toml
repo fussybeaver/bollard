@@ -33,7 +33,7 @@ futures-util = "0.3"
 hex = "0.4.2"
 http = "0.2"
 hyper = { version = "0.14", features = ["client", "tcp", "http1", "http2", "stream"] }
-hyper-rustls = { version = "0.22", optional = true }
+hyper-rustls = { version = "0.23", optional = true }
 log = "0.4"
 pin-project = "1.0.2"
 rustls = { version = "0.19", optional = true }
