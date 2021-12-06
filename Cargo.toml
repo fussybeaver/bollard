@@ -49,7 +49,7 @@ url = "2.2"
 webpki-roots = { version = "0.21", optional = true }
 
 [dev-dependencies]
-env_logger = "0.8"
+env_logger = "0.9"
 flate2 = "1.0"
 tar = "0.4"
 tokio = { version = "1.7", features = ["time", "fs", "net", "rt", "rt-multi-thread", "macros", "io-std"] }
