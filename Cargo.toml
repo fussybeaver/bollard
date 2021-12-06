@@ -46,7 +46,7 @@ tokio = { version = "1.7", features = ["time", "fs", "net", "rt", "rt-multi-thre
 thiserror = "1.0"
 tokio-util = { version = "0.6", features = ["codec"] }
 url = "2.2"
-webpki-roots = { version = "0.21", optional = true }
+webpki-roots = { version = "0.22", optional = true }
 
 [dev-dependencies]
 env_logger = "0.8"
