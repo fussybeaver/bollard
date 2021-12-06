@@ -26,7 +26,7 @@ base64 = "0.13"
 bollard-stubs = { version = "1.41.0" }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
-ct-logs = { version = "0.8.0", optional = true }
+ct-logs = { version = "0.9.0", optional = true }
 dirs-next = "2.0"
 futures-core = "0.3"
 futures-util = "0.3"
