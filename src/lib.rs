@@ -28,7 +28,7 @@
 //! [API docs](https://docs.rs/bollard/).
 //!
 //! Version 0.11 re-enables Windows Named Pipe support.
-//! 
+//!
 //! As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
 //! [Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.41.yaml). The generated
 //! models are committed to this repository, but packaged in a separate crate

@@ -1,4 +1,4 @@
-//! Post a dockerfile 
+//! Post a dockerfile
 //!
 //! tar cvf dockerfile.tar Dockerfile
 
@@ -22,7 +22,7 @@ async fn main() {
         rm: true,
         ..Default::default()
     };
-    
+
     let filename = &args().nth(1).expect("needs first argument");
     let archive = File::open(filename).await.expect("could not open file");
     let stream = FramedRead::new(archive, BytesCodec::new());

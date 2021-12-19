@@ -6,11 +6,7 @@ use serde::de::DeserializeOwned;
 use std::pin::Pin;
 use std::string::String;
 use std::task::{Context, Poll};
-use std::{
-    cmp,
-    io,
-    marker::PhantomData,
-};
+use std::{cmp, io, marker::PhantomData};
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_util::codec::Decoder;
 
@@ -263,7 +259,7 @@ mod tests {
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
         assert!(buf.is_empty());
     }
-    
+
     #[test]
     fn json_partial_decode() {
         let mut buf = BytesMut::from(&b"{}\n{}\n\n{"[..]);
@@ -278,7 +274,7 @@ mod tests {
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert!(buf.is_empty());
     }
-    
+
     #[test]
     fn json_decode_lacking_newline() {
         env_logger::try_init().unwrap();
