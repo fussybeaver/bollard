@@ -1,11 +1,16 @@
-FROM ekidd/rust-musl-builder:stable AS builder
+FROM rust:1.57.0 AS chef 
+RUN cargo install cargo-chef 
+WORKDIR app
 
-WORKDIR /tmp/bollard
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare  --recipe-path recipe.json
 
-COPY . ./
-
-RUN sudo chown -R rust:rust /tmp/bollard \
-  && sudo groupadd --gid 999 docker \
-  && sudo usermod -a -G docker rust
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies - this is the caching Docker layer!
+RUN cargo chef cook --release --recipe-path recipe.json
+# Build application
+COPY . .
 
 RUN cargo build
