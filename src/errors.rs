@@ -6,8 +6,8 @@ use std::path::PathBuf;
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
-    #[error("Could not find DOCKER_CERT_PATH")]
-    NoCertPathError,
+    #[error("Could not find home directory")]
+    NoHomePathError,
     /// Generic error when reading a certificate from the filesystem
     #[error("Cannot open/read certificate with path: {path}")]
     CertPathError {
@@ -27,6 +27,12 @@ pub enum Error {
     CertParseError {
         /// Path for the failing certificate file
         path: PathBuf,
+    },
+    /// Error emitted when the client is unable to load native certs for SSL
+    #[error("Could not load native certs")]
+    NoNativeCertsError {
+        /// The original error emitted.
+        err: webpki::Error,
     },
     /// Error emitted by the docker server, when it responds with a 404.
     #[error("API responded with a 404 not found: {message}")]

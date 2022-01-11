@@ -12,6 +12,8 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(feature = "ct_logs")]
+use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
@@ -27,9 +29,7 @@ use hyper_rustls::HttpsConnector;
 #[cfg(unix)]
 use hyperlocal::UnixConnector;
 #[cfg(feature = "ssl")]
-use rustls::internal::pemfile;
-#[cfg(feature = "ssl")]
-use rustls::sign::{CertifiedKey, RSASigningKey};
+use rustls::sign::{CertifiedKey, RsaSigningKey};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 
@@ -63,6 +63,10 @@ pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
     minor_version: 40,
 };
+
+/// 2 years from ct_logs 0.9 release
+#[cfg(feature = "ct_logs")]
+const TIMESTAMP_CT_LOGS_EXPIRY: u64 = 1681908462;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
@@ -243,7 +247,7 @@ impl DockerClientCertResolver {
         if let Ok(ref path) = from_env {
             Ok(Path::new(path).to_owned())
         } else {
-            let home = dirs_next::home_dir().ok_or_else(|| NoCertPathError)?;
+            let home = dirs_next::home_dir().ok_or_else(|| NoHomePathError)?;
             Ok(home.join(".docker"))
         }
     }
@@ -253,23 +257,33 @@ impl DockerClientCertResolver {
     }
 
     fn certs(path: &Path) -> Result<Vec<rustls::Certificate>, Error> {
-        Ok(
-            pemfile::certs(&mut Self::open_buffered(path)?).map_err(|_| CertPathError {
+        Ok(rustls_pemfile::certs(&mut Self::open_buffered(path)?)
+            .map_err(|_| CertPathError {
                 path: path.to_path_buf(),
-            })?,
-        )
+            })?
+            .iter()
+            .map(|v| rustls::Certificate(v.clone()))
+            .collect())
     }
 
     fn keys(path: &Path) -> Result<Vec<rustls::PrivateKey>, Error> {
         let mut rdr = Self::open_buffered(path)?;
-        let keys = pemfile::rsa_private_keys(&mut rdr).map_err(|_| CertPathError {
-            path: path.to_path_buf(),
-        })?;
+        let mut keys = vec![];
+        loop {
+            match rustls_pemfile::read_one(&mut rdr).map_err(|_| CertPathError {
+                path: path.to_path_buf(),
+            })? {
+                Some(rustls_pemfile::Item::RSAKey(key)) => keys.push(rustls::PrivateKey(key)),
+                Some(rustls_pemfile::Item::PKCS8Key(key)) => keys.push(rustls::PrivateKey(key)),
+                None => break,
+                _ => {}
+            }
+        }
 
         Ok(keys)
     }
 
-    fn docker_client_key(&self) -> Result<CertifiedKey, Error> {
+    fn docker_client_key(&self) -> Result<Arc<CertifiedKey>, Error> {
         let all_certs = Self::certs(&self.ssl_cert)?;
 
         let mut all_keys = Self::keys(&self.ssl_key)?;
@@ -282,20 +296,20 @@ impl DockerClientCertResolver {
             });
         };
 
-        let signing_key = RSASigningKey::new(&key).map_err(|_| CertParseError {
+        let signing_key = RsaSigningKey::new(&key).map_err(|_| CertParseError {
             path: self.ssl_key.to_owned(),
         })?;
 
-        Ok(CertifiedKey::new(
+        Ok(Arc::new(CertifiedKey::new(
             all_certs,
-            Arc::new(Box::new(signing_key)),
-        ))
+            Arc::new(signing_key),
+        )))
     }
 }
 
 #[cfg(feature = "ssl")]
-impl rustls::ResolvesClientCert for DockerClientCertResolver {
-    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<CertifiedKey> {
+impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
+    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<CertifiedKey>> {
         self.docker_client_key().ok()
     }
 
@@ -332,25 +346,18 @@ impl Docker {
     /// ```
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
         let cert_path = DockerClientCertResolver::default_cert_path()?;
-        if let Ok(ref host) = env::var("DOCKER_HOST") {
-            Docker::connect_with_ssl(
-                host,
-                &cert_path.join("key.pem"),
-                &cert_path.join("cert.pem"),
-                &cert_path.join("ca.pem"),
-                DEFAULT_TIMEOUT,
-                API_DEFAULT_VERSION,
-            )
-        } else {
-            Docker::connect_with_ssl(
-                DEFAULT_DOCKER_HOST,
-                &cert_path.join("key.pem"),
-                &cert_path.join("cert.pem"),
-                &cert_path.join("ca.pem"),
-                DEFAULT_TIMEOUT,
-                API_DEFAULT_VERSION,
-            )
-        }
+        Docker::connect_with_ssl(
+            if let Ok(ref host) = env::var("DOCKER_HOST") {
+                host
+            } else {
+                DEFAULT_DOCKER_HOST
+            },
+            &cert_path.join("key.pem"),
+            &cert_path.join("cert.pem"),
+            &cert_path.join("ca.pem"),
+            DEFAULT_TIMEOUT,
+            API_DEFAULT_VERSION,
+        )
     }
 
     /// Connect using secure HTTPS.
@@ -394,38 +401,50 @@ impl Docker {
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1).replacen("https://", "", 1);
 
-        let mut config = rustls::ClientConfig::new();
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        config.ct_logs = Some(&ct_logs::LOGS);
+        let mut root_store = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()? {
+            root_store.add(&rustls::Certificate(cert.0)).map_err(|err| NoNativeCertsError{ err })?;
+        }
 
-        config.root_store = match rustls_native_certs::load_native_certs() {
-            Ok(store) => store,
-            Err((Some(store), err)) => {
-                warn!("could not load all certificates: {}", err);
-                store
-            }
-            Err((None, err)) => {
-                warn!("cannot access native certificate store: {}", err);
-                config.root_store
-            }
-        };
+        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        }));
 
-        let mut ca_pem = io::Cursor::new(fs::read(ssl_ca)?);
+        let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
+            path: ssl_ca.to_owned(),
+        })?);
 
-        config
-            .root_store
-            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-        config
-            .root_store
-            .add_pem_file(&mut ca_pem)
-            .map_err(|_| CertParseError {
+        root_store.add_parsable_certificates(&rustls_pemfile::certs(&mut ca_pem).map_err(
+            |_| CertParseError {
                 path: ssl_ca.to_owned(),
-            })?;
+            },
+        )?);
 
-        config.client_auth_cert_resolver = Arc::new(DockerClientCertResolver {
-            ssl_key: ssl_key.to_owned(),
-            ssl_cert: ssl_cert.to_owned(),
-        });
+        #[cfg(feature = "ct_logs")]
+        let config = {
+            let ct_logs_expiry =
+                SystemTime::UNIX_EPOCH + Duration::from_secs(TIMESTAMP_CT_LOGS_EXPIRY);
+            rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_store)
+                .with_certificate_transparency_logs(&ct_logs::LOGS, ct_logs_expiry)
+                .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
+                    ssl_key: ssl_key.to_owned(),
+                    ssl_cert: ssl_cert.to_owned(),
+                }))
+        };
+        #[cfg(not(feature = "ct_logs"))]
+        let config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_store)
+            .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
+                ssl_key: ssl_key.to_owned(),
+                ssl_cert: ssl_cert.to_owned(),
+            }));
 
         let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
@@ -572,12 +591,16 @@ impl Docker {
     /// let connection = Docker::connect_with_socket("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
-    pub fn connect_with_socket(path: &str, timeout: u64, client_version: &ClientVersion) -> Result<Docker, Error> {
+    pub fn connect_with_socket(
+        path: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
         #[cfg(unix)]
         let docker = Docker::connect_with_unix(path, timeout, client_version);
         #[cfg(windows)]
         let docker = Docker::connect_with_named_pipe(path, timeout, client_version);
-       
+
         docker
     }
 }

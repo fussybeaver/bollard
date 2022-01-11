@@ -19,12 +19,10 @@ use winapi::shared::winerror;
 use crate::docker::ClientType;
 use crate::uri::Uri;
 
-
-
 #[pin_project]
 pub struct NamedPipeStream {
     #[pin]
-    io: NamedPipeClient
+    io: NamedPipeClient,
 }
 
 impl NamedPipeStream {
@@ -44,7 +42,7 @@ impl NamedPipeStream {
             time::sleep(Duration::from_millis(50)).await;
         };
 
-        Ok(NamedPipeStream{ io: client })
+        Ok(NamedPipeStream { io: client })
     }
 }
 
@@ -101,23 +99,19 @@ impl hyper::service::Service<hyper::Uri> for NamedPipeConnector {
         let fut = async move {
             match destination.scheme() {
                 Some(scheme) if scheme == NAMED_PIPE_SCHEME => Ok(()),
-                _ => {
-                    Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("Invalid scheme {:?}", destination.scheme()),
-                    ))
-                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid scheme {:?}", destination.scheme()),
+                )),
             }?;
 
             match Uri::socket_path_dest(&destination, &ClientType::NamedPipe) {
                 Some(path) => Ok(NamedPipeStream::connect(&path).await?),
 
-                None => {
-                    Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("Invalid uri {:?}", destination),
-                    ))
-                }
+                None => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid uri {:?}", destination),
+                )),
             }
         };
 
