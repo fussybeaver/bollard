@@ -5,11 +5,11 @@ use bollard::models::*;
 use bollard::system::*;
 use bollard::Docker;
 
-use chrono::Utc;
 use futures_util::future;
 use futures_util::stream::select;
 use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
+use time::OffsetDateTime;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -78,7 +78,7 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let start_time = Utc::now();
+    let start_time = OffsetDateTime::now_utc();
 
     let stream = docker.events(Some(EventsOptions::<String> {
         since: Some(start_time),

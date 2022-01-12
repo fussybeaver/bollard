@@ -5,7 +5,7 @@ use bollard::{
     container::PruneContainersOptions, image::PruneImagesOptions, network::PruneNetworksOptions,
     volume::PruneVolumesOptions,
 };
-use chrono::{Duration, Utc};
+use time::{Duration, OffsetDateTime};
 
 use std::collections::HashMap;
 
@@ -15,8 +15,8 @@ const THRESHOLD_DAYS: i64 = 90;
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let docker = Docker::connect_with_socket_defaults().unwrap();
 
-    let date = Utc::now() - Duration::days(THRESHOLD_DAYS);
-    let timestamp = &date.timestamp().to_string()[..];
+    let date = OffsetDateTime::now_utc() - Duration::days(THRESHOLD_DAYS);
+    let timestamp = &date.unix_timestamp().to_string()[..];
 
     let mut prune_filters = HashMap::new();
     prune_filters.insert("until", vec![timestamp]);

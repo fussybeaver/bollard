@@ -1,11 +1,11 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 
-use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::request::Builder;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
 use serde_json::value::Value;
+use time::OffsetDateTime;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -103,15 +103,14 @@ pub struct VersionComponents {
 /// ## Examples
 ///
 /// ```rust
-/// # extern crate chrono;
 /// use bollard::system::EventsOptions;
-/// use chrono::{Duration, Utc};
+/// use time::{Duration, OffsetDateTime};
 /// use std::collections::HashMap;
 ///
 /// # fn main() {
 /// EventsOptions::<String>{
-///     since: Some(Utc::now() - Duration::minutes(20)),
-///     until: Some(Utc::now()),
+///     since: Some(OffsetDateTime::now_utc() - Duration::minutes(20)),
+///     until: Some(OffsetDateTime::now_utc()),
 ///     filters: HashMap::new()
 /// };
 /// # }
@@ -123,10 +122,10 @@ where
 {
     /// Show events created since this timestamp then stream new events.
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub since: Option<DateTime<Utc>>,
+    pub since: Option<OffsetDateTime>,
     /// Show events created until this timestamp then stop streaming.
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub until: Option<DateTime<Utc>>,
+    pub until: Option<OffsetDateTime>,
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
     ///  - `config=<string>` config name or ID
     ///  - `container=<string>` container name or ID
@@ -250,15 +249,15 @@ impl Docker {
     ///
     /// ```rust
     /// use bollard::system::EventsOptions;
-    /// use chrono::{Duration, Utc};
+    /// use time::{Duration, OffsetDateTime};
     /// use std::collections::HashMap;
     ///
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.events(Some(EventsOptions::<String> {
-    ///     since: Some(Utc::now() - Duration::minutes(20)),
-    ///     until: Some(Utc::now()),
+    ///     since: Some(OffsetDateTime::now_utc() - Duration::minutes(20)),
+    ///     until: Some(OffsetDateTime::now_utc()),
     ///     filters: HashMap::new(),
     /// }));
     /// ```

@@ -9,8 +9,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
-use chrono::DateTime;
-use chrono::Utc;
+use time::OffsetDateTime;
 
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
@@ -22,6 +21,28 @@ fn deserialize_nonoptional_map<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<HashMap<String, T>, D::Error> {
     serde::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or(HashMap::new()))
+}
+
+fn deserialize_timestamp<'de, D: Deserializer<'de>>(
+    d: D
+) -> Result<Option<OffsetDateTime>, D::Error> {
+    let opt: Option<String> = serde::Deserialize::deserialize(d)?;
+    if let Some(s) = opt {
+        Ok(Some(
+            OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
+                .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn serialize_timestamp<S: Serializer>(date: &Option<OffsetDateTime>, s: S) -> Result<S::Ok, S::Error> {
+    match date {
+        Some(inner) => Ok(s.serialize_str(&inner.format(&time::format_description::well_known::Rfc3339)
+                                          .map_err(|e| serde::ser::Error::custom(format!("{:?}", e)))?)?),
+        None => Ok(s.serialize_str("")?)
+    }
 }
 
 {{#models}}{{#model}}
@@ -68,10 +89,12 @@ pub struct {{classname}} {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}
+    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
-    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(skip_serializing_if="Option::is_none")]{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: Option<{{#isEnum}}{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}}>,
 {{/required}}
 

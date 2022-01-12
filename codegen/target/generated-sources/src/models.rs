@@ -9,8 +9,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
-use chrono::DateTime;
-use chrono::Utc;
+use time::OffsetDateTime;
 
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
@@ -22,6 +21,28 @@ fn deserialize_nonoptional_map<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<HashMap<String, T>, D::Error> {
     serde::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or(HashMap::new()))
+}
+
+fn deserialize_timestamp<'de, D: Deserializer<'de>>(
+    d: D
+) -> Result<Option<OffsetDateTime>, D::Error> {
+    let opt: Option<String> = serde::Deserialize::deserialize(d)?;
+    if let Some(s) = opt {
+        Ok(Some(
+            OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
+                .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn serialize_timestamp<S: Serializer>(date: &Option<OffsetDateTime>, s: S) -> Result<S::Ok, S::Error> {
+    match date {
+        Some(inner) => Ok(s.serialize_str(&inner.format(&time::format_description::well_known::Rfc3339)
+                                          .map_err(|e| serde::ser::Error::custom(format!("{:?}", e)))?)?),
+        None => Ok(s.serialize_str("")?)
+    }
 }
 
 
@@ -94,12 +115,14 @@ pub struct BuildCache {
     /// Date and time at which the build cache was created in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     /// Date and time at which the build cache was last used in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "LastUsedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub last_used_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub last_used_at: Option<OffsetDateTime>,
 
     #[serde(rename = "UsageCount")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -171,12 +194,14 @@ pub struct ClusterInfo {
     /// Date and time at which the swarm was initialised in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     /// Date and time at which the swarm was last updated in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -235,11 +260,13 @@ pub struct Config {
 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -1695,12 +1722,14 @@ pub struct HealthcheckResult {
     /// Date and time at which this check started in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "Start")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub start: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub start: Option<OffsetDateTime>,
 
     /// Date and time at which this check ended in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "End")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub end: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub end: Option<OffsetDateTime>,
 
     /// ExitCode meanings:  - `0` healthy - `1` unhealthy - `2` reserved (considered unhealthy) - other values: error running probe 
     #[serde(rename = "ExitCode")]
@@ -2334,7 +2363,8 @@ pub struct ImageInspectMetadata {
     /// Date and time at which the image was last tagged in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds.  This information is only available if the image was tagged locally, and omitted otherwise. 
     #[serde(rename = "LastTagTime")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub last_tag_time: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub last_tag_time: Option<OffsetDateTime>,
 
 }
 
@@ -2934,7 +2964,8 @@ pub struct Network {
 
     #[serde(rename = "Created")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created: Option<OffsetDateTime>,
 
     #[serde(rename = "Scope")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -3241,12 +3272,14 @@ pub struct Node {
     /// Date and time at which the node was added to the swarm in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     /// Date and time at which the node was last updated in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -4425,11 +4458,13 @@ pub struct Secret {
 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -4478,11 +4513,13 @@ pub struct Service {
 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -4559,7 +4596,8 @@ pub struct ServiceJobStatus {
     /// The last time, as observed by the server, that this job was started. 
     #[serde(rename = "LastExecution")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub last_execution: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub last_execution: Option<OffsetDateTime>,
 
 }
 
@@ -4937,11 +4975,13 @@ pub struct ServiceUpdateStatus {
 
     #[serde(rename = "StartedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub started_at: Option<OffsetDateTime>,
 
     #[serde(rename = "CompletedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub completed_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Message")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -5027,12 +5067,14 @@ pub struct Swarm {
     /// Date and time at which the swarm was initialised in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     /// Date and time at which the swarm was last updated in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     #[serde(rename = "Spec")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -6017,11 +6059,13 @@ pub struct Task {
 
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     #[serde(rename = "UpdatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub updated_at: Option<OffsetDateTime>,
 
     /// Name of the task.
     #[serde(rename = "Name")]
@@ -6744,7 +6788,8 @@ impl ::std::str::FromStr for TaskState {
 pub struct TaskStatus {
     #[serde(rename = "Timestamp")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub timestamp: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub timestamp: Option<OffsetDateTime>,
 
     #[serde(rename = "State")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -6840,7 +6885,8 @@ pub struct Volume {
     /// Date/Time the volume was created.
     #[serde(rename = "CreatedAt")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]
+    pub created_at: Option<OffsetDateTime>,
 
     /// Low-level details about the volume, provided by the volume driver. Details are returned as a map with key/value pairs: `{\"key\":\"value\",\"key2\":\"value2\"}`.  The `Status` field is optional, and is omitted if the volume driver does not support this feature. 
     #[serde(rename = "Status")]
