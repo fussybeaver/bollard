@@ -419,6 +419,28 @@ where
     pub detach_keys: Option<T>,
 }
 
+/// Parameters used in the [Resize Container Tty API](Docker::resize_container_tty())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::ResizeContainerTtyOptions;
+///
+/// ResizeContainerTtyOptions {
+///     width: 50,
+///     height: 10,
+/// };
+/// ```
+#[derive(Debug, Copy, Clone, Default, Serialize)]
+pub struct ResizeContainerTtyOptions {
+    /// Width of the TTY session in characters
+    #[serde(rename = "w")]
+    pub width: u16,
+    /// Height of the TTY session in characters
+    #[serde(rename = "h")]
+    pub height: u16,
+}
+
 /// Parameters used in the [Restart Container API](Docker::restart_container())
 ///
 /// ## Example
@@ -1451,6 +1473,49 @@ impl Docker {
             output: Box::pin(log),
             input: Box::pin(write),
         })
+    }
+
+    /// ---
+    ///
+    /// # Resize container tty
+    ///
+    /// Resize the container's TTY.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - [Resize Container Tty Options](ResizeContainerTtyOptions) struct.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::container::ResizeContainerTtyOptions;
+    ///
+    /// let options = ResizeContainerTtyOptions {
+    ///     width: 50,
+    ///     height: 20,
+    /// };
+    ///
+    /// docker.resize_container_tty("hello-world", options);
+    /// ```
+    pub async fn resize_container_tty(
+        &self,
+        container_name: &str,
+        options: ResizeContainerTtyOptions,
+    ) -> Result<(), Error> {
+        let url = format!("/containers/{}/resize", container_name);
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::POST),
+            Some(options),
+            Ok(Body::empty()),
+        );
+
+        self.process_into_unit(req).await
     }
 
     /// ---
