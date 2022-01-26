@@ -166,6 +166,55 @@ pub async fn create_container_hello_world(
 }
 
 #[allow(dead_code)]
+pub async fn create_shell_daemon(
+    docker: &Docker,
+    container_name: &'static str,
+) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}nanoserver/iis", registry_http_addr())
+    } else {
+        format!("{}alpine", registry_http_addr())
+    };
+
+    let _ = &docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: &image[..],
+                ..Default::default()
+            }),
+            None,
+            if cfg!(windows) {
+                None
+            } else {
+                Some(integration_test_registry_credentials())
+            },
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let result = &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: container_name,
+            }),
+            Config {
+                image: Some(image),
+                open_stdin: Some(true),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_ne!(result.id.len(), 0);
+
+    let _ = &docker
+        .start_container(container_name, None::<StartContainerOptions<String>>)
+        .await?;
+
+    Ok(())
+}
+
+#[allow(dead_code)]
 pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}nanoserver/iis", registry_http_addr())

@@ -1,10 +1,11 @@
 #![type_length_limit = "2097152"]
 
 use bollard::container::{
-    Config, CreateContainerOptions, DownloadFromContainerOptions, InspectContainerOptions,
-    KillContainerOptions, ListContainersOptions, LogsOptions, PruneContainersOptions,
-    RemoveContainerOptions, RenameContainerOptions, RestartContainerOptions, StatsOptions,
-    TopOptions, UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
+    AttachContainerOptions, AttachContainerResults, Config, CreateContainerOptions,
+    DownloadFromContainerOptions, InspectContainerOptions, KillContainerOptions,
+    ListContainersOptions, LogsOptions, PruneContainersOptions, RemoveContainerOptions,
+    RenameContainerOptions, RestartContainerOptions, StatsOptions, TopOptions,
+    UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
 };
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
@@ -12,6 +13,7 @@ use bollard::models::*;
 use bollard::Docker;
 
 use futures_util::stream::TryStreamExt;
+use tokio::io::AsyncWriteExt;
 use tokio::runtime::Runtime;
 
 use std::io::Write;
@@ -276,6 +278,67 @@ async fn kill_container_test(docker: Docker) -> Result<(), Error> {
             None::<RemoveContainerOptions>,
         )
         .await?;
+
+    Ok(())
+}
+
+async fn attach_container_test(docker: Docker) -> Result<(), Error> {
+    create_shell_daemon(&docker, "integration_test_attach_container").await?;
+
+    let unique_string = "bollard_unique_string";
+    let AttachContainerResults { output, mut input } = docker
+        .attach_container(
+            "integration_test_attach_container",
+            Some(AttachContainerOptions::<String> {
+                stream: Some(true),
+                stdout: Some(true),
+                stdin: Some(true),
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    input
+        .write(format!("echo {}\n", unique_string).as_bytes())
+        .await?;
+    input.write("exit\n".as_bytes()).await?;
+
+    let log = match tokio::time::timeout(tokio::time::Duration::from_secs(2), output.try_collect())
+        .await
+    {
+        Ok(res) => res?,
+        Err(_) => {
+            docker
+                .kill_container(
+                    "integration_test_attach_container",
+                    None::<KillContainerOptions<String>>,
+                )
+                .await?;
+            vec![]
+        }
+    };
+
+    let _ = &docker
+        .wait_container(
+            "integration_test_attach_container",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let _ = &docker
+        .remove_container(
+            "integration_test_attach_container",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    let input_found = log
+        .iter()
+        .find(|val| val.to_string().contains(unique_string))
+        .is_some();
+
+    assert!(input_found);
 
     Ok(())
 }
@@ -773,4 +836,9 @@ fn integration_test_inspect_containers() {
 #[test]
 fn integration_test_mount_volume_containers() {
     connect_to_docker_and_run!(mount_volume_container_test);
+}
+
+#[test]
+fn integration_test_attach_container() {
+    connect_to_docker_and_run!(attach_container_test);
 }

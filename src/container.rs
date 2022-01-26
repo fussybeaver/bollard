@@ -2,20 +2,24 @@
 
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
-use http::header::CONTENT_TYPE;
+use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
+use tokio::io::AsyncWrite;
+use tokio_util::codec::FramedRead;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
+use std::pin::Pin;
 
 use super::Docker;
 use crate::errors::Error;
 
 use crate::models::*;
+use crate::read::NewlineLogOutputDecoder;
 
 /// Parameters used in the [List Container API](Docker::list_containers())
 ///
@@ -360,6 +364,59 @@ where
     /// Wait until a container state reaches the given condition, either 'not-running' (default),
     /// 'next-exit', or 'removed'.
     pub condition: T,
+}
+
+/// Results type for the [Attach Container API](Docker::attach_container())
+pub struct AttachContainerResults {
+    /// [Log Output](LogOutput) enum, wrapped in a Stream.
+    pub output: Pin<Box<dyn Stream<Item = Result<LogOutput, Error>> + Send>>,
+    /// Byte writer to container
+    pub input: Pin<Box<dyn AsyncWrite + Send>>,
+}
+
+impl fmt::Debug for AttachContainerResults {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AttachContainerResults")
+    }
+}
+
+/// Parameters used in the [Attach Container API](Docker::attach_container())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::AttachContainerOptions;
+///
+/// AttachContainerOptions::<String>{
+///     stdin: Some(true),
+///     stdout: Some(true),
+///     stderr: Some(true),
+///     stream: Some(true),
+///     logs: Some(true),
+///     detach_keys: Some("ctrl-c".to_string()),
+/// };
+/// ```
+#[derive(Debug, Copy, Clone, Default, Serialize)]
+pub struct AttachContainerOptions<T>
+where
+    T: Into<String> + Serialize + Default,
+{
+    /// Attach to `stdin`
+    pub stdin: Option<bool>,
+    /// Attach to `stdout`
+    pub stdout: Option<bool>,
+    /// Attach to `stderr`
+    pub stderr: Option<bool>,
+    /// Stream attached streams from the time the request was made onwards.
+    pub stream: Option<bool>,
+    /// Replay previous logs from the container.
+    /// This is useful for attaching to a container that has started and you want to output everything since the container started.
+    /// If stream is also enabled, once all the previous output has been returned, it will seamlessly transition into streaming current output.
+    pub logs: Option<bool>,
+    /// Override the key sequence for detaching a container.
+    /// Format is a single character [a-Z] or ctrl-<value> where <value> is one of: a-z, @, ^, [, , or _.
+    #[serde(rename = "detachKeys")]
+    pub detach_keys: Option<T>,
 }
 
 /// Parameters used in the [Restart Container API](Docker::restart_container())
@@ -1330,6 +1387,70 @@ impl Docker {
         );
 
         self.process_into_stream(req)
+    }
+
+    /// ---
+    ///
+    /// # Attach Container
+    ///
+    /// Attach to a container to read its output or send it input. You can attach to the
+    /// same container multiple times and you can reattach to containers that have been detached.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as string slice.
+    /// - Optional [Attach Container Options](AttachContainerOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - [AttachContainerResults](AttachContainerResults) wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    ///
+    /// use bollard::container::AttachContainerOptions;
+    ///
+    /// let options = Some(AttachContainerOptions::<String>{
+    ///     stdin: Some(true),
+    ///     stdout: Some(true),
+    ///     stderr: Some(true),
+    ///     stream: Some(true),
+    ///     logs: Some(true),
+    ///     detach_keys: Some("ctrl-c".to_string()),
+    /// });
+    ///
+    /// docker.attach_container("hello-world", options);
+    /// ```
+    pub async fn attach_container<T>(
+        &self,
+        container_name: &str,
+        options: Option<AttachContainerOptions<T>>,
+    ) -> Result<AttachContainerResults, Error>
+    where
+        T: Into<String> + Serialize + Default,
+    {
+        let url = format!("/containers/{}/attach", container_name);
+
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONNECTION, "Upgrade")
+                .header(UPGRADE, "tcp"),
+            options,
+            Ok(Body::empty()),
+        );
+
+        let (read, write) = self.process_upgraded(req).await?;
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+
+        Ok(AttachContainerResults {
+            output: Box::pin(log),
+            input: Box::pin(write),
+        })
     }
 
     /// ---
