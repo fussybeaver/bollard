@@ -4,8 +4,8 @@ use bollard::container::{
     AttachContainerOptions, AttachContainerResults, Config, CreateContainerOptions,
     DownloadFromContainerOptions, InspectContainerOptions, KillContainerOptions,
     ListContainersOptions, LogsOptions, PruneContainersOptions, RemoveContainerOptions,
-    RenameContainerOptions, RestartContainerOptions, StatsOptions, TopOptions,
-    UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
+    RenameContainerOptions, ResizeContainerTtyOptions, RestartContainerOptions, StatsOptions,
+    TopOptions, UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
 };
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
@@ -339,6 +339,44 @@ async fn attach_container_test(docker: Docker) -> Result<(), Error> {
         .is_some();
 
     assert!(input_found);
+
+    Ok(())
+}
+
+async fn resize_container_test(docker: Docker) -> Result<(), Error> {
+    create_shell_daemon(&docker, "integration_test_resize_container_tty").await?;
+
+    docker
+        .resize_container_tty(
+            "integration_test_resize_container_tty",
+            ResizeContainerTtyOptions {
+                width: 50,
+                height: 50,
+            },
+        )
+        .await?;
+
+    let _ = &docker
+        .kill_container(
+            "integration_test_resize_container_tty",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    let _ = &docker
+        .wait_container(
+            "integration_test_resize_container_tty",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let _ = &docker
+        .remove_container(
+            "integration_test_resize_container_tty",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
 
     Ok(())
 }
@@ -841,4 +879,9 @@ fn integration_test_mount_volume_containers() {
 #[test]
 fn integration_test_attach_container() {
     connect_to_docker_and_run!(attach_container_test);
+}
+
+#[test]
+fn integration_test_resize_container_tty() {
+    connect_to_docker_and_run!(resize_container_test);
 }
