@@ -1,3 +1,4 @@
+use bytes::Buf;
 use bytes::BytesMut;
 use futures_core::Stream;
 use hyper::body::Bytes;
@@ -131,17 +132,34 @@ where
 
         if !src.is_empty() {
             if let Some(pos) = nl_index {
-                let slice = src.split_to(pos + 1);
-                let slice = &slice[..slice.len() - 1];
+                let remainder = src.split_off(pos + 1);
+                let slice = &src[..src.len() - 1];
 
-                decode_json_from_slice(slice)
+                match decode_json_from_slice(slice) {
+                    Ok(None) => {
+                        // Unescaped newline inside the json structure
+                        src.truncate(src.len() - 1); // Remove the newline
+                        src.unsplit(remainder);
+                        Ok(None)
+                    },
+                    Ok(json) => {
+                        // Newline delimited json
+                        src.unsplit(remainder);
+                        src.advance(pos + 1);
+                        Ok(json)
+                    },
+                    Err(e) => Err(e)
+                }
+            
             } else {
-                // OSX will not send a newline for some API endpoints (`/events`),
-                if src[src.len() - 1] == b'}' {
-                    let slice = src.split_to(src.len());
-                    decode_json_from_slice(&slice)
-                } else {
-                    Ok(None)
+                // No newline delimited json. 
+                match decode_json_from_slice(src) {
+                    Ok(None) => Ok(None),
+                    Ok(json) => {
+                        src.clear();
+                        Ok(json)
+                    },
+                    Err(e) => Err(e)
                 }
             }
         } else {
@@ -266,6 +284,7 @@ mod tests {
         let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
 
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(buf, &b"{}\n\n{"[..]);
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
@@ -273,6 +292,54 @@ mod tests {
         buf.put(&b"}"[..]);
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn json_partial_decode_no_newline() {
+        let mut buf = BytesMut::from(&b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}"[..]);
+        let mut codec: JsonLineDecoder<crate::models::CreateImageInfo> = JsonLineDecoder::new();
+
+        let expected = crate::models::CreateImageInfo {
+            status: Some(String::from("Extracting")),
+            progress_detail: Some(crate::models::ProgressDetail {
+                current: Some(33980416),
+                total: Some(102266715),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(buf, &b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}"[..]);
+        buf.put(&b"}"[..]);
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(expected));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn json_partial_decode_newline() {
+        let mut buf = BytesMut::from(&b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}\n"[..]);
+        let mut codec: JsonLineDecoder<crate::models::CreateImageInfo> = JsonLineDecoder::new();
+
+        let expected = crate::models::CreateImageInfo {
+            status: Some(String::from("Extracting")),
+            progress_detail: Some(crate::models::ProgressDetail {
+                current: Some(33980416),
+                total: Some(102266715),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(buf, &b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}"[..]);
+        buf.put(&b"}"[..]);
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(expected));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn json_decode_escaped_newline() {
+        let mut buf = BytesMut::from(&b"\"foo\\nbar\""[..]);
+        let mut codec: JsonLineDecoder<String> = JsonLineDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(String::from("foo\nbar")));
     }
 
     #[test]
