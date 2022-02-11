@@ -801,6 +801,34 @@ impl Docker {
     }
 }
 
+impl Docker {
+    /// Set the request timeout.
+    ///
+    /// This timeout is shared by all requests to the Docker Engine API.
+    ///
+    /// By default, 2 minutes.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.set_timeout(timeout);
+        self
+    }
+
+    /// Get the current timeout.
+    ///
+    /// This timeout is shared by all requests to the Docker Engine API.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.client_timeout)
+    }
+
+    /// Set the request timeout.
+    ///
+    /// This timeout is shared by all requests to the Docker Engine API.
+    ///
+    /// By default, 2 minutes.
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.client_timeout = timeout.as_secs();
+    }
+}
+
 // The implementation block for Docker requests
 impl Docker {
     pub(crate) fn process_into_value<T>(
