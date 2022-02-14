@@ -108,7 +108,7 @@ pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
 }
 
 /// Container to create.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config<T>
 where
     T: Into<String> + Eq + Hash,
