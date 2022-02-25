@@ -494,7 +494,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
+    ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
     ///  Stream.
     ///
     /// # Examples

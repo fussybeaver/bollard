@@ -41,35 +41,11 @@ pub enum Error {
         /// The original error emitted.
         err: webpki::Error,
     },
-    /// Error emitted by the docker server, when it responds with a 404.
-    #[error("API responded with a 404 not found: {message}")]
-    DockerResponseNotFoundError {
-        /// Message returned by the docker server.
-        message: String,
-    },
     /// Generic error emitted by the docker server.
     #[error("Docker responded with status code {status_code}: {message}")]
     DockerResponseServerError {
         /// Status code returned by the docker server.
         status_code: u16,
-        /// Message returned by the docker server.
-        message: String,
-    },
-    /// Error emitted by the docker server, when it responds with a 400.
-    #[error("API queried with a bad parameter: {message}")]
-    DockerResponseBadParameterError {
-        /// Message returned by the docker server.
-        message: String,
-    },
-    /// Error emitted by the docker server, when it responds with a 409.
-    #[error("API responded with a 409 conflict: {message}")]
-    DockerResponseConflictError {
-        /// Message returned by the docker server.
-        message: String,
-    },
-    /// Error emitted by the docker server, when it responds with a 304.
-    #[error("API responded with a 304, resource was not modified: {message}")]
-    DockerResponseNotModifiedError {
         /// Message returned by the docker server.
         message: String,
     },
