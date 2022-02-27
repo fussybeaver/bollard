@@ -1026,7 +1026,7 @@ impl Docker {
     {
         let url = "/build";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(HashMap::new)) {
+        match serde_json::to_string(&credentials.unwrap_or_default()) {
             Ok(ser_cred) => {
                 let req = self.build_request(
                     url,
@@ -1142,7 +1142,7 @@ impl Docker {
         root_fs: Body,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
-        match serde_json::to_string(&credentials.unwrap_or_else(HashMap::new)) {
+        match serde_json::to_string(&credentials.unwrap_or_default()) {
             Ok(ser_cred) => {
                 let req = self.build_request(
                     "/images/load",

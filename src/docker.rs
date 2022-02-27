@@ -924,7 +924,7 @@ impl Docker {
             None => Ok(None),
         }
         .map(|payload| {
-            debug!("{}", payload.clone().unwrap_or_else(String::new));
+            debug!("{}", payload.clone().unwrap_or_default());
             payload
                 .map(|content| content.into())
                 .unwrap_or_else(Body::empty)
