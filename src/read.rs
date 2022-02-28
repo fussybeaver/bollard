@@ -2,7 +2,7 @@ use bytes::Buf;
 use bytes::BytesMut;
 use futures_core::Stream;
 use hyper::body::Bytes;
-use pin_project::pin_project;
+use pin_project_lite::pin_project;
 use serde::de::DeserializeOwned;
 use std::pin::Pin;
 use std::string::String;
@@ -90,10 +90,11 @@ impl Decoder for NewlineLogOutputDecoder {
     }
 }
 
-#[pin_project]
-#[derive(Debug)]
-pub(crate) struct JsonLineDecoder<T> {
-    ty: PhantomData<T>,
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct JsonLineDecoder<T> {
+        ty: PhantomData<T>,
+    }
 }
 
 impl<T> JsonLineDecoder<T> {
@@ -174,12 +175,13 @@ enum ReadState {
     NotReady,
 }
 
-#[pin_project]
-#[derive(Debug)]
-pub(crate) struct StreamReader<S> {
-    #[pin]
-    stream: S,
-    state: ReadState,
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct StreamReader<S> {
+        #[pin]
+        stream: S,
+        state: ReadState,
+    }
 }
 
 impl<S> StreamReader<S>
