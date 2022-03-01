@@ -1,7 +1,7 @@
 #![cfg(windows)]
 
 use hyper::client::connect::Connected;
-use pin_project::pin_project;
+use pin_project_lite::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tokio::time;
@@ -19,10 +19,11 @@ use winapi::shared::winerror;
 use crate::docker::ClientType;
 use crate::uri::Uri;
 
-#[pin_project]
-pub struct NamedPipeStream {
-    #[pin]
-    io: NamedPipeClient,
+pin_project! {
+    pub struct NamedPipeStream {
+        #[pin]
+        io: NamedPipeClient,
+    }
 }
 
 impl NamedPipeStream {
