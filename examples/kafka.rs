@@ -9,8 +9,8 @@ use futures_util::stream::select;
 use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
 
-const KAFKA_IMAGE: &'static str = "confluentinc/cp-kafka:5.0.1";
-const ZOOKEEPER_IMAGE: &'static str = "confluentinc/cp-zookeeper:5.0.1";
+const KAFKA_IMAGE: &str = "confluentinc/cp-kafka:5.0.1";
+const ZOOKEEPER_IMAGE: &str = "confluentinc/cp-zookeeper:5.0.1";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {

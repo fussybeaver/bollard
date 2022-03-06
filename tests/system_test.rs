@@ -49,8 +49,8 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
     );
 
     let vec = select(
-        stream.map_ok(|events_results| Results::EventsResults(events_results)),
-        stream2.map_ok(|image_results| Results::CreateImageResults(image_results)),
+        stream.map_ok(Results::EventsResults),
+        stream2.map_ok(Results::CreateImageResults),
     )
     .skip_while(|value| match value {
         Ok(Results::EventsResults(_)) => future::ready(false),
@@ -66,10 +66,10 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             println!("{:?}", value);
             value
         })
-        .any(|value| match value {
-            Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
-            _ => false,
-        }));
+        .any(|value| matches!(
+            value,
+            Results::EventsResults(SystemEventsResponse { typ: _, .. })
+        )));
 
     Ok(())
 }
@@ -107,8 +107,8 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     );
 
     let vec = select(
-        stream.map_ok(|events_results| Results::EventsResults(events_results)),
-        stream2.map_ok(|image_results| Results::CreateImageResults(image_results)),
+        stream.map_ok(Results::EventsResults),
+        stream2.map_ok(Results::CreateImageResults),
     )
     .skip_while(|value| match value {
         Ok(Results::EventsResults(_)) => future::ready(false),
@@ -118,10 +118,10 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     .try_collect::<Vec<_>>()
     .await?;
 
-    assert!(vec.iter().map(|value| { value }).any(|value| match value {
-        Results::EventsResults(SystemEventsResponse { typ: _, .. }) => true,
-        _ => false,
-    }));
+    assert!(vec.iter().any(|value| matches!(
+        value,
+        Results::EventsResults(SystemEventsResponse { typ: _, .. })
+    )));
 
     Ok(())
 }
@@ -131,15 +131,14 @@ async fn df_test(docker: Docker) -> Result<(), Error> {
 
     let result = &docker.df().await?;
 
-    let c: Vec<_> = result
+    let c = result
         .images
         .as_ref()
         .unwrap()
         .iter()
-        .filter(|c: &&ImageSummary| c.repo_tags.iter().any(|r| r.contains("hello-world")))
-        .collect();
+        .filter(|c: &&ImageSummary| c.repo_tags.iter().any(|r| r.contains("hello-world")));
 
-    assert!(c.len() > 0);
+    assert!(c.count() > 0);
 
     Ok(())
 }

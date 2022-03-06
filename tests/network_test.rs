@@ -171,7 +171,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .disconnect_network(
-            &id,
+            id,
             DisconnectNetworkOptions {
                 container: "integration_test_connect_network_test",
                 force: true,
@@ -179,7 +179,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let _ = &docker.remove_network(&id).await?;
+    let _ = &docker.remove_network(id).await?;
 
     let _ = &docker
         .kill_container(

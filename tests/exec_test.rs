@@ -42,7 +42,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
     assert!(match results {
         StartExecResults::Attached { output, .. } => {
             let log: Vec<_> = output.try_collect().await?;
-            assert!(log.len() > 0);
+            assert!(!log.is_empty());
             match &log[0] {
                 LogOutput::StdOut { message } => {
                     let (n, expected) = if cfg!(windows) {
@@ -52,7 +52,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
                     };
 
                     let s = String::from_utf8_lossy(message);
-                    s.split("\n").skip(n).next().expect("log exists") == expected
+                    s.split('\n').nth(n).expect("log exists") == expected
                 }
                 _ => false,
             }

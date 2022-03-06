@@ -17,7 +17,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::task::spawn;
 use tokio::time::sleep;
 
-const IMAGE: &'static str = "alpine:3";
+const IMAGE: &str = "alpine:3";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
         // pipe docker exec output into stdout
         while let Some(Ok(output)) = output.next().await {
-            stdout.write(output.into_bytes().as_ref())?;
+            stdout.write_all(output.into_bytes().as_ref())?;
             stdout.flush()?;
         }
     }

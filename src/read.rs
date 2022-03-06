@@ -142,25 +142,24 @@ where
                         src.truncate(src.len() - 1); // Remove the newline
                         src.unsplit(remainder);
                         Ok(None)
-                    },
+                    }
                     Ok(json) => {
                         // Newline delimited json
                         src.unsplit(remainder);
                         src.advance(pos + 1);
                         Ok(json)
-                    },
-                    Err(e) => Err(e)
+                    }
+                    Err(e) => Err(e),
                 }
-            
             } else {
-                // No newline delimited json. 
+                // No newline delimited json.
                 match decode_json_from_slice(src) {
                     Ok(None) => Ok(None),
                     Ok(json) => {
                         src.clear();
                         Ok(json)
-                    },
-                    Err(e) => Err(e)
+                    }
+                    Err(e) => Err(e),
                 }
             }
         } else {
@@ -341,7 +340,10 @@ mod tests {
         let mut buf = BytesMut::from(&b"\"foo\\nbar\""[..]);
         let mut codec: JsonLineDecoder<String> = JsonLineDecoder::new();
 
-        assert_eq!(codec.decode(&mut buf).unwrap(), Some(String::from("foo\nbar")));
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(String::from("foo\nbar"))
+        );
     }
 
     #[test]

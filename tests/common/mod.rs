@@ -4,8 +4,6 @@ use futures_util::stream::TryStreamExt;
 use std::future::Future;
 use tokio::runtime::Runtime;
 
-use std;
-
 use bollard::auth::DockerCredentials;
 use bollard::container::*;
 use bollard::errors::Error;
@@ -92,9 +90,9 @@ where
     T: Future<Output = Result<(), Error>>,
 {
     rt.block_on(future)
-        .or_else(|e| {
+        .map_err(|e| {
             println!("{:?}", e);
-            Err(e)
+            e
         })
         .unwrap();
 }

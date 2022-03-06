@@ -70,10 +70,7 @@ fn test_downversioning() {
 
         let _ = &docker.version().await.unwrap();
 
-        assert_eq!(
-            format!("{}", &docker.client_version()),
-            format!("{}", "1.24")
-        );
+        assert_eq!(docker.client_version().to_string(), "1.24".to_string());
     };
     rt.block_on(fut);
 }
