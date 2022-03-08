@@ -48,13 +48,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     {
         if let Some(p) = p.get(0) {
             print!("{}", name);
-            for mut v in p.to_vec() {
+            for mut v in p.iter().cloned() {
                 if v.len() > 30 {
                     v.truncate(30);
                 }
                 print!("\t{}", v);
             }
-            print!("\n");
+            println!();
         }
     }
 

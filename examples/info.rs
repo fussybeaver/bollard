@@ -10,7 +10,7 @@ use std::default::Default;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
 
-async fn conc(arg: (Docker, &ContainerSummary)) -> () {
+async fn conc(arg: (Docker, &ContainerSummary)) {
     let (docker, container) = arg;
     println!(
         "{:?}",

@@ -299,9 +299,9 @@ async fn attach_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     input
-        .write(format!("echo {}\n", unique_string).as_bytes())
+        .write_all(format!("echo {}\n", unique_string).as_bytes())
         .await?;
-    input.write("exit\n".as_bytes()).await?;
+    input.write_all("exit\n".as_bytes()).await?;
 
     let log = match tokio::time::timeout(tokio::time::Duration::from_secs(2), output.try_collect())
         .await
@@ -335,8 +335,7 @@ async fn attach_container_test(docker: Docker) -> Result<(), Error> {
 
     let input_found = log
         .iter()
-        .find(|val| val.to_string().contains(unique_string))
-        .is_some();
+        .any(|val| val.to_string().contains(unique_string));
 
     assert!(input_found);
 
@@ -517,7 +516,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
     assert_eq!(
         0,
         result
-            .into_iter()
+            .iter()
             .filter(|r| vec![
                 "bollard",
                 "registry:2",
@@ -526,8 +525,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
             ]
             .into_iter()
             .all(|v| v != r.image.as_ref().unwrap()))
-            .collect::<Vec<_>>()
-            .len()
+            .count()
     );
 
     Ok(())

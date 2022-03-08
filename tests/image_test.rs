@@ -36,7 +36,7 @@ async fn search_images_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     assert!(result
-        .into_iter()
+        .iter()
         .any(|api_image| &api_image.name.as_ref().unwrap()[..] == "hello-world"));
 
     Ok::<_, Error>(())
@@ -79,7 +79,7 @@ async fn list_images_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert!(result.into_iter().any(|api_image| {
+    assert!(result.iter().any(|api_image| {
         api_image
             .repo_tags
             .iter()

@@ -8,7 +8,7 @@ use bollard::image::CreateImageOptions;
 use futures_util::stream::StreamExt;
 use futures_util::TryStreamExt;
 
-const IMAGE: &'static str = "alpine:3";
+const IMAGE: &str = "alpine:3";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
