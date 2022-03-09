@@ -46,7 +46,7 @@ serde_json = "1.0"
 serde_urlencoded = "0.7"
 tokio = { version = "1.7", features = ["time", "net", "io-util"] }
 thiserror = "1.0"
-tokio-util = { version = "0.6", features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 url = "2.2"
 webpki-roots = { version = "0.22", optional = true }
 webpki = { version = "0.22", optional = true }
