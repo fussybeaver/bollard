@@ -1248,13 +1248,13 @@ impl Docker {
     /// ```
     pub async fn start_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<StartContainerOptions<T>>,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/start", container_name);
+        let url = format!("/containers/{}/start", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1296,10 +1296,10 @@ impl Docker {
     /// ```
     pub async fn stop_container(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<StopContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/stop", container_name);
+        let url = format!("/containers/{}/stop", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1345,10 +1345,10 @@ impl Docker {
     /// ```
     pub async fn remove_container(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<RemoveContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}", container_name);
+        let url = format!("/containers/{}", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1393,13 +1393,13 @@ impl Docker {
     /// ```
     pub fn wait_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<WaitContainerOptions<T>>,
     ) -> impl Stream<Item = Result<ContainerWaitResponse, Error>>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/wait", container_name);
+        let url = format!("/containers/{}/wait", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1448,13 +1448,13 @@ impl Docker {
     /// ```
     pub async fn attach_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<AttachContainerOptions<T>>,
     ) -> Result<AttachContainerResults, Error>
     where
         T: Into<String> + Serialize + Default,
     {
-        let url = format!("/containers/{}/attach", container_name);
+        let url = format!("/containers/{}/attach", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1503,10 +1503,10 @@ impl Docker {
     /// ```
     pub async fn resize_container_tty(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: ResizeContainerTtyOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/resize", container_name);
+        let url = format!("/containers/{}/resize", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1549,10 +1549,10 @@ impl Docker {
     /// ```
     pub async fn restart_container(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<RestartContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/restart", container_name);
+        let url = format!("/containers/{}/restart", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1594,10 +1594,10 @@ impl Docker {
     /// ```
     pub async fn inspect_container(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<InspectContainerOptions>,
     ) -> Result<ContainerInspectResponse, Error> {
-        let url = format!("/containers/{}/json", container_name);
+        let url = format!("/containers/{}/json", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1639,13 +1639,13 @@ impl Docker {
     /// ```
     pub async fn top_processes<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<TopOptions<T>>,
     ) -> Result<ContainerTopResponse, Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/top", container_name);
+        let url = format!("/containers/{}/top", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1692,13 +1692,13 @@ impl Docker {
     /// ```
     pub fn logs<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<LogsOptions<T>>,
     ) -> impl Stream<Item = Result<LogOutput, Error>>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/logs", container_name);
+        let url = format!("/containers/{}/logs", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1735,9 +1735,9 @@ impl Docker {
     /// ```
     pub async fn container_changes(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
     ) -> Result<Option<Vec<ContainerChangeResponseItem>>, Error> {
-        let url = format!("/containers/{}/changes", container_name);
+        let url = format!("/containers/{}/changes", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1782,10 +1782,10 @@ impl Docker {
     /// ```
     pub fn stats(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<StatsOptions>,
     ) -> impl Stream<Item = Result<Stats, Error>> {
-        let url = format!("/containers/{}/stats", container_name);
+        let url = format!("/containers/{}/stats", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1828,13 +1828,13 @@ impl Docker {
     /// ```
     pub async fn kill_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<KillContainerOptions<T>>,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/kill", container_name);
+        let url = format!("/containers/{}/kill", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1880,13 +1880,13 @@ impl Docker {
     /// ```
     pub async fn update_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         config: UpdateContainerOptions<T>,
     ) -> Result<(), Error>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
-        let url = format!("/containers/{}/update", container_name);
+        let url = format!("/containers/{}/update", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1929,13 +1929,13 @@ impl Docker {
     /// ```
     pub async fn rename_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: RenameContainerOptions<T>,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/rename", container_name);
+        let url = format!("/containers/{}/rename", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -1969,8 +1969,8 @@ impl Docker {
     ///
     /// docker.pause_container("postgres");
     /// ```
-    pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/pause", container_name);
+    pub async fn pause_container(&self, container_name: impl Into<String>) -> Result<(), Error> {
+        let url = format!("/containers/{}/pause", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -2004,8 +2004,8 @@ impl Docker {
     ///
     /// docker.unpause_container("postgres");
     /// ```
-    pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/unpause", container_name);
+    pub async fn unpause_container(&self, container_name: impl Into<String>) -> Result<(), Error> {
+        let url = format!("/containers/{}/unpause", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -2106,14 +2106,14 @@ impl Docker {
     /// ```
     pub async fn upload_to_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<UploadToContainerOptions<T>>,
         tar: Body,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{}/archive", container_name.into());
 
         let req = self.build_request(
             &url,
@@ -2157,13 +2157,13 @@ impl Docker {
     /// ```
     pub fn download_from_container<T>(
         &self,
-        container_name: &str,
+        container_name: impl Into<String>,
         options: Option<DownloadFromContainerOptions<T>>,
     ) -> impl Stream<Item = Result<Bytes, Error>>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{}/archive", container_name.into());
 
         let req = self.build_request(
             &url,
