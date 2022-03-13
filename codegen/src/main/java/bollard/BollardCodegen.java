@@ -47,15 +47,6 @@ public class BollardCodegen extends RustServerCodegen {
         enumValues.add(additionalEnumValues);
 
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
-
-        additionalEnumValues = new HashMap<String, String>();
-        enumValues = new ArrayList<Map<String, String>>();
-
-        additionalEnumValues.put("name", "NO");
-        additionalEnumValues.put("value", "\"no\"");
-        enumValues.add(additionalEnumValues);
-
-        patchEnumValues.put("RestartPolicyNameEnum", enumValues);
     }
 
     private static ArrayList<String> enumToString;
