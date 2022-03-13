@@ -284,15 +284,15 @@ pub struct ContainerChangeResponseItem {
 
 }
 
-/// Configuration for a container that is portable between hosts
+/// Configuration for a container that is portable between hosts. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerConfig {
-    /// The hostname to use for the container, as a valid RFC 1123 hostname.
+    /// The hostname to use for the container, as a valid RFC 1123 hostname. 
     #[serde(rename = "Hostname")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub hostname: Option<String>,
 
-    /// The domain name to use for the container.
+    /// The domain name to use for the container. 
     #[serde(rename = "Domainname")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub domainname: Option<String>,
@@ -356,7 +356,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub args_escaped: Option<bool>,
 
-    /// The name of the image to use when creating the container/ 
+    /// The name (or reference) of the image to use when creating the container, or which was used when the container was created. 
     #[serde(rename = "Image")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub image: Option<String>,
@@ -756,7 +756,7 @@ pub struct ContainerSummary {
 
     #[serde(rename = "Mounts")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub mounts: Option<Vec<Mount>>,
+    pub mounts: Option<Vec<MountPoint>>,
 
 }
 
@@ -1571,12 +1571,14 @@ pub struct GenericResourcesInnerNamedResourceSpec {
 
 }
 
-/// Information about a container's graph driver.
+/// Information about the storage driver used to store the container's and image's filesystem. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GraphDriverData {
+    /// Name of the storage driver.
     #[serde(rename = "Name")]
     pub name: String,
 
+    /// Low-level storage metadata, provided as key/value pairs.  This information is driver-specific, and depends on the storage-driver in use, and should be used for informational purposes only. 
     #[serde(rename = "Data")]
     #[serde(deserialize_with = "deserialize_nonoptional_map")]
     pub data: HashMap<String, String>,
@@ -1759,73 +1761,6 @@ pub struct IdResponse {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Image {
-    #[serde(rename = "Id")]
-    pub id: String,
-
-    #[serde(rename = "RepoTags")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub repo_tags: Option<Vec<String>>,
-
-    #[serde(rename = "RepoDigests")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub repo_digests: Option<Vec<String>>,
-
-    #[serde(rename = "Parent")]
-    pub parent: String,
-
-    #[serde(rename = "Comment")]
-    pub comment: String,
-
-    #[serde(rename = "Created")]
-    pub created: String,
-
-    #[serde(rename = "Container")]
-    pub container: String,
-
-    #[serde(rename = "ContainerConfig")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub container_config: Option<ContainerConfig>,
-
-    #[serde(rename = "DockerVersion")]
-    pub docker_version: String,
-
-    #[serde(rename = "Author")]
-    pub author: String,
-
-    #[serde(rename = "Config")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub config: Option<ContainerConfig>,
-
-    #[serde(rename = "Architecture")]
-    pub architecture: String,
-
-    #[serde(rename = "Os")]
-    pub os: String,
-
-    #[serde(rename = "OsVersion")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub os_version: Option<String>,
-
-    #[serde(rename = "Size")]
-    pub size: i64,
-
-    #[serde(rename = "VirtualSize")]
-    pub virtual_size: i64,
-
-    #[serde(rename = "GraphDriver")]
-    pub graph_driver: GraphDriverData,
-
-    #[serde(rename = "RootFS")]
-    pub root_fs: ImageRootFs,
-
-    #[serde(rename = "Metadata")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub metadata: Option<ImageMetadata>,
-
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageDeleteResponseItem {
     /// The image ID of an image that was untagged
     #[serde(rename = "Untagged")]
@@ -1848,11 +1783,125 @@ pub struct ImageId {
 
 }
 
+/// Information about an image in the local image cache. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ImageMetadata {
+pub struct ImageInspect {
+    /// ID is the content-addressable ID of an image.  This identified is a content-addressable digest calculated from the image's configuration (which includes the digests of layers used by the image).  Note that this digest differs from the `RepoDigests` below, which holds digests of image manifests that reference the image. 
+    #[serde(rename = "Id")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub id: Option<String>,
+
+    /// List of image names/tags in the local image cache that reference this image.  Multiple image tags can refer to the same imagem and this list may be empty if no tags reference the image, in which case the image is \"untagged\", in which case it can still be referenced by its ID. 
+    #[serde(rename = "RepoTags")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub repo_tags: Option<Vec<String>>,
+
+    /// List of content-addressable digests of locally available image manifests that the image is referenced from. Multiple manifests can refer to the same image.  These digests are usually only available if the image was either pulled from a registry, or if the image was pushed to a registry, which is when the manifest is generated and its digest calculated. 
+    #[serde(rename = "RepoDigests")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub repo_digests: Option<Vec<String>>,
+
+    /// ID of the parent image.  Depending on how the image was created, this field may be empty and is only set for images that were built/created locally. This field is empty if the image was pulled from an image registry. 
+    #[serde(rename = "Parent")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub parent: Option<String>,
+
+    /// Optional message that was set when committing or importing the image. 
+    #[serde(rename = "Comment")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub comment: Option<String>,
+
+    /// Date and time at which the image was created, formatted in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
+    #[serde(rename = "Created")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub created: Option<String>,
+
+    /// The ID of the container that was used to create the image.  Depending on how the image was created, this field may be empty. 
+    #[serde(rename = "Container")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub container: Option<String>,
+
+    #[serde(rename = "ContainerConfig")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub container_config: Option<ContainerConfig>,
+
+    /// The version of Docker that was used to build the image.  Depending on how the image was created, this field may be empty. 
+    #[serde(rename = "DockerVersion")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub docker_version: Option<String>,
+
+    /// Name of the author that was specified when committing the image, or as specified through MAINTAINER (deprecated) in the Dockerfile. 
+    #[serde(rename = "Author")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub author: Option<String>,
+
+    #[serde(rename = "Config")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub config: Option<ContainerConfig>,
+
+    /// Hardware CPU architecture that the image runs on. 
+    #[serde(rename = "Architecture")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub architecture: Option<String>,
+
+    /// CPU architecture variant (presently ARM-only). 
+    #[serde(rename = "Variant")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub variant: Option<String>,
+
+    /// Operating System the image is built to run on. 
+    #[serde(rename = "Os")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub os: Option<String>,
+
+    /// Operating System version the image is built to run on (especially for Windows). 
+    #[serde(rename = "OsVersion")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub os_version: Option<String>,
+
+    /// Total size of the image including all layers it is composed of. 
+    #[serde(rename = "Size")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub size: Option<i64>,
+
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
+    #[serde(rename = "VirtualSize")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub virtual_size: Option<i64>,
+
+    #[serde(rename = "GraphDriver")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub graph_driver: Option<GraphDriverData>,
+
+    #[serde(rename = "RootFS")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub root_fs: Option<ImageInspectRootFs>,
+
+    #[serde(rename = "Metadata")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub metadata: Option<ImageInspectMetadata>,
+
+}
+
+/// Additional metadata of the image in the local cache. This information is local to the daemon, and not part of the image itself. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageInspectMetadata {
+    /// Date and time at which the image was last tagged in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds.  This information is only available if the image was tagged locally, and omitted otherwise. 
     #[serde(rename = "LastTagTime")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub last_tag_time: Option<DateTime<Utc>>,
+
+}
+
+/// Information about the image's RootFS, including the layer IDs. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageInspectRootFs {
+    #[serde(rename = "Type")]
+    pub typ: String,
+
+    #[serde(rename = "Layers")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub layers: Option<Vec<String>>,
 
 }
 
@@ -1867,21 +1916,6 @@ pub struct ImagePruneResponse {
     #[serde(rename = "SpaceReclaimed")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub space_reclaimed: Option<i64>,
-
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ImageRootFs {
-    #[serde(rename = "Type")]
-    pub typ: String,
-
-    #[serde(rename = "Layers")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub layers: Option<Vec<String>>,
-
-    #[serde(rename = "BaseLayer")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub base_layer: Option<String>,
 
 }
 
@@ -1994,12 +2028,32 @@ pub struct Ipam {
     /// List of IPAM configuration options, specified as a map:  ``` {\"Subnet\": <CIDR>, \"IPRange\": <CIDR>, \"Gateway\": <IP address>, \"AuxAddress\": <device_name:IP address>} ``` 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub config: Option<Vec<HashMap<String, String>>>,
+    pub config: Option<Vec<IpamConfig>>,
 
     /// Driver-specific options, specified as a map.
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub options: Option<HashMap<String, String>>,
+
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct IpamConfig {
+    #[serde(rename = "Subnet")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub subnet: Option<String>,
+
+    #[serde(rename = "IPRange")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub ip_range: Option<String>,
+
+    #[serde(rename = "Gateway")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub gateway: Option<String>,
+
+    #[serde(rename = "AuxiliaryAddresses")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub auxiliary_addresses: Option<HashMap<String, String>>,
 
 }
 
@@ -2278,41 +2332,103 @@ impl ::std::convert::AsRef<str> for MountBindOptionsPropagationEnum {
     }
 }
 
-/// A mount point inside a container
+/// MountPoint represents a mount point configuration inside the container. This is used for reporting the mountpoints in use by a container. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MountPoint {
+    /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `volume` a docker volume with the given `Name`. - `tmpfs` a `tmpfs`. - `npipe` a named pipe from the host into the container. 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub typ: Option<String>,
+    pub typ: Option<MountPointTypeEnum>,
 
+    /// Name is the name reference to the underlying data defined by `Source` e.g., the volume name. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub name: Option<String>,
 
+    /// Source location of the mount.  For volumes, this contains the storage location of the volume (within `/var/lib/docker/volumes/`). For bind-mounts, and `npipe`, this contains the source (host) part of the bind-mount. For `tmpfs` mount points, this field is empty. 
     #[serde(rename = "Source")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub source: Option<String>,
 
+    /// Destination is the path relative to the container root (`/`) where the `Source` is mounted inside the container. 
     #[serde(rename = "Destination")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub destination: Option<String>,
 
+    /// Driver is the volume driver used to create the volume (if it is a volume). 
     #[serde(rename = "Driver")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub driver: Option<String>,
 
+    /// Mode is a comma separated list of options supplied by the user when creating the bind/volume mount.  The default is platform-specific (`\"z\"` on Linux, empty on Windows). 
     #[serde(rename = "Mode")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub mode: Option<String>,
 
+    /// Whether the mount is mounted writable (read-write). 
     #[serde(rename = "RW")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub rw: Option<bool>,
 
+    /// Propagation describes how mounts are propagated from the host into the mount point, and vice-versa. Refer to the [Linux kernel documentation](https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt) for details. This field is not used on Windows. 
     #[serde(rename = "Propagation")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub propagation: Option<String>,
 
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum MountPointTypeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "bind")]
+    BIND,
+    #[serde(rename = "volume")]
+    VOLUME,
+    #[serde(rename = "tmpfs")]
+    TMPFS,
+    #[serde(rename = "npipe")]
+    NPIPE,
+}
+
+impl ::std::fmt::Display for MountPointTypeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            MountPointTypeEnum::EMPTY => write!(f, ""),
+            MountPointTypeEnum::BIND => write!(f, "{}", "bind"),
+            MountPointTypeEnum::VOLUME => write!(f, "{}", "volume"),
+            MountPointTypeEnum::TMPFS => write!(f, "{}", "tmpfs"),
+            MountPointTypeEnum::NPIPE => write!(f, "{}", "npipe"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for MountPointTypeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(MountPointTypeEnum::EMPTY),
+            "bind" => Ok(MountPointTypeEnum::BIND),
+            "volume" => Ok(MountPointTypeEnum::VOLUME),
+            "tmpfs" => Ok(MountPointTypeEnum::TMPFS),
+            "npipe" => Ok(MountPointTypeEnum::NPIPE),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for MountPointTypeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            MountPointTypeEnum::EMPTY => "",
+            MountPointTypeEnum::BIND => "bind",
+            MountPointTypeEnum::VOLUME => "volume",
+            MountPointTypeEnum::TMPFS => "tmpfs",
+            MountPointTypeEnum::NPIPE => "npipe",
+        }
+    }
 }
 
 /// Optional configuration for the `tmpfs` type.
@@ -2569,7 +2685,7 @@ pub struct NetworkPruneResponse {
 /// NetworkSettings exposes the network settings in the API
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkSettings {
-    /// Name of the network'a bridge (for example, `docker0`).
+    /// Name of the network's bridge (for example, `docker0`).
     #[serde(rename = "Bridge")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub bridge: Option<String>,
@@ -4556,7 +4672,7 @@ pub struct SwarmJoinRequest {
     #[serde(skip_serializing_if="Option::is_none")]
     pub advertise_addr: Option<String>,
 
-    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same addres as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
+    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
     #[serde(rename = "DataPathAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data_path_addr: Option<String>,
@@ -4901,6 +5017,11 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub kernel_memory: Option<bool>,
 
+    /// Indicates if the host has kernel memory TCP limit support enabled.  Kernel memory TCP limits are not supported when using cgroups v2, which does not support the corresponding `memory.kmem.tcp.limit_in_bytes` cgroup. 
+    #[serde(rename = "KernelMemoryTCP")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub kernel_memory_tcp: Option<bool>,
+
     /// Indicates if CPU CFS(Completely Fair Scheduler) period is supported by the host. 
     #[serde(rename = "CpuCfsPeriod")]
     #[serde(skip_serializing_if="Option::is_none")]
@@ -5064,7 +5185,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub experimental_build: Option<bool>,
 
-    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
+    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](https://docs.docker.com/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
     #[serde(rename = "ServerVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub server_version: Option<String>,

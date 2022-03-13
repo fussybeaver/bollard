@@ -564,7 +564,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Image](Image), wrapped in a Future.
+    ///  - [ImageInspect](ImageInspect), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -576,7 +576,7 @@ impl Docker {
     ///
     /// docker.inspect_image("hello-world");
     /// ```
-    pub async fn inspect_image(&self, image_name: &str) -> Result<Image, Error> {
+    pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
         let url = format!("/images/{}/json", image_name);
 
         let req = self.build_request(
