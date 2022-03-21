@@ -232,6 +232,12 @@ impl Clone for Docker {
     }
 }
 
+/// Internal model: Docker Server JSON payload when an error is emitted
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+struct DockerServerErrorMessage {
+    message: String,
+}
+
 #[cfg(feature = "ssl")]
 struct DockerClientCertResolver {
     ssl_key: PathBuf,
@@ -1005,33 +1011,13 @@ impl Docker {
 
                 StatusCode::SWITCHING_PROTOCOLS => Ok(response),
 
-                // Status code 304: Not Modified
-                StatusCode::NOT_MODIFIED => {
-                    let message = Docker::decode_into_string(response).await?;
-                    Err(DockerResponseNotModifiedError { message })
-                }
-
-                // Status code 409: Conflict
-                StatusCode::CONFLICT => {
-                    let message = Docker::decode_into_string(response).await?;
-                    Err(DockerResponseConflictError { message })
-                }
-
-                // Status code 400: Bad request
-                StatusCode::BAD_REQUEST => {
-                    let message = Docker::decode_into_string(response).await?;
-                    Err(DockerResponseBadParameterError { message })
-                }
-
-                // Status code 404: Not Found
-                StatusCode::NOT_FOUND => {
-                    let message = Docker::decode_into_string(response).await?;
-                    Err(DockerResponseNotFoundError { message })
-                }
-
                 // All other status codes
                 _ => {
-                    let message = Docker::decode_into_string(response).await?;
+                    let contents = Docker::decode_into_string(response).await?;
+
+                    let message = serde_json::from_str::<DockerServerErrorMessage>(&contents)
+                        .map(|msg| msg.message)
+                        .or_else(|e| if e.is_data() { Ok(contents) } else { Err(e) })?;
                     Err(DockerResponseServerError {
                         status_code: status.as_u16(),
                         message,
