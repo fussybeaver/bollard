@@ -1,5 +1,10 @@
 .DS_Store
+.git
 Cargo.lock
-target
+**/target
 doc
 main.rs
+**/workspace
+**/.settings
+**/.project
+**/.factorypath
