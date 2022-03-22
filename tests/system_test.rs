@@ -19,7 +19,7 @@ use common::*;
 #[derive(Debug)]
 enum Results {
     CreateImageResults(CreateImageInfo),
-    EventsResults(SystemEventsResponse),
+    EventsResults(EventMessage),
 }
 
 async fn events_test(docker: Docker) -> Result<(), Error> {
@@ -66,10 +66,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
             println!("{:?}", value);
             value
         })
-        .any(|value| matches!(
-            value,
-            Results::EventsResults(SystemEventsResponse { typ: _, .. })
-        )));
+        .any(|value| matches!(value, Results::EventsResults(EventMessage { typ: _, .. }))));
 
     Ok(())
 }
@@ -118,10 +115,9 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     .try_collect::<Vec<_>>()
     .await?;
 
-    assert!(vec.iter().any(|value| matches!(
-        value,
-        Results::EventsResults(SystemEventsResponse { typ: _, .. })
-    )));
+    assert!(vec
+        .iter()
+        .any(|value| matches!(value, Results::EventsResults(EventMessage { typ: _, .. }))));
 
     Ok(())
 }

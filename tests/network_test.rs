@@ -17,8 +17,10 @@ pub mod common;
 use crate::common::*;
 
 async fn create_network_test(docker: Docker) -> Result<(), Error> {
-    let mut ipam_config = HashMap::new();
-    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
+    let ipam_config = IpamConfig {
+        subnet: Some(String::from("10.10.10.10/24")),
+        ..Default::default()
+    };
 
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_create_network",
@@ -55,7 +57,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
         .unwrap()
         .iter()
         .take(1)
-        .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
+        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.10/24"));
 
     let _ = &docker
         .remove_network("integration_test_create_network")
@@ -65,8 +67,10 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn list_networks_test(docker: Docker) -> Result<(), Error> {
-    let mut ipam_config = HashMap::new();
-    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
+    let ipam_config = IpamConfig {
+        subnet: Some(String::from("10.10.10.10/24")),
+        ..Default::default()
+    };
 
     let mut create_network_filters = HashMap::new();
     create_network_filters.insert("maintainer", "bollard-maintainer");
@@ -108,7 +112,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         .as_ref()
         .unwrap()
         .iter()
-        .any(|i| &i.get("Subnet").as_ref().unwrap()[..] == "10.10.10.10/24"));
+        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.10/24"));
 
     let _ = &docker
         .remove_network("integration_test_list_network")
@@ -118,8 +122,10 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn connect_network_test(docker: Docker) -> Result<(), Error> {
-    let mut ipam_config = HashMap::new();
-    ipam_config.insert(String::from("Subnet"), String::from("10.10.10.10/24"));
+    let ipam_config = IpamConfig {
+        subnet: Some(String::from("10.10.10.10/24")),
+        ..Default::default()
+    };
 
     let create_network_options = CreateNetworkOptions {
         name: "integration_test_connect_network",

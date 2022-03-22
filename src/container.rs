@@ -1123,7 +1123,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [ContainerSummaryInner](ContainerSummaryInner), wrapped in a Future.
+    ///  - Vector of [ContainerSummary](ContainerSummary), wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -1149,7 +1149,7 @@ impl Docker {
     pub async fn list_containers<'de, T>(
         &self,
         options: Option<ListContainersOptions<T>>,
-    ) -> Result<Vec<ContainerSummaryInner>, Error>
+    ) -> Result<Vec<ContainerSummary>, Error>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {

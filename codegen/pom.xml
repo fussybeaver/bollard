@@ -19,7 +19,10 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
+                <!-- Pegged release: switch back on moby release v20.10.14+
                 <inputSpec>https://docs.docker.com/engine/api/v1.41.yaml</inputSpec>
+                -->
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/master/docs/api/v1.41.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.build.directory}/generated-sources</output>
                 <generateApis>true</generateApis>
@@ -27,7 +30,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>0</packageVersion>
+                  <packageVersion>1</packageVersion>
                 </configOptions>
               </configuration>
             </execution>

@@ -265,7 +265,7 @@ impl Docker {
     pub fn events<T>(
         &self,
         options: Option<EventsOptions<T>>,
-    ) -> impl Stream<Item = Result<SystemEventsResponse, Error>>
+    ) -> impl Stream<Item = Result<EventMessage, Error>>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
