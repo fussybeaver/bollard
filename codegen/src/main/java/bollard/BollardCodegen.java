@@ -58,12 +58,8 @@ public class BollardCodegen extends RustServerCodegen {
     @Override
     public void preprocessSwagger(Swagger swagger) {
         Info info = swagger.getInfo();
-        List versionComponents = new ArrayList(Arrays.asList(info.getVersion().split("[.]")));
-        while (versionComponents.size() < 3) {
-            // Add the package version as a version component to the official specification
-            // version
-            versionComponents.add((String) additionalProperties.get(CodegenConstants.PACKAGE_VERSION));
-        }
+        List versionComponents = new ArrayList();
+        versionComponents.add((String) additionalProperties.get(CodegenConstants.PACKAGE_VERSION));
 
         info.setVersion(StringUtils.join(versionComponents, "."));
 
