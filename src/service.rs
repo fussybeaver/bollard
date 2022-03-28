@@ -35,7 +35,7 @@ use std::{collections::HashMap, hash::Hash};
 ///
 /// let options: ListServicesOptions<&str> = Default::default();
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListServicesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -60,7 +60,7 @@ where
 ///     insert_defaults: true,
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectServiceOptions {
     /// Fill empty fields with default values.
@@ -79,7 +79,7 @@ pub struct InspectServiceOptions {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.

@@ -39,7 +39,7 @@ use std::hash::Hash;
 ///   ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateImageOptions<T>
 where
@@ -91,7 +91,7 @@ where
 /// };
 /// ```
 ///
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -135,7 +135,7 @@ where
 /// };
 /// ```
 ///
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -179,7 +179,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct SearchImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -209,7 +209,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct RemoveImageOptions {
     /// Remove the image even if it is being used by stopped containers or has other tags.
     pub force: bool,
@@ -238,7 +238,7 @@ pub struct RemoveImageOptions {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct TagImageOptions<T>
 where
     T: Into<String> + Serialize,
@@ -268,7 +268,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PushImageOptions<T>
 where
     T: Into<String> + Serialize,
@@ -298,7 +298,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct CommitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -340,7 +340,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct BuildImageOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -418,7 +418,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct ImportImageOptions {
     /// Suppress progress details during load.
     pub quiet: bool,
