@@ -116,7 +116,7 @@ pub struct VersionComponents {
 /// };
 /// # }
 /// ```
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct EventsOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,

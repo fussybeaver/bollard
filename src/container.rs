@@ -48,7 +48,7 @@ use crate::read::NewlineLogOutputDecoder;
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -90,7 +90,7 @@ where
 ///     name: "my-new-container",
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct CreateContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -100,7 +100,7 @@ where
 }
 
 /// This container's networking configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
@@ -108,7 +108,7 @@ pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
 }
 
 /// Container to create.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Config<T>
 where
     T: Into<String> + Eq + Hash,
@@ -293,7 +293,7 @@ impl From<ContainerConfig> for Config<String> {
 /// StopContainerOptions{
 ///     t: 30,
 /// };
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct StopContainerOptions {
     /// Number of seconds to wait before killing the container
     pub t: i64,
@@ -310,7 +310,7 @@ pub struct StopContainerOptions {
 ///     detach_keys: "ctrl-^"
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartContainerOptions<T>
 where
@@ -335,7 +335,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct RemoveContainerOptions {
     /// Remove the volumes associated with the container.
     pub v: bool,
@@ -356,7 +356,7 @@ pub struct RemoveContainerOptions {
 ///     condition: "not-running",
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct WaitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -396,7 +396,7 @@ impl fmt::Debug for AttachContainerResults {
 ///     detach_keys: Some("ctrl-c".to_string()),
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct AttachContainerOptions<T>
 where
     T: Into<String> + Serialize + Default,
@@ -431,7 +431,7 @@ where
 ///     height: 10,
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct ResizeContainerTtyOptions {
     /// Width of the TTY session in characters
     #[serde(rename = "w")]
@@ -452,7 +452,7 @@ pub struct ResizeContainerTtyOptions {
 ///     t: 30,
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct RestartContainerOptions {
     /// Number of seconds to wait before killing the container.
     pub t: isize,
@@ -469,7 +469,7 @@ pub struct RestartContainerOptions {
 ///     size: false,
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct InspectContainerOptions {
     /// Return the size of container as fields `SizeRw` and `SizeRootFs`
     pub size: bool,
@@ -486,7 +486,7 @@ pub struct InspectContainerOptions {
 ///     ps_args: "aux",
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopOptions<T>
 where
@@ -514,7 +514,7 @@ fn is_zero(val: &i64) -> bool {
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct LogsOptions<T>
 where
     T: Into<String> + Serialize,
@@ -584,7 +584,7 @@ impl LogOutput {
 ///     one_shot: false,
 /// };
 /// ```
-#[derive(Debug, Copy, Clone, Default, Serialize)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
 pub struct StatsOptions {
     /// Stream the output. If false, the stats will be output once and then it will disconnect.
     pub stream: bool,
@@ -594,7 +594,7 @@ pub struct StatsOptions {
 }
 
 /// Granular memory statistics for the container.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 #[serde(untagged)]
 pub enum MemoryStatsStats {
@@ -605,7 +605,7 @@ pub enum MemoryStatsStats {
 /// Granular memory statistics for the container, v1 cgroups.
 ///
 /// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1436).
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryStatsStatsV1 {
@@ -648,7 +648,7 @@ pub struct MemoryStatsStatsV1 {
 /// Granular memory statistics for the container, v2 cgroups.
 ///
 /// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1542).
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryStatsStatsV2 {
@@ -686,7 +686,7 @@ pub struct MemoryStatsStatsV2 {
 }
 
 /// General memory statistics for the container.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct MemoryStats {
     pub stats: Option<MemoryStatsStats>,
@@ -702,7 +702,7 @@ pub struct MemoryStats {
 }
 
 /// Process ID statistics for the container.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct PidsStats {
     pub current: Option<u64>,
@@ -710,7 +710,7 @@ pub struct PidsStats {
 }
 
 /// I/O statistics for the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
@@ -724,7 +724,7 @@ pub struct BlkioStats {
 }
 
 /// File I/O statistics for the container.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct StorageStats {
     pub read_count_normalized: Option<u64>,
@@ -734,7 +734,7 @@ pub struct StorageStats {
 }
 
 /// Statistics for the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct Stats {
     pub read: DateTime<Utc>,
@@ -753,7 +753,7 @@ pub struct Stats {
 }
 
 /// Network statistics for the container.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct NetworkStats {
     pub rx_dropped: u64,
@@ -767,7 +767,7 @@ pub struct NetworkStats {
 }
 
 /// CPU usage statistics for the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CPUUsage {
     pub percpu_usage: Option<Vec<u64>>,
@@ -777,7 +777,7 @@ pub struct CPUUsage {
 }
 
 /// CPU throttling statistics.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct ThrottlingData {
     pub periods: u64,
@@ -786,7 +786,7 @@ pub struct ThrottlingData {
 }
 
 /// General CPU statistics for the container.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct CPUStats {
     pub cpu_usage: CPUUsage,
@@ -795,7 +795,7 @@ pub struct CPUStats {
     pub throttling_data: ThrottlingData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct BlkioStatsEntry {
     pub major: u64,
@@ -815,7 +815,7 @@ pub struct BlkioStatsEntry {
 ///     signal: "SIGINT",
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct KillContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -838,7 +838,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct UpdateContainerOptions<T>
 where
@@ -1022,7 +1022,7 @@ where
 ///     name: "my_new_container_name"
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct RenameContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -1047,7 +1047,7 @@ where
 ///     filters
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -1076,7 +1076,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadToContainerOptions<T>
 where
@@ -1101,7 +1101,7 @@ where
 ///     path: "/opt",
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct DownloadFromContainerOptions<T>
 where
     T: Into<String> + Serialize,

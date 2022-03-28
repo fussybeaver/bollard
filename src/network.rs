@@ -14,7 +14,7 @@ use crate::errors::Error;
 use crate::models::*;
 
 /// Network configuration used in the [Create Network API](Docker::create_network())
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
 where
@@ -68,7 +68,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct InspectNetworkOptions<T>
 where
     T: Into<String> + Serialize,
@@ -104,7 +104,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -121,7 +121,7 @@ where
 }
 
 /// Network configuration used in the [Connect Network API](Docker::connect_network())
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
@@ -134,7 +134,7 @@ where
 }
 
 /// Network configuration used in the [Disconnect Network API](Docker::disconnect_network())
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
@@ -171,7 +171,7 @@ where
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
