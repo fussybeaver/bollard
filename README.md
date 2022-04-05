@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.11"
+bollard = "0.12"
 ```
 
 ## API
