@@ -1006,8 +1006,8 @@ impl Docker {
 
             let status = response.status();
             match status {
-                // Status code 200 - 299
-                s if s.is_success() => Ok(response),
+                // Status code 200 - 299 or 304
+                s if s.is_success() || s == StatusCode::NOT_MODIFIED => Ok(response),
 
                 StatusCode::SWITCHING_PROTOCOLS => Ok(response),
 
