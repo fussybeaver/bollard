@@ -63,6 +63,8 @@ pub struct CreateExecResults {
 pub struct StartExecOptions {
     /// Detach from the command.
     pub detach: bool,
+    /// The maximum size for a line of output. The default is 8 * 1024 (roughly 1024 characters).
+    pub output_capacity: Option<usize>,
 }
 
 /// Result type for the [Start Exec API](Docker::start_exec())
@@ -207,6 +209,14 @@ impl Docker {
                 Ok(StartExecResults::Detached)
             }
             _ => {
+                let capacity = match config {
+                    Some(StartExecOptions {
+                        output_capacity: Some(capacity),
+                        ..
+                    }) => capacity,
+                    _ => 8 * 1024,
+                };
+
                 let req = self.build_request(
                     &url,
                     Builder::new()
@@ -223,7 +233,7 @@ impl Docker {
 
                 let (read, write) = self.process_upgraded(req).await?;
 
-                let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+                let log = FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(), capacity);
                 Ok(StartExecResults::Attached {
                     output: Box::pin(log),
                     input: Box::pin(write),

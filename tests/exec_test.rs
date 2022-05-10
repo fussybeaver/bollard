@@ -109,7 +109,13 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     docker
-        .start_exec(&message.id, Some(StartExecOptions { detach: true }))
+        .start_exec(
+            &message.id,
+            Some(StartExecOptions {
+                detach: true,
+                ..Default::default()
+            }),
+        )
         .await?;
 
     let exec_process = &docker.inspect_exec(&message.id).await?;
@@ -150,6 +156,115 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "start_exec_output_capacity_test").await?;
+
+    let text1 = "a".repeat(1024);
+    let text2 = "a".repeat(7 * 1024);
+
+    let message = &docker
+        .create_exec(
+            "start_exec_output_capacity_test",
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                cmd: if cfg!(windows) {
+                    Some(vec!["cmd.exe", "/C", "echo", &text1])
+                } else {
+                    Some(vec!["/bin/echo", &text1])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let results = docker
+        .start_exec(&message.id, None::<StartExecOptions>)
+        .await?;
+
+    assert!(match results {
+        StartExecResults::Attached { output, .. } => {
+            let log: Vec<_> = output.try_collect().await?;
+            assert!(!log.is_empty());
+            match &log[0] {
+                LogOutput::StdOut { message } => {
+                    let expected = if cfg!(windows) { text1 + "\r" } else { text1 };
+
+                    let s = String::from_utf8_lossy(message);
+                    s.split('\n').next().expect("log exists") == expected
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    });
+
+    let message = &docker
+        .create_exec(
+            "start_exec_output_capacity_test",
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                cmd: if cfg!(windows) {
+                    Some(vec!["cmd.exe", "/C", "echo", &text2])
+                } else {
+                    Some(vec!["/bin/echo", &text2])
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let results = docker
+        .start_exec(
+            &message.id,
+            Some(StartExecOptions {
+                output_capacity: Some(100 * 1024),
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    assert!(match results {
+        StartExecResults::Attached { output, .. } => {
+            let log: Vec<_> = output.try_collect().await?;
+            assert!(!log.is_empty());
+            match &log[0] {
+                LogOutput::StdOut { message } => {
+                    let expected = if cfg!(windows) { text2 + "\r" } else { text2 };
+
+                    let s = String::from_utf8_lossy(message);
+                    s.split('\n').next().expect("log exists") == expected
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    });
+
+    let _ = &docker
+        .kill_container(
+            "start_exec_output_capacity_test",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    let _ = &docker
+        .wait_container(
+            "start_exec_output_capacity_test",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let _ = &docker
+        .remove_container(
+            "start_exec_output_capacity_test",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
+}
+
 #[test]
 fn integration_test_start_exec() {
     connect_to_docker_and_run!(start_exec_test);
@@ -158,4 +273,9 @@ fn integration_test_start_exec() {
 #[test]
 fn integration_test_inspect_exec() {
     connect_to_docker_and_run!(inspect_exec_test);
+}
+
+#[test]
+fn integration_test_start_exec_output_capacity() {
+    connect_to_docker_and_run!(start_exec_output_capacity_test);
 }
