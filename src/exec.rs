@@ -210,7 +210,10 @@ impl Docker {
             }
             _ => {
                 let capacity = match config {
-                    Some(StartExecOptions { output_capacity: Some(capacity), .. }) => capacity,
+                    Some(StartExecOptions {
+                        output_capacity: Some(capacity),
+                        ..
+                    }) => capacity,
                     _ => 8 * 1024,
                 };
 

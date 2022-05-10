@@ -109,7 +109,13 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     docker
-        .start_exec(&message.id, Some(StartExecOptions { detach: true, ..Default::default() }))
+        .start_exec(
+            &message.id,
+            Some(StartExecOptions {
+                detach: true,
+                ..Default::default()
+            }),
+        )
         .await?;
 
     let exec_process = &docker.inspect_exec(&message.id).await?;
@@ -162,12 +168,7 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
             CreateExecOptions {
                 attach_stdout: Some(true),
                 cmd: if cfg!(windows) {
-                    Some(vec![
-                        "cmd.exe",
-                        "/C",
-                        "echo",
-                        &text1
-                    ])
+                    Some(vec!["cmd.exe", "/C", "echo", &text1])
                 } else {
                     Some(vec!["/bin/echo", &text1])
                 },
@@ -203,12 +204,7 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
             CreateExecOptions {
                 attach_stdout: Some(true),
                 cmd: if cfg!(windows) {
-                    Some(vec![
-                        "cmd.exe",
-                        "/C",
-                        "echo",
-                        &text2
-                    ])
+                    Some(vec!["cmd.exe", "/C", "echo", &text2])
                 } else {
                     Some(vec!["/bin/echo", &text2])
                 },
@@ -218,10 +214,13 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let results = docker
-        .start_exec(&message.id, Some(StartExecOptions {
-            output_capacity: Some(100 * 1024),
-            ..Default::default()
-        }))
+        .start_exec(
+            &message.id,
+            Some(StartExecOptions {
+                output_capacity: Some(100 * 1024),
+                ..Default::default()
+            }),
+        )
         .await?;
 
     assert!(match results {
