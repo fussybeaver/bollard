@@ -160,7 +160,7 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
     create_daemon(&docker, "start_exec_output_capacity_test").await?;
 
     let text1 = "a".repeat(1024);
-    let text2 = "a".repeat(32 * 1024);
+    let text2 = "a".repeat(7 * 1024);
 
     let message = &docker
         .create_exec(
