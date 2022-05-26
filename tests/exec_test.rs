@@ -1,11 +1,15 @@
 #![type_length_limit = "2097152"]
 
+use std::task::Poll;
+
 use bollard::container::*;
 use bollard::errors::Error;
 use bollard::exec::*;
 use bollard::Docker;
 
+use futures_util::future;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -156,15 +160,14 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
-    create_daemon(&docker, "start_exec_output_capacity_test").await?;
+async fn start_exec_output_capacity_test_short(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "start_exec_output_capacity_test_short").await?;
 
     let text1 = "a".repeat(1024);
-    let text2 = "a".repeat(7 * 1024);
 
     let message = &docker
         .create_exec(
-            "start_exec_output_capacity_test",
+            "start_exec_output_capacity_test_short",
             CreateExecOptions {
                 attach_stdout: Some(true),
                 cmd: if cfg!(windows) {
@@ -181,26 +184,65 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
         .start_exec(&message.id, None::<StartExecOptions>)
         .await?;
 
-    assert!(match results {
-        StartExecResults::Attached { output, .. } => {
-            let log: Vec<_> = output.try_collect().await?;
-            assert!(!log.is_empty());
-            match &log[0] {
-                LogOutput::StdOut { message } => {
-                    let expected = if cfg!(windows) { text1 + "\r" } else { text1 };
+    if let StartExecResults::Attached { output, .. } = results {
+        let mut i = 0;
+        let stop_fut = future::poll_fn(|_cx| {
+            i += 1;
+            if i < text1.len() {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let stream = output.take_until(stop_fut);
 
-                    let s = String::from_utf8_lossy(message);
-                    s.split('\n').next().expect("log exists") == expected
-                }
-                _ => false,
+        let log: Vec<_> = stream.try_collect::<Vec<_>>().await?;
+        assert!(!log.is_empty());
+        let mut buf = String::new();
+
+        for chunk in &log {
+            if let LogOutput::StdOut { message } = chunk {
+                let s = String::from_utf8_lossy(message);
+                buf.push_str(&s);
             }
         }
-        _ => false,
-    });
+
+        assert_eq!(buf.trim(), text1);
+    }
+
+    let _ = &docker
+        .kill_container(
+            "start_exec_output_capacity_test_short",
+            None::<KillContainerOptions<String>>,
+        )
+        .await?;
+
+    let _ = &docker
+        .wait_container(
+            "start_exec_output_capacity_test_short",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let _ = &docker
+        .remove_container(
+            "start_exec_output_capacity_test_short",
+            None::<RemoveContainerOptions>,
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn start_exec_output_capacity_test_long(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "start_exec_output_capacity_test_long").await?;
+
+    let text2 = "a".repeat(7 * 1024);
 
     let message = &docker
         .create_exec(
-            "start_exec_output_capacity_test",
+            "start_exec_output_capacity_test_long",
             CreateExecOptions {
                 attach_stdout: Some(true),
                 cmd: if cfg!(windows) {
@@ -223,33 +265,42 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    assert!(match results {
-        StartExecResults::Attached { output, .. } => {
-            let log: Vec<_> = output.try_collect().await?;
-            assert!(!log.is_empty());
-            match &log[0] {
-                LogOutput::StdOut { message } => {
-                    let expected = if cfg!(windows) { text2 + "\r" } else { text2 };
+    if let StartExecResults::Attached { output, .. } = results {
+        let mut i = 0;
+        let stop_fut = future::poll_fn(|_cx| {
+            i += 1;
+            if i < text2.len() {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let stream = output.take_until(stop_fut);
 
-                    let s = String::from_utf8_lossy(message);
-                    s.split('\n').next().expect("log exists") == expected
-                }
-                _ => false,
+        let log: Vec<_> = stream.try_collect::<Vec<_>>().await?;
+        assert!(!log.is_empty());
+        let mut buf = String::new();
+
+        for chunk in &log {
+            if let LogOutput::StdOut { message } = chunk {
+                let s = String::from_utf8_lossy(message);
+                buf.push_str(&s);
             }
         }
-        _ => false,
-    });
+
+        assert_eq!(buf.trim(), text2);
+    }
 
     let _ = &docker
         .kill_container(
-            "start_exec_output_capacity_test",
+            "start_exec_output_capacity_test_long",
             None::<KillContainerOptions<String>>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
-            "start_exec_output_capacity_test",
+            "start_exec_output_capacity_test_long",
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
@@ -257,7 +308,7 @@ async fn start_exec_output_capacity_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .remove_container(
-            "start_exec_output_capacity_test",
+            "start_exec_output_capacity_test_long",
             None::<RemoveContainerOptions>,
         )
         .await?;
@@ -276,6 +327,11 @@ fn integration_test_inspect_exec() {
 }
 
 #[test]
-fn integration_test_start_exec_output_capacity() {
-    connect_to_docker_and_run!(start_exec_output_capacity_test);
+fn integration_test_start_exec_output_capacity_short() {
+    connect_to_docker_and_run!(start_exec_output_capacity_test_short);
+}
+
+#[test]
+fn integration_test_start_exec_output_capacity_long() {
+    connect_to_docker_and_run!(start_exec_output_capacity_test_long);
 }
