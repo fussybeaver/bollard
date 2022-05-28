@@ -801,6 +801,16 @@ pub struct ContainerUpdateResponse {
 
 }
 
+/// container waiting error, if any
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContainerWaitExitError {
+    /// Details of an error
+    #[serde(rename = "Message")]
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub message: Option<String>,
+
+}
+
 /// OK response to ContainerWait operation
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerWaitResponse {
@@ -809,18 +819,7 @@ pub struct ContainerWaitResponse {
     pub status_code: i64,
 
     #[serde(rename = "Error")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub error: Option<ContainerWaitResponseError>,
-
-}
-
-/// container waiting error, if any
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContainerWaitResponseError {
-    /// Details of an error
-    #[serde(rename = "Message")]
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub message: Option<String>,
+    pub error: ContainerWaitExitError,
 
 }
 
@@ -2028,7 +2027,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if="Option::is_none")]
     pub readonly_rootfs: Option<bool>,
 
-    /// A list of string values to customize labels for MLS systems, such as SELinux.
+    /// A list of string values to customize labels for MLS systems, such as SELinux. 
     #[serde(rename = "SecurityOpt")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub security_opt: Option<Vec<String>>,
@@ -3117,7 +3116,7 @@ pub struct NetworkPruneResponse {
 /// NetworkSettings exposes the network settings in the API
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkSettings {
-    /// Name of the network's bridge (for example, `docker0`).
+    /// Name of the network'a bridge (for example, `docker0`).
     #[serde(rename = "Bridge")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub bridge: Option<String>,
@@ -5159,7 +5158,7 @@ pub struct SwarmJoinRequest {
     #[serde(skip_serializing_if="Option::is_none")]
     pub advertise_addr: Option<String>,
 
-    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
+    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same addres as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
     #[serde(rename = "DataPathAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data_path_addr: Option<String>,
@@ -5672,7 +5671,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub experimental_build: Option<bool>,
 
-    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](https://docs.docker.com/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
+    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
     #[serde(rename = "ServerVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub server_version: Option<String>,
@@ -6565,9 +6564,9 @@ pub struct TaskSpecResources {
     pub limits: Option<Limit>,
 
     /// Define resources reservation.
-    #[serde(rename = "Reservation")]
+    #[serde(rename = "Reservations")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub reservation: Option<ResourceObject>,
+    pub reservations: Option<ResourceObject>,
 
 }
 
@@ -6905,7 +6904,7 @@ impl ::std::convert::AsRef<str> for VolumeScopeEnum {
 
 /// Volume configuration
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct VolumeConfig {
+pub struct VolumeCreateOptions {
     /// The new volume's name. If not specified, Docker generates a name. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if="Option::is_none")]
