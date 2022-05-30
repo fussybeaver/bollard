@@ -24,7 +24,7 @@ ct_logs = ["ssl", "ct-logs"]
 
 [dependencies]
 base64 = "0.13"
-bollard-stubs = { version = "=1.42.0-rc.0" }
+bollard-stubs = { version = "=1.42.0-rc.1" }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 ct-logs = { version = "0.9.0", optional = true }
