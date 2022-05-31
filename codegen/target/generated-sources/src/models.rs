@@ -284,7 +284,7 @@ pub struct ContainerChangeResponseItem {
 
 }
 
-/// Configuration for a container that is portable between hosts. 
+/// Configuration for a container that is portable between hosts.  When used as `ContainerConfig` field in an image, `ContainerConfig` is an optional field containing the configuration of the container that was last committed when creating the image.  Previous versions of Docker builder used this field to store build cache, and it is not in active use anymore. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerConfig {
     /// The hostname to use for the container, as a valid RFC 1123 hostname. 
@@ -819,7 +819,8 @@ pub struct ContainerWaitResponse {
     pub status_code: i64,
 
     #[serde(rename = "Error")]
-    pub error: ContainerWaitExitError,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub error: Option<ContainerWaitExitError>,
 
 }
 
@@ -2055,7 +2056,7 @@ pub struct HostConfig {
     /// Size of `/dev/shm` in bytes. If omitted, the system uses 64MB. 
     #[serde(rename = "ShmSize")]
     #[serde(skip_serializing_if="Option::is_none")]
-    pub shm_size: Option<usize>,
+    pub shm_size: Option<i64>,
 
     /// A list of kernel parameters (sysctls) to set in the container. For example:  ``` {\"net.ipv4.ip_forward\": \"1\"} ``` 
     #[serde(rename = "Sysctls")]
@@ -2230,12 +2231,12 @@ pub struct ImageId {
 /// Information about an image in the local image cache. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageInspect {
-    /// ID is the content-addressable ID of an image.  This identified is a content-addressable digest calculated from the image's configuration (which includes the digests of layers used by the image).  Note that this digest differs from the `RepoDigests` below, which holds digests of image manifests that reference the image. 
+    /// ID is the content-addressable ID of an image.  This identifier is a content-addressable digest calculated from the image's configuration (which includes the digests of layers used by the image).  Note that this digest differs from the `RepoDigests` below, which holds digests of image manifests that reference the image. 
     #[serde(rename = "Id")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub id: Option<String>,
 
-    /// List of image names/tags in the local image cache that reference this image.  Multiple image tags can refer to the same imagem and this list may be empty if no tags reference the image, in which case the image is \"untagged\", in which case it can still be referenced by its ID. 
+    /// List of image names/tags in the local image cache that reference this image.  Multiple image tags can refer to the same image, and this list may be empty if no tags reference the image, in which case the image is \"untagged\", in which case it can still be referenced by its ID. 
     #[serde(rename = "RepoTags")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub repo_tags: Option<Vec<String>>,
@@ -2389,36 +2390,46 @@ pub struct ImageSearchResponseItem {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageSummary {
+    /// ID is the content-addressable ID of an image.  This identifier is a content-addressable digest calculated from the image's configuration (which includes the digests of layers used by the image).  Note that this digest differs from the `RepoDigests` below, which holds digests of image manifests that reference the image. 
     #[serde(rename = "Id")]
     pub id: String,
 
+    /// ID of the parent image.  Depending on how the image was created, this field may be empty and is only set for images that were built/created locally. This field is empty if the image was pulled from an image registry. 
     #[serde(rename = "ParentId")]
     pub parent_id: String,
 
+    /// List of image names/tags in the local image cache that reference this image.  Multiple image tags can refer to the same image, and this list may be empty if no tags reference the image, in which case the image is \"untagged\", in which case it can still be referenced by its ID. 
     #[serde(rename = "RepoTags")]
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub repo_tags: Vec<String>,
 
+    /// List of content-addressable digests of locally available image manifests that the image is referenced from. Multiple manifests can refer to the same image.  These digests are usually only available if the image was either pulled from a registry, or if the image was pushed to a registry, which is when the manifest is generated and its digest calculated. 
     #[serde(rename = "RepoDigests")]
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub repo_digests: Vec<String>,
 
+    /// Date and time at which the image was created as a Unix timestamp (number of seconds sinds EPOCH). 
     #[serde(rename = "Created")]
     pub created: i64,
 
+    /// Total size of the image including all layers it is composed of. 
     #[serde(rename = "Size")]
     pub size: i64,
 
+    /// Total size of image layers that are shared between this image and other images.  This size is not calculated by default. `-1` indicates that the value has not been set / calculated. 
     #[serde(rename = "SharedSize")]
     pub shared_size: i64,
 
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
     #[serde(rename = "VirtualSize")]
     pub virtual_size: i64,
 
+    /// User-defined key/value metadata.
     #[serde(rename = "Labels")]
     #[serde(deserialize_with = "deserialize_nonoptional_map")]
     pub labels: HashMap<String, String>,
 
+    /// Number of containers using this image. Includes both stopped and running containers.  This size is not calculated by default, and depends on which API endpoint is used. `-1` indicates that the value has not been set / calculated. 
     #[serde(rename = "Containers")]
     pub containers: i64,
 
@@ -3116,7 +3127,7 @@ pub struct NetworkPruneResponse {
 /// NetworkSettings exposes the network settings in the API
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkSettings {
-    /// Name of the network'a bridge (for example, `docker0`).
+    /// Name of the network's bridge (for example, `docker0`).
     #[serde(rename = "Bridge")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub bridge: Option<String>,
@@ -5158,7 +5169,7 @@ pub struct SwarmJoinRequest {
     #[serde(skip_serializing_if="Option::is_none")]
     pub advertise_addr: Option<String>,
 
-    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same addres as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
+    /// Address or interface to use for data path traffic (format: `<ip|interface>`), for example,  `192.168.1.1`, or an interface, like `eth0`. If `DataPathAddr` is unspecified, the same address as `AdvertiseAddr` is used.  The `DataPathAddr` specifies the address that global scope network drivers will publish towards other nodes in order to reach the containers running on this node. Using this parameter it is possible to separate the container data traffic from the management traffic of the cluster. 
     #[serde(rename = "DataPathAddr")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub data_path_addr: Option<String>,
@@ -5671,7 +5682,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if="Option::is_none")]
     pub experimental_build: Option<bool>,
 
-    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
+    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](https://docs.docker.com/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
     #[serde(rename = "ServerVersion")]
     #[serde(skip_serializing_if="Option::is_none")]
     pub server_version: Option<String>,
@@ -6932,13 +6943,13 @@ pub struct VolumeCreateOptions {
 pub struct VolumeListResponse {
     /// List of volumes
     #[serde(rename = "Volumes")]
-    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
-    pub volumes: Vec<Volume>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub volumes: Option<Vec<Volume>>,
 
     /// Warnings that occurred when fetching the list of volumes. 
     #[serde(rename = "Warnings")]
-    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
-    pub warnings: Vec<String>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub warnings: Option<Vec<String>>,
 
 }
 

@@ -35,8 +35,11 @@ async fn list_volumes_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert_eq!(results.volumes.len(), 1);
-    assert_eq!(results.volumes[0].name, "integration_test_list_volumes");
+    assert_eq!(results.volumes.as_ref().unwrap().len(), 1);
+    assert_eq!(
+        results.volumes.as_ref().unwrap()[0].name,
+        "integration_test_list_volumes"
+    );
 
     let remove_volume_options = RemoveVolumeOptions { force: true };
     let _ = &docker
@@ -124,7 +127,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert_eq!(results.volumes.len(), 0);
+    assert_eq!(results.volumes, None);
 
     let mut list_volumes_filters = HashMap::new();
     list_volumes_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
@@ -135,8 +138,11 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert_eq!(results.volumes.len(), 1);
-    assert_eq!(results.volumes[0].name, "integration_test_prune_volumes_2");
+    assert_eq!(results.volumes.as_ref().unwrap().len(), 1);
+    assert_eq!(
+        results.volumes.as_ref().unwrap()[0].name,
+        "integration_test_prune_volumes_2"
+    );
 
     let results = &docker.list_volumes::<String>(None).await?;
 
@@ -146,13 +152,15 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         String::from("bollard-maintainer"),
     );
 
-    assert_ne!(0, results.volumes.len());
+    assert_ne!(0, results.volumes.as_ref().unwrap().len());
 
     // we need to filter the results, because volumes without a label are not pruned
     assert_eq!(
         &expected_results_label,
         &results
             .volumes
+            .as_ref()
+            .unwrap()
             .iter()
             .find(|v| !v.labels.is_empty())
             .unwrap()

@@ -19,10 +19,11 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <!-- At the time of writing, v20.10.16 + a few fixes == v1.41 API 
+                <!-- moby commit a06bae909494b43daadc0ee60dbce79231616470 is v20.10.16 + a fix for issue https://github.com/moby/moby/issues/43655 
                 <inputSpec>https://raw.githubusercontent.com/moby/moby/v20.10.16/docs/api/v1.41.yaml</inputSpec>
-                -->
                 <inputSpec>https://docs.docker.com/engine/api/v1.41.yaml</inputSpec>
+                -->
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/a06bae909494b43daadc0ee60dbce79231616470/docs/api/v1.41.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.build.directory}/generated-sources</output>
                 <generateApis>true</generateApis>
@@ -30,7 +31,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.42.0-rc.1</packageVersion>
+                  <packageVersion>1.42.0-rc.2</packageVersion>
                 </configOptions>
               </configuration>
             </execution>

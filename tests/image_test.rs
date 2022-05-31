@@ -241,7 +241,9 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let first = vec.get(0).unwrap();
-    println!("{}", first.error.message.as_ref().unwrap());
+    if let Some(error) = &first.error {
+        println!("{}", error.message.as_ref().unwrap());
+    }
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
@@ -356,7 +358,9 @@ RUN touch bollard.txt
         .await?;
 
     let first = vec.get(0).unwrap();
-    println!("{}", first.error.message.as_ref().unwrap());
+    if let Some(error) = &first.error {
+        println!("{}", error.message.as_ref().unwrap());
+    }
     assert_eq!(first.status_code, 0);
     let _ = &docker
         .remove_container("integration_test_build_image", None)
