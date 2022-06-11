@@ -29,7 +29,23 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: dockerfiles/bin/run_integration_tests.sh
+      - run: dockerfiles/bin/run_integration_tests.sh --tests
+  test_chrono:
+    docker:
+      - image: docker:20.10.16
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run: dockerfiles/bin/run_integration_tests.sh --features chrono --tests
+  test_time:
+    docker:
+      - image: docker:20.10.16
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run: dockerfiles/bin/run_integration_tests.sh --features time --tests
   test_doc:
     docker:
       - image: docker:20.10.16
@@ -70,6 +86,8 @@ workflows:
       - test_ssl
       - test_http
       - test_unix
+      - test_chrono
+      - test_time
       - test_doc
       - test_clippy
       - test_audit
