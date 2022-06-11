@@ -20,4 +20,4 @@ docker push localhost:5000/hello-world:linux
 docker push localhost:5000/fussybeaver/uhttpd
 docker push localhost:5000/alpine
 docker swarm init
-docker run -e RUST_LOG=bollard=debug -e REGISTRY_PASSWORD -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test -- --test-threads 1
+docker run -e RUST_LOG=bollard=debug -e REGISTRY_PASSWORD -e REGISTRY_HTTP_ADDR=localhost:5000 -v /var/run/docker.sock:/var/run/docker.sock -ti --rm bollard cargo test --tests -- --test-threads 1

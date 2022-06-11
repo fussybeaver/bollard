@@ -29,7 +29,6 @@ use hyper_rustls::HttpsConnector;
 use hyperlocal::UnixConnector;
 #[cfg(feature = "ssl")]
 use rustls::sign::{CertifiedKey, RsaSigningKey};
-use time::OffsetDateTime;
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 
@@ -187,16 +186,18 @@ where
     )
 }
 
+#[cfg(feature = "time")]
 pub fn deserialize_rfc3339<'de, D: serde::Deserializer<'de>>(
     d: D,
-) -> Result<OffsetDateTime, D::Error> {
+) -> Result<time::OffsetDateTime, D::Error> {
     let s: String = serde::Deserialize::deserialize(d)?;
-    OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
+    time::OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
         .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))
 }
 
+#[cfg(feature = "time")]
 pub fn serialize_rfc3339<S: serde::Serializer>(
-    date: &OffsetDateTime,
+    date: &time::OffsetDateTime,
     s: S,
 ) -> Result<S::Ok, S::Error> {
     s.serialize_str(
@@ -206,15 +207,34 @@ pub fn serialize_rfc3339<S: serde::Serializer>(
     )
 }
 
+#[cfg(feature = "time")]
 pub(crate) fn serialize_as_timestamp<S>(
-    opt: &Option<OffsetDateTime>,
+    opt: &Option<crate::models::BollardDate>,
     s: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     match opt {
-        Some(t) => s.serialize_str(&format!("{}.{}", t.unix_timestamp(), t.unix_timestamp_nanos())),
+        Some(t) => s.serialize_str(&format!(
+            "{}.{}",
+            t.unix_timestamp(),
+            t.unix_timestamp_nanos()
+        )),
+        None => s.serialize_str(""),
+    }
+}
+
+#[cfg(feature = "chrono")]
+pub(crate) fn serialize_as_timestamp<S>(
+    opt: &Option<crate::models::BollardDate>,
+    s: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match opt {
+        Some(t) => s.serialize_str(&format!("{}.{}", t.timestamp(), t.timestamp_subsec_nanos())),
         None => s.serialize_str(""),
     }
 }

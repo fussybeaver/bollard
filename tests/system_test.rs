@@ -9,7 +9,6 @@ use futures_util::future;
 use futures_util::stream::select;
 use futures_util::stream::StreamExt;
 use futures_util::stream::TryStreamExt;
-use time::OffsetDateTime;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -71,6 +70,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(any(feature = "time", feature = "chrono"))]
 async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
@@ -78,7 +78,10 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let start_time = OffsetDateTime::now_utc();
+    #[cfg(feature = "time")]
+    let start_time = time::OffsetDateTime::now_utc();
+    #[cfg(feature = "chrono")]
+    let start_time = chrono::Utc::now();
 
     let stream = docker.events(Some(EventsOptions::<String> {
         since: Some(start_time),
@@ -161,7 +164,7 @@ fn integration_test_events() {
 }
 
 #[test]
-#[cfg(not(windows))]
+#[cfg(all(not(windows), any(feature = "chrono", feature = "time")))]
 fn integration_test_events_until_forever() {
     connect_to_docker_and_run!(events_until_forever_test);
 }

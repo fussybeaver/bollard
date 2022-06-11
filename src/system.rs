@@ -5,7 +5,6 @@ use http::request::Builder;
 use hyper::{Body, Method};
 use serde::ser::Serialize;
 use serde_json::value::Value;
-use time::OffsetDateTime;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -121,11 +120,27 @@ where
     T: Into<String> + Eq + Hash + Serialize,
 {
     /// Show events created since this timestamp then stream new events.
+    #[cfg(feature = "chrono")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub since: Option<OffsetDateTime>,
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created until this timestamp then stop streaming.
+    #[cfg(feature = "chrono")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub until: Option<OffsetDateTime>,
+    pub until: Option<chrono::DateTime<chrono::Utc>>,
+    /// Show events created since this timestamp then stream new events.
+    #[cfg(feature = "time")]
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub since: Option<time::OffsetDateTime>,
+    /// Show events created until this timestamp then stop streaming.
+    #[cfg(feature = "time")]
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub until: Option<time::OffsetDateTime>,
+    /// Show events created since this timestamp then stream new events.
+    #[cfg(not(any(feature = "time", feature = "chrono")))]
+    pub since: Option<String>,
+    /// Show events created until this timestamp then stop streaming.
+    #[cfg(not(any(feature = "time", feature = "chrono")))]
+    pub until: Option<String>,
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
     ///  - `config=<string>` config name or ID
     ///  - `container=<string>` container name or ID

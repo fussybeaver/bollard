@@ -5,7 +5,6 @@ use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
-use time::OffsetDateTime;
 use tokio::io::AsyncWrite;
 use tokio_util::codec::FramedRead;
 
@@ -737,16 +736,26 @@ pub struct StorageStats {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct Stats {
+    #[cfg(feature = "time")]
     #[serde(
         deserialize_with = "crate::docker::deserialize_rfc3339",
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
-    pub read: OffsetDateTime,
+    pub read: time::OffsetDateTime,
+    #[cfg(feature = "time")]
     #[serde(
         deserialize_with = "crate::docker::deserialize_rfc3339",
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
-    pub preread: OffsetDateTime,
+    pub preread: time::OffsetDateTime,
+    #[cfg(feature = "chrono")]
+    pub read: chrono::DateTime<chrono::Utc>,
+    #[cfg(feature = "chrono")]
+    pub preread: chrono::DateTime<chrono::Utc>,
+    #[cfg(not(any(feature = "chrono", feature = "time")))]
+    pub read: String,
+    #[cfg(not(any(feature = "chrono", feature = "time")))]
+    pub preread: String,
     pub num_procs: u32,
     pub pids_stats: PidsStats,
     pub network: Option<NetworkStats>,

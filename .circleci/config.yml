@@ -37,7 +37,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard cargo test --target x86_64-unknown-linux-gnu --doc
+      - run: docker run -ti --rm bollard cargo test --features time --target x86_64-unknown-linux-gnu --doc
   test_clippy:
     docker:
       - image: docker:20.10.16
