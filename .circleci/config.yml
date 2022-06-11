@@ -62,7 +62,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "cargo fmt -- --check --verbose"
+      - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -- --check --verbose"
 workflows:
   version: 2
   test-image:
