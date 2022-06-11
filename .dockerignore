@@ -1,7 +1,8 @@
 .DS_Store
 .git
 Cargo.lock
-**/target
+/target
+/codegen/target/generated-sources/target
 doc
 main.rs
 **/workspace
