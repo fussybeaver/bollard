@@ -1,6 +1,3 @@
-use std::cmp;
-use std::env;
-use std::fmt;
 #[cfg(feature = "ssl")]
 use std::fs;
 use std::future::Future;
@@ -14,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "ct_logs")]
 use std::time::SystemTime;
+use std::{cmp, env, fmt};
 
 use futures_core::Stream;
 use futures_util::future::FutureExt;
@@ -1145,15 +1143,17 @@ impl Docker {
     where
         T: DeserializeOwned,
     {
-        let contents = Docker::decode_into_string(response).await?;
+        let bytes = hyper::body::to_bytes(response.into_body()).await?;
 
-        debug!("Decoded into string: {}", &contents);
-        serde_json::from_str::<T>(&contents).map_err(|e| {
+        debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
+
+        serde_json::from_slice::<T>(&bytes).map_err(|e| {
             if e.is_data() {
                 JsonDataError {
                     message: e.to_string(),
                     column: e.column(),
-                    contents: contents.to_owned(),
+                    #[cfg(feature = "json_data_content")]
+                    contents: String::from_utf8_lossy(&bytes).to_string(),
                 }
             } else {
                 e.into()
