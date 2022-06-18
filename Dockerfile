@@ -1,11 +1,7 @@
-FROM ekidd/rust-musl-builder:stable AS builder
+FROM rust:1.61.0-buster
 
-WORKDIR /tmp/bollard
+WORKDIR /usr/src/bollard
 
-COPY . ./
-
-RUN sudo chown -R rust:rust /tmp/bollard \
-  && sudo groupadd --gid 999 docker \
-  && sudo usermod -a -G docker rust
+COPY . .
 
 RUN cargo build

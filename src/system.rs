@@ -1,6 +1,5 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 
-use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::request::Builder;
 use hyper::{Body, Method};
@@ -103,15 +102,14 @@ pub struct VersionComponents {
 /// ## Examples
 ///
 /// ```rust
-/// # extern crate chrono;
 /// use bollard::system::EventsOptions;
-/// use chrono::{Duration, Utc};
+/// use time::{Duration, OffsetDateTime};
 /// use std::collections::HashMap;
 ///
 /// # fn main() {
 /// EventsOptions::<String>{
-///     since: Some(Utc::now() - Duration::minutes(20)),
-///     until: Some(Utc::now()),
+///     since: Some(OffsetDateTime::now_utc() - Duration::minutes(20)),
+///     until: Some(OffsetDateTime::now_utc()),
 ///     filters: HashMap::new()
 /// };
 /// # }
@@ -122,11 +120,27 @@ where
     T: Into<String> + Eq + Hash + Serialize,
 {
     /// Show events created since this timestamp then stream new events.
+    #[cfg(feature = "chrono")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub since: Option<DateTime<Utc>>,
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created until this timestamp then stop streaming.
+    #[cfg(feature = "chrono")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
-    pub until: Option<DateTime<Utc>>,
+    pub until: Option<chrono::DateTime<chrono::Utc>>,
+    /// Show events created since this timestamp then stream new events.
+    #[cfg(feature = "time")]
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub since: Option<time::OffsetDateTime>,
+    /// Show events created until this timestamp then stop streaming.
+    #[cfg(feature = "time")]
+    #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    pub until: Option<time::OffsetDateTime>,
+    /// Show events created since this timestamp then stream new events.
+    #[cfg(not(any(feature = "time", feature = "chrono")))]
+    pub since: Option<String>,
+    /// Show events created until this timestamp then stop streaming.
+    #[cfg(not(any(feature = "time", feature = "chrono")))]
+    pub until: Option<String>,
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
     ///  - `config=<string>` config name or ID
     ///  - `container=<string>` container name or ID
@@ -250,15 +264,15 @@ impl Docker {
     ///
     /// ```rust
     /// use bollard::system::EventsOptions;
-    /// use chrono::{Duration, Utc};
+    /// use time::{Duration, OffsetDateTime};
     /// use std::collections::HashMap;
     ///
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.events(Some(EventsOptions::<String> {
-    ///     since: Some(Utc::now() - Duration::minutes(20)),
-    ///     until: Some(Utc::now()),
+    ///     since: Some(OffsetDateTime::now_utc() - Duration::minutes(20)),
+    ///     until: Some(OffsetDateTime::now_utc()),
     ///     filters: HashMap::new(),
     /// }));
     /// ```

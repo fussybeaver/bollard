@@ -348,7 +348,6 @@ mod tests {
 
     #[test]
     fn json_decode_lacking_newline() {
-        env_logger::try_init().unwrap();
         let mut buf = BytesMut::from(&b"{}"[..]);
         let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
 

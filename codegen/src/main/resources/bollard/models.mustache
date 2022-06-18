@@ -9,9 +9,6 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
-use chrono::DateTime;
-use chrono::Utc;
-
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<Vec<T>, D::Error> {
@@ -22,6 +19,52 @@ fn deserialize_nonoptional_map<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<HashMap<String, T>, D::Error> {
     serde::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or(HashMap::new()))
+}
+
+#[cfg(feature = "time")]
+pub type BollardDate = time::OffsetDateTime;
+#[cfg(feature = "chrono")]
+pub type BollardDate = chrono::DateTime<chrono::Utc>;
+#[cfg(not(any(feature = "chrono", feature = "time")))]
+pub type BollardDate = String;
+
+#[cfg(feature = "time")]
+fn deserialize_timestamp<'de, D: Deserializer<'de>>(
+    d: D
+) -> Result<Option<BollardDate>, D::Error> {
+    let opt: Option<String> = serde::Deserialize::deserialize(d)?;
+    if let Some(s) = opt {
+        Ok(Some(
+            time::OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
+                .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(not(feature = "time"))]
+fn deserialize_timestamp<'de, D: Deserializer<'de>>(
+    d: D
+) -> Result<Option<BollardDate>, D::Error> {
+    serde::Deserialize::deserialize(d)
+}
+
+#[cfg(feature = "time")]
+fn serialize_timestamp<S: Serializer>(date: &Option<BollardDate>, s: S) -> Result<S::Ok, S::Error> {
+    match date {
+        Some(inner) => Ok(s.serialize_str(&inner.format(&time::format_description::well_known::Rfc3339)
+                                          .map_err(|e| serde::ser::Error::custom(format!("{:?}", e)))?)?),
+        None => Ok(s.serialize_str("")?)
+    }
+}
+
+#[cfg(not(feature = "time"))]
+fn serialize_timestamp<S: Serializer>(date: &Option<BollardDate>, s: S) -> Result<S::Ok, S::Error> {
+    match date {
+        Some(inner) => s.serialize_some(inner),
+        None => s.serialize_none()
+    }
 }
 
 {{#models}}{{#model}}
@@ -68,10 +111,12 @@ pub struct {{classname}} {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}
+    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
-    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(skip_serializing_if="Option::is_none")]{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: Option<{{#isEnum}}{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}}>,
 {{/required}}
 

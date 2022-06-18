@@ -22,6 +22,7 @@ public class BollardCodegen extends RustServerCodegen {
 
     public BollardCodegen() {
         super();
+        typeMapping.put("DateTime", "BollardDate");
     }
 
     // Declare custom additions to inline enums that are behaving differently
@@ -123,9 +124,10 @@ public class BollardCodegen extends RustServerCodegen {
                 } else if (prop.name.equals("_type")) {
                     prop.name = "typ";
                 } 
-                if (prop.dataFormat != null && prop.dataFormat.equals("dateTime")) {
+                if (prop.dataFormat != null && (prop.dataFormat.equals("dateTime") || prop.datatype.equals("BollardDate"))) {
                     // set DateTime format on properties where appropriate
-                    prop.datatype = "DateTime<Utc>";
+                    prop.vendorExtensions.put("x-rustgen-is-datetime", true);
+                    prop.datatype = "BollardDate";
                 }
                 if (prop.isEnum) {
                     if (enumToString.contains(model.classname)) {

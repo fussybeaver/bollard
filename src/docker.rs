@@ -15,7 +15,6 @@ use std::time::Duration;
 #[cfg(feature = "ct_logs")]
 use std::time::SystemTime;
 
-use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
@@ -187,8 +186,48 @@ where
     )
 }
 
+#[cfg(feature = "time")]
+pub fn deserialize_rfc3339<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<time::OffsetDateTime, D::Error> {
+    let s: String = serde::Deserialize::deserialize(d)?;
+    time::OffsetDateTime::parse(&s, &time::format_description::well_known::Rfc3339)
+        .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))
+}
+
+#[cfg(feature = "time")]
+pub fn serialize_rfc3339<S: serde::Serializer>(
+    date: &time::OffsetDateTime,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    s.serialize_str(
+        &date
+            .format(&time::format_description::well_known::Rfc3339)
+            .map_err(|e| serde::ser::Error::custom(format!("{:?}", e)))?,
+    )
+}
+
+#[cfg(feature = "time")]
 pub(crate) fn serialize_as_timestamp<S>(
-    opt: &Option<DateTime<Utc>>,
+    opt: &Option<crate::models::BollardDate>,
+    s: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match opt {
+        Some(t) => s.serialize_str(&format!(
+            "{}.{}",
+            t.unix_timestamp(),
+            t.unix_timestamp_nanos()
+        )),
+        None => s.serialize_str(""),
+    }
+}
+
+#[cfg(feature = "chrono")]
+pub(crate) fn serialize_as_timestamp<S>(
+    opt: &Option<crate::models::BollardDate>,
     s: S,
 ) -> Result<S::Ok, S::Error>
 where

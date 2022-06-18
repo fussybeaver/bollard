@@ -37,7 +37,6 @@ async fn service_create_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn service_list_test(docker: Docker) -> Result<(), Error> {
-    env_logger::init();
     let image = if cfg!(windows) {
         format!("{}nanoserver/iis", registry_http_addr())
     } else {

@@ -1,6 +1,5 @@
 //! Container API: run docker containers and manage their lifecycle
 
-use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
@@ -737,8 +736,26 @@ pub struct StorageStats {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub struct Stats {
-    pub read: DateTime<Utc>,
-    pub preread: DateTime<Utc>,
+    #[cfg(feature = "time")]
+    #[serde(
+        deserialize_with = "crate::docker::deserialize_rfc3339",
+        serialize_with = "crate::docker::serialize_rfc3339"
+    )]
+    pub read: time::OffsetDateTime,
+    #[cfg(feature = "time")]
+    #[serde(
+        deserialize_with = "crate::docker::deserialize_rfc3339",
+        serialize_with = "crate::docker::serialize_rfc3339"
+    )]
+    pub preread: time::OffsetDateTime,
+    #[cfg(feature = "chrono")]
+    pub read: chrono::DateTime<chrono::Utc>,
+    #[cfg(feature = "chrono")]
+    pub preread: chrono::DateTime<chrono::Utc>,
+    #[cfg(not(any(feature = "chrono", feature = "time")))]
+    pub read: String,
+    #[cfg(not(any(feature = "chrono", feature = "time")))]
+    pub preread: String,
     pub num_procs: u32,
     pub pids_stats: PidsStats,
     pub network: Option<NetworkStats>,
