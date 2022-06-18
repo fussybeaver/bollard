@@ -9,7 +9,7 @@ repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard"
 readme = "README.md"
 keywords = ["docker"]
-edition = "2018"
+edition = "2021"
 
 [features]
 # Enable tests specifically for the http connector
@@ -26,7 +26,7 @@ time = ["dep:time", "bollard-stubs/time"]
 
 [dependencies]
 base64 = "0.13"
-bollard-stubs = { version = "=1.42.0-rc.2", path = "codegen/target/generated-sources", default-features = false }
+bollard-stubs = { version = "=1.42.0-rc.3", path = "codegen/target/generated-sources", default-features = false }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"], optional = true }
 ct-logs = { version = "0.9.0", optional = true }
