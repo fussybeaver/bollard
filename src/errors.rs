@@ -54,7 +54,8 @@ pub enum Error {
     JsonDataError {
         /// Short section of the json close to the error.
         message: String,
-        /// Entire JSON payload.
+        /// Entire JSON payload. This field is toggled with the **json_data_content** feature cargo flag.
+        #[cfg(feature = "json_data_content")]
         contents: String,
         /// Character sequence at error location.
         column: usize,
@@ -65,6 +66,9 @@ pub enum Error {
         /// The api version returned by the server.
         api_version: String,
     },
+    /// Error emitted when a request times out.
+    #[error("Timeout error")]
+    RequestTimeoutError,
     /// Error emitted when JSON fails to serialize.
     #[error(transparent)]
     JsonSerdeError {
@@ -107,9 +111,6 @@ pub enum Error {
         #[from]
         err: hyper::Error,
     },
-    /// Error emitted when a request times out.
-    #[error("Timeout error")]
-    RequestTimeoutError,
     /// Error emitted when serde fails to urlencod a struct of options
     #[error(transparent)]
     URLEncodedError {

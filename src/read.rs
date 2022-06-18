@@ -115,6 +115,7 @@ fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<Option<T>
         Err(ref e) if e.is_data() => Err(JsonDataError {
             message: e.to_string(),
             column: e.column(),
+            #[cfg(feature = "json_data_content")]
             contents: String::from_utf8_lossy(slice).to_string(),
         }),
         Err(e) if e.is_eof() => Ok(None),

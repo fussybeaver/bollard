@@ -18,6 +18,8 @@ test_http = []
 test_ssl = ["ssl"]
 # Enable tests specifically for macos
 test_macos = []
+# Enable JSON payload in deserialization errors
+json_data_content = []
 # Enable rustls / ssl
 ssl = ["dirs-next", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "webpki", "webpki-roots"]
 ct_logs = ["ssl", "ct-logs"]
