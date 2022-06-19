@@ -19,13 +19,16 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.12"
+bollard = "0.13"
 ```
 
 ## API
 ### Documentation
 
 [API docs](https://docs.rs/bollard/).
+
+Version 0.13 introduces an optional `chrono` and alternative mutually exclusive `time` feature
+flag to represent the date format. This version matches the moby v20.10.16 server API.
 
 Version 0.11 re-enables Windows Named Pipe support.
 
