@@ -368,7 +368,7 @@ async fn resize_container_test(docker: Docker) -> Result<(), Error> {
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker
         .remove_container(
@@ -416,7 +416,7 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let result = &docker
         .inspect_container(

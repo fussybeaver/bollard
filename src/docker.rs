@@ -97,6 +97,10 @@ pub(crate) enum Transport {
     NamedPipe {
         client: Client<NamedPipeConnector>,
     },
+    #[cfg(test)]
+    Mock {
+        client: Client<yup_hyper_mock::HostToReplyConnector>,
+    },
 }
 
 impl fmt::Debug for Transport {
@@ -109,6 +113,8 @@ impl fmt::Debug for Transport {
             Transport::Unix { .. } => write!(f, "Unix"),
             #[cfg(windows)]
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
+            #[cfg(test)]
+            Transport::Mock { .. } => write!(f, "Mock"),
         }
     }
 }
@@ -846,6 +852,62 @@ impl Docker {
     }
 }
 
+#[cfg(test)]
+impl Docker {
+    ///
+    ///  - `connector`: a `HostToReplyConnector` as defined in `yup_hyper_mock`
+    ///  - `client_addr`: location to connect to.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # extern crate bollard;
+    /// # extern crate futures;
+    /// # extern crate yup_hyper_mock;
+    /// # fn main () {
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures::future::Future;
+    ///
+    /// # use yup_hyper_mock::HostToReplyConnector;
+    /// let mut connector = HostToReplyConnector::default();
+    /// connector.m.insert(
+    ///   String::from("http://127.0.0.1"),
+    ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+    /// );
+    /// let connection = Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION).unwrap();
+    /// connection.ping()
+    ///   .and_then(|_| Ok(println!("Connected!")));
+    /// # }
+    /// ```
+    pub fn connect_with_mock(
+        connector: yup_hyper_mock::HostToReplyConnector,
+        client_addr: String,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        let client_builder = Client::builder();
+        let client = client_builder.build(connector);
+
+        let (transport, client_type) = (Transport::Mock { client }, ClientType::Http);
+
+        let docker = Docker {
+            transport: Arc::new(transport),
+            client_type,
+            client_addr,
+            client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
+        };
+
+        Ok(docker)
+    }
+}
+
 impl Docker {
     /// Set the request timeout.
     ///
@@ -1106,6 +1168,8 @@ impl Docker {
             Transport::Unix { ref client } => client.request(req),
             #[cfg(windows)]
             Transport::NamedPipe { ref client } => client.request(req),
+            #[cfg(test)]
+            Transport::Mock { ref client } => client.request(req),
         };
 
         match tokio::time::timeout(Duration::from_secs(timeout), request).await {

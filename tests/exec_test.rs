@@ -77,7 +77,7 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker
         .remove_container(
@@ -223,7 +223,7 @@ async fn start_exec_output_capacity_test_short(docker: Docker) -> Result<(), Err
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker
         .remove_container(
@@ -304,7 +304,7 @@ async fn start_exec_output_capacity_test_long(docker: Docker) -> Result<(), Erro
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker
         .remove_container(

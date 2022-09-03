@@ -20,36 +20,6 @@ macro_rules! rt_exec {
 }
 
 #[allow(unused_macros)]
-macro_rules! rt_stream {
-    ($docker_call:expr, $assertions:expr) => {{
-        let rt = Runtime::new().unwrap();
-        let call = $docker_call.fold(vec![], |mut v, line| {
-            v.push(line);
-            future::ok::<_, Error>(v)
-        });
-        $assertions(
-            rt.block_on(call)
-                .or_else(|e| {
-                    println!("{}", e);
-                    Err(e)
-                })
-                .unwrap(),
-        );
-        rt.shutdown_now();
-    }};
-}
-
-#[allow(unused_macros)]
-macro_rules! rt_exec_ignore_error {
-    ($docker_call:expr, $assertions:expr) => {{
-        let rt = Runtime::new().unwrap();
-        let call = $docker_call;
-        $assertions(rt.block_on(call).unwrap_or_else(|_| ()));
-        rt.shutdown_now().wait().unwrap();
-    }};
-}
-
-#[allow(unused_macros)]
 macro_rules! connect_to_docker_and_run {
     ($exec:expr) => {{
         let rt = Runtime::new().unwrap();
@@ -284,7 +254,7 @@ pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Re
     let _ = &docker
         .wait_container(container_name, None::<WaitContainerOptions<String>>)
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker.remove_container(container_name, None).await?;
 

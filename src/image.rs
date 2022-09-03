@@ -550,6 +550,16 @@ impl Docker {
             }
             Err(e) => stream::once(async move { Err(Error::from(e)) }).boxed(),
         }
+        .map(|res| {
+            if let Ok(CreateImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -908,6 +918,16 @@ impl Docker {
             }
             Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
+        .map(|res| {
+            if let Ok(PushImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -1042,6 +1062,16 @@ impl Docker {
             }
             Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
+        .map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -1157,5 +1187,136 @@ impl Docker {
             }
             Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
+        .map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![cfg(not(target_arch = "windows"))]
+
+    use std::io::Write;
+
+    use futures_util::TryStreamExt;
+    use yup_hyper_mock::HostToReplyConnector;
+
+    use crate::{
+        image::{BuildImageOptions, PushImageOptions},
+        Docker, API_DEFAULT_VERSION,
+    };
+
+    use super::CreateImageOptions;
+
+    #[tokio::test]
+    async fn test_create_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"status\":\"Pulling from localstack/localstack\",\"id\":\"0.14.2\"}\n{\"errorDetail\":{\"message\":\"Get \\\"[https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819](https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819/)\\\": EOF\"},\"error\":\"Get \\\"[https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819](https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819/)\\\": EOF\"}".to_string());
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let image = String::from("localstack");
+
+        let result = &docker
+            .create_image(
+                Some(CreateImageOptions {
+                    from_image: &image[..],
+                    ..Default::default()
+                }),
+                None,
+                None,
+            )
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_push_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"status\":\"The push refers to repository [localhost:5000/centos]\"}\n{\"status\":\"Preparing\",\"progressDetail\":{},\"id\":\"74ddd0ec08fa\"}\n{\"errorDetail\":{\"message\":\"EOF\"},\"error\":\"EOF\"}".to_string());
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let image = String::from("centos");
+
+        let result = docker
+            .push_image(&image[..], None::<PushImageOptions<String>>, None)
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_build_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"), 
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\n{\"stream\":\"\n\"}\n{\"status\":\"Pulling from library/alpine\",\"id\":\"latest\"}\n{\"status\":\"Digest: sha256:bc41182d7ef5ffc53a40b044e725193bc10142a1243f395ee852a8d9730fc2ad\"}\n{\"status\":\"Status: Image is up to date for alpine:latest\"}\n{\"stream\":\" --- 9c6f07244728\\n\"}\n{\"stream\":\"Step 2/2 : RUN cmd.exe /C copy nul bollard.txt\"}\n{\"stream\":\"\\n\"}\n{\"stream\":\" --- Running in d615794caf91\\n\"}\n{\"stream\":\"/bin/sh: cmd.exe: not found\\n\"}\n{\"errorDetail\":{\"code\":127,\"message\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"},\"error\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"}".to_string());
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let dockerfile = String::from(
+            r#"FROM alpine
+            RUN cmd.exe /C copy nul bollard.txt"#,
+        );
+
+        let mut header = tar::Header::new_gnu();
+        header.set_path("Dockerfile").unwrap();
+        header.set_size(dockerfile.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        let mut tar = tar::Builder::new(Vec::new());
+        tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+        let uncompressed = tar.into_inner().unwrap();
+        let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        c.write_all(&uncompressed).unwrap();
+        let compressed = c.finish().unwrap();
+
+        let result = &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_image".to_string(),
+                    pull: true,
+                    rm: true,
+                    ..Default::default()
+                },
+                None,
+                Some(compressed.into()),
+            )
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
     }
 }
