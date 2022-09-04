@@ -69,6 +69,20 @@ pub enum Error {
     /// Error emitted when a request times out.
     #[error("Timeout error")]
     RequestTimeoutError,
+    /// Error emitted mid-stream as part of a successful docker operation
+    #[error("Docker stream error")]
+    DockerStreamError {
+        /// error string emitted by the Stream
+        error: String,
+    },
+    /// Error emitted as part of a container wait response
+    #[error("Docker container wait error")]
+    DockerContainerWaitError {
+        /// error string returned from container wait call
+        error: String,
+        /// error code returned from container wait call
+        code: i64,
+    },
     /// Error emitted when JSON fails to serialize.
     #[error(transparent)]
     JsonSerdeError {

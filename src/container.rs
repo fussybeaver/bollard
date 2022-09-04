@@ -1,6 +1,7 @@
 //! Container API: run docker containers and manage their lifecycle
 
 use futures_core::Stream;
+use futures_util::StreamExt;
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
@@ -1425,7 +1426,23 @@ impl Docker {
             Ok(Body::empty()),
         );
 
-        self.process_into_stream(req)
+        self.process_into_stream(req).map(|res| match res {
+            Ok(ContainerWaitResponse {
+                status_code: code,
+                error:
+                    Some(ContainerWaitExitError {
+                        message: Some(error),
+                    }),
+            }) if code > 0 => Err(Error::DockerContainerWaitError { error, code }),
+            Ok(ContainerWaitResponse {
+                status_code: code,
+                error: None,
+            }) if code > 0 => Err(Error::DockerContainerWaitError {
+                error: String::new(),
+                code,
+            }),
+            v => v,
+        })
     }
 
     /// ---
@@ -2190,5 +2207,40 @@ impl Docker {
         );
 
         self.process_into_body(req)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![cfg(not(target_arch = "windows"))]
+
+    use futures_util::TryStreamExt;
+    use yup_hyper_mock::HostToReplyConnector;
+
+    use crate::{Docker, API_DEFAULT_VERSION};
+
+    use super::WaitContainerOptions;
+
+    #[tokio::test]
+    async fn test_container_wait_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"Error\":null,\"StatusCode\":1}".to_string(),
+        );
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let result = &docker
+            .wait_container("wait_container_test", None::<WaitContainerOptions<String>>)
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerContainerWaitError { code: _, error: _ })
+        ));
     }
 }
