@@ -1,4 +1,4 @@
-#![allow(unused_imports, unused_qualifications, unused_extern_crates)]
+#![allow(unused_imports, unused_qualifications, unused_extern_crates, clippy::all)]
 
 use serde::{Deserialize, Serialize};
 use serde::ser::Serializer;
@@ -23,7 +23,7 @@ fn deserialize_nonoptional_map<'de, D: Deserializer<'de>, T: DeserializeOwned>(
 
 #[cfg(feature = "time")]
 pub type BollardDate = time::OffsetDateTime;
-#[cfg(feature = "chrono")]
+#[cfg(all(feature = "chrono", not(feature = "time")))]
 pub type BollardDate = chrono::DateTime<chrono::Utc>;
 #[cfg(not(any(feature = "chrono", feature = "time")))]
 pub type BollardDate = String;

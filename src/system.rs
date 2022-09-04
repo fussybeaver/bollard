@@ -120,11 +120,11 @@ where
     T: Into<String> + Eq + Hash + Serialize,
 {
     /// Show events created since this timestamp then stream new events.
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
     pub since: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created until this timestamp then stop streaming.
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
     pub until: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created since this timestamp then stream new events.

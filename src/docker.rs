@@ -229,7 +229,7 @@ where
     }
 }
 
-#[cfg(feature = "chrono")]
+#[cfg(all(feature = "chrono", not(feature = "time")))]
 pub(crate) fn serialize_as_timestamp<S>(
     opt: &Option<crate::models::BollardDate>,
     s: S,
