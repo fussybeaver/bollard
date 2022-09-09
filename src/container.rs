@@ -749,9 +749,9 @@ pub struct Stats {
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
     pub preread: time::OffsetDateTime,
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     pub read: chrono::DateTime<chrono::Utc>,
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     pub preread: chrono::DateTime<chrono::Utc>,
     #[cfg(not(any(feature = "chrono", feature = "time")))]
     pub read: String,

@@ -53,7 +53,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard cargo test --features time --target x86_64-unknown-linux-gnu --doc
+      - run: docker run -ti --rm bollard cargo test --all-features --target x86_64-unknown-linux-gnu --doc
   test_clippy:
     docker:
       - image: docker:20.10.16
@@ -70,7 +70,7 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
         # RUSTSEC-2020-0159 https://github.com/chronotope/chrono/issues/602
-      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071 --ignore=RUSTSEC-2020-0016"
+      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071"
   test_fmt:
     docker:
       - image: docker:20.10.16
@@ -78,7 +78,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -- --check --verbose"
+      - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -- --check --verbose"
 workflows:
   version: 2
   test-image:

@@ -127,7 +127,11 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert_eq!(results.volumes, None);
+    if cfg!(windows) {
+        assert_eq!(results.volumes, None);
+    } else {
+        assert_eq!(results.volumes, Some(vec![]));
+    }
 
     let mut list_volumes_filters = HashMap::new();
     list_volumes_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
