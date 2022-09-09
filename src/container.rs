@@ -487,7 +487,6 @@ pub struct InspectContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TopOptions<T>
 where
     T: Into<String> + Serialize,
