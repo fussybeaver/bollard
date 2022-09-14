@@ -1214,6 +1214,7 @@ impl Docker {
     ///
     /// let options = Some(CreateContainerOptions{
     ///     name: "my-new-container",
+    ///     platform: None,
     /// });
     ///
     /// let config = Config {
