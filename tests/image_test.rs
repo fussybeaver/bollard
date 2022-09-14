@@ -170,6 +170,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_commit_container",
+                platform: None,
             }),
             Config {
                 cmd,
@@ -212,6 +213,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_commit_container_next",
+                platform: None,
             }),
             Config {
                 image: Some("integration_test_commit_container_next"),
@@ -329,6 +331,7 @@ RUN touch bollard.txt
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_build_image",
+                platform: None,
             }),
             Config {
                 image: Some("integration_test_build_image"),

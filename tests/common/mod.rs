@@ -108,6 +108,7 @@ pub async fn create_container_hello_world(
         .create_container(
             Some(CreateContainerOptions {
                 name: container_name.to_string(),
+                platform: None,
             }),
             Config {
                 cmd,
@@ -164,6 +165,7 @@ pub async fn create_shell_daemon(
         .create_container(
             Some(CreateContainerOptions {
                 name: container_name,
+                platform: None,
             }),
             Config {
                 image: Some(image),
@@ -227,6 +229,7 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
         .create_container(
             Some(CreateContainerOptions {
                 name: container_name,
+                platform: None,
             }),
             Config {
                 cmd,

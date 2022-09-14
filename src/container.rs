@@ -88,6 +88,7 @@ where
 ///
 /// CreateContainerOptions{
 ///     name: "my-new-container",
+///     platform: Some("linux/amd64"),
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -97,6 +98,11 @@ where
 {
     /// Assign the specified name to the container.
     pub name: T,
+
+    /// The platform to use for the container.
+    /// Added in API v1.41.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<T>,
 }
 
 /// This container's networking configuration.
