@@ -573,6 +573,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_archive_container",
+                platform: None,
             }),
             Config {
                 image: Some(&image[..]),
@@ -727,6 +728,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_mount_volume_container",
+                platform: None,
             }),
             Config {
                 image: Some(&image[..]),
