@@ -105,18 +105,9 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         filters: prune_volumes_filters,
     };
 
-    let _ = &docker.prune_volumes(Some(prune_volumes_options)).await?;
+    let result = &docker.prune_volumes(Some(prune_volumes_options)).await?;
 
-    // Varying Result objects depending on platform / Docker server version
-    // - the volumes are still pruned though
-    //if cfg!(not(feature = "test_macos")) {
-    //    assert!(result
-    //        .volumes_deleted
-    //        .as_ref()
-    //        .unwrap()
-    //        .iter()
-    //        .any(|v| v == "integration_test_prune_volumes_1"));
-    //}
+    assert_eq!(result.volumes_deleted.as_ref().unwrap().len(), 1);
 
     let mut list_volumes_filters = HashMap::new();
     list_volumes_filters.insert("label", vec!["maintainer=shiplift-maintainer"]);
@@ -127,7 +118,11 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    assert_eq!(results.volumes, None);
+    if results.volumes.is_some() {
+        assert_eq!(results.volumes, Some(vec![]))
+    } else {
+        assert_eq!(results.volumes, None);
+    }
 
     let mut list_volumes_filters = HashMap::new();
     list_volumes_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
