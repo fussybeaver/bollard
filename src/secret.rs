@@ -148,7 +148,7 @@ impl Docker {
     ///     ..Default::default()
     /// };
     ///
-    /// let secret_id = docker.create_secret(secret_spec).await?;
+    /// docker.create_secret(secret_spec);
     /// ```
     pub async fn create_secret(&self, secret_spec: SecretSpec) -> Result<String, Error> {
         let url = "/secrets/create";
@@ -270,20 +270,22 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// let existing = docker.inspect_secret("my-secret").await?;
-    /// let version = existing.version.unwrap().index.unwrap();
-    /// let mut spec = existing.spec.unwrap().clone();
+    /// use std::collections::HashMap;
+    /// use bollard::secret::UpdateSecretOptions;
     ///
-    /// let mut labels = HashMap::new();
-    /// labels.insert(String::from("secret-label"), String::from("label-value"));
-    /// spec.labels = Some(labels.clone());
+    /// let result = async move {
+    ///     let existing = docker.inspect_secret("my-secret").await?;
+    ///     let version = existing.version.unwrap().index.unwrap();
+    ///     let mut spec = existing.spec.unwrap().clone();
     ///
-    /// let options = UpdateSecretOptions {
-    ///     version: version,
-    ///     ..Default::default()
+    ///     let mut labels = HashMap::new();
+    ///     labels.insert(String::from("secret-label"), String::from("label-value"));
+    ///     spec.labels = Some(labels.clone());
+    ///
+    ///     let options = UpdateSecretOptions { version };
+    ///
+    ///     docker.update_secret("my-secret", spec, options).await
     /// };
-    ///
-    /// docker.update_secret("my-secret", spec, options).await?;
     /// ```
     pub async fn update_secret(
         &self,

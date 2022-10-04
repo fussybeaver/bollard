@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use bollard::errors::Error;
 use bollard::{secret::*, Docker};
 
-use base64;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -82,10 +81,7 @@ async fn secret_list_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["secret-label=filter-value"]);
 
-    let options = Some(ListSecretsOptions {
-        filters,
-        ..Default::default()
-    });
+    let options = Some(ListSecretsOptions { filters });
 
     let mut secrets = docker.list_secrets(options).await?;
 
@@ -115,10 +111,7 @@ async fn secret_update_test(docker: Docker) -> Result<(), Error> {
     labels.insert(String::from("secret-label"), String::from("label-value"));
     spec.labels = Some(labels.clone());
 
-    let options = UpdateSecretOptions {
-        version: version,
-        ..Default::default()
-    };
+    let options = UpdateSecretOptions { version };
 
     docker
         .update_secret("secret_update_test", spec, options)
