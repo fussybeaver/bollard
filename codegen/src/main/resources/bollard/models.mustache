@@ -103,11 +103,11 @@ pub type {{classname}} = {{{arrayModelType}}};
 {{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}// special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type {{classname}} = HashMap<String, Option<Vec<PortBinding>>>;
 {{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]{{#xmlName}}
-#[serde(rename = "{{xmlName}}")]{{/xmlName}}
+#[serde(rename = "{{xmlName}}")]{{/xmlName}}{{#vendorExtensions.x-rustgen-upper-case}}
+#[serde(rename_all = "UPPERCASE")]{{/vendorExtensions.x-rustgen-upper-case}}
 pub struct {{classname}} {
 {{#vars}}{{#description}}    /// {{{description}}}
-{{/description}}    #[serde(rename = "{{baseName}}")]{{#vendorExtensions}}{{#itemXmlName}}
-    #[serde(serialize_with = "wrap_in_{{itemXmlName}}")]{{/itemXmlName}}{{/vendorExtensions}}{{#required}}{{#isContainer}}{{^isListContainer}}
+{{/description}}    {{^vendorExtensions.x-rustgen-upper-case}}#[serde(rename = "{{baseName}}")]{{/vendorExtensions.x-rustgen-upper-case}}{{#required}}{{#isContainer}}{{^isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if="Option::is_none")]
