@@ -130,7 +130,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [String](String) secret Id, wrapped in a Future.
+    ///  - A [IdResponse](IdResponse) wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -150,7 +150,7 @@ impl Docker {
     ///
     /// docker.create_secret(secret_spec);
     /// ```
-    pub async fn create_secret(&self, secret_spec: SecretSpec) -> Result<String, Error> {
+    pub async fn create_secret(&self, secret_spec: SecretSpec) -> Result<IdResponse, Error> {
         let url = "/secrets/create";
 
         let req = self.build_request(
@@ -160,20 +160,7 @@ impl Docker {
             Docker::serialize_payload(Some(secret_spec)),
         );
 
-        // XXX: workaround, because docker api return {"ID":"..."} instead of {"Id":"..."}
-        // maybe in the near future the IdResponse struct is useable for this
-        let response: HashMap<String, String> = self.process_into_value(req).await?;
-
-        match response.get("ID") {
-            Some(id) => Ok(id.clone()),
-            None => match response.get("Id") {
-                Some(id) => Ok(id.clone()),
-                None => Err(Error::DockerResponseServerError {
-                    status_code: 201,
-                    message: String::from("Missing 'Id' or 'ID' from response"),
-                }),
-            },
-        }
+        self.process_into_value(req).await
     }
 
     /// ---

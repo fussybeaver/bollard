@@ -22,7 +22,7 @@ async fn secret_create_test(docker: Docker) -> Result<(), Error> {
         labels: Some(labels),
         ..Default::default()
     };
-    let secret_id = docker.create_secret(spec.clone()).await?;
+    let secret_id = docker.create_secret(spec.clone()).await?.id;
 
     let inspect_by_id = docker.inspect_secret(&secret_id).await?;
     let spec_by_id = inspect_by_id.spec.unwrap();
@@ -76,7 +76,7 @@ async fn secret_list_test(docker: Docker) -> Result<(), Error> {
         labels: Some(labels),
         ..Default::default()
     };
-    let secret_id = docker.create_secret(spec).await?;
+    let secret_id = docker.create_secret(spec).await?.id;
 
     let mut filters = HashMap::new();
     filters.insert("label", vec!["secret-label=filter-value"]);
