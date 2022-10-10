@@ -56,6 +56,12 @@ public class BollardCodegen extends RustServerCodegen {
         enumToString.add("HostConfigLogConfig");
     }
 
+    private static ArrayList<String> upperCaseModelFields;
+    static {
+        upperCaseModelFields = new ArrayList();
+        upperCaseModelFields.add("IdResponse");
+    }
+
     @Override
     public void preprocessSwagger(Swagger swagger) {
         Info info = swagger.getInfo();
@@ -110,6 +116,11 @@ public class BollardCodegen extends RustServerCodegen {
 
         for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
             CodegenModel model = entry.getValue();
+
+            if (upperCaseModelFields.contains(model.classname)) {
+                model.vendorExtensions.put("x-rustgen-upper-case", true);
+            }
+
             for (CodegenProperty prop : model.vars) {
                 if (prop.name.contains("i_pv6")) {
                     prop.name = prop.name.replace("i_pv6", "ipv6");
@@ -123,7 +134,12 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.name = prop.name.replace("_c_as", "_cas");
                 } else if (prop.name.equals("_type")) {
                     prop.name = "typ";
-                } 
+                }
+
+                if (upperCaseModelFields.contains(model.classname)) {
+                    prop.vendorExtensions.put("x-rustgen-upper-case", true);
+                }
+
                 if (prop.dataFormat != null && (prop.dataFormat.equals("dateTime") || prop.datatype.equals("BollardDate"))) {
                     // set DateTime format on properties where appropriate
                     prop.vendorExtensions.put("x-rustgen-is-datetime", true);

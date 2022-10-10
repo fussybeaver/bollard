@@ -31,7 +31,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.42.0-rc.4</packageVersion>
+                  <packageVersion>1.42.0-rc.5</packageVersion>
                 </configOptions>
               </configuration>
             </execution>
