@@ -3976,7 +3976,7 @@ pub struct Port {
 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(with = "serde_with::rust::string_empty_as_none")]
+    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
     pub typ: Option<PortTypeEnum>,
 
 }
@@ -6924,7 +6924,7 @@ pub struct Volume {
     /// The level at which the volume exists. Either `global` for cluster-wide, or `local` for machine level. 
     #[serde(rename = "Scope")]
     #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(with = "serde_with::rust::string_empty_as_none")]
+    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
     pub scope: Option<VolumeScopeEnum>,
 
     /// The driver specific options used when creating the volume. 
