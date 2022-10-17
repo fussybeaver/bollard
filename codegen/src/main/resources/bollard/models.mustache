@@ -111,7 +111,7 @@ pub struct {{classname}} {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(with = "serde_with::rust::string_empty_as_none")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
     #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
