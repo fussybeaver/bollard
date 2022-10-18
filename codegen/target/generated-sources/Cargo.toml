@@ -1,6 +1,6 @@
 [package]
 name = "bollard-stubs"
-version = "1.42.0-rc.5"
+version = "1.42.0-rc.6"
 authors = [ "Bollard contributors" ]
 description = "Stubs used for the Bollard rust async Docker client API"
 license = "Apache-2.0"
@@ -11,4 +11,4 @@ chrono = { version = "0.4", features = ["serde"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
 
-serde_with = "1.4"
+serde_with = {version = "2.0", default-features = false, features = ["std"]}
