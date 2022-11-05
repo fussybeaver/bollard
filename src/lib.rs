@@ -232,15 +232,16 @@
 //! REGISTRY_HTTP_ADDR=localhost:5000 cargo test -- --test-threads 1
 //! ```
 #![deny(
-    // missing_docs,
+    missing_docs,
     missing_debug_implementations,
-    // missing_copy_implementations,
+    missing_copy_implementations,
     trivial_casts,
     trivial_numeric_casts,
     unstable_features,
     unused_import_braces,
     unused_qualifications
 )]
+#![allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
 #![warn(rust_2018_idioms)]
 
 #[macro_use]
@@ -255,10 +256,6 @@ mod docker;
 pub mod errors;
 pub mod exec;
 pub mod image;
-#[cfg(feature = "buildkit")]
-pub mod buildkit_secrets { include!("proto/moby.buildkit.secrets.v1.rs"); }
-#[cfg(feature = "buildkit")]
-pub mod buildkit_ssh { include!("proto/moby.sshforward.v1.rs"); }
 mod named_pipe;
 pub mod network;
 mod read;
@@ -268,6 +265,11 @@ pub mod system;
 mod uri;
 pub mod volume;
 
+pub mod grpc;
+
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
 pub use bollard_stubs::models;
+
+#[cfg(feature = "buildkit")]
+pub use bollard_buildkit_proto::health;

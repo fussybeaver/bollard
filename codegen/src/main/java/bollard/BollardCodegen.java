@@ -136,6 +136,11 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.name = "typ";
                 }
 
+                if (prop.name.equals("aux") && model.classname.equals("BuildInfo")) {
+                    prop.vendorExtensions.put("x-rustgen-grpc-aux", true);
+                    model.vendorExtensions.put("x-rustgen-grpc-aux", true);
+                }
+
                 if (upperCaseModelFields.contains(model.classname)) {
                     prop.vendorExtensions.put("x-rustgen-upper-case", true);
                 }

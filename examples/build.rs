@@ -41,6 +41,8 @@ async fn main() {
         labels: build_image_labels,
         networkmode: "host",
         platform: "linux/x86_64",
+        #[cfg(feature = "buildkit")]
+        session: None,
         version: bollard::image::BuilderVersion::BuilderV1,
     };
 

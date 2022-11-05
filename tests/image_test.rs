@@ -384,6 +384,112 @@ RUN touch bollard.txt
     Ok(())
 }
 
+#[cfg(feature = "buildkit")]
+async fn build_buildkit_image_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = String::from(
+        "FROM alpine as builder1
+RUN touch bollard.txt
+FROM alpine as builder2
+RUN --mount=type=bind,from=builder1,target=mnt cp mnt/bollard.txt buildkit-bollard.txt
+ENTRYPOINT ls buildkit-bollard.txt
+",
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let id = "build_buildkit_image_test";
+    let build = &docker
+        .build_image(
+            BuildImageOptions {
+                dockerfile: "Dockerfile".to_string(),
+                t: "integration_test_build_buildkit_image".to_string(),
+                pull: true,
+                version: BuilderVersion::BuilderBuildKit,
+                rm: true,
+                #[cfg(feature = "buildkit")]
+                session: Some(String::from(id)),
+                ..Default::default()
+            },
+            None,
+            Some(compressed.into()),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await?;
+
+    assert!(build
+        .into_iter()
+        .flat_map(|build_info| {
+            if let Some(aux) = &build_info.aux {
+                match aux {
+                    bollard::models::BuildInfoAux::BuildKit(res) => Vec::clone(&res.statuses),
+                    _ => vec![],
+                }
+            } else {
+                vec![]
+            }
+        })
+        .any(|status| status.id
+            == "naming to docker.io/library/integration_test_build_buildkit_image"));
+
+    let _ = &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "integration_test_build_buildkit_image",
+                platform: None,
+            }),
+            Config {
+                image: Some("integration_test_build_buildkit_image"),
+                cmd: Some(vec!["ls", "/buildkit-bollard.txt"]),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let _ = &docker
+        .start_container(
+            "integration_test_build_buildkit_image",
+            None::<StartContainerOptions<String>>,
+        )
+        .await?;
+
+    let vec = &docker
+        .wait_container(
+            "integration_test_build_buildkit_image",
+            None::<WaitContainerOptions<String>>,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let first = vec.get(0).unwrap();
+    if let Some(error) = &first.error {
+        println!("{}", error.message.as_ref().unwrap());
+    }
+    assert_eq!(first.status_code, 0);
+    let _ = &docker
+        .remove_container("integration_test_build_buildkit_image", None)
+        .await?;
+
+    let _ = &docker
+        .remove_image(
+            "integration_test_build_buildkit_image",
+            None::<RemoveImageOptions>,
+            None,
+        )
+        .await?;
+
+    Ok(())
+}
+
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -578,6 +684,12 @@ fn integration_test_commit_container() {
 #[test]
 fn integration_test_build_image() {
     connect_to_docker_and_run!(build_image_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_build_buildkit_image() {
+    connect_to_docker_and_run!(build_buildkit_image_test);
 }
 
 #[test]

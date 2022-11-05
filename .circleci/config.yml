@@ -29,7 +29,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: dockerfiles/bin/run_integration_tests.sh --tests
+      - run: dockerfiles/bin/run_integration_tests.sh --features buildkit --tests
   test_chrono:
     docker:
       - image: docker:20.10.16
@@ -61,7 +61,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --all-targets -- -Dwarnings -Aclippy::upper_case_acronyms"
+      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --all-targets -- -Dwarnings"
   test_audit:
     docker:
       - image: docker:20.10.16
