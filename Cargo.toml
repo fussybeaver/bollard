@@ -63,7 +63,7 @@ webpki-roots = { version = "0.22", optional = true }
 webpki = { version = "0.22", optional = true }
 
 [dev-dependencies]
-env_logger = "0.9"
+env_logger = "0.10"
 flate2 = "1.0"
 tar = "0.4"
 tokio = { version = "1.7", features = ["fs", "rt-multi-thread", "macros"] }
