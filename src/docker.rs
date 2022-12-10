@@ -1017,6 +1017,8 @@ impl Docker {
         req: Result<Request<Body>, Error>,
     ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
         let res = self.process_request(req).await?;
+        dbg!(res.status()); // this does return 101 at the moment so we good
+        dbg!(res.headers());
         let upgraded = hyper::upgrade::on(res).await?;
         Ok(split(upgraded))
     }
@@ -1090,7 +1092,7 @@ impl Docker {
         Ok(self)
     }
 
-    fn process_request(
+    pub(crate) fn process_request(
         &self,
         request: Result<Request<Body>, Error>,
     ) -> impl Future<Output = Result<Response<Body>, Error>> {

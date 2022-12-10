@@ -1,10 +1,13 @@
 //! Image API: creating, manipulating and pushing docker images
 use futures_core::Stream;
+#[cfg(feature = "buildkit")]
+use futures_util::future::{Either, FutureExt};
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
 use serde::Serialize;
+use serde_repr::*;
 
 use super::Docker;
 use crate::auth::{base64_url_encode, DockerCredentials};
@@ -63,7 +66,7 @@ where
 }
 
 /// Parameters to the [List Images
-/// API](Docker::list_images())
+// API](Docker::list_images())
 ///
 /// ## Examples
 ///
@@ -390,6 +393,9 @@ where
     /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub buildargs: HashMap<T, T>,
+    #[cfg(feature = "buildkit")]
+    /// Session ID
+    pub session: Option<String>,
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
     pub shmsize: Option<u64>,
     /// Squash the resulting images layers into a single layer.
@@ -403,6 +409,24 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// Builder version to use
+    pub version: BuilderVersion,
+}
+
+/// Builder Version to use
+#[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub enum BuilderVersion {
+    /// BuilderV1 is the first generation builder in docker daemon
+    BuilderV1 = 1,
+    /// BuilderBuildKit is builder based on moby/buildkit project
+    BuilderBuildKit = 2,
+}
+
+impl Default for BuilderVersion {
+    fn default() -> Self {
+        BuilderVersion::BuilderV1
+    }
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -998,6 +1022,8 @@ impl Docker {
     /// the archive's root, but can be at a different path or have a different name by specifying
     /// the `dockerfile` parameter.
     ///
+    /// By default, the call to build specifies using BuilderV1, the first generation builder in docker daemon.
+    ///
     /// # Arguments
     ///
     ///  - [Build Image Options](BuildImageOptions) struct.
@@ -1040,14 +1066,24 @@ impl Docker {
         options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<Body>,
-    ) -> impl Stream<Item = Result<BuildInfo, Error>>
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/build";
+        #[cfg(feature = "buildkit")]
+        let session_id = if let Some(session) = options.session.as_ref() {
+            String::clone(session)
+        } else {
+            warn!("Please add a unique `session` to BuildImageOptions when using buildkit, the default session will conflict with parallel builds");
+            String::from("bollard")
+        };
 
         match serde_json::to_string(&credentials.unwrap_or_default()) {
             Ok(ser_cred) => {
+                #[cfg(feature = "buildkit")]
+                let use_buildkit = options.version == BuilderVersion::BuilderBuildKit;
+
                 let req = self.build_request(
                     url,
                     Builder::new()
@@ -1058,6 +1094,30 @@ impl Docker {
                     Ok(tar.unwrap_or_else(Body::empty)),
                 );
 
+                #[cfg(feature = "buildkit")]
+                if use_buildkit {
+                    let session = stream::once(
+                        self.start_session(session_id)
+                            .map(|_| Either::Right(()))
+                            .fuse(),
+                    );
+                    let stream = self
+                        .process_into_stream::<BuildInfo>(req)
+                        .map(|data| Either::Left(data));
+
+                    futures_util::stream::select(stream, session)
+                        .filter_map(|either| async move {
+                            match either {
+                                Either::Left(data) => Some(data),
+                                _ => None,
+                            }
+                        })
+                        .boxed()
+                } else {
+                    self.process_into_stream(req).boxed()
+                }
+
+                #[cfg(not(feature = "buildkit"))]
                 self.process_into_stream(req).boxed()
             }
             Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
@@ -1072,6 +1132,40 @@ impl Docker {
                 res
             }
         })
+    }
+
+    #[cfg(feature = "buildkit")]
+    async fn start_session(&self, id: String) -> Result<(), Error> {
+        let url = "/session";
+
+        let opt: Option<serde_json::Value> = None;
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header("Connection", "Upgrade")
+                .header("Upgrade", "h2c")
+                .header("X-Docker-Expose-Session-Uuid", &id),
+            opt,
+            Ok(Body::empty()),
+        );
+        let (read, write) = self.process_upgraded(req).await?;
+
+        let output = Box::pin(read);
+        let input = Box::pin(write);
+        let transport = crate::grpc::GrpcTransport {
+            read: output,
+            write: input,
+        };
+        let service =
+            crate::health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
+
+        Ok(tonic::transport::Server::builder()
+            .add_service(service)
+            .serve_with_incoming(stream::iter(vec![Ok::<_, tonic::transport::Error>(
+                transport,
+            )]))
+            .await?)
     }
 
     /// ---

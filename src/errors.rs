@@ -60,7 +60,7 @@ pub enum Error {
         /// Character sequence at error location.
         column: usize,
     },
-    /// Error emitted when the server version cannot be parsed when negotiating a version
+    /// Error emitted when the docker is requested to build with buildkit without a session id
     #[error("Failed to parse API version: {api_version}")]
     APIVersionParseError {
         /// The api version returned by the server.
@@ -131,5 +131,13 @@ pub enum Error {
         /// The original error emitted.
         #[from]
         err: serde_urlencoded::ser::Error,
+    },
+    #[cfg(feature = "buildkit")]
+    /// Error emitted when a GRPC network request or response fails with docker's buildkit client
+    #[error(transparent)]
+    TonicError {
+        /// The tonic error emitted.
+        #[from]
+        err: tonic::transport::Error,
     },
 }
