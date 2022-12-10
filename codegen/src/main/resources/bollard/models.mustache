@@ -1,8 +1,15 @@
-#![allow(unused_imports, unused_qualifications, unused_extern_crates, clippy::all)]
+#![allow(
+    unused_imports,
+    unused_qualifications,
+    unused_extern_crates,
+    clippy::all
+)]
 
-use serde::{Deserialize, Serialize};
-use serde::ser::Serializer;
+#[cfg(feature = "buildkit")]
+use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
+use serde::ser::Serializer;
+use serde::{Deserialize, Serialize};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -67,6 +74,28 @@ fn serialize_timestamp<S: Serializer>(date: &Option<BollardDate>, s: S) -> Resul
     }
 }
 
+#[cfg(feature = "buildkit")]
+fn deserialize_buildinfo_aux<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<crate::moby::buildkit::v1::StatusResponse, D::Error> {
+    let aux: String = serde::Deserialize::deserialize(d)?;
+    let raw = base64::decode(&aux).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+    let buf = bytes::BytesMut::from(&raw[..]);
+
+    let res = crate::moby::buildkit::v1::StatusResponse::decode(buf)
+        .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+    Ok(res)
+}
+
+#[cfg(feature = "buildkit")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum BuildInfoAux {
+    #[serde(deserialize_with = "deserialize_buildinfo_aux")]
+    BuildKit(crate::moby::buildkit::v1::StatusResponse),
+    Default(ImageId)
+}
+
 {{#models}}{{#model}}
 {{#description}}/// {{{description}}}
 {{/description}}{{#isEnum}}/// Enumeration of values.
@@ -102,24 +131,40 @@ impl ::std::str::FromStr for {{classname}} {
 pub type {{classname}} = {{{arrayModelType}}};
 {{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}// special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type {{classname}} = HashMap<String, Option<Vec<PortBinding>>>;
-{{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]{{#xmlName}}
+{{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, {{^vendorExtensions.x-rustgen-grpc-aux}}Serialize, {{/vendorExtensions.x-rustgen-grpc-aux}}Deserialize)]{{#xmlName}}
 #[serde(rename = "{{xmlName}}")]{{/xmlName}}{{#vendorExtensions.x-rustgen-upper-case}}
 #[serde(rename_all = "UPPERCASE")]{{/vendorExtensions.x-rustgen-upper-case}}
 pub struct {{classname}} {
 {{#vars}}{{#description}}    /// {{{description}}}
-{{/description}}    {{^vendorExtensions.x-rustgen-upper-case}}#[serde(rename = "{{baseName}}")]{{/vendorExtensions.x-rustgen-upper-case}}{{#required}}{{#isContainer}}{{^isListContainer}}
+{{/description}}    {{#vendorExtensions.x-rustgen-grpc-aux}}#[serde(rename = "aux")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg(feature = "buildkit")]
+    pub aux: Option<BuildInfoAux>,
+
+    #[serde(rename = "aux")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg(not(feature = "buildkit"))]
+    pub aux: Option<ImageId>,
+    {{/vendorExtensions.x-rustgen-grpc-aux}}{{^vendorExtensions.x-rustgen-grpc-aux}}{{^vendorExtensions.x-rustgen-upper-case}}#[serde(rename = "{{baseName}}")]{{/vendorExtensions.x-rustgen-upper-case}}{{#required}}{{#isContainer}}{{^isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
-    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
-    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
-    #[serde(skip_serializing_if="Option::is_none")]{{#vendorExtensions.x-rustgen-is-datetime}}
-    #[serde(default, deserialize_with = "deserialize_timestamp", serialize_with = "serialize_timestamp")]{{/vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(skip_serializing_if = "Option::is_none")]{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: Option<{{#isEnum}}{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}}>,
-{{/required}}
-
+{{/required}}{{/vendorExtensions.x-rustgen-grpc-aux}}
 {{/vars}}
 }
 {{#vars}}{{#isEnum}}

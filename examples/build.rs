@@ -41,6 +41,9 @@ async fn main() {
         labels: build_image_labels,
         networkmode: "host",
         platform: "linux/x86_64",
+        #[cfg(feature = "buildkit")]
+        session: None,
+        version: bollard::image::BuilderVersion::BuilderV1,
     };
 
     let mut image_build_stream = docker.build_image(build_image_options, None, None);

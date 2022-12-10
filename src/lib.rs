@@ -241,6 +241,7 @@
     unused_import_braces,
     unused_qualifications
 )]
+#![allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
 #![warn(rust_2018_idioms)]
 
 #[macro_use]
@@ -264,6 +265,11 @@ pub mod system;
 mod uri;
 pub mod volume;
 
+pub mod grpc;
+
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
 pub use bollard_stubs::models;
+
+#[cfg(feature = "buildkit")]
+pub use bollard_buildkit_proto::health;
