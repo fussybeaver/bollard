@@ -23,3 +23,38 @@ pub mod google {
 pub mod pb {
     include!("generated/pb.rs");
 }
+
+use std::fmt::{self, Display, Formatter};
+
+impl Display for moby::buildkit::v1::StatusResponse {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "StatusResponse: {{ vertexes: {:?}, statuses: {:?}, logs: ",
+            self.vertexes, self.statuses
+        )
+        .and_then(|_| {
+            if self.logs.is_empty() {
+                write!(f, "[]")
+            } else {
+                self.logs.iter().fold(Ok(()), |result, item| {
+                    result.and_then(|_| write!(f, "{}", item))
+                })
+            }
+        })
+        .and_then(|_| write!(f, r#", warnings: {:?} }}"#, self.warnings))
+    }
+}
+
+impl Display for moby::buildkit::v1::VertexLog {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            r#"VertexLog: {{ vertex: {:?}, timestamp: {:?}, stream: {:?}, msg: \"{}\" }}"#,
+            self.vertex,
+            self.timestamp,
+            self.stream,
+            String::from_utf8_lossy(&self.msg).trim(),
+        )
+    }
+}

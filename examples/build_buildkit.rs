@@ -1,8 +1,12 @@
 //! Builds a container with a bunch of extra options for testing
+#![allow(unused_variables, unused_mut)]
 
 use bollard::image::{BuildImageOptions, BuilderVersion};
+#[cfg(feature = "buildkit")]
+use bollard::models::BuildInfoAux;
 use bollard::Docker;
 
+#[cfg(feature = "buildkit")]
 use futures_util::stream::StreamExt;
 
 use std::io::Write;
@@ -47,9 +51,12 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut image_build_stream =
         docker.build_image(build_image_options, None, Some(compressed.into()));
 
-    while let Some(Ok(bollard::models::BuildInfo { aux: Some(aux), .. })) =
-        image_build_stream.next().await
+    #[cfg(feature = "buildkit")]
+    while let Some(Ok(bollard::models::BuildInfo {
+        aux: Some(BuildInfoAux::BuildKit(inner)),
+        ..
+    })) = image_build_stream.next().await
     {
-        println!("Response: {:?}", aux);
+        println!("Response: {:?}", inner);
     }
 }
