@@ -273,3 +273,6 @@ pub use bollard_stubs::models;
 
 #[cfg(feature = "buildkit")]
 pub use bollard_buildkit_proto::health;
+
+#[cfg(feature = "buildkit")]
+pub use bollard_buildkit_proto::moby;
