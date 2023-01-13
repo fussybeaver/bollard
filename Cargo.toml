@@ -13,7 +13,7 @@ edition = "2021"
 
 [workspace]
 members = [
-  "codegen/target/generated-sources",
+  "codegen/swagger",
   "codegen/proto",
   "."
 ]
@@ -37,7 +37,7 @@ time = ["dep:time", "bollard-stubs/time"]
 
 [dependencies]
 base64 = "0.13"
-bollard-stubs = { path = "codegen/target/generated-sources", version = "=1.42.0-rc.7", default-features = false }
+bollard-stubs = { path = "codegen/swagger", version = "=1.42.0-rc.7", default-features = false }
 bollard-buildkit-proto = { path = "codegen/proto", version = "=0.1.0", optional = true }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"], optional = true }
