@@ -29,7 +29,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: dockerfiles/bin/run_integration_tests.sh --features buildkit --tests
+      - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit --tests
   test_chrono:
     docker:
       - image: docker:20.10.16
@@ -37,7 +37,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: dockerfiles/bin/run_integration_tests.sh --features chrono --tests
+      - run: resources/dockerfiles/bin/run_integration_tests.sh --features chrono --tests
   test_time:
     docker:
       - image: docker:20.10.16
@@ -45,7 +45,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: dockerfiles/bin/run_integration_tests.sh --features time --tests
+      - run: resources/dockerfiles/bin/run_integration_tests.sh --features time --tests
   test_doc:
     docker:
       - image: docker:20.10.16

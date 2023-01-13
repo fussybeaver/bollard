@@ -21,7 +21,7 @@ build_script:
   - ipconfig
   - echo %HOST_IP%
   - ps: |
-      cd dockerfiles/windows/registry
+      cd resources/dockerfiles/windows/registry
       docker build -t stefanscherer/registry-windows -f Dockerfile .
       cd ../../../
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
