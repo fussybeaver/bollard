@@ -196,21 +196,25 @@
 //!
 //! Contributions are welcome, please observe the following advice.
 //!
-//! # Building the stubs
+//! ## Building the proto models
 //!
-//! Serialization stubs are generated through the [Swagger
-//! library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
-//! following in the `codegen` folder:
+//! Serialization models for the buildkit feature are generated through the [Tonic
+//! library](https://github.com/hyperium/tonic/). To generate these files, use the
+//! following in the `codegen/proto` folder:
 //!
 //! ```bash
-//! mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile generate-resources
+//! cargo run --bin gen --features build
 //! ```
 //!
-//! # History
+//! ## Building the swagger models
 //!
-//! This library was originally forked from the [boondock rust
-//! library](https://github.com/faradayio/boondock).  Many thanks to the original authors for the
-//! initial code and inspiration.
+//! Serialization models are generated through the [Swagger
+//! library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
+//! following in the `codegen/swagger` folder:
+//!
+//! ```bash
+//! mvn -D org.slf4j.simpleLogger.defaultLogLevel=error compiler:compile generate-resources
+//! ```
 //!
 //! # Integration tests
 //!
