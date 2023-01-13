@@ -1,5 +1,7 @@
 //! Credentials management, for access to the Docker Hub or a custom Registry.
 
+use base64::{engine::general_purpose::STANDARD, Engine};
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 /// DockerCredentials credentials and server URI to push images using the [Push Image
@@ -16,5 +18,5 @@ pub struct DockerCredentials {
 }
 
 pub(crate) fn base64_url_encode(payload: &str) -> String {
-    base64::encode_config(payload, base64::URL_SAFE)
+    STANDARD.encode(payload)
 }
