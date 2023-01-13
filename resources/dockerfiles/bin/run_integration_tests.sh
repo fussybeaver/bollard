@@ -7,7 +7,7 @@
 export REGISTRY_PASSWORD=$(date | md5sum | cut -f1 -d\ )
 docker create -v /etc/docker/registry --name config alpine:3.4 /bin/true
 echo -n "${REGISTRY_PASSWORD}" | docker run --rm -i --entrypoint=htpasswd --volumes-from config nimmis/alpine-apache -i -B -c /etc/docker/registry/htpasswd bollard
-cat dockerfiles/registry/config.yml | docker run --rm -i --volumes-from config --entrypoint=tee alpine:3.4 /etc/docker/registry/config.yml
+cat resources/dockerfiles/registry/config.yml | docker run --rm -i --volumes-from config --entrypoint=tee alpine:3.4 /etc/docker/registry/config.yml
 docker run -d --restart always --name registry -p 5000:5000 --volumes-from config registry:2
 sleep 4
 docker login --username bollard --password "${REGISTRY_PASSWORD}" localhost:5000

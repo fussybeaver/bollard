@@ -137,6 +137,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # use std::default::Default;
+    /// # use base64::Engine;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::secret::SecretSpec;
     ///
@@ -144,7 +145,7 @@ impl Docker {
     ///
     /// let secret_spec = SecretSpec {
     ///     name: Some(String::from("secret-name")),
-    ///     data: Some(base64::encode_config("secret-data", base64::URL_SAFE)),
+    ///     data: Some(base64::engine::general_purpose::STANDARD.encode("secret-data")),
     ///     ..Default::default()
     /// };
     ///

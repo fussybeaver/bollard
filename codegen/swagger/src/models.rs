@@ -1040,7 +1040,7 @@ pub struct EndpointIpamConfig {
 
     #[serde(rename = "LinkLocalIPs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub link_local_i_ps: Option<Vec<String>>,
+    pub link_local_ips: Option<Vec<String>>,
 
 }
 
@@ -2643,7 +2643,7 @@ pub struct JoinTokens {
 pub struct Limit {
     #[serde(rename = "NanoCPUs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     #[serde(rename = "MemoryBytes")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4232,7 +4232,7 @@ pub struct RegistryServiceConfig {
     /// List of IP ranges to which nondistributable artifacts can be pushed, using the CIDR syntax [RFC 4632](https://tools.ietf.org/html/4632).  Some images (for example, Windows base images) contain artifacts whose distribution is restricted by license. When these images are pushed to a registry, restricted artifacts are not included.  This configuration override this behavior, and enables the daemon to push nondistributable artifacts to all registries whose resolved IP address is within the subnet described by the CIDR syntax.  This option is useful when pushing images containing nondistributable artifacts to a registry on an air-gapped network so hosts on that network can pull the images without connecting to another server.  > **Warning**: Nondistributable artifacts typically have restrictions > on how and where they can be distributed and shared. Only use this > feature to push artifacts to private registries and ensure that you > are in compliance with any terms that cover redistributing > nondistributable artifacts. 
     #[serde(rename = "AllowNondistributableArtifactsCIDRs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_nondistributable_artifacts_cid_rs: Option<Vec<String>>,
+    pub allow_nondistributable_artifacts_cidrs: Option<Vec<String>>,
 
     /// List of registry hostnames to which nondistributable artifacts can be pushed, using the format `<hostname>[:<port>]` or `<IP address>[:<port>]`.  Some images (for example, Windows base images) contain artifacts whose distribution is restricted by license. When these images are pushed to a registry, restricted artifacts are not included.  This configuration override this behavior for the specified registries.  This option is useful when pushing images containing nondistributable artifacts to a registry on an air-gapped network so hosts on that network can pull the images without connecting to another server.  > **Warning**: Nondistributable artifacts typically have restrictions > on how and where they can be distributed and shared. Only use this > feature to push artifacts to private registries and ensure that you > are in compliance with any terms that cover redistributing > nondistributable artifacts. 
     #[serde(rename = "AllowNondistributableArtifactsHostnames")]
@@ -4242,7 +4242,7 @@ pub struct RegistryServiceConfig {
     /// List of IP ranges of insecure registries, using the CIDR syntax ([RFC 4632](https://tools.ietf.org/html/4632)). Insecure registries accept un-encrypted (HTTP) and/or untrusted (HTTPS with certificates from unknown CAs) communication.  By default, local registries (`127.0.0.0/8`) are configured as insecure. All other registries are secure. Communicating with an insecure registry is not possible if the daemon assumes that registry is secure.  This configuration override this behavior, insecure communication with registries whose resolved IP address is within the subnet described by the CIDR syntax.  Registries can also be marked insecure by hostname. Those registries are listed under `IndexConfigs` and have their `Secure` field set to `false`.  > **Warning**: Using this option can be useful when running a local > registry, but introduces security vulnerabilities. This option > should therefore ONLY be used for testing purposes. For increased > security, users should add their CA to their system's list of trusted > CAs instead of enabling this option. 
     #[serde(rename = "InsecureRegistryCIDRs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub insecure_registry_cid_rs: Option<Vec<String>>,
+    pub insecure_registry_cidrs: Option<Vec<String>>,
 
     #[serde(rename = "IndexConfigs")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4260,7 +4260,7 @@ pub struct RegistryServiceConfig {
 pub struct ResourceObject {
     #[serde(rename = "NanoCPUs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     #[serde(rename = "MemoryBytes")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4691,12 +4691,12 @@ pub struct ServiceEndpoint {
 
     #[serde(rename = "VirtualIPs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub virtual_i_ps: Option<Vec<ServiceEndpointVirtualIPs>>,
+    pub virtual_ips: Option<Vec<ServiceEndpointVirtualIps>>,
 
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ServiceEndpointVirtualIPs {
+pub struct ServiceEndpointVirtualIps {
     #[serde(rename = "NetworkID")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_id: Option<String>,
@@ -5420,7 +5420,7 @@ pub struct SwarmSpecCaConfig {
     /// Configuration for forwarding signing requests to an external certificate authority. 
     #[serde(rename = "ExternalCAs")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub external_cas: Option<Vec<SwarmSpecCaConfigExternalCAs>>,
+    pub external_cas: Option<Vec<SwarmSpecCaConfigExternalCas>>,
 
     /// The desired signing CA certificate for all swarm node TLS leaf certificates, in PEM format. 
     #[serde(rename = "SigningCACert")]
@@ -5440,11 +5440,11 @@ pub struct SwarmSpecCaConfig {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SwarmSpecCaConfigExternalCAs {
+pub struct SwarmSpecCaConfigExternalCas {
     /// Protocol for communication with the external CA (currently only `cfssl` is supported). 
     #[serde(rename = "Protocol")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol: Option<SwarmSpecCaConfigExternalCAsProtocolEnum>,
+    pub protocol: Option<SwarmSpecCaConfigExternalCasProtocolEnum>,
 
     /// URL where certificate signing requests should be sent. 
     #[serde(rename = "URL")]
@@ -5465,39 +5465,39 @@ pub struct SwarmSpecCaConfigExternalCAs {
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
-pub enum SwarmSpecCaConfigExternalCAsProtocolEnum { 
+pub enum SwarmSpecCaConfigExternalCasProtocolEnum { 
     #[serde(rename = "")]
     EMPTY,
     #[serde(rename = "cfssl")]
     CFSSL,
 }
 
-impl ::std::fmt::Display for SwarmSpecCaConfigExternalCAsProtocolEnum {
+impl ::std::fmt::Display for SwarmSpecCaConfigExternalCasProtocolEnum {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self { 
-            SwarmSpecCaConfigExternalCAsProtocolEnum::EMPTY => write!(f, ""),
-            SwarmSpecCaConfigExternalCAsProtocolEnum::CFSSL => write!(f, "{}", "cfssl"),
+            SwarmSpecCaConfigExternalCasProtocolEnum::EMPTY => write!(f, ""),
+            SwarmSpecCaConfigExternalCasProtocolEnum::CFSSL => write!(f, "{}", "cfssl"),
 
         }
     }
 }
 
-impl ::std::str::FromStr for SwarmSpecCaConfigExternalCAsProtocolEnum {
+impl ::std::str::FromStr for SwarmSpecCaConfigExternalCasProtocolEnum {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s { 
-            "" => Ok(SwarmSpecCaConfigExternalCAsProtocolEnum::EMPTY),
-            "cfssl" => Ok(SwarmSpecCaConfigExternalCAsProtocolEnum::CFSSL),
+            "" => Ok(SwarmSpecCaConfigExternalCasProtocolEnum::EMPTY),
+            "cfssl" => Ok(SwarmSpecCaConfigExternalCasProtocolEnum::CFSSL),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
 }
 
-impl ::std::convert::AsRef<str> for SwarmSpecCaConfigExternalCAsProtocolEnum {
+impl ::std::convert::AsRef<str> for SwarmSpecCaConfigExternalCasProtocolEnum {
     fn as_ref(&self) -> &str {
         match self { 
-            SwarmSpecCaConfigExternalCAsProtocolEnum::EMPTY => "",
-            SwarmSpecCaConfigExternalCAsProtocolEnum::CFSSL => "cfssl",
+            SwarmSpecCaConfigExternalCasProtocolEnum::EMPTY => "",
+            SwarmSpecCaConfigExternalCasProtocolEnum::CFSSL => "cfssl",
         }
     }
 }
@@ -5756,7 +5756,7 @@ pub struct SystemInfo {
     /// The total number of file Descriptors in use by the daemon process.  This information is only returned if debug-mode is enabled. 
     #[serde(rename = "NFd")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub n_fd: Option<i64>,
+    pub nfd: Option<i64>,
 
     /// The  number of goroutines that currently exist.  This information is only returned if debug-mode is enabled. 
     #[serde(rename = "NGoroutines")]

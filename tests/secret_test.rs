@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use bollard::errors::Error;
 use bollard::{secret::*, Docker};
 
@@ -18,7 +20,7 @@ async fn secret_create_test(docker: Docker) -> Result<(), Error> {
 
     let spec = SecretSpec {
         name: Some(String::from("secret_create_test")),
-        data: Some(base64::encode_config("BOLLARD", base64::URL_SAFE)),
+        data: Some(STANDARD.encode("BOLLARD")),
         labels: Some(labels),
         ..Default::default()
     };
@@ -72,7 +74,7 @@ async fn secret_list_test(docker: Docker) -> Result<(), Error> {
 
     let spec = SecretSpec {
         name: Some(String::from("secret_list_test")),
-        data: Some(base64::encode_config("BOLLARD", base64::URL_SAFE)),
+        data: Some(STANDARD.encode("BOLLARD")),
         labels: Some(labels),
         ..Default::default()
     };
@@ -96,7 +98,7 @@ async fn secret_list_test(docker: Docker) -> Result<(), Error> {
 async fn secret_update_test(docker: Docker) -> Result<(), Error> {
     let spec = SecretSpec {
         name: Some(String::from("secret_update_test")),
-        data: Some(base64::encode_config("BOLLARD", base64::URL_SAFE)),
+        data: Some(STANDARD.encode("BOLLARD")),
         ..Default::default()
     };
 

@@ -1,5 +1,8 @@
+.idea
+.settings
+.classpath
+.factorypath
+.swagger-codegen-ignore
+.project
 .DS_Store
-Cargo.lock
 target
-doc
-main.rs

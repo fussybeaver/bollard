@@ -25,7 +25,7 @@
                 -->
                 <inputSpec>https://raw.githubusercontent.com/moby/moby/a06bae909494b43daadc0ee60dbce79231616470/docs/api/v1.41.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
-                <output>${project.build.directory}/generated-sources</output>
+                <output>${project.basedir}</output>
                 <generateApis>true</generateApis>
                 <templateDirectory>${project.basedir}/src/main/resources/bollard</templateDirectory>
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
