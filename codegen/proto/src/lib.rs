@@ -37,9 +37,18 @@ impl Display for moby::buildkit::v1::StatusResponse {
             if self.logs.is_empty() {
                 write!(f, "[]")
             } else {
-                self.logs.iter().fold(Ok(()), |result, item| {
-                    result.and_then(|_| write!(f, "{}", item))
-                })
+                let mut iter = self.logs.iter().peekable();
+                let mut next = iter.next();
+                let mut result = Ok(());
+                while next.is_some() {
+
+                    result = result.and_then(|_| write!(f, "{}", next.unwrap()));
+                    next = iter.next();
+                    if iter.peek().is_some() {
+                        result = result.and_then(|_| write!(f, ", "));
+                    }
+                }
+                result
             }
         })
         .and_then(|_| write!(f, r#", warnings: {:?} }}"#, self.warnings))
