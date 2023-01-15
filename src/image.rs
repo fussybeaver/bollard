@@ -1071,18 +1071,21 @@ impl Docker {
         T: Into<String> + Eq + Hash + Serialize,
     {
         let url = "/build";
-        #[cfg(feature = "buildkit")]
-        let session_id = if let Some(session) = options.session.as_ref() {
-            String::clone(session)
-        } else {
-            warn!("Please add a unique `session` to BuildImageOptions when using buildkit, the default session will conflict with parallel builds");
-            String::from("bollard")
-        };
 
-        match serde_json::to_string(&credentials.unwrap_or_default()) {
-            Ok(ser_cred) => {
-                #[cfg(feature = "buildkit")]
-                let use_buildkit = options.version == BuilderVersion::BuilderBuildKit;
+        match (
+            serde_json::to_string(&credentials.unwrap_or_default()),
+            &options,
+        ) {
+            #[cfg(feature = "buildkit")]
+            (
+                Ok(ser_cred),
+                BuildImageOptions {
+                    version: BuilderVersion::BuilderBuildKit,
+                    session: Some(ref sess),
+                    ..
+                },
+            ) => {
+                let session_id = String::clone(sess);
 
                 let req = self.build_request(
                     url,
@@ -1094,33 +1097,51 @@ impl Docker {
                     Ok(tar.unwrap_or_else(Body::empty)),
                 );
 
-                #[cfg(feature = "buildkit")]
-                if use_buildkit {
-                    let session = stream::once(
-                        self.start_session(session_id)
-                            .map(|_| Either::Right(()))
-                            .fuse(),
-                    );
-                    let stream = self
-                        .process_into_stream::<BuildInfo>(req)
-                        .map(|data| Either::Left(data));
+                let session = stream::once(
+                    self.start_session(session_id)
+                        .map(|_| Either::Right(()))
+                        .fuse(),
+                );
 
-                    futures_util::stream::select(stream, session)
-                        .filter_map(|either| async move {
-                            match either {
-                                Either::Left(data) => Some(data),
-                                _ => None,
-                            }
-                        })
-                        .boxed()
-                } else {
-                    self.process_into_stream(req).boxed()
-                }
+                let stream = self
+                    .process_into_stream::<BuildInfo>(req)
+                    .map(|data| Either::Left(data));
 
-                #[cfg(not(feature = "buildkit"))]
+                futures_util::stream::select(stream, session)
+                    .filter_map(|either| async move {
+                        match either {
+                            Either::Left(data) => Some(data),
+                            _ => None,
+                        }
+                    })
+                    .boxed()
+            }
+            #[cfg(feature = "buildkit")]
+            (
+                Ok(_),
+                BuildImageOptions {
+                    version: BuilderVersion::BuilderBuildKit,
+                    session: None,
+                    ..
+                },
+            ) => stream::once(futures_util::future::err(
+                Error::MissingSessionBuildkitError {},
+            ))
+            .boxed(),
+            (Ok(ser_cred), _) => {
+                let req = self.build_request(
+                    url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/x-tar")
+                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
+                    Some(options),
+                    Ok(tar.unwrap_or_else(Body::empty)),
+                );
+
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
+            (Err(e), _) => stream::once(async move { Err(e.into()) }).boxed(),
         }
         .map(|res| {
             if let Ok(BuildInfo {

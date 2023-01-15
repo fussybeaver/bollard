@@ -490,6 +490,55 @@ ENTRYPOINT ls buildkit-bollard.txt
     Ok(())
 }
 
+#[cfg(feature = "buildkit")]
+async fn buildkit_image_missing_session_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = String::from(
+        "FROM alpine as builder1
+RUN touch bollard.txt
+FROM alpine as builder2
+RUN --mount=type=bind,from=builder1,target=mnt cp mnt/bollard.txt buildkit-bollard.txt
+ENTRYPOINT ls buildkit-bollard.txt
+",
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let id = "build_buildkit_image_test";
+    let build = &docker
+        .build_image(
+            BuildImageOptions {
+                dockerfile: "Dockerfile".to_string(),
+                t: "integration_test_build_buildkit_image".to_string(),
+                pull: true,
+                version: BuilderVersion::BuilderBuildKit,
+                rm: true,
+                #[cfg(feature = "buildkit")]
+                session: None,
+                ..Default::default()
+            },
+            None,
+            Some(compressed.into()),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await;
+
+    assert!(build.is_err());
+    let err = build.as_ref().unwrap_err();
+    assert!(matches!(err, Error::MissingSessionBuildkitError {}));
+
+    Ok(())
+}
+
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -690,6 +739,12 @@ fn integration_test_build_image() {
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_image() {
     connect_to_docker_and_run!(build_buildkit_image_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_buildkit_image_missing_session_test() {
+    connect_to_docker_and_run!(buildkit_image_missing_session_test);
 }
 
 #[test]

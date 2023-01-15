@@ -83,6 +83,9 @@ pub enum Error {
         /// error code returned from container wait call
         code: i64,
     },
+    /// Error emitted when a session is not provided to the buildkit engine
+    #[error("Buildkit requires a unique session")]
+    MissingSessionBuildkitError {},
     /// Error emitted when JSON fails to serialize.
     #[error(transparent)]
     JsonSerdeError {
