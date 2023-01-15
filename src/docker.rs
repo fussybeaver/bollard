@@ -1017,11 +1017,6 @@ impl Docker {
         req: Result<Request<Body>, Error>,
     ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
         let res = self.process_request(req).await?;
-        #[cfg(test)]
-        {
-            dbg!(res.status()); // this does return 101 at the moment so we good
-            dbg!(res.headers());
-        }
         let upgraded = hyper::upgrade::on(res).await?;
         Ok(split(upgraded))
     }
