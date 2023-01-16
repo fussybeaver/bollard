@@ -257,7 +257,9 @@ mod tests {
     use bytes::{BufMut, BytesMut};
     use tokio_util::codec::Decoder;
 
-    use super::JsonLineDecoder;
+    use crate::container::LogOutput;
+
+    use super::{JsonLineDecoder, NewlineLogOutputDecoder};
 
     #[test]
     fn json_decode_empty() {
@@ -354,5 +356,26 @@ mod tests {
 
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn newline_decode_no_header() {
+        let mut buf =
+            BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
+        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+
+        buf.put(
+            &b":17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..],
+        );
+
+        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23:17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..];
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(expected)
+            })
+        );
     }
 }

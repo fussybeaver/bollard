@@ -544,7 +544,7 @@ where
 }
 
 /// Result type for the [Logs API](Docker::logs())
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub enum LogOutput {
     StdErr { message: Bytes },
