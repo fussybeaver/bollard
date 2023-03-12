@@ -1,10 +1,9 @@
 .DS_Store
 Cargo.lock
-/target
+**/target
 doc
 main.rs
 .metals
-codegen/target/generated-sources/target
-/.idea
+**/.idea
 .vscode/
-/codegen/.idea
+**/.swagger-codegen
