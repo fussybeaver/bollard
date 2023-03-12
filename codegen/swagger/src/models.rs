@@ -132,28 +132,49 @@ pub struct AuthConfig {
 
 }
 
+/// Volume configuration
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Body {
+    #[serde(rename = "Spec")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec: Option<ClusterVolumeSpec>,
+
+}
+
+/// BuildCache contains information about a build cache record. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BuildCache {
+    /// Unique ID of the build cache record. 
     #[serde(rename = "ID")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// ID of the parent build cache record.  > **Deprecated**: This field is deprecated, and omitted if empty. 
     #[serde(rename = "Parent")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
 
+    /// List of parent build cache record IDs. 
+    #[serde(rename = "Parents")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parents: Option<Vec<String>>,
+
+    /// Cache record type. 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub typ: Option<String>,
+    pub typ: Option<BuildCacheTypeEnum>,
 
+    /// Description of the build-step that produced the build cache. 
     #[serde(rename = "Description")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
+    /// Indicates if the build cache is in use. 
     #[serde(rename = "InUse")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub in_use: Option<bool>,
 
+    /// Indicates if the build cache is shared. 
     #[serde(rename = "Shared")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shared: Option<bool>,
@@ -187,6 +208,70 @@ pub struct BuildCache {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_count: Option<i64>,
 
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum BuildCacheTypeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "internal")]
+    INTERNAL,
+    #[serde(rename = "frontend")]
+    FRONTEND,
+    #[serde(rename = "source.local")]
+    SOURCE_LOCAL,
+    #[serde(rename = "source.git.checkout")]
+    SOURCE_GIT_CHECKOUT,
+    #[serde(rename = "exec.cachemount")]
+    EXEC_CACHEMOUNT,
+    #[serde(rename = "regular")]
+    REGULAR,
+}
+
+impl ::std::fmt::Display for BuildCacheTypeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            BuildCacheTypeEnum::EMPTY => write!(f, ""),
+            BuildCacheTypeEnum::INTERNAL => write!(f, "{}", "internal"),
+            BuildCacheTypeEnum::FRONTEND => write!(f, "{}", "frontend"),
+            BuildCacheTypeEnum::SOURCE_LOCAL => write!(f, "{}", "source.local"),
+            BuildCacheTypeEnum::SOURCE_GIT_CHECKOUT => write!(f, "{}", "source.git.checkout"),
+            BuildCacheTypeEnum::EXEC_CACHEMOUNT => write!(f, "{}", "exec.cachemount"),
+            BuildCacheTypeEnum::REGULAR => write!(f, "{}", "regular"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for BuildCacheTypeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(BuildCacheTypeEnum::EMPTY),
+            "internal" => Ok(BuildCacheTypeEnum::INTERNAL),
+            "frontend" => Ok(BuildCacheTypeEnum::FRONTEND),
+            "source.local" => Ok(BuildCacheTypeEnum::SOURCE_LOCAL),
+            "source.git.checkout" => Ok(BuildCacheTypeEnum::SOURCE_GIT_CHECKOUT),
+            "exec.cachemount" => Ok(BuildCacheTypeEnum::EXEC_CACHEMOUNT),
+            "regular" => Ok(BuildCacheTypeEnum::REGULAR),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for BuildCacheTypeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            BuildCacheTypeEnum::EMPTY => "",
+            BuildCacheTypeEnum::INTERNAL => "internal",
+            BuildCacheTypeEnum::FRONTEND => "frontend",
+            BuildCacheTypeEnum::SOURCE_LOCAL => "source.local",
+            BuildCacheTypeEnum::SOURCE_GIT_CHECKOUT => "source.git.checkout",
+            BuildCacheTypeEnum::EXEC_CACHEMOUNT => "exec.cachemount",
+            BuildCacheTypeEnum::REGULAR => "regular",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -303,6 +388,393 @@ pub struct ClusterInfo {
     #[serde(rename = "SubnetSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subnet_size: Option<u32>,
+
+}
+
+/// Options and information specific to, and only present on, Swarm CSI cluster volumes. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolume {
+    /// The Swarm ID of this volume. Because cluster volumes are Swarm objects, they have an ID, unlike non-cluster volumes. This ID can be used to refer to the Volume instead of the name. 
+    #[serde(rename = "ID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    #[serde(rename = "Version")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<ObjectVersion>,
+
+    #[serde(rename = "CreatedAt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]
+    pub created_at: Option<BollardDate>,
+
+    #[serde(rename = "UpdatedAt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]
+    pub updated_at: Option<BollardDate>,
+
+    #[serde(rename = "Spec")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec: Option<ClusterVolumeSpec>,
+
+    #[serde(rename = "Info")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<ClusterVolumeInfo>,
+
+    /// The status of the volume as it pertains to its publishing and use on specific nodes 
+    #[serde(rename = "PublishStatus")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publish_status: Option<Vec<ClusterVolumePublishStatus>>,
+
+}
+
+/// Information about the global status of the volume. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeInfo {
+    /// The capacity of the volume in bytes. A value of 0 indicates that the capacity is unknown. 
+    #[serde(rename = "CapacityBytes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity_bytes: Option<i64>,
+
+    /// A map of strings to strings returned from the storage plugin when the volume is created. 
+    #[serde(rename = "VolumeContext")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_context: Option<HashMap<String, String>>,
+
+    /// The ID of the volume as returned by the CSI storage plugin. This is distinct from the volume's ID as provided by Docker. This ID is never used by the user when communicating with Docker to refer to this volume. If the ID is blank, then the Volume has not been successfully created in the plugin yet. 
+    #[serde(rename = "VolumeID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_id: Option<String>,
+
+    /// The topology this volume is actually accessible from. 
+    #[serde(rename = "AccessibleTopology")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessible_topology: Option<Vec<Topology>>,
+
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumePublishStatus {
+    /// The ID of the Swarm node the volume is published on. 
+    #[serde(rename = "NodeID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+
+    /// The published state of the volume. * `pending-publish` The volume should be published to this node, but the call to the controller plugin to do so has not yet been successfully completed. * `published` The volume is published successfully to the node. * `pending-node-unpublish` The volume should be unpublished from the node, and the manager is awaiting confirmation from the worker that it has done so. * `pending-controller-unpublish` The volume is successfully unpublished from the node, but has not yet been successfully unpublished on the controller. 
+    #[serde(rename = "State")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<ClusterVolumePublishStatusStateEnum>,
+
+    /// A map of strings to strings returned by the CSI controller plugin when a volume is published. 
+    #[serde(rename = "PublishContext")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publish_context: Option<HashMap<String, String>>,
+
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ClusterVolumePublishStatusStateEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "pending-publish")]
+    PENDING_PUBLISH,
+    #[serde(rename = "published")]
+    PUBLISHED,
+    #[serde(rename = "pending-node-unpublish")]
+    PENDING_NODE_UNPUBLISH,
+    #[serde(rename = "pending-controller-unpublish")]
+    PENDING_CONTROLLER_UNPUBLISH,
+}
+
+impl ::std::fmt::Display for ClusterVolumePublishStatusStateEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ClusterVolumePublishStatusStateEnum::EMPTY => write!(f, ""),
+            ClusterVolumePublishStatusStateEnum::PENDING_PUBLISH => write!(f, "{}", "pending-publish"),
+            ClusterVolumePublishStatusStateEnum::PUBLISHED => write!(f, "{}", "published"),
+            ClusterVolumePublishStatusStateEnum::PENDING_NODE_UNPUBLISH => write!(f, "{}", "pending-node-unpublish"),
+            ClusterVolumePublishStatusStateEnum::PENDING_CONTROLLER_UNPUBLISH => write!(f, "{}", "pending-controller-unpublish"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for ClusterVolumePublishStatusStateEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(ClusterVolumePublishStatusStateEnum::EMPTY),
+            "pending-publish" => Ok(ClusterVolumePublishStatusStateEnum::PENDING_PUBLISH),
+            "published" => Ok(ClusterVolumePublishStatusStateEnum::PUBLISHED),
+            "pending-node-unpublish" => Ok(ClusterVolumePublishStatusStateEnum::PENDING_NODE_UNPUBLISH),
+            "pending-controller-unpublish" => Ok(ClusterVolumePublishStatusStateEnum::PENDING_CONTROLLER_UNPUBLISH),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for ClusterVolumePublishStatusStateEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            ClusterVolumePublishStatusStateEnum::EMPTY => "",
+            ClusterVolumePublishStatusStateEnum::PENDING_PUBLISH => "pending-publish",
+            ClusterVolumePublishStatusStateEnum::PUBLISHED => "published",
+            ClusterVolumePublishStatusStateEnum::PENDING_NODE_UNPUBLISH => "pending-node-unpublish",
+            ClusterVolumePublishStatusStateEnum::PENDING_CONTROLLER_UNPUBLISH => "pending-controller-unpublish",
+        }
+    }
+}
+
+/// Cluster-specific options used to create the volume. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeSpec {
+    /// Group defines the volume group of this volume. Volumes belonging to the same group can be referred to by group name when creating Services.  Referring to a volume by group instructs Swarm to treat volumes in that group interchangeably for the purpose of scheduling. Volumes with an empty string for a group technically all belong to the same, emptystring group. 
+    #[serde(rename = "Group")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+
+    #[serde(rename = "AccessMode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<ClusterVolumeSpecAccessMode>,
+
+}
+
+/// Defines how the volume is used by tasks. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeSpecAccessMode {
+    /// The set of nodes this volume can be used on at one time. - `single` The volume may only be scheduled to one node at a time. - `multi` the volume may be scheduled to any supported number of nodes at a time. 
+    #[serde(rename = "Scope")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<ClusterVolumeSpecAccessModeScopeEnum>,
+
+    /// The number and way that different tasks can use this volume at one time. - `none` The volume may only be used by one task at a time. - `readonly` The volume may be used by any number of tasks, but they all must mount the volume as readonly - `onewriter` The volume may be used by any number of tasks, but only one may mount it as read/write. - `all` The volume may have any number of readers and writers. 
+    #[serde(rename = "Sharing")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharing: Option<ClusterVolumeSpecAccessModeSharingEnum>,
+
+    /// Options for using this volume as a Mount-type volume.      Either MountVolume or BlockVolume, but not both, must be     present.   properties:     FsType:       type: \"string\"       description: |         Specifies the filesystem type for the mount volume.         Optional.     MountFlags:       type: \"array\"       description: |         Flags to pass when mounting the volume. Optional.       items:         type: \"string\" BlockVolume:   type: \"object\"   description: |     Options for using this volume as a Block-type volume.     Intentionally empty. 
+    #[serde(rename = "MountVolume")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mount_volume: Option<HashMap<(), ()>>,
+
+    /// Swarm Secrets that are passed to the CSI storage plugin when operating on this volume. 
+    #[serde(rename = "Secrets")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secrets: Option<Vec<ClusterVolumeSpecAccessModeSecrets>>,
+
+    #[serde(rename = "AccessibilityRequirements")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility_requirements: Option<ClusterVolumeSpecAccessModeAccessibilityRequirements>,
+
+    #[serde(rename = "CapacityRange")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity_range: Option<ClusterVolumeSpecAccessModeCapacityRange>,
+
+    /// The availability of the volume for use in tasks. - `active` The volume is fully available for scheduling on the cluster - `pause` No new workloads should use the volume, but existing workloads are not stopped. - `drain` All workloads using this volume should be stopped and rescheduled, and no new ones should be started. 
+    #[serde(rename = "Availability")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub availability: Option<ClusterVolumeSpecAccessModeAvailabilityEnum>,
+
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ClusterVolumeSpecAccessModeScopeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "single")]
+    SINGLE,
+    #[serde(rename = "multi")]
+    MULTI,
+}
+
+impl ::std::fmt::Display for ClusterVolumeSpecAccessModeScopeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ClusterVolumeSpecAccessModeScopeEnum::EMPTY => write!(f, ""),
+            ClusterVolumeSpecAccessModeScopeEnum::SINGLE => write!(f, "{}", "single"),
+            ClusterVolumeSpecAccessModeScopeEnum::MULTI => write!(f, "{}", "multi"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for ClusterVolumeSpecAccessModeScopeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(ClusterVolumeSpecAccessModeScopeEnum::EMPTY),
+            "single" => Ok(ClusterVolumeSpecAccessModeScopeEnum::SINGLE),
+            "multi" => Ok(ClusterVolumeSpecAccessModeScopeEnum::MULTI),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for ClusterVolumeSpecAccessModeScopeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            ClusterVolumeSpecAccessModeScopeEnum::EMPTY => "",
+            ClusterVolumeSpecAccessModeScopeEnum::SINGLE => "single",
+            ClusterVolumeSpecAccessModeScopeEnum::MULTI => "multi",
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ClusterVolumeSpecAccessModeSharingEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "none")]
+    NONE,
+    #[serde(rename = "readonly")]
+    READONLY,
+    #[serde(rename = "onewriter")]
+    ONEWRITER,
+    #[serde(rename = "all")]
+    ALL,
+}
+
+impl ::std::fmt::Display for ClusterVolumeSpecAccessModeSharingEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ClusterVolumeSpecAccessModeSharingEnum::EMPTY => write!(f, ""),
+            ClusterVolumeSpecAccessModeSharingEnum::NONE => write!(f, "{}", "none"),
+            ClusterVolumeSpecAccessModeSharingEnum::READONLY => write!(f, "{}", "readonly"),
+            ClusterVolumeSpecAccessModeSharingEnum::ONEWRITER => write!(f, "{}", "onewriter"),
+            ClusterVolumeSpecAccessModeSharingEnum::ALL => write!(f, "{}", "all"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for ClusterVolumeSpecAccessModeSharingEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(ClusterVolumeSpecAccessModeSharingEnum::EMPTY),
+            "none" => Ok(ClusterVolumeSpecAccessModeSharingEnum::NONE),
+            "readonly" => Ok(ClusterVolumeSpecAccessModeSharingEnum::READONLY),
+            "onewriter" => Ok(ClusterVolumeSpecAccessModeSharingEnum::ONEWRITER),
+            "all" => Ok(ClusterVolumeSpecAccessModeSharingEnum::ALL),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for ClusterVolumeSpecAccessModeSharingEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            ClusterVolumeSpecAccessModeSharingEnum::EMPTY => "",
+            ClusterVolumeSpecAccessModeSharingEnum::NONE => "none",
+            ClusterVolumeSpecAccessModeSharingEnum::READONLY => "readonly",
+            ClusterVolumeSpecAccessModeSharingEnum::ONEWRITER => "onewriter",
+            ClusterVolumeSpecAccessModeSharingEnum::ALL => "all",
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ClusterVolumeSpecAccessModeAvailabilityEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "active")]
+    ACTIVE,
+    #[serde(rename = "pause")]
+    PAUSE,
+    #[serde(rename = "drain")]
+    DRAIN,
+}
+
+impl ::std::fmt::Display for ClusterVolumeSpecAccessModeAvailabilityEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ClusterVolumeSpecAccessModeAvailabilityEnum::EMPTY => write!(f, ""),
+            ClusterVolumeSpecAccessModeAvailabilityEnum::ACTIVE => write!(f, "{}", "active"),
+            ClusterVolumeSpecAccessModeAvailabilityEnum::PAUSE => write!(f, "{}", "pause"),
+            ClusterVolumeSpecAccessModeAvailabilityEnum::DRAIN => write!(f, "{}", "drain"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for ClusterVolumeSpecAccessModeAvailabilityEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(ClusterVolumeSpecAccessModeAvailabilityEnum::EMPTY),
+            "active" => Ok(ClusterVolumeSpecAccessModeAvailabilityEnum::ACTIVE),
+            "pause" => Ok(ClusterVolumeSpecAccessModeAvailabilityEnum::PAUSE),
+            "drain" => Ok(ClusterVolumeSpecAccessModeAvailabilityEnum::DRAIN),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for ClusterVolumeSpecAccessModeAvailabilityEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            ClusterVolumeSpecAccessModeAvailabilityEnum::EMPTY => "",
+            ClusterVolumeSpecAccessModeAvailabilityEnum::ACTIVE => "active",
+            ClusterVolumeSpecAccessModeAvailabilityEnum::PAUSE => "pause",
+            ClusterVolumeSpecAccessModeAvailabilityEnum::DRAIN => "drain",
+        }
+    }
+}
+
+/// Requirements for the accessible topology of the volume. These fields are optional. For an in-depth description of what these fields mean, see the CSI specification. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeSpecAccessModeAccessibilityRequirements {
+    /// A list of required topologies, at least one of which the volume must be accessible from. 
+    #[serde(rename = "Requisite")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requisite: Option<Vec<Topology>>,
+
+    /// A list of topologies that the volume should attempt to be provisioned in. 
+    #[serde(rename = "Preferred")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred: Option<Vec<Topology>>,
+
+}
+
+/// The desired capacity that the volume should be created with. If empty, the plugin will decide the capacity. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeSpecAccessModeCapacityRange {
+    /// The volume must be at least this big. The value of 0 indicates an unspecified minimum 
+    #[serde(rename = "RequiredBytes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_bytes: Option<i64>,
+
+    /// The volume must not be bigger than this. The value of 0 indicates an unspecified maximum. 
+    #[serde(rename = "LimitBytes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_bytes: Option<i64>,
+
+}
+
+/// One cluster volume secret entry. Defines a key-value pair that is passed to the plugin. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClusterVolumeSpecAccessModeSecrets {
+    /// Key is the name of the key of the key-value pair passed to the plugin. 
+    #[serde(rename = "Key")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+
+    /// Secret is the swarm Secret object from which to read data. This can be a Secret name or ID. The Secret data is retrieved by swarm and used as the value of the key-value pair passed to the plugin. 
+    #[serde(rename = "Secret")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
 
 }
 
@@ -942,6 +1414,10 @@ pub struct CreateImageInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 
+    #[serde(rename = "errorDetail")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_detail: Option<ErrorDetail>,
+
     #[serde(rename = "status")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
@@ -1539,6 +2015,11 @@ pub struct ExecConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stderr: Option<bool>,
 
+    /// Initial console size, as an `[height, width]` array.
+    #[serde(rename = "ConsoleSize")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub console_size: Option<Vec<i32>>,
+
     /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`. 
     #[serde(rename = "DetachKeys")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1636,6 +2117,11 @@ pub struct ExecStartConfig {
     #[serde(rename = "Tty")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tty: Option<bool>,
+
+    /// Initial console size, as an `[height, width]` array.
+    #[serde(rename = "ConsoleSize")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub console_size: Option<Vec<i32>>,
 
 }
 
@@ -1949,12 +2435,7 @@ pub struct HostConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
-    #[serde(rename = "KernelMemory")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_memory: Option<i64>,
-
-    /// Hard limit for kernel TCP buffer memory (in bytes).
+    /// Hard limit for kernel TCP buffer memory (in bytes). Depending on the OCI runtime in use, this option may be ignored. It is no longer supported by the default (runc) runtime.  This field is omitted when empty. 
     #[serde(rename = "KernelMemoryTCP")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_memory_tcp: Option<i64>,
@@ -2065,6 +2546,11 @@ pub struct HostConfig {
     #[serde(rename = "Mounts")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mounts: Option<Vec<Mount>>,
+
+    /// Initial console size, as an `[height, width]` array. 
+    #[serde(rename = "ConsoleSize")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub console_size: Option<Vec<i32>>,
 
     /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapAdd")]
@@ -2185,11 +2671,6 @@ pub struct HostConfig {
     #[serde(rename = "Runtime")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
-
-    /// Initial console size, as an `[height, width]` array. (Windows only) 
-    #[serde(rename = "ConsoleSize")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub console_size: Option<Vec<i32>>,
 
     /// Isolation technology of the container. (Windows only) 
     #[serde(rename = "Isolation")]
@@ -2736,7 +3217,7 @@ pub struct Mount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
-    /// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs. - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container. 
+    /// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs. - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container. - `cluster` a Swarm cluster volume 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<MountTypeEnum>,
@@ -2778,6 +3259,8 @@ pub enum MountTypeEnum {
     TMPFS,
     #[serde(rename = "npipe")]
     NPIPE,
+    #[serde(rename = "cluster")]
+    CLUSTER,
 }
 
 impl ::std::fmt::Display for MountTypeEnum {
@@ -2788,6 +3271,7 @@ impl ::std::fmt::Display for MountTypeEnum {
             MountTypeEnum::VOLUME => write!(f, "{}", "volume"),
             MountTypeEnum::TMPFS => write!(f, "{}", "tmpfs"),
             MountTypeEnum::NPIPE => write!(f, "{}", "npipe"),
+            MountTypeEnum::CLUSTER => write!(f, "{}", "cluster"),
 
         }
     }
@@ -2802,6 +3286,7 @@ impl ::std::str::FromStr for MountTypeEnum {
             "volume" => Ok(MountTypeEnum::VOLUME),
             "tmpfs" => Ok(MountTypeEnum::TMPFS),
             "npipe" => Ok(MountTypeEnum::NPIPE),
+            "cluster" => Ok(MountTypeEnum::CLUSTER),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -2815,6 +3300,7 @@ impl ::std::convert::AsRef<str> for MountTypeEnum {
             MountTypeEnum::VOLUME => "volume",
             MountTypeEnum::TMPFS => "tmpfs",
             MountTypeEnum::NPIPE => "npipe",
+            MountTypeEnum::CLUSTER => "cluster",
         }
     }
 }
@@ -2831,6 +3317,11 @@ pub struct MountBindOptions {
     #[serde(rename = "NonRecursive")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub non_recursive: Option<bool>,
+
+    /// Create mount point on host if missing
+    #[serde(rename = "CreateMountpoint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_mountpoint: Option<bool>,
 
 }
 
@@ -2901,7 +3392,7 @@ impl ::std::convert::AsRef<str> for MountBindOptionsPropagationEnum {
 /// MountPoint represents a mount point configuration inside the container. This is used for reporting the mountpoints in use by a container. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MountPoint {
-    /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `volume` a docker volume with the given `Name`. - `tmpfs` a `tmpfs`. - `npipe` a named pipe from the host into the container. 
+    /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `volume` a docker volume with the given `Name`. - `tmpfs` a `tmpfs`. - `npipe` a named pipe from the host into the container. - `cluster` a Swarm cluster volume 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<MountPointTypeEnum>,
@@ -2956,6 +3447,8 @@ pub enum MountPointTypeEnum {
     TMPFS,
     #[serde(rename = "npipe")]
     NPIPE,
+    #[serde(rename = "cluster")]
+    CLUSTER,
 }
 
 impl ::std::fmt::Display for MountPointTypeEnum {
@@ -2966,6 +3459,7 @@ impl ::std::fmt::Display for MountPointTypeEnum {
             MountPointTypeEnum::VOLUME => write!(f, "{}", "volume"),
             MountPointTypeEnum::TMPFS => write!(f, "{}", "tmpfs"),
             MountPointTypeEnum::NPIPE => write!(f, "{}", "npipe"),
+            MountPointTypeEnum::CLUSTER => write!(f, "{}", "cluster"),
 
         }
     }
@@ -2980,6 +3474,7 @@ impl ::std::str::FromStr for MountPointTypeEnum {
             "volume" => Ok(MountPointTypeEnum::VOLUME),
             "tmpfs" => Ok(MountPointTypeEnum::TMPFS),
             "npipe" => Ok(MountPointTypeEnum::NPIPE),
+            "cluster" => Ok(MountPointTypeEnum::CLUSTER),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -2993,6 +3488,7 @@ impl ::std::convert::AsRef<str> for MountPointTypeEnum {
             MountPointTypeEnum::VOLUME => "volume",
             MountPointTypeEnum::TMPFS => "tmpfs",
             MountPointTypeEnum::NPIPE => "npipe",
+            MountPointTypeEnum::CLUSTER => "cluster",
         }
     }
 }
@@ -3129,15 +3625,14 @@ pub struct NetworkAttachmentConfig {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConnectRequest {
-    /// The ID or name of the container to disconnect from the network. 
+    /// The ID or name of the container to connect to the network.
     #[serde(rename = "Container")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
 
-    /// Force the container to disconnect from the network. 
-    #[serde(rename = "Force")]
+    #[serde(rename = "EndpointConfig")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub force: Option<bool>,
+    pub endpoint_config: Option<EndpointSettings>,
 
 }
 
@@ -3233,14 +3728,15 @@ pub struct NetworkCreateResponse {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkDisconnectRequest {
-    /// The ID or name of the container to connect to the network.
+    /// The ID or name of the container to disconnect from the network. 
     #[serde(rename = "Container")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
 
-    #[serde(rename = "EndpointConfig")]
+    /// Force the container to disconnect from the network. 
+    #[serde(rename = "Force")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub endpoint_config: Option<EndpointSettings>,
+    pub force: Option<bool>,
 
 }
 
@@ -4365,12 +4861,7 @@ pub struct Resources {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
-    #[serde(rename = "KernelMemory")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_memory: Option<i64>,
-
-    /// Hard limit for kernel TCP buffer memory (in bytes).
+    /// Hard limit for kernel TCP buffer memory (in bytes). Depending on the OCI runtime in use, this option may be ignored. It is no longer supported by the default (runc) runtime.  This field is omitted when empty. 
     #[serde(rename = "KernelMemoryTCP")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_memory_tcp: Option<i64>,
@@ -5693,12 +6184,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub swap_limit: Option<bool>,
 
-    /// Indicates if the host has kernel memory limit support enabled.  <p><br /></p>  > **Deprecated**: This field is deprecated as the kernel 5.4 deprecated > `kmem.limit_in_bytes`. 
-    #[serde(rename = "KernelMemory")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_memory: Option<bool>,
-
-    /// Indicates if the host has kernel memory TCP limit support enabled.  Kernel memory TCP limits are not supported when using cgroups v2, which does not support the corresponding `memory.kmem.tcp.limit_in_bytes` cgroup. 
+    /// Indicates if the host has kernel memory TCP limit support enabled. This field is omitted if not supported.  Kernel memory TCP limits are not supported when using cgroups v2, which does not support the corresponding `memory.kmem.tcp.limit_in_bytes` cgroup. 
     #[serde(rename = "KernelMemoryTCP")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_memory_tcp: Option<bool>,
@@ -7013,6 +7499,10 @@ pub struct TlsInfo {
 
 }
 
+/// A map of topological domains to topological segments. For in depth details, see documentation for the Topology object in the CSI specification. 
+// special-casing PortMap, cos swagger-codegen doesn't figure out this type
+pub type Topology = HashMap<String, Option<Vec<PortBinding>>>;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnlockKeyResponse {
     /// The swarm's unlock key.
@@ -7061,6 +7551,10 @@ pub struct Volume {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
     pub scope: Option<VolumeScopeEnum>,
+
+    #[serde(rename = "ClusterVolume")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_volume: Option<ClusterVolume>,
 
     /// The driver specific options used when creating the volume. 
     #[serde(rename = "Options")]
@@ -7139,6 +7633,10 @@ pub struct VolumeCreateOptions {
     #[serde(rename = "Labels")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
+
+    #[serde(rename = "ClusterVolumeSpec")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_volume_spec: Option<ClusterVolumeSpec>,
 
 }
 
