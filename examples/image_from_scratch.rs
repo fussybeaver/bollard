@@ -1,9 +1,9 @@
-use bollard::models::CreateImageInfo;
+use bollard_next::models::CreateImageInfo;
 /// Example of creating an image from scratch with a file system in a raw Tar (or tar.gz) archive.
 /// Run with `cargo run --example image_from_scratch <path to archive>.tar.gz
 /// This implementation streams the archive file piece by piece to the Docker daemon,
 /// but does so inefficiently. For best results, use `tokio::fs` instead of `std::fs`.
-use bollard::{image::CreateImageOptions, Docker};
+use bollard_next::{image::CreateImageOptions, Docker};
 use futures_util::stream::{Stream, TryStreamExt};
 use futures_util::task::{Context, Poll};
 use hyper::body::Body;
@@ -14,7 +14,7 @@ use std::pin::Pin;
 
 /*
   Image file system archives can be very large, so we don't want to load the entire thing
-  into memory in order to send it to Docker. Since `bollard::Docker::create_image` takes
+  into memory in order to send it to Docker. Since `bollard_next::Docker::create_image` takes
   a `hyper::Body` struct, which can be created from a `futures_util::stream::Stream`, we will
   implement `Stream` on our own type `FileStreamer`.
 */

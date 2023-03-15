@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use bollard::errors::Error;
-use bollard::{secret::*, Docker};
+use bollard_next::errors::Error;
+use bollard_next::{secret::*, Docker};
 
 use tokio::runtime::Runtime;
 

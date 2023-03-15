@@ -1,9 +1,9 @@
 //! This example will spin up Zookeeper and two Kafka brokers asynchronously.
 
-use bollard::container::{Config, CreateContainerOptions, LogsOptions, StartContainerOptions};
-use bollard::image::CreateImageOptions;
-use bollard::models::*;
-use bollard::Docker;
+use bollard_next::container::{Config, CreateContainerOptions, LogsOptions, StartContainerOptions};
+use bollard_next::image::CreateImageOptions;
+use bollard_next::models::*;
+use bollard_next::Docker;
 
 use futures_util::stream::select;
 use futures_util::stream::StreamExt;

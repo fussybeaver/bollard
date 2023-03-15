@@ -48,16 +48,9 @@ impl Decoder for NewlineLogOutputDecoder {
                         debug!(
                             "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
                         );
-                        let nl_index = src.iter().position(|b| *b == b'\n');
-                        if let Some(pos) = nl_index {
-                            debug!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
-                            return Ok(Some(LogOutput::Console {
-                                message: src.split_to(pos + 1).freeze(),
-                            }));
-                        } else {
-                            debug!("NewlineLogOutputDecoder: no newline found");
-                            return Ok(None);
-                        }
+                        let message = src.split_to(src.len()).freeze();
+                        debug!("NewlineLogOutputDecoder: no newline found");
+                        return Ok(Some(LogOutput::Console { message }));
                     }
 
                     if src.len() < 8 {

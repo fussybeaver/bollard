@@ -1,7 +1,7 @@
 //! Removes old docker containers, images, volumes and networks
 
-use bollard::Docker;
-use bollard::{
+use bollard_next::Docker;
+use bollard_next::{
     container::PruneContainersOptions, image::PruneImagesOptions, network::PruneNetworksOptions,
     volume::PruneVolumesOptions,
 };

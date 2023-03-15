@@ -1,8 +1,8 @@
 //! Fetch info of all running containers concurrently
 
-use bollard::container::{InspectContainerOptions, ListContainersOptions};
-use bollard::models::ContainerSummary;
-use bollard::Docker;
+use bollard_next::container::{InspectContainerOptions, ListContainersOptions};
+use bollard_next::models::ContainerSummary;
+use bollard_next::Docker;
 
 use std::collections::HashMap;
 use std::default::Default;

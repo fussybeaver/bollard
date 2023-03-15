@@ -2,8 +2,8 @@
 //!
 //! tar cvf dockerfile.tar Dockerfile
 
-use bollard::image::BuildImageOptions;
-use bollard::Docker;
+use bollard_next::image::BuildImageOptions;
+use bollard_next::Docker;
 use futures_util::stream::StreamExt;
 use hyper::body::Body;
 

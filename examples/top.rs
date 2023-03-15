@@ -1,7 +1,7 @@
 //! Run top asynchronously across several docker containers
-use bollard::container::{ListContainersOptions, TopOptions};
-use bollard::models::*;
-use bollard::Docker;
+use bollard_next::container::{ListContainersOptions, TopOptions};
+use bollard_next::models::*;
+use bollard_next::Docker;
 
 use std::collections::HashMap;
 use std::default::Default;

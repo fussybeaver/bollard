@@ -53,7 +53,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::network::InspectNetworkOptions;
+/// use bollard_next::network::InspectNetworkOptions;
 ///
 /// InspectNetworkOptions{
 ///     verbose: true,
@@ -62,7 +62,7 @@ where
 /// ```
 ///
 /// ```rust
-/// # use bollard::network::InspectNetworkOptions;
+/// # use bollard_next::network::InspectNetworkOptions;
 /// # use std::default::Default;
 /// InspectNetworkOptions::<&str>{
 ///     ..Default::default()
@@ -84,7 +84,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::network::ListNetworksOptions;
+/// use bollard_next::network::ListNetworksOptions;
 ///
 /// use std::collections::HashMap;
 ///
@@ -97,7 +97,7 @@ where
 /// ```
 ///
 /// ```rust
-/// # use bollard::network::ListNetworksOptions;
+/// # use bollard_next::network::ListNetworksOptions;
 /// # use std::default::Default;
 ///
 /// ListNetworksOptions::<&str> {
@@ -151,7 +151,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::network::PruneNetworksOptions;
+/// use bollard_next::network::PruneNetworksOptions;
 ///
 /// use std::collections::HashMap;
 ///
@@ -164,7 +164,7 @@ where
 /// ```
 ///
 /// ```rust
-/// # use bollard::network::PruneNetworksOptions;
+/// # use bollard_next::network::PruneNetworksOptions;
 /// # use std::default::Default;
 ///
 /// PruneNetworksOptions::<&str>{
@@ -205,10 +205,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::CreateNetworkOptions;
+    /// use bollard_next::network::CreateNetworkOptions;
     ///
     /// use std::default::Default;
     ///
@@ -253,7 +253,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.remove_network("my_network_name");
@@ -287,10 +287,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::InspectNetworkOptions;
+    /// use bollard_next::network::InspectNetworkOptions;
     ///
     /// use std::default::Default;
     ///
@@ -337,10 +337,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::ListNetworksOptions;
+    /// use bollard_next::network::ListNetworksOptions;
     ///
     /// use std::collections::HashMap;
     ///
@@ -387,11 +387,11 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::ConnectNetworkOptions;
-    /// use bollard::models::{EndpointSettings, EndpointIpamConfig};
+    /// use bollard_next::network::ConnectNetworkOptions;
+    /// use bollard_next::models::{EndpointSettings, EndpointIpamConfig};
     ///
     /// use std::default::Default;
     ///
@@ -444,10 +444,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::DisconnectNetworkOptions;
+    /// use bollard_next::network::DisconnectNetworkOptions;
     ///
     /// use std::default::Default;
     ///
@@ -495,10 +495,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::PruneNetworksOptions;
+    /// use bollard_next::network::PruneNetworksOptions;
     ///
     /// use std::collections::HashMap;
     ///

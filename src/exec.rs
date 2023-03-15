@@ -118,10 +118,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::exec::CreateExecOptions;
+    /// use bollard_next::exec::CreateExecOptions;
     ///
     /// use std::default::Default;
     ///
@@ -171,10 +171,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// # use bollard::exec::CreateExecOptions;
+    /// # use bollard_next::exec::CreateExecOptions;
     /// # use std::default::Default;
     ///
     /// # let config = CreateExecOptions {
@@ -185,7 +185,7 @@ impl Docker {
     ///
     /// async {
     ///     let message = docker.create_exec("hello-world", config).await.unwrap();
-    ///     use bollard::exec::StartExecOptions;
+    ///     use bollard_next::exec::StartExecOptions;
     ///     docker.start_exec(&message.id, None::<StartExecOptions>);
     /// };
     /// ```
@@ -259,10 +259,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// # use bollard::exec::CreateExecOptions;
+    /// # use bollard_next::exec::CreateExecOptions;
     /// # use std::default::Default;
     ///
     /// # let config = CreateExecOptions {
@@ -303,10 +303,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// #
-    /// # use bollard::exec::{CreateExecOptions, ResizeExecOptions};
+    /// # use bollard_next::exec::{CreateExecOptions, ResizeExecOptions};
     /// # use std::default::Default;
     /// #
     /// # let config = CreateExecOptions {

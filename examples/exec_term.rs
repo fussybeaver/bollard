@@ -1,11 +1,11 @@
 //! This example will run a interactive command inside the container using `docker exec`,
 //! passing trough input and output into the tty running inside the container
 
-use bollard::container::{Config, RemoveContainerOptions};
-use bollard::Docker;
+use bollard_next::container::{Config, RemoveContainerOptions};
+use bollard_next::Docker;
 
-use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
-use bollard::image::CreateImageOptions;
+use bollard_next::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
+use bollard_next::image::CreateImageOptions;
 use futures_util::{StreamExt, TryStreamExt};
 use std::io::{stdout, Read, Write};
 use std::time::Duration;

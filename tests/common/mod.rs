@@ -4,11 +4,11 @@ use futures_util::stream::TryStreamExt;
 use std::future::Future;
 use tokio::runtime::Runtime;
 
-use bollard::auth::DockerCredentials;
-use bollard::container::*;
-use bollard::errors::Error;
-use bollard::image::*;
-use bollard::Docker;
+use bollard_next::auth::DockerCredentials;
+use bollard_next::container::*;
+use bollard_next::errors::Error;
+use bollard_next::image::*;
+use bollard_next::Docker;
 
 #[allow(unused_macros)]
 macro_rules! rt_exec {
@@ -37,7 +37,7 @@ macro_rules! connect_to_docker_and_run {
 
 pub fn integration_test_registry_credentials() -> DockerCredentials {
     DockerCredentials {
-        username: Some("bollard".to_string()),
+        username: Some("bollard_next".to_string()),
         password: std::env::var("REGISTRY_PASSWORD").ok(),
         ..Default::default()
     }

@@ -1,7 +1,7 @@
 //! Builds a container with a bunch of extra options for testing
 
-use bollard::image::BuildImageOptions;
-use bollard::Docker;
+use bollard_next::image::BuildImageOptions;
+use bollard_next::Docker;
 
 use std::collections::HashMap;
 
@@ -43,7 +43,7 @@ async fn main() {
         platform: "linux/x86_64",
         #[cfg(feature = "buildkit")]
         session: None,
-        version: bollard::image::BuilderVersion::BuilderV1,
+        version: bollard_next::image::BuilderVersion::BuilderV1,
     };
 
     let mut image_build_stream = docker.build_image(build_image_options, None, None);

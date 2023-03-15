@@ -16,7 +16,7 @@ use std::{collections::HashMap, hash::Hash};
 /// ```rust
 /// # use std::collections::HashMap;
 /// # use std::default::Default;
-/// use bollard::secret::ListSecretsOptions;
+/// use bollard_next::secret::ListSecretsOptions;
 ///
 /// let mut filters = HashMap::new();
 /// filters.insert("name", vec!["my-secret-name"]);
@@ -27,7 +27,7 @@ use std::{collections::HashMap, hash::Hash};
 /// ```
 ///
 /// ```rust
-/// # use bollard::secret::ListSecretsOptions;
+/// # use bollard_next::secret::ListSecretsOptions;
 /// # use std::default::Default;
 ///
 /// let options: ListSecretsOptions<&str> = Default::default();
@@ -51,7 +51,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::secret::UpdateSecretOptions;
+/// use bollard_next::secret::UpdateSecretOptions;
 ///
 /// UpdateSecretOptions{
 ///     version: 1234,
@@ -82,9 +82,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::secret::ListSecretsOptions;
+    /// use bollard_next::secret::ListSecretsOptions;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
@@ -135,11 +135,11 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # use std::default::Default;
     /// # use base64::Engine;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::secret::SecretSpec;
+    /// use bollard_next::secret::SecretSpec;
     ///
     /// use base64;
     ///
@@ -181,7 +181,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.inspect_secret("secret-id");
@@ -217,7 +217,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.delete_secret("secret-id");
@@ -255,11 +255,11 @@ impl Docker {
     ///
     /// # Examples
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// use std::collections::HashMap;
-    /// use bollard::secret::UpdateSecretOptions;
+    /// use bollard_next::secret::UpdateSecretOptions;
     ///
     /// let result = async move {
     ///     let existing = docker.inspect_secret("my-secret").await?;

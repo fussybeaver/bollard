@@ -26,7 +26,7 @@ use crate::read::NewlineLogOutputDecoder;
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::ListContainersOptions;
+/// use bollard_next::container::ListContainersOptions;
 ///
 /// use std::collections::HashMap;
 /// use std::default::Default;
@@ -42,7 +42,7 @@ use crate::read::NewlineLogOutputDecoder;
 /// ```
 ///
 /// ```rust
-/// # use bollard::container::ListContainersOptions;
+/// # use bollard_next::container::ListContainersOptions;
 /// # use std::default::Default;
 /// ListContainersOptions::<String>{
 ///     ..Default::default()
@@ -84,7 +84,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::CreateContainerOptions;
+/// use bollard_next::container::CreateContainerOptions;
 ///
 /// CreateContainerOptions{
 ///     name: "my-new-container",
@@ -294,7 +294,7 @@ impl From<ContainerConfig> for Config<String> {
 ///
 /// ## Examples
 ///
-/// use bollard::container::StopContainerOptions;
+/// use bollard_next::container::StopContainerOptions;
 ///
 /// StopContainerOptions{
 ///     t: 30,
@@ -310,7 +310,7 @@ pub struct StopContainerOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::StartContainerOptions;
+/// use bollard_next::container::StartContainerOptions;
 ///
 /// StartContainerOptions{
 ///     detach_keys: "ctrl-^"
@@ -332,7 +332,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::RemoveContainerOptions;
+/// use bollard_next::container::RemoveContainerOptions;
 ///
 /// use std::default::Default;
 ///
@@ -356,7 +356,7 @@ pub struct RemoveContainerOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::WaitContainerOptions;
+/// use bollard_next::container::WaitContainerOptions;
 ///
 /// WaitContainerOptions{
 ///     condition: "not-running",
@@ -391,7 +391,7 @@ impl fmt::Debug for AttachContainerResults {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::AttachContainerOptions;
+/// use bollard_next::container::AttachContainerOptions;
 ///
 /// AttachContainerOptions::<String>{
 ///     stdin: Some(true),
@@ -430,7 +430,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::ResizeContainerTtyOptions;
+/// use bollard_next::container::ResizeContainerTtyOptions;
 ///
 /// ResizeContainerTtyOptions {
 ///     width: 50,
@@ -452,7 +452,7 @@ pub struct ResizeContainerTtyOptions {
 /// ## Example
 ///
 /// ```rust
-/// use bollard::container::RestartContainerOptions;
+/// use bollard_next::container::RestartContainerOptions;
 ///
 /// RestartContainerOptions{
 ///     t: 30,
@@ -469,7 +469,7 @@ pub struct RestartContainerOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::InspectContainerOptions;
+/// use bollard_next::container::InspectContainerOptions;
 ///
 /// InspectContainerOptions{
 ///     size: false,
@@ -486,7 +486,7 @@ pub struct InspectContainerOptions {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::TopOptions;
+/// use bollard_next::container::TopOptions;
 ///
 /// TopOptions{
 ///     ps_args: "aux",
@@ -510,7 +510,7 @@ fn is_zero(val: &i64) -> bool {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::LogsOptions;
+/// use bollard_next::container::LogsOptions;
 ///
 /// use std::default::Default;
 ///
@@ -582,7 +582,7 @@ impl LogOutput {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::StatsOptions;
+/// use bollard_next::container::StatsOptions;
 ///
 /// StatsOptions{
 ///     stream: false,
@@ -832,7 +832,7 @@ pub struct BlkioStatsEntry {
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::KillContainerOptions;
+/// use bollard_next::container::KillContainerOptions;
 ///
 /// KillContainerOptions{
 ///     signal: "SIGINT",
@@ -852,7 +852,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::UpdateContainerOptions;
+/// use bollard_next::container::UpdateContainerOptions;
 /// use std::default::Default;
 ///
 /// UpdateContainerOptions::<String> {
@@ -1039,7 +1039,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::RenameContainerOptions;
+/// use bollard_next::container::RenameContainerOptions;
 ///
 /// RenameContainerOptions {
 ///     name: "my_new_container_name"
@@ -1059,7 +1059,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::PruneContainersOptions;
+/// use bollard_next::container::PruneContainersOptions;
 ///
 /// use std::collections::HashMap;
 ///
@@ -1090,7 +1090,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::UploadToContainerOptions;
+/// use bollard_next::container::UploadToContainerOptions;
 ///
 /// use std::default::Default;
 ///
@@ -1118,7 +1118,7 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use bollard::container::DownloadFromContainerOptions;
+/// use bollard_next::container::DownloadFromContainerOptions;
 ///
 /// DownloadFromContainerOptions{
 ///     path: "/opt",
@@ -1151,9 +1151,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::ListContainersOptions;
+    /// use bollard_next::container::ListContainersOptions;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
@@ -1206,9 +1206,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::{CreateContainerOptions, Config};
+    /// use bollard_next::container::{CreateContainerOptions, Config};
     ///
     /// use std::default::Default;
     ///
@@ -1264,9 +1264,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::StartContainerOptions;
+    /// use bollard_next::container::StartContainerOptions;
     ///
     /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
@@ -1308,8 +1308,8 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
-    /// use bollard::container::StopContainerOptions;
+    /// # use bollard_next::Docker;
+    /// use bollard_next::container::StopContainerOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// let options = Some(StopContainerOptions{
@@ -1353,10 +1353,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RemoveContainerOptions;
+    /// use bollard_next::container::RemoveContainerOptions;
     ///
     /// use std::default::Default;
     ///
@@ -1404,10 +1404,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::WaitContainerOptions;
+    /// use bollard_next::container::WaitContainerOptions;
     ///
     /// let options = Some(WaitContainerOptions{
     ///     condition: "not-running",
@@ -1470,10 +1470,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::AttachContainerOptions;
+    /// use bollard_next::container::AttachContainerOptions;
     ///
     /// let options = Some(AttachContainerOptions::<String>{
     ///     stdin: Some(true),
@@ -1507,6 +1507,7 @@ impl Docker {
         );
 
         let (read, write) = self.process_upgraded(req).await?;
+
         let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
 
         Ok(AttachContainerResults {
@@ -1529,10 +1530,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::ResizeContainerTtyOptions;
+    /// use bollard_next::container::ResizeContainerTtyOptions;
     ///
     /// let options = ResizeContainerTtyOptions {
     ///     width: 50,
@@ -1576,10 +1577,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RestartContainerOptions;
+    /// use bollard_next::container::RestartContainerOptions;
     ///
     /// let options = Some(RestartContainerOptions{
     ///     t: 30,
@@ -1622,9 +1623,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::InspectContainerOptions;
+    /// use bollard_next::container::InspectContainerOptions;
     ///
     /// let options = Some(InspectContainerOptions{
     ///     size: false,
@@ -1667,9 +1668,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::TopOptions;
+    /// use bollard_next::container::TopOptions;
     ///
     /// let options = Some(TopOptions{
     ///     ps_args: "aux",
@@ -1716,10 +1717,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::LogsOptions;
+    /// use bollard_next::container::LogsOptions;
     ///
     /// use std::default::Default;
     ///
@@ -1768,7 +1769,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.container_changes("hello-world");
@@ -1808,10 +1809,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::StatsOptions;
+    /// use bollard_next::container::StatsOptions;
     ///
     /// let options = Some(StatsOptions{
     ///     stream: false,
@@ -1855,10 +1856,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::KillContainerOptions;
+    /// use bollard_next::container::KillContainerOptions;
     ///
     /// let options = Some(KillContainerOptions{
     ///     signal: "SIGINT",
@@ -1904,10 +1905,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::UpdateContainerOptions;
+    /// use bollard_next::container::UpdateContainerOptions;
     /// use std::default::Default;
     ///
     /// let config = UpdateContainerOptions::<String> {
@@ -1956,10 +1957,10 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RenameContainerOptions;
+    /// use bollard_next::container::RenameContainerOptions;
     ///
     /// let required = RenameContainerOptions {
     ///     name: "my_new_container_name"
@@ -2004,7 +2005,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.pause_container("postgres");
@@ -2039,7 +2040,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// docker.unpause_container("postgres");
@@ -2074,9 +2075,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::PruneContainersOptions;
+    /// use bollard_next::container::PruneContainersOptions;
     ///
     /// use std::collections::HashMap;
     ///
@@ -2125,9 +2126,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::UploadToContainerOptions;
+    /// use bollard_next::container::UploadToContainerOptions;
     ///
     /// use std::default::Default;
     /// use std::fs::File;
@@ -2185,9 +2186,9 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust
-    /// # use bollard::Docker;
+    /// # use bollard_next::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::DownloadFromContainerOptions;
+    /// use bollard_next::container::DownloadFromContainerOptions;
     ///
     /// let options = Some(DownloadFromContainerOptions{
     ///     path: "/opt",

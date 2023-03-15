@@ -1,7 +1,7 @@
 /// Example of using `std::error::Error` with bollard
-extern crate bollard;
+extern crate bollard_next;
 
-use bollard::Docker;
+use bollard_next::Docker;
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _docker = Docker::connect_with_socket_defaults().unwrap();

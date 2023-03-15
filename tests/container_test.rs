@@ -1,16 +1,16 @@
 #![type_length_limit = "2097152"]
 
-use bollard::container::{
+use bollard_next::container::{
     AttachContainerOptions, AttachContainerResults, Config, CreateContainerOptions,
     DownloadFromContainerOptions, InspectContainerOptions, KillContainerOptions,
     ListContainersOptions, LogsOptions, PruneContainersOptions, RemoveContainerOptions,
     RenameContainerOptions, ResizeContainerTtyOptions, RestartContainerOptions, StatsOptions,
     TopOptions, UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
 };
-use bollard::errors::Error;
-use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
-use bollard::models::*;
-use bollard::Docker;
+use bollard_next::errors::Error;
+use bollard_next::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
+use bollard_next::models::*;
+use bollard_next::Docker;
 
 use futures_util::stream::TryStreamExt;
 use tokio::io::AsyncWriteExt;

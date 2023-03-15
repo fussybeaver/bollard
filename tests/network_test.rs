@@ -1,12 +1,12 @@
-extern crate bollard;
+extern crate bollard_next;
 extern crate hyper;
 extern crate tokio;
 
-use bollard::container::*;
-use bollard::errors::Error;
-use bollard::models::*;
-use bollard::network::*;
-use bollard::Docker;
+use bollard_next::container::*;
+use bollard_next::errors::Error;
+use bollard_next::models::*;
+use bollard_next::network::*;
+use bollard_next::Docker;
 
 use tokio::runtime::Runtime;
 

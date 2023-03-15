@@ -189,7 +189,7 @@ pub struct BuildCache {
 
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BuildInfo {
     #[serde(rename = "id")]
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -71,7 +71,7 @@
 //! named pipe location `//./pipe/docker_engine`.
 //!
 //! ```rust
-//! use bollard::Docker;
+//! use bollard_next::Docker;
 //! #[cfg(unix)]
 //! Docker::connect_with_socket_defaults();
 //! ```
@@ -86,7 +86,7 @@
 //! operating systems.
 //!
 //! ```rust
-//! use bollard::Docker;
+//! use bollard_next::Docker;
 //! Docker::connect_with_local_defaults();
 //! ```
 //!
@@ -98,7 +98,7 @@
 //! `localhost:2375` if missing.
 //!
 //! ```rust
-//! use bollard::Docker;
+//! use bollard_next::Docker;
 //! Docker::connect_with_http_defaults();
 //! ```
 //!
@@ -114,7 +114,7 @@
 //! `ca.pem` for the certificate authority chain.
 //!
 //! ```rust
-//! use bollard::Docker;
+//! use bollard_next::Docker;
 //! #[cfg(feature = "ssl")]
 //! Docker::connect_with_ssl_defaults();
 //! ```
@@ -131,7 +131,7 @@
 //! First, check that the API is working with your server:
 //!
 //! ```rust,no_run
-//! use bollard::Docker;
+//! use bollard_next::Docker;
 //!
 //! use futures_util::future::FutureExt;
 //!
@@ -150,8 +150,8 @@
 //! To list docker images available on the Docker server:
 //!
 //! ```rust,no_run
-//! use bollard::Docker;
-//! use bollard::image::ListImagesOptions;
+//! use bollard_next::Docker;
+//! use bollard_next::image::ListImagesOptions;
 //!
 //! use futures_util::future::FutureExt;
 //!
@@ -178,8 +178,8 @@
 //! To receive a stream of stats for a running container.
 //!
 //! ```rust,no_run
-//! use bollard::Docker;
-//! use bollard::container::StatsOptions;
+//! use bollard_next::Docker;
+//! use bollard_next::container::StatsOptions;
 //!
 //! use futures_util::stream::TryStreamExt;
 //!
@@ -291,7 +291,7 @@ pub mod grpc;
 
 // publicly re-export
 pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
-pub use bollard_stubs::models;
+pub use bollard_next_stubs::models;
 
 #[cfg(feature = "buildkit")]
 pub use bollard_buildkit_proto::health;

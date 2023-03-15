@@ -1,10 +1,10 @@
 //! Builds a container with a bunch of extra options for testing
 #![allow(unused_variables, unused_mut)]
 
-use bollard::image::{BuildImageOptions, BuilderVersion};
+use bollard_next::image::{BuildImageOptions, BuilderVersion};
 #[cfg(feature = "buildkit")]
-use bollard::models::BuildInfoAux;
-use bollard::Docker;
+use bollard_next::models::BuildInfoAux;
+use bollard_next::Docker;
 
 #[cfg(feature = "buildkit")]
 use futures_util::stream::StreamExt;
@@ -52,7 +52,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         docker.build_image(build_image_options, None, Some(compressed.into()));
 
     #[cfg(feature = "buildkit")]
-    while let Some(Ok(bollard::models::BuildInfo {
+    while let Some(Ok(bollard_next::models::BuildInfo {
         aux: Some(BuildInfoAux::BuildKit(inner)),
         ..
     })) = image_build_stream.next().await

@@ -2,10 +2,10 @@
 
 use std::task::Poll;
 
-use bollard::container::*;
-use bollard::errors::Error;
-use bollard::exec::*;
-use bollard::Docker;
+use bollard_next::container::*;
+use bollard_next::errors::Error;
+use bollard_next::exec::*;
+use bollard_next::Docker;
 
 use futures_util::future;
 use futures_util::stream::TryStreamExt;

@@ -1,5 +1,5 @@
-use bollard::errors::Error;
-use bollard::{service::*, Docker};
+use bollard_next::errors::Error;
+use bollard_next::{service::*, Docker};
 
 use tokio::runtime::Runtime;
 

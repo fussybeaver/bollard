@@ -1,8 +1,8 @@
 //! Stream stats for all running Docker containers asynchronously
 #![type_length_limit = "2097152"]
 
-use bollard::container::{ListContainersOptions, StatsOptions};
-use bollard::Docker;
+use bollard_next::container::{ListContainersOptions, StatsOptions};
+use bollard_next::Docker;
 
 use futures_util::stream::StreamExt;
 

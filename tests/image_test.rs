@@ -4,13 +4,13 @@ use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
 use tokio::runtime::Runtime;
 
-use bollard::container::{
+use bollard_next::container::{
     Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
     WaitContainerOptions,
 };
-use bollard::errors::Error;
-use bollard::image::*;
-use bollard::Docker;
+use bollard_next::errors::Error;
+use bollard_next::image::*;
+use bollard_next::Docker;
 
 use std::collections::HashMap;
 use std::default::Default;
@@ -423,7 +423,7 @@ ENTRYPOINT ls buildkit-bollard.txt
             None,
             Some(compressed.into()),
         )
-        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .try_collect::<Vec<bollard_next::models::BuildInfo>>()
         .await?;
 
     assert!(build
@@ -431,7 +431,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         .flat_map(|build_info| {
             if let Some(aux) = &build_info.aux {
                 match aux {
-                    bollard::models::BuildInfoAux::BuildKit(res) => Vec::clone(&res.statuses),
+                    bollard_next::models::BuildInfoAux::BuildKit(res) => Vec::clone(&res.statuses),
                     _ => vec![],
                 }
             } else {
@@ -529,7 +529,7 @@ ENTRYPOINT ls buildkit-bollard.txt
             None,
             Some(compressed.into()),
         )
-        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .try_collect::<Vec<bollard_next::models::BuildInfo>>()
         .await;
 
     assert!(build.is_err());

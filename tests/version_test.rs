@@ -1,7 +1,7 @@
-use bollard::system::Version;
+use bollard_next::system::Version;
 #[cfg(unix)]
-use bollard::ClientVersion;
-use bollard::Docker;
+use bollard_next::ClientVersion;
+use bollard_next::Docker;
 use tokio::runtime::Runtime;
 
 #[macro_use]

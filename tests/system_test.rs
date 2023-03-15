@@ -1,9 +1,9 @@
-use bollard::auth::DockerCredentials;
-use bollard::errors::Error;
-use bollard::image::*;
-use bollard::models::*;
-use bollard::system::*;
-use bollard::Docker;
+use bollard_next::auth::DockerCredentials;
+use bollard_next::errors::Error;
+use bollard_next::image::*;
+use bollard_next::models::*;
+use bollard_next::system::*;
+use bollard_next::Docker;
 
 use futures_util::future;
 use futures_util::stream::select;

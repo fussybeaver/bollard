@@ -1,12 +1,12 @@
 //! This example will create a container and attach an interactive session to it
 //! passing through input and output into the tty running inside the container
 
-use bollard::container::{
+use bollard_next::container::{
     AttachContainerOptions, AttachContainerResults, Config, RemoveContainerOptions,
 };
-use bollard::Docker;
+use bollard_next::Docker;
 
-use bollard::image::CreateImageOptions;
+use bollard_next::image::CreateImageOptions;
 use futures_util::{StreamExt, TryStreamExt};
 use std::io::{stdout, Read, Write};
 use std::time::Duration;

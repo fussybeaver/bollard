@@ -71,7 +71,7 @@ The client will connect to the standard unix socket location `/var/run/docker.so
 named pipe location `//./pipe/docker_engine`.
 
 ```rust
-use bollard::Docker;
+use bollard_next::Docker;
 #[cfg(unix)]
 Docker::connect_with_socket_defaults();
 ```
@@ -86,7 +86,7 @@ This is a convenience for localhost environment that should run on multiple
 operating systems.
 
 ```rust
-use bollard::Docker;
+use bollard_next::Docker;
 Docker::connect_with_local_defaults();
 ```
 
@@ -98,7 +98,7 @@ The client will connect to the location pointed to by `DOCKER_HOST` environment 
 `localhost:2375` if missing.
 
 ```rust
-use bollard::Docker;
+use bollard_next::Docker;
 Docker::connect_with_http_defaults();
 ```
 
@@ -114,7 +114,7 @@ certificates - `key.pem` for the private key, `cert.pem` for the server certific
 `ca.pem` for the certificate authority chain.
 
 ```rust
-use bollard::Docker;
+use bollard_next::Docker;
 #[cfg(feature = "ssl")]
 Docker::connect_with_ssl_defaults();
 ```
@@ -131,7 +131,7 @@ Runtime](https://tokio.rs/).
 First, check that the API is working with your server:
 
 ```rust
-use bollard::Docker;
+use bollard_next::Docker;
 
 use futures_util::future::FutureExt;
 
@@ -149,8 +149,8 @@ async move {
 To list docker images available on the Docker server:
 
 ```rust
-use bollard::Docker;
-use bollard::image::ListImagesOptions;
+use bollard_next::Docker;
+use bollard_next::image::ListImagesOptions;
 
 use futures_util::future::FutureExt;
 
@@ -176,8 +176,8 @@ async move {
 To receive a stream of stats for a running container.
 
 ```rust
-use bollard::Docker;
-use bollard::container::StatsOptions;
+use bollard_next::Docker;
+use bollard_next::container::StatsOptions;
 
 use futures_util::stream::TryStreamExt;
 
