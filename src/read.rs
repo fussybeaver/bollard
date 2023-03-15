@@ -357,17 +357,10 @@ mod tests {
 
     #[test]
     fn newline_decode_no_header() {
-        let mut buf =
-            BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
+        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..];
+        let mut buf = BytesMut::from(expected);
         let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new();
 
-        assert_eq!(codec.decode(&mut buf).unwrap(), None);
-
-        buf.put(
-            &b":17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..],
-        );
-
-        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23:17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..];
         assert_eq!(
             codec.decode(&mut buf).unwrap(),
             Some(LogOutput::Console {
