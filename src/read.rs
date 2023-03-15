@@ -45,19 +45,9 @@ impl Decoder for NewlineLogOutputDecoder {
                 NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
                     if !src.is_empty() && src[0] > 2 {
-                        debug!(
-                            "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
-                        );
-                        let nl_index = src.iter().position(|b| *b == b'\n');
-                        if let Some(pos) = nl_index {
-                            debug!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
-                            return Ok(Some(LogOutput::Console {
-                                message: src.split_to(pos + 1).freeze(),
-                            }));
-                        } else {
-                            debug!("NewlineLogOutputDecoder: no newline found");
-                            return Ok(None);
-                        }
+                        return Ok(Some(LogOutput::Console {
+                            message: src.split_to(src.len()).freeze(),
+                        }));
                     }
 
                     if src.len() < 8 {
