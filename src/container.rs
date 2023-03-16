@@ -1507,7 +1507,7 @@ impl Docker {
         );
 
         let (read, write) = self.process_upgraded(req).await?;
-        let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true));
 
         Ok(AttachContainerResults {
             output: Box::pin(log),
