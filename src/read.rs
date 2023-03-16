@@ -25,12 +25,14 @@ enum NewlineLogOutputDecoderState {
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {
     state: NewlineLogOutputDecoderState,
+    is_tcp: bool,
 }
 
 impl NewlineLogOutputDecoder {
-    pub(crate) fn new() -> NewlineLogOutputDecoder {
+    pub(crate) fn new(is_tcp: bool) -> NewlineLogOutputDecoder {
         NewlineLogOutputDecoder {
             state: NewlineLogOutputDecoderState::WaitingHeader,
+            is_tcp,
         }
     }
 }
@@ -45,9 +47,22 @@ impl Decoder for NewlineLogOutputDecoder {
                 NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
                     if !src.is_empty() && src[0] > 2 {
-                        return Ok(Some(LogOutput::Console {
-                            message: src.split_to(src.len()).freeze(),
-                        }));
+                        if self.is_tcp {
+                            debug!("NewlineLogOutputDecoder: no header, but is_tcp is true returning raw data");
+                            return Ok(Some(LogOutput::Console {
+                                message: src.split().freeze(),
+                            }));
+                        }
+                        let nl_index = src.iter().position(|b| *b == b'\n');
+                        if let Some(pos) = nl_index {
+                            debug!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
+                            return Ok(Some(LogOutput::Console {
+                                message: src.split_to(pos + 1).freeze(),
+                            }));
+                        } else {
+                            debug!("NewlineLogOutputDecoder: no newline found");
+                            return Ok(None);
+                        }
                     }
 
                     if src.len() < 8 {
@@ -359,8 +374,26 @@ mod tests {
     fn newline_decode_no_header() {
         let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..];
         let mut buf = BytesMut::from(expected);
-        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new();
+        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(true);
 
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(expected)
+            })
+        );
+
+        let mut buf =
+            BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
+        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(false);
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+
+        buf.put(
+            &b":17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..],
+        );
+
+        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23:17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..];
         assert_eq!(
             codec.decode(&mut buf).unwrap(),
             Some(LogOutput::Console {

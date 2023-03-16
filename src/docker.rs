@@ -1193,7 +1193,7 @@ impl Docker {
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
         FramedRead::new(
             StreamReader::new(res.into_body().map_err(Error::from)),
-            NewlineLogOutputDecoder::new(),
+            NewlineLogOutputDecoder::new(false),
         )
     }
 
