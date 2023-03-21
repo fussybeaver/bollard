@@ -772,6 +772,9 @@ pub struct Stats {
     pub precpu_stats: CPUStats,
     pub storage_stats: StorageStats,
     pub name: String,
+
+    // Podman incorrectly capitalises the "id" field. See https://github.com/containers/podman/issues/17869
+    #[serde(alias = "Id")]
     pub id: String,
 }
 
