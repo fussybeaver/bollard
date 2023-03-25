@@ -65,7 +65,7 @@ where
     pub platform: T,
     /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
     /// URL-encoded! This parameter may only be used when importing an image.
-    pub changes: T,
+    pub changes: Option;<T>,
 }
 
 /// Parameters to the [List Images
