@@ -63,6 +63,9 @@ where
     pub tag: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
+    /// URL-encoded! This parameter may only be used when importing an image.
+    pub changes: Vec<T>,
 }
 
 /// Parameters to the [List Images
