@@ -14,7 +14,7 @@ name = "gen"
 required-features = ["build"]
 
 [dependencies]
-tonic = { version = "0.8" }
+tonic = { version = "0.9" }
 prost = { version = "0.11" }
 prost-types = "0.11"
 tonic-build = { version = "0.9", optional = true }
