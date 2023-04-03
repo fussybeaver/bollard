@@ -69,7 +69,7 @@ time = { version = "0.3", features = ["formatting", "parsing"], optional = true 
 tokio-util = { version = "0.7", features = ["codec"] }
 tower-service = { version = "0.3", optional = true }
 url = "2.2"
-webpki-roots = { version = "0.22", optional = true }
+webpki-roots = { version = "0.23", optional = true }
 webpki = { version = "0.22", optional = true }
 
 [dev-dependencies]
