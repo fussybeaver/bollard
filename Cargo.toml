@@ -30,7 +30,7 @@ test_macos = []
 # Enable JSON payload in deserialization errors
 json_data_content = []
 # Enable rustls / ssl
-ssl = ["dirs-next", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "webpki", "webpki-roots"]
+ssl = ["home", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "webpki", "webpki-roots"]
 ct_logs = ["ssl", "ct-logs"]
 chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]
@@ -42,7 +42,7 @@ bollard-buildkit-proto = { path = "codegen/proto", version = "=0.1.0", optional 
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
 ct-logs = { version = "0.9.0", optional = true }
-dirs-next = { version = "2.0", optional = true }
+home = { version = "0.5", optional = true }
 futures-core = "0.3"
 futures-util = "0.3"
 hex = "0.4.2"
