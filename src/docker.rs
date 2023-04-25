@@ -296,7 +296,7 @@ impl DockerClientCertResolver {
         if let Ok(ref path) = from_env {
             Ok(Path::new(path).to_owned())
         } else {
-            let home = dirs_next::home_dir().ok_or_else(|| NoHomePathError)?;
+            let home = home::home_dir().ok_or_else(|| NoHomePathError)?;
             Ok(home.join(".docker"))
         }
     }
