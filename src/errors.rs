@@ -39,7 +39,7 @@ pub enum Error {
     #[error("Could not load native certs")]
     NoNativeCertsError {
         /// The original error emitted.
-        err: webpki::Error,
+        err: rustls::Error,
     },
     /// Generic error emitted by the docker server.
     #[error("Docker responded with status code {status_code}: {message}")]
