@@ -329,6 +329,44 @@ pub struct BuildPruneResponse {
 
 }
 
+/// Kind of change  Can be one of:  - `0`: Modified (\"C\") - `1`: Added (\"A\") - `2`: Deleted (\"D\") 
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ChangeType { 
+    #[serde(rename = "0")]
+    _0,
+    #[serde(rename = "1")]
+    _1,
+    #[serde(rename = "2")]
+    _2,
+}
+
+impl ::std::fmt::Display for ChangeType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ChangeType::_0 => write!(f, "{}", "0"),
+            ChangeType::_1 => write!(f, "{}", "1"),
+            ChangeType::_2 => write!(f, "{}", "2"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for ChangeType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "0" => Ok(ChangeType::_0),
+            "1" => Ok(ChangeType::_1),
+            "2" => Ok(ChangeType::_2),
+            _ => Err(()),
+        }
+    }
+}
+
 /// ClusterInfo represents information about the swarm as is returned by the \"/info\" endpoint. Join-tokens are not included. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClusterInfo {
@@ -851,19 +889,6 @@ pub struct ConfigSpec {
 
 }
 
-/// change item in response to ContainerChanges operation
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContainerChangeResponseItem {
-    /// Path to file that has changed
-    #[serde(rename = "Path")]
-    pub path: String,
-
-    /// Kind of change
-    #[serde(rename = "Kind")]
-    pub kind: i64,
-
-}
-
 /// Configuration for a container that is portable between hosts.  When used as `ContainerConfig` field in an image, `ContainerConfig` is an optional field containing the configuration of the container that was last committed when creating the image.  Previous versions of Docker builder used this field to store build cache, and it is not in active use anymore. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerConfig {
@@ -1156,7 +1181,7 @@ pub struct ContainerState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restarting: Option<bool>,
 
-    /// Whether this container has been killed because it ran out of memory. 
+    /// Whether a process within this container has been killed because it ran out of memory since the container was last started. 
     #[serde(rename = "OOMKilled")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oom_killed: Option<bool>,
@@ -2125,6 +2150,17 @@ pub struct ExecStartConfig {
 
 }
 
+/// Change in the container's filesystem. 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilesystemChange {
+    /// Path to file or directory that has changed. 
+    #[serde(rename = "Path")]
+    pub path: String,
+
+    #[serde(rename = "Kind")]
+    pub kind: ChangeType,
+}
+
 /// User-defined resources can be either Integer resources (e.g, `SSD=3`) or String resources (e.g, `GPU=UUID1`). 
 
 pub type GenericResources = GenericResourcesInner;
@@ -2552,6 +2588,11 @@ pub struct HostConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub console_size: Option<Vec<i32>>,
 
+    /// Arbitrary non-identifying metadata attached to container and provided to the runtime when the container is started. 
+    #[serde(rename = "Annotations")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
+
     /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapAdd")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2909,7 +2950,7 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  > **Deprecated**: this field is kept for backward compatibility, but > will be removed in API v1.44. 
     #[serde(rename = "VirtualSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_size: Option<i64>,
@@ -3025,9 +3066,10 @@ pub struct ImageSummary {
     #[serde(rename = "SharedSize")]
     pub shared_size: i64,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  Deprecated: this field is kept for backward compatibility, and will be removed in API v1.44.
     #[serde(rename = "VirtualSize")]
-    pub virtual_size: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtual_size: Option<i64>,
 
     /// User-defined key/value metadata.
     #[serde(rename = "Labels")]
@@ -6408,7 +6450,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init_commit: Option<Commit>,
 
-    /// List of security features that are enabled on the daemon, such as apparmor, seccomp, SELinux, user-namespaces (userns), and rootless.  Additional configuration options for each security feature may be present, and are included as a comma-separated list of key/value pairs. 
+    /// List of security features that are enabled on the daemon, such as apparmor, seccomp, SELinux, user-namespaces (userns), rootless and no-new-privileges.  Additional configuration options for each security feature may be present, and are included as a comma-separated list of key/value pairs. 
     #[serde(rename = "SecurityOptions")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub security_options: Option<Vec<String>>,
