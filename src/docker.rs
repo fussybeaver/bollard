@@ -190,6 +190,19 @@ where
     )
 }
 
+pub(crate) fn serialize_image_changes<T, S>(t: &Option<Vec<T>>, s: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + std::fmt::Debug + Clone + Into<String>,
+    S: serde::Serializer,
+{
+    if let Some(ref value) = t {
+        let out: Vec<String> = value.clone().iter().map(|t| t.clone().into()).collect();
+        s.serialize_str(out.join("\n").as_str())
+    } else {
+        s.serialize_none()
+    }
+}
+
 #[cfg(feature = "time")]
 pub fn deserialize_rfc3339<'de, D: serde::Deserializer<'de>>(
     d: D,

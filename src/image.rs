@@ -46,7 +46,7 @@ use std::hash::Hash;
 #[serde(rename_all = "camelCase")]
 pub struct CreateImageOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + Serialize + std::fmt::Debug + Clone,
 {
     /// Name of the image to pull. The name may include a tag or digest. This parameter may only be
     /// used when pulling an image. The pull is cancelled if the HTTP connection is closed.
@@ -65,7 +65,8 @@ where
     pub platform: T,
     /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
     /// URL-encoded! This parameter may only be used when importing an image.
-    pub changes: Option<T>,
+    #[serde(serialize_with = "crate::docker::serialize_image_changes")]
+    pub changes: Option<Vec<T>>,
 }
 
 /// Parameters to the [List Images
@@ -554,7 +555,7 @@ impl Docker {
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + Serialize + std::fmt::Debug + Clone,
     {
         let url = "/images/create";
 
