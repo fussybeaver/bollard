@@ -121,6 +121,16 @@ public class BollardCodegen extends RustServerCodegen {
                 model.vendorExtensions.put("x-rustgen-upper-case", true);
             }
 
+            // Special case for numeric Enums
+            if (model.isEnum && model.dataType != null && (model.dataType.equals("i8") || model.dataType.equals("i16") || model.dataType.equals("i32") || model.dataType.equals("i64"))) {
+                model.vendorExtensions.put("x-rustgen-numeric-enum", true);
+                ArrayList<HashMap<String, String>> lst = (ArrayList) model.allowableValues.get("enumVars");
+                for (HashMap<String, String> enumVar : lst) {
+                    String val = enumVar.get("value");
+                    enumVar.put("value", val.replace("\"", ""));
+                }
+            }
+
             for (CodegenProperty prop : model.vars) {
                 if (prop.name.contains("i_pv6")) {
                     prop.name = prop.name.replace("i_pv6", "ipv6");
