@@ -10,6 +10,7 @@ use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -334,36 +335,27 @@ pub struct BuildPruneResponse {
 /// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
 /// which helps with FFI.
 #[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize_repr, Deserialize_repr, Eq, Ord)]
 pub enum ChangeType { 
-    #[serde(rename = "0")]
-    _0,
-    #[serde(rename = "1")]
-    _1,
-    #[serde(rename = "2")]
-    _2,
+    _0 = 0,
+    _1 = 1,
+    _2 = 2,
 }
 
 impl ::std::fmt::Display for ChangeType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self { 
-            ChangeType::_0 => write!(f, "{}", "0"),
-            ChangeType::_1 => write!(f, "{}", "1"),
-            ChangeType::_2 => write!(f, "{}", "2"),
+            ChangeType::_0 => write!(f, "{}", 0),
+            ChangeType::_1 => write!(f, "{}", 1),
+            ChangeType::_2 => write!(f, "{}", 2),
         }
     }
 }
 
-impl ::std::str::FromStr for ChangeType {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "0" => Ok(ChangeType::_0),
-            "1" => Ok(ChangeType::_1),
-            "2" => Ok(ChangeType::_2),
-            _ => Err(()),
-        }
+impl std::default::Default for ChangeType {
+    fn default() -> Self { 
+        ChangeType::_0
     }
 }
 
@@ -3230,6 +3222,12 @@ impl ::std::str::FromStr for LocalNodeState {
     }
 }
 
+impl std::default::Default for LocalNodeState {
+    fn default() -> Self { 
+        LocalNodeState::EMPTY
+    }
+}
+
 /// ManagerStatus represents the status of a manager.  It provides the current status of a node's manager component, if the node is a manager. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ManagerStatus {
@@ -4128,6 +4126,12 @@ impl ::std::str::FromStr for NodeState {
     }
 }
 
+impl std::default::Default for NodeState {
+    fn default() -> Self { 
+        NodeState::UNKNOWN
+    }
+}
+
 /// NodeStatus represents the status of a node.  It provides the current status of the node, as seen by the manager. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
@@ -4589,12 +4593,12 @@ pub struct Port {
 
     /// Port on the container
     #[serde(rename = "PrivatePort")]
-    pub private_port: i64,
+    pub private_port: u16,
 
     /// Port exposed on the host
     #[serde(rename = "PublicPort")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub public_port: Option<i64>,
+    pub public_port: Option<u16>,
 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4762,6 +4766,12 @@ impl ::std::str::FromStr for Reachability {
             "reachable" => Ok(Reachability::REACHABLE),
             _ => Err(()),
         }
+    }
+}
+
+impl std::default::Default for Reachability {
+    fn default() -> Self { 
+        Reachability::UNKNOWN
     }
 }
 
@@ -7460,6 +7470,12 @@ impl ::std::str::FromStr for TaskState {
             "orphaned" => Ok(TaskState::ORPHANED),
             _ => Err(()),
         }
+    }
+}
+
+impl std::default::Default for TaskState {
+    fn default() -> Self { 
+        TaskState::NEW
     }
 }
 
