@@ -10,6 +10,7 @@ use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -327,6 +328,35 @@ pub struct BuildPruneResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub space_reclaimed: Option<i64>,
 
+}
+
+/// Kind of change  Can be one of:  - `0`: Modified (\"C\") - `1`: Added (\"A\") - `2`: Deleted (\"D\") 
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize_repr, Deserialize_repr, Eq, Ord)]
+pub enum ChangeType { 
+    _0 = 0,
+    _1 = 1,
+    _2 = 2,
+}
+
+impl ::std::fmt::Display for ChangeType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ChangeType::_0 => write!(f, "{}", 0),
+            ChangeType::_1 => write!(f, "{}", 1),
+            ChangeType::_2 => write!(f, "{}", 2),
+        }
+    }
+}
+
+impl std::default::Default for ChangeType {
+    fn default() -> Self { 
+        ChangeType::_0
+    }
 }
 
 /// ClusterInfo represents information about the swarm as is returned by the \"/info\" endpoint. Join-tokens are not included. 
@@ -851,19 +881,6 @@ pub struct ConfigSpec {
 
 }
 
-/// change item in response to ContainerChanges operation
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ContainerChangeResponseItem {
-    /// Path to file that has changed
-    #[serde(rename = "Path")]
-    pub path: String,
-
-    /// Kind of change
-    #[serde(rename = "Kind")]
-    pub kind: i64,
-
-}
-
 /// Configuration for a container that is portable between hosts.  When used as `ContainerConfig` field in an image, `ContainerConfig` is an optional field containing the configuration of the container that was last committed when creating the image.  Previous versions of Docker builder used this field to store build cache, and it is not in active use anymore. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerConfig {
@@ -1156,7 +1173,7 @@ pub struct ContainerState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restarting: Option<bool>,
 
-    /// Whether this container has been killed because it ran out of memory. 
+    /// Whether a process within this container has been killed because it ran out of memory since the container was last started. 
     #[serde(rename = "OOMKilled")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oom_killed: Option<bool>,
@@ -2125,6 +2142,18 @@ pub struct ExecStartConfig {
 
 }
 
+/// Change in the container's filesystem. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FilesystemChange {
+    /// Path to file or directory that has changed. 
+    #[serde(rename = "Path")]
+    pub path: String,
+
+    #[serde(rename = "Kind")]
+    pub kind: ChangeType,
+
+}
+
 /// User-defined resources can be either Integer resources (e.g, `SSD=3`) or String resources (e.g, `GPU=UUID1`). 
 
 pub type GenericResources = GenericResourcesInner;
@@ -2552,6 +2581,11 @@ pub struct HostConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub console_size: Option<Vec<i32>>,
 
+    /// Arbitrary non-identifying metadata attached to container and provided to the runtime when the container is started. 
+    #[serde(rename = "Annotations")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
+
     /// A list of kernel capabilities to add to the container. Conflicts with option 'Capabilities'. 
     #[serde(rename = "CapAdd")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2909,7 +2943,7 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  > **Deprecated**: this field is kept for backward compatibility, but > will be removed in API v1.44. 
     #[serde(rename = "VirtualSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_size: Option<i64>,
@@ -3025,9 +3059,10 @@ pub struct ImageSummary {
     #[serde(rename = "SharedSize")]
     pub shared_size: i64,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Docker v1.10 and up store images self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  This field is kept for backward compatibility, but may be removed in a future version of the API. 
+    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  Deprecated: this field is kept for backward compatibility, and will be removed in API v1.44.
     #[serde(rename = "VirtualSize")]
-    pub virtual_size: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtual_size: Option<i64>,
 
     /// User-defined key/value metadata.
     #[serde(rename = "Labels")]
@@ -3184,6 +3219,12 @@ impl ::std::str::FromStr for LocalNodeState {
             "locked" => Ok(LocalNodeState::LOCKED),
             _ => Err(()),
         }
+    }
+}
+
+impl std::default::Default for LocalNodeState {
+    fn default() -> Self { 
+        LocalNodeState::EMPTY
     }
 }
 
@@ -4085,6 +4126,12 @@ impl ::std::str::FromStr for NodeState {
     }
 }
 
+impl std::default::Default for NodeState {
+    fn default() -> Self { 
+        NodeState::UNKNOWN
+    }
+}
+
 /// NodeStatus represents the status of a node.  It provides the current status of the node, as seen by the manager. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
@@ -4546,12 +4593,12 @@ pub struct Port {
 
     /// Port on the container
     #[serde(rename = "PrivatePort")]
-    pub private_port: i64,
+    pub private_port: u16,
 
     /// Port exposed on the host
     #[serde(rename = "PublicPort")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub public_port: Option<i64>,
+    pub public_port: Option<u16>,
 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4719,6 +4766,12 @@ impl ::std::str::FromStr for Reachability {
             "reachable" => Ok(Reachability::REACHABLE),
             _ => Err(()),
         }
+    }
+}
+
+impl std::default::Default for Reachability {
+    fn default() -> Self { 
+        Reachability::UNKNOWN
     }
 }
 
@@ -6408,7 +6461,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init_commit: Option<Commit>,
 
-    /// List of security features that are enabled on the daemon, such as apparmor, seccomp, SELinux, user-namespaces (userns), and rootless.  Additional configuration options for each security feature may be present, and are included as a comma-separated list of key/value pairs. 
+    /// List of security features that are enabled on the daemon, such as apparmor, seccomp, SELinux, user-namespaces (userns), rootless and no-new-privileges.  Additional configuration options for each security feature may be present, and are included as a comma-separated list of key/value pairs. 
     #[serde(rename = "SecurityOptions")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub security_options: Option<Vec<String>>,
@@ -7417,6 +7470,12 @@ impl ::std::str::FromStr for TaskState {
             "orphaned" => Ok(TaskState::ORPHANED),
             _ => Err(()),
         }
+    }
+}
+
+impl std::default::Default for TaskState {
+    fn default() -> Self { 
+        TaskState::NEW
     }
 }
 

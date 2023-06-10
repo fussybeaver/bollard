@@ -10,6 +10,7 @@ use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -101,14 +102,20 @@ pub enum BuildInfoAux {
 {{/description}}{{#isEnum}}/// Enumeration of values.
 /// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
 /// which helps with FFI.
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types)]{{#vendorExtensions.x-rustgen-numeric-enum}}
+#[repr({{dataType}})]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize_repr, Deserialize_repr, Eq, Ord)]{{#xmlName}}
+#[serde(rename = "{{xmlName}}")]{{/xmlName}}
+pub enum {{classname}} { {{#allowableValues}}{{#enumVars}}
+    {{name}} = {{value}},{{/enumVars}}{{/allowableValues}}
+}{{/vendorExtensions.x-rustgen-numeric-enum}}{{^vendorExtensions.x-rustgen-numeric-enum}}
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]{{#xmlName}}
 #[serde(rename = "{{xmlName}}")]{{/xmlName}}
 pub enum {{classname}} { {{#allowableValues}}{{#enumVars}}
     #[serde(rename = {{{value}}})]
     {{name}},{{/enumVars}}{{/allowableValues}}
-}
+}{{/vendorExtensions.x-rustgen-numeric-enum}}
 
 impl ::std::fmt::Display for {{classname}} {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
@@ -116,7 +123,7 @@ impl ::std::fmt::Display for {{classname}} {
             {{classname}}::{{name}} => write!(f, "{}", {{{value}}}),{{/enumVars}}{{/allowableValues}}
         }
     }
-}
+}{{^vendorExtensions.x-rustgen-numeric-enum}}
 
 impl ::std::str::FromStr for {{classname}} {
     type Err = ();
@@ -125,6 +132,12 @@ impl ::std::str::FromStr for {{classname}} {
 {{#allowableValues}}{{#enumVars}}            {{{value}}} => Ok({{classname}}::{{name}}),
 {{/enumVars}}{{/allowableValues}}            _ => Err(()),
         }
+    }
+}{{/vendorExtensions.x-rustgen-numeric-enum}}
+
+impl std::default::Default for {{classname}}{{enumName}} {
+    fn default() -> Self { {{#allowableValues}}{{#enumVars.0}}
+        {{classname}}{{enumName}}::{{name}}{{/enumVars.0}}{{/allowableValues}}
     }
 }
 {{/isEnum}}{{^isEnum}}{{^dataType}}{{#arrayModelType}}{{! vec}}
