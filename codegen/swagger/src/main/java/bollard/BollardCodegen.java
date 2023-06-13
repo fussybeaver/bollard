@@ -121,6 +121,16 @@ public class BollardCodegen extends RustServerCodegen {
                 model.vendorExtensions.put("x-rustgen-upper-case", true);
             }
 
+            // Special case for numeric Enums
+            if (model.isEnum && model.dataType != null && (model.dataType.equals("i8") || model.dataType.equals("i16") || model.dataType.equals("i32") || model.dataType.equals("i64"))) {
+                model.vendorExtensions.put("x-rustgen-numeric-enum", true);
+                ArrayList<HashMap<String, String>> lst = (ArrayList) model.allowableValues.get("enumVars");
+                for (HashMap<String, String> enumVar : lst) {
+                    String val = enumVar.get("value");
+                    enumVar.put("value", val.replace("\"", ""));
+                }
+            }
+
             for (CodegenProperty prop : model.vars) {
                 if (prop.name.contains("i_pv6")) {
                     prop.name = prop.name.replace("i_pv6", "ipv6");
@@ -184,6 +194,35 @@ public class BollardCodegen extends RustServerCodegen {
         if (property.datatype.equals("isize")) {
             // needed for windows
             property.datatype = "i64";
+        }
+
+        if (property.dataFormat != null) {
+            switch (property.dataFormat) {
+                case "uint64":
+                    property.datatype = "u64";
+                    break;
+                case "int64":
+                    property.datatype = "i64";
+                    break;
+                case "uint32":
+                    property.datatype = "u32";
+                    break;
+                case "int32":
+                    property.datatype = "i32";
+                    break;
+                case "uint16":
+                    property.datatype = "u16";
+                    break;
+                case "int16":
+                    property.datatype = "i16";
+                    break;
+                case "uint8":
+                    property.datatype = "u8";
+                    break;
+                case "int8":
+                    property.datatype = "i8";
+                    break;
+            }
         }
     }
 

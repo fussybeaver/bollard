@@ -1779,7 +1779,7 @@ impl Docker {
     pub async fn container_changes(
         &self,
         container_name: &str,
-    ) -> Result<Option<Vec<ContainerChangeResponseItem>>, Error> {
+    ) -> Result<Option<Vec<FilesystemChange>>, Error> {
         let url = format!("/containers/{}/changes", container_name);
 
         let req = self.build_request(
