@@ -208,7 +208,7 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     let value = vec.get(1).unwrap();
 
-    assert_eq!(format!("{}", value), "Hello from Docker!\n".to_string());
+    assert_eq!(format!("{value}"), "Hello from Docker!\n".to_string());
 
     let _ = &docker
         .remove_container("integration_test_logs", None::<RemoveContainerOptions>)
@@ -299,7 +299,7 @@ async fn attach_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     input
-        .write_all(format!("echo {}\n", unique_string).as_bytes())
+        .write_all(format!("echo {unique_string}\n").as_bytes())
         .await?;
     input.write_all("exit\n".as_bytes()).await?;
 
@@ -523,7 +523,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
                 "stefanscherer/registry-windows",
                 "moby/buildkit:master",
                 // Containers existing on CircleCI after a prune
-                "docker:20.10.16",
+                "docker:24.0.5",
                 "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
             ]
             .into_iter()
@@ -622,7 +622,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .map(|file| file.unwrap())
         .filter(|file| {
             let path = file.header().path().unwrap();
-            println!("{:?}", path);
+            println!("{path:?}");
             if path
                 == std::path::Path::new(if cfg!(windows) {
                     "Logs/readme.txt"

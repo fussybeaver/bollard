@@ -214,7 +214,7 @@ impl Docker {
     /// docker.inspect_volume("my_volume_name");
     /// ```
     pub async fn inspect_volume(&self, volume_name: &str) -> Result<Volume, Error> {
-        let url = format!("/volumes/{}", volume_name);
+        let url = format!("/volumes/{volume_name}");
 
         let req = self.build_request(
             &url,
@@ -261,7 +261,7 @@ impl Docker {
         volume_name: &str,
         options: Option<RemoveVolumeOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/volumes/{}", volume_name);
+        let url = format!("/volumes/{volume_name}");
 
         let req = self.build_request(
             &url,

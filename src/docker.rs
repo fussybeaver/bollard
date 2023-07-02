@@ -58,7 +58,7 @@ const DEFAULT_TIMEOUT: u64 = 120;
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 40,
+    minor_version: 42,
 };
 
 /// 2 years from ct_logs 0.9 release
@@ -186,7 +186,7 @@ where
     S: serde::Serializer,
 {
     s.serialize_str(
-        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
+        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{e}")))?,
     )
 }
 
@@ -470,7 +470,7 @@ impl Docker {
                 .map_err(|err| NoNativeCertsError { err })?;
         }
 
-        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
             rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                 ta.subject,
                 ta.spki,
@@ -1208,6 +1208,7 @@ impl Docker {
             StreamReader::new(res.into_body().map_err(Error::from)),
             NewlineLogOutputDecoder::new(false),
         )
+        .map_err(Error::from)
     }
 
     async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {

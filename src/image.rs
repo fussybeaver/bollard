@@ -15,6 +15,9 @@ use crate::container::Config;
 use crate::errors::Error;
 use crate::models::*;
 
+#[cfg(feature = "buildkit")]
+use super::health;
+
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -415,22 +418,37 @@ where
     pub platform: T,
     /// Builder version to use
     pub version: BuilderVersion,
+    #[cfg(feature = "buildkit")]
+    /// Buildkit output configuration for exporters
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
+    pub outputs: Option<Vec<ImageBuildOutput<T>>>,
+}
+
+#[cfg(feature = "buildkit")]
+/// Buildkit Image Output configuration: <https://docs.docker.com/build/exporters/oci-docker/>
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ImageBuildOutput<T>
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    /// The base type for a container image: [oci|docker]
+    #[serde(rename = "type")]
+    pub typ: T,
+    /// The set of parameters to export the image
+    #[serde(rename = "attrs")]
+    pub attrs: HashMap<T, T>,
 }
 
 /// Builder Version to use
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum BuilderVersion {
     /// BuilderV1 is the first generation builder in docker daemon
+    #[default]
     BuilderV1 = 1,
     /// BuilderBuildKit is builder based on moby/buildkit project
     BuilderBuildKit = 2,
-}
-
-impl Default for BuilderVersion {
-    fn default() -> Self {
-        BuilderVersion::BuilderV1
-    }
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -615,7 +633,7 @@ impl Docker {
     /// docker.inspect_image("hello-world");
     /// ```
     pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
-        let url = format!("/images/{}/json", image_name);
+        let url = format!("/images/{image_name}/json");
 
         let req = self.build_request(
             &url,
@@ -702,7 +720,7 @@ impl Docker {
     /// docker.image_history("hello-world");
     /// ```
     pub async fn image_history(&self, image_name: &str) -> Result<Vec<HistoryResponseItem>, Error> {
-        let url = format!("/images/{}/history", image_name);
+        let url = format!("/images/{image_name}/history");
 
         let req = self.build_request(
             &url,
@@ -807,7 +825,7 @@ impl Docker {
         options: Option<RemoveImageOptions>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
-        let url = format!("/images/{}", image_name);
+        let url = format!("/images/{image_name}");
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
@@ -866,7 +884,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/tag", image_name);
+        let url = format!("/images/{image_name}/tag");
 
         let req = self.build_request(
             &url,
@@ -926,7 +944,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/push", image_name);
+        let url = format!("/images/{image_name}/push");
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
@@ -1160,7 +1178,9 @@ impl Docker {
     }
 
     #[cfg(feature = "buildkit")]
-    async fn start_session(&self, id: String) -> Result<(), Error> {
+    async fn start_session(&self, id: String) -> Result<(), crate::grpc::error::GrpcError> {
+        use crate::grpc::io::GrpcTransport;
+
         let url = "/session";
 
         let opt: Option<serde_json::Value> = None;
@@ -1174,16 +1194,17 @@ impl Docker {
             opt,
             Ok(Body::empty()),
         );
+
         let (read, write) = self.process_upgraded(req).await?;
 
         let output = Box::pin(read);
         let input = Box::pin(write);
-        let transport = crate::grpc::GrpcTransport {
+        let transport = GrpcTransport {
             read: output,
             write: input,
         };
         let service =
-            crate::health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
+            health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
 
         Ok(tonic::transport::Server::builder()
             .add_service(service)
@@ -1199,28 +1220,54 @@ impl Docker {
     ///
     /// Get a tarball containing all images and metadata for a repository.
     ///
-    /// The root of the resulting tar file will contain the file "mainifest.json". If the export is
-    /// of an image repository, rather than a signle image, there will also be a `repositories` file
+    /// The root of the resulting tar file will contain the file "manifest.json". If the export is
+    /// of an image repository, rather than a single image, there will also be a `repositories` file
     /// with a JSON description of the exported image repositories.
     /// Additionally, each layer of all exported images will have a sub directory in the archive
     /// containing the filesystem of the layer.
     ///
-    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageCommit)
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageGet)
     /// for more information.
     /// # Arguments
-    /// - The `image_name` string can refer to an individual image and tag (e.g. alpine:latest),
-    ///   an individual image by I
+    /// - The `image_name` string referring to an individual image and tag (e.g. alpine:latest)
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
     pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/images/{}/get", image_name);
+        let url = format!("/images/{image_name}/get");
         let req = self.build_request(
             &url,
             Builder::new()
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
+            Ok(Body::empty()),
+        );
+        self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Export Images
+    ///
+    /// Get a tarball containing all images and metadata for several image repositories. Shared
+    /// layers will be deduplicated.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#tag/Image/operation/ImageGetAll)
+    /// for more information.
+    /// # Arguments
+    /// - The `image_names` Vec of image names.
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_images(&self, image_names: &[&str]) -> impl Stream<Item = Result<Bytes, Error>> {
+        let options: Vec<_> = image_names.iter().map(|name| ("names", name)).collect();
+        let req = self.build_request(
+            "/images/get",
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
             Ok(Body::empty()),
         );
         self.process_into_body(req)

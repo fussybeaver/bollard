@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         }))
         .await?;
 
-    println!("{:?}", prune);
+    println!("{prune:?}");
 
     let prune = docker
         .prune_images(Some(PruneImagesOptions {
@@ -54,13 +54,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         }))
         .await?;
 
-    println!("{:?}", prune);
+    println!("{prune:?}");
 
     let prune = docker
         .prune_volumes(None::<PruneVolumesOptions<String>>)
         .await?;
 
-    println!("{:?}", prune);
+    println!("{prune:?}");
 
     let prune = docker
         .prune_networks(Some(PruneNetworksOptions {
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         }))
         .await?;
 
-    println!("{:?}", prune);
+    println!("{prune:?}");
 
     Ok(())
 }

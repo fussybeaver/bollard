@@ -162,7 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let mut stream = select(&mut stream1, &mut stream2);
 
     while let Some(msg) = stream.next().await {
-        println!("Message: {:?}", msg);
+        println!("Message: {msg:?}");
     }
 
     Ok(())

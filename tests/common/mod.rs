@@ -61,7 +61,7 @@ where
 {
     rt.block_on(future)
         .map_err(|e| {
-            println!("{:?}", e);
+            println!("{e:?}");
             e
         })
         .unwrap();

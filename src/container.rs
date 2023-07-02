@@ -1,7 +1,7 @@
 //! Container API: run docker containers and manage their lifecycle
 
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
@@ -420,7 +420,7 @@ where
     /// If stream is also enabled, once all the previous output has been returned, it will seamlessly transition into streaming current output.
     pub logs: Option<bool>,
     /// Override the key sequence for detaching a container.
-    /// Format is a single character [a-Z] or ctrl-<value> where <value> is one of: a-z, @, ^, [, , or _.
+    /// Format is a single character [a-Z] or ctrl-\<value\> where \<value\> is one of: a-z, @, ^, [, , or _.
     #[serde(rename = "detachKeys")]
     pub detach_keys: Option<T>,
 }
@@ -562,6 +562,17 @@ impl fmt::Display for LogOutput {
             LogOutput::Console { message } => message,
         };
         write!(f, "{}", String::from_utf8_lossy(message))
+    }
+}
+
+impl AsRef<[u8]> for LogOutput {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            LogOutput::StdErr { message } => message.as_ref(),
+            LogOutput::StdOut { message } => message.as_ref(),
+            LogOutput::StdIn { message } => message.as_ref(),
+            LogOutput::Console { message } => message.as_ref(),
+        }
     }
 }
 
@@ -1281,7 +1292,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/start", container_name);
+        let url = format!("/containers/{container_name}/start");
 
         let req = self.build_request(
             &url,
@@ -1326,7 +1337,7 @@ impl Docker {
         container_name: &str,
         options: Option<StopContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/stop", container_name);
+        let url = format!("/containers/{container_name}/stop");
 
         let req = self.build_request(
             &url,
@@ -1375,7 +1386,7 @@ impl Docker {
         container_name: &str,
         options: Option<RemoveContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}", container_name);
+        let url = format!("/containers/{container_name}");
 
         let req = self.build_request(
             &url,
@@ -1426,7 +1437,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/wait", container_name);
+        let url = format!("/containers/{container_name}/wait");
 
         let req = self.build_request(
             &url,
@@ -1497,7 +1508,7 @@ impl Docker {
     where
         T: Into<String> + Serialize + Default,
     {
-        let url = format!("/containers/{}/attach", container_name);
+        let url = format!("/containers/{container_name}/attach");
 
         let req = self.build_request(
             &url,
@@ -1510,7 +1521,7 @@ impl Docker {
         );
 
         let (read, write) = self.process_upgraded(req).await?;
-        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true));
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
 
         Ok(AttachContainerResults {
             output: Box::pin(log),
@@ -1549,7 +1560,7 @@ impl Docker {
         container_name: &str,
         options: ResizeContainerTtyOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/resize", container_name);
+        let url = format!("/containers/{container_name}/resize");
 
         let req = self.build_request(
             &url,
@@ -1595,7 +1606,7 @@ impl Docker {
         container_name: &str,
         options: Option<RestartContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/restart", container_name);
+        let url = format!("/containers/{container_name}/restart");
 
         let req = self.build_request(
             &url,
@@ -1640,7 +1651,7 @@ impl Docker {
         container_name: &str,
         options: Option<InspectContainerOptions>,
     ) -> Result<ContainerInspectResponse, Error> {
-        let url = format!("/containers/{}/json", container_name);
+        let url = format!("/containers/{container_name}/json");
 
         let req = self.build_request(
             &url,
@@ -1688,7 +1699,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/top", container_name);
+        let url = format!("/containers/{container_name}/top");
 
         let req = self.build_request(
             &url,
@@ -1741,7 +1752,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/logs", container_name);
+        let url = format!("/containers/{container_name}/logs");
 
         let req = self.build_request(
             &url,
@@ -1765,7 +1776,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An Option of Vector of [Container Change Response Item](ContainerChangeResponseItem) structs, wrapped in a
+    ///  - An Option of Vector of [File System Change](FilesystemChange) structs, wrapped in a
     ///  Future.
     ///
     /// # Examples
@@ -1780,7 +1791,7 @@ impl Docker {
         &self,
         container_name: &str,
     ) -> Result<Option<Vec<FilesystemChange>>, Error> {
-        let url = format!("/containers/{}/changes", container_name);
+        let url = format!("/containers/{container_name}/changes");
 
         let req = self.build_request(
             &url,
@@ -1828,7 +1839,7 @@ impl Docker {
         container_name: &str,
         options: Option<StatsOptions>,
     ) -> impl Stream<Item = Result<Stats, Error>> {
-        let url = format!("/containers/{}/stats", container_name);
+        let url = format!("/containers/{container_name}/stats");
 
         let req = self.build_request(
             &url,
@@ -1877,7 +1888,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/kill", container_name);
+        let url = format!("/containers/{container_name}/kill");
 
         let req = self.build_request(
             &url,
@@ -1929,7 +1940,7 @@ impl Docker {
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
-        let url = format!("/containers/{}/update", container_name);
+        let url = format!("/containers/{container_name}/update");
 
         let req = self.build_request(
             &url,
@@ -1978,7 +1989,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/rename", container_name);
+        let url = format!("/containers/{container_name}/rename");
 
         let req = self.build_request(
             &url,
@@ -2013,7 +2024,7 @@ impl Docker {
     /// docker.pause_container("postgres");
     /// ```
     pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/pause", container_name);
+        let url = format!("/containers/{container_name}/pause");
 
         let req = self.build_request(
             &url,
@@ -2048,7 +2059,7 @@ impl Docker {
     /// docker.unpause_container("postgres");
     /// ```
     pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/unpause", container_name);
+        let url = format!("/containers/{container_name}/unpause");
 
         let req = self.build_request(
             &url,
@@ -2156,7 +2167,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,
@@ -2206,7 +2217,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,

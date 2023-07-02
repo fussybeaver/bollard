@@ -31,6 +31,6 @@ async fn main() {
     let mut image_build_stream = docker.build_image(image_options, None, Some(body));
 
     while let Some(msg) = image_build_stream.next().await {
-        println!("Message: {:?}", msg);
+        println!("Message: {msg:?}");
     }
 }

@@ -39,7 +39,7 @@ impl NewlineLogOutputDecoder {
 
 impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
-    type Error = Error;
+    type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
@@ -48,43 +48,44 @@ impl Decoder for NewlineLogOutputDecoder {
                     // `start_exec` API on unix socket will emit values without a header
                     if !src.is_empty() && src[0] > 2 {
                         if self.is_tcp {
-                            debug!("NewlineLogOutputDecoder: no header, but is_tcp is true returning raw data");
+                            trace!("NewlineLogOutputDecoder: no header, but is_tcp is true returning raw data");
                             return Ok(Some(LogOutput::Console {
                                 message: src.split().freeze(),
                             }));
                         }
                         let nl_index = src.iter().position(|b| *b == b'\n');
                         if let Some(pos) = nl_index {
-                            debug!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
+                            trace!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
                             return Ok(Some(LogOutput::Console {
                                 message: src.split_to(pos + 1).freeze(),
                             }));
                         } else {
-                            debug!("NewlineLogOutputDecoder: no newline found");
+                            trace!("NewlineLogOutputDecoder: no newline found");
                             return Ok(None);
                         }
                     }
 
                     if src.len() < 8 {
-                        debug!("NewlineLogOutputDecoder: not enough data for read header");
+                        trace!("NewlineLogOutputDecoder: not enough data for read header");
                         return Ok(None);
                     }
 
                     let header = src.split_to(8);
                     let length =
                         u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
-                    debug!(
+                    trace!(
                         "NewlineLogOutputDecoder: read header, type = {}, length = {}",
-                        header[0], length
+                        header[0],
+                        length
                     );
                     self.state = NewlineLogOutputDecoderState::WaitingPayload(header[0], length);
                 }
                 NewlineLogOutputDecoderState::WaitingPayload(typ, length) => {
                     if src.len() < length {
-                        debug!("NewlineLogOutputDecoder: not enough data to read");
+                        trace!("NewlineLogOutputDecoder: not enough data to read");
                         return Ok(None);
                     } else {
-                        debug!("NewlineLogOutputDecoder: Reading payload");
+                        trace!("NewlineLogOutputDecoder: Reading payload");
                         let message = src.split_to(length).freeze();
                         let item = match typ {
                             0 => LogOutput::StdIn { message },
