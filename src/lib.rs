@@ -294,6 +294,9 @@ pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
 pub use bollard_stubs::models;
 
 #[cfg(feature = "buildkit")]
+pub use bollard_buildkit_proto::fsutil;
+
+#[cfg(feature = "buildkit")]
 pub use bollard_buildkit_proto::health;
 
 #[cfg(feature = "buildkit")]

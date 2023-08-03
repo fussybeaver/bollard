@@ -20,7 +20,7 @@ members = [
 
 [features]
 # Enable Buildkit-enabled docker image building
-buildkit = ["num", "rand", "tower", "tonic", "tower-service", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
+buildkit = ["num", "rand", "tokio-stream", "tower", "tonic", "tower-service", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
@@ -66,6 +66,7 @@ tonic = { version = "0.9", optional = true }
 tower = { version = "0.4", optional = true }
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 tower-service = { version = "0.3", optional = true }
 url = "2.2"

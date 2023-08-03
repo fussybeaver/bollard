@@ -2,6 +2,14 @@
 #![cfg(feature = "buildkit")]
 #![allow(dead_code)]
 
+use crate::fsutil::types::Packet;
+//use crate::moby::filesync::v1::file_sync_server::DiffCopyStream;
+//use crate::moby::filesync::v1::file_sync_server::TarStreamStream;
+use crate::moby::filesync::v1::BytesMessage as FileSyncBytesMessage;
+use crate::moby::filesync::v1::file_sync_server::FileSync;
+use crate::moby::filesync::v1::file_send_server::FileSend;
+use crate::moby::upload::v1::upload_server::Upload;
+use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
@@ -14,7 +22,8 @@ use futures_core::Stream;
 use rand::RngCore;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tonic::transport::server::Connected;
-use tonic::{Code, Request, Response, Status};
+use tonic::{Code, Request, Response, Status, Streaming};
+use tower::make::MakeConnection;
 
 #[allow(missing_debug_implementations)]
 pub(crate) struct GrpcTransport {
@@ -103,6 +112,161 @@ impl Health for HealthServerImpl {
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<Self::WatchStream>, Status> {
         unimplemented!();
+    }
+}
+
+pub(crate) struct FileSendImpl {
+}
+
+impl FileSendImpl {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[tonic::async_trait]
+impl FileSend for FileSendImpl 
+{
+    type DiffCopyStream = Pin<Box<dyn Stream<Item = Result<FileSyncBytesMessage, Status>> + Send>>;
+    async fn diff_copy(
+        &self,
+        request: Request<Streaming<FileSyncBytesMessage>>
+    ) -> Result<Response<Self::DiffCopyStream>, Status> {
+        debug!("Protobuf FileSend diff_copy triggered: {:#?}", request);
+
+        use tokio::sync::mpsc;
+        use futures_util::StreamExt;
+        use tokio_stream::wrappers::ReceiverStream;
+        use std::io::Write;
+
+        let mut in_stream = request.into_inner();
+        let (tx, rx) = mpsc::channel(128);
+
+
+        tokio::spawn(async move {
+            let file = std::fs::File::create("/tmp/bollard-oci.dump").expect("unable to create file");
+            let mut f = std::io::BufWriter::new(file);
+            while let Some(result) = in_stream.next().await {
+                match result {
+                    Ok(v) => {
+                        //debug!("string: {}", &String::from_utf8_lossy(&v.data));
+                        f.write_all(&v.data).expect("unable to write data");
+                        tx
+                        .send(Ok(v))
+                        .await
+                        .expect("working rx")
+                    },
+                    Err(err) => {
+                        unimplemented!("foo");
+                    }
+                }
+            }
+        });
+
+        let out_stream = ReceiverStream::new(rx);
+
+        Ok(Response::new(Box::pin(out_stream)))
+        //unimplemented!("Need to implement diff_copy");
+    }
+
+}
+
+use std::io::Read;
+
+pub(crate) struct UploadProvider {
+    pub(crate) store: HashMap<String, Vec<u8>>
+}
+
+impl UploadProvider {
+    pub fn new() -> Self {
+        Self {
+            store: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, reader: Vec<u8>) -> String {
+        let id = new_id();
+        let key = format!("http://buildkit-session/{}", id);
+
+        self.store.insert(format!("/{}", id), reader);
+        key
+    }
+}
+
+#[tonic::async_trait]
+impl Upload for UploadProvider {
+        type PullStream = Pin<Box<dyn Stream<Item = Result<UploadBytesMessage, Status>> + Send>>;
+
+        async fn pull(
+            &self,
+            request: Request<Streaming<UploadBytesMessage>>,
+        ) -> Result<Response<Self::PullStream>, Status> {
+            let key = request.metadata().get("urlpath").unwrap();
+            debug!("found metadata key {:#?}", key);
+
+            let str: String = String::from(key.to_str().unwrap());
+            debug!("hashmap... {:#?}", self.store.keys());
+            
+            let read: &Vec<u8> = self.store.get(&str).unwrap();
+            debug!("trying to pull... {:#?}", request);
+
+            let out_stream = futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
+                data: read.to_owned(),
+            }));
+
+            Ok(Response::new(Box::pin(out_stream)))
+        }
+}
+
+use http::StatusCode;
+use std::future::Future;
+use tower::Service;
+use http::request::Builder;
+use hyper::{body::Bytes, Body, Method};
+
+pub(crate) struct GrpcClient {
+    pub(crate) client: crate::Docker,
+    pub(crate) session_id: String,
+}
+
+impl Service<http::Uri> for GrpcClient {
+    type Response = GrpcTransport;
+    type Error = crate::errors::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: http::Uri) -> Self::Future {
+        // create the body
+        let opt: Option<serde_json::Value> = None;
+        let url = "/grpc";
+        let client = self.client.clone();
+        let req = client.build_request(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header("Connection", "Upgrade")
+                .header("Upgrade", "h2c")
+                .header("X-Docker-Expose-Session-Uuid", &self.session_id),
+            opt,
+            Ok(Body::empty()),
+        );
+        let fut = async move {
+            client.process_upgraded(req).await.and_then(|(read, write)| {
+                debug!("process upgraded");
+                        let output = Box::pin(read);
+                        let input = Box::pin(write);
+                        Ok(GrpcTransport {
+                            read: output,
+                            write: input,
+                        })
+                    })
+        };
+
+        // Return the response as an immediate future
+        Box::pin(fut)
     }
 }
 
