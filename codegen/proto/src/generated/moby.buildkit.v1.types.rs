@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerRecord {
     #[prost(string, tag = "1")]
@@ -14,6 +15,7 @@ pub struct WorkerRecord {
     #[prost(message, optional, tag = "5")]
     pub buildkit_version: ::core::option::Option<BuildkitVersion>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GcPolicy {
     #[prost(bool, tag = "1")]
@@ -25,6 +27,7 @@ pub struct GcPolicy {
     #[prost(string, repeated, tag = "4")]
     pub filters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BuildkitVersion {
     #[prost(string, tag = "1")]

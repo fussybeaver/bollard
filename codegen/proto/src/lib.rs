@@ -1,6 +1,12 @@
 #![allow(missing_docs, unused_qualifications)]
 #![cfg(not(feature = "build"))]
 
+pub mod fsutil {
+    pub mod types {
+        include!("generated/fsutil.types.rs");
+    }
+}
+
 pub mod health {
     include!("generated/grpc.health.v1.rs");
 }
@@ -14,6 +20,17 @@ pub mod moby {
             }
         }
     }
+    pub mod filesync {
+        pub mod v1 {
+            include!("generated/moby.filesync.v1.rs");
+        }
+    }
+    pub mod upload {
+        pub mod v1 {
+            include!("generated/moby.upload.v1.rs");
+        }
+    }
+
 }
 
 pub mod google {

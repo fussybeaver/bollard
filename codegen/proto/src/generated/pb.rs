@@ -1,4 +1,5 @@
 /// Op represents a vertex of the LLB DAG.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Op {
     /// inputs is a set of input edges.
@@ -13,6 +14,7 @@ pub struct Op {
 }
 /// Nested message and enum types in `Op`.
 pub mod op {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Op {
         #[prost(message, tag = "2")]
@@ -30,6 +32,7 @@ pub mod op {
     }
 }
 /// Platform is github.com/opencontainers/image-spec/specs-go/v1.Platform
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Platform {
     #[prost(string, tag = "1")]
@@ -46,6 +49,7 @@ pub struct Platform {
     pub os_features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Input represents an input edge for an Op.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Input {
     /// digest of the marshaled input Op
@@ -56,6 +60,7 @@ pub struct Input {
     pub index: i64,
 }
 /// ExecOp executes a command in a container.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExecOp {
     #[prost(message, optional, tag = "1")]
@@ -72,6 +77,7 @@ pub struct ExecOp {
 /// Meta is a set of arguments for ExecOp.
 /// Meta is unrelated to LLB metadata.
 /// FIXME: rename (ExecContext? ExecArgs?)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Meta {
     #[prost(string, repeated, tag = "1")]
@@ -93,6 +99,7 @@ pub struct Meta {
     #[prost(string, tag = "10")]
     pub cgroup_parent: ::prost::alloc::string::String,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HostIp {
     #[prost(string, tag = "1")]
@@ -100,6 +107,7 @@ pub struct HostIp {
     #[prost(string, tag = "2")]
     pub ip: ::prost::alloc::string::String,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Ulimit {
     #[prost(string, tag = "1")]
@@ -110,6 +118,7 @@ pub struct Ulimit {
     pub hard: i64,
 }
 /// SecretEnv is an environment variable that is backed by a secret.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SecretEnv {
     #[prost(string, tag = "1")]
@@ -120,6 +129,7 @@ pub struct SecretEnv {
     pub optional: bool,
 }
 /// Mount specifies how to mount an input Op as a filesystem.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Mount {
     #[prost(int64, tag = "1")]
@@ -146,6 +156,7 @@ pub struct Mount {
     pub result_id: ::prost::alloc::string::String,
 }
 /// TmpfsOpt defines options describing tpmfs mounts
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TmpfsOpt {
     /// Specify an upper limit on the size of the filesystem.
@@ -153,6 +164,7 @@ pub struct TmpfsOpt {
     pub size: i64,
 }
 /// CacheOpt defines options specific to cache mounts
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CacheOpt {
     /// ID is an optional namespace for the mount
@@ -163,6 +175,7 @@ pub struct CacheOpt {
     pub sharing: i32,
 }
 /// SecretOpt defines options describing secret mounts
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SecretOpt {
     /// ID of secret. Used for quering the value.
@@ -183,6 +196,7 @@ pub struct SecretOpt {
     pub optional: bool,
 }
 /// SSHOpt defines options describing ssh mounts
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SshOpt {
     /// ID of exposed ssh rule. Used for quering the value.
@@ -203,6 +217,7 @@ pub struct SshOpt {
     pub optional: bool,
 }
 /// SourceOp specifies a source such as build contexts and images.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceOp {
     /// TODO: use source type or any type instead of URL protocol.
@@ -218,6 +233,7 @@ pub struct SourceOp {
 }
 /// BuildOp is used for nested build invocation.
 /// BuildOp is experimental and can break without backwards compatibility
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BuildOp {
     #[prost(int64, tag = "1")]
@@ -234,12 +250,14 @@ pub struct BuildOp {
     >,
 }
 /// BuildInput is used for BuildOp.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BuildInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
 /// OpMetadata is a per-vertex metadata entry, which can be defined for arbitrary Op vertex and overridable on the run time.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpMetadata {
     /// ignore_cache specifies to ignore the cache for this Op.
@@ -261,6 +279,7 @@ pub struct OpMetadata {
     pub progress_group: ::core::option::Option<ProgressGroup>,
 }
 /// Source is a source mapping description for a file
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Source {
     #[prost(map = "string, message", tag = "1")]
@@ -272,12 +291,14 @@ pub struct Source {
     pub infos: ::prost::alloc::vec::Vec<SourceInfo>,
 }
 /// Locations is a list of ranges with a index to its source map.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Locations {
     #[prost(message, repeated, tag = "1")]
     pub locations: ::prost::alloc::vec::Vec<Location>,
 }
 /// Source info contains the shared metadata of a source mapping
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceInfo {
     #[prost(string, tag = "1")]
@@ -288,6 +309,7 @@ pub struct SourceInfo {
     pub definition: ::core::option::Option<Definition>,
 }
 /// Location defines list of areas in to source file
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Location {
     #[prost(int32, tag = "1")]
@@ -296,6 +318,7 @@ pub struct Location {
     pub ranges: ::prost::alloc::vec::Vec<Range>,
 }
 /// Range is an area in the source file
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Range {
     #[prost(message, optional, tag = "1")]
@@ -304,6 +327,7 @@ pub struct Range {
     pub end: ::core::option::Option<Position>,
 }
 /// Position is single location in a source file
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Position {
     #[prost(int32, tag = "1")]
@@ -311,11 +335,13 @@ pub struct Position {
     #[prost(int32, tag = "2")]
     pub character: i32,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportCache {
     #[prost(bool, tag = "1")]
     pub value: bool,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProgressGroup {
     #[prost(string, tag = "1")]
@@ -325,6 +351,7 @@ pub struct ProgressGroup {
     #[prost(bool, tag = "3")]
     pub weak: bool,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProxyEnv {
     #[prost(string, tag = "1")]
@@ -339,6 +366,7 @@ pub struct ProxyEnv {
     pub all_proxy: ::prost::alloc::string::String,
 }
 /// WorkerConstraints defines conditions for the worker
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerConstraints {
     /// containerd-style filter
@@ -346,6 +374,7 @@ pub struct WorkerConstraints {
     pub filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Definition is the LLB definition structure with per-vertex metadata entries
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Definition {
     /// def is a list of marshaled Op messages
@@ -362,11 +391,13 @@ pub struct Definition {
     #[prost(message, optional, tag = "3")]
     pub source: ::core::option::Option<Source>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileOp {
     #[prost(message, repeated, tag = "2")]
     pub actions: ::prost::alloc::vec::Vec<FileAction>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileAction {
     /// could be real input or target (target index + max input index)
@@ -382,6 +413,7 @@ pub struct FileAction {
 }
 /// Nested message and enum types in `FileAction`.
 pub mod file_action {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Action {
         /// FileActionCopy copies files from secondaryInput on top of input
@@ -398,6 +430,7 @@ pub mod file_action {
         Rm(super::FileActionRm),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileActionCopy {
     /// src is the source path
@@ -440,6 +473,7 @@ pub struct FileActionCopy {
     #[prost(string, repeated, tag = "13")]
     pub exclude_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileActionMkFile {
     /// path for the new file
@@ -458,6 +492,7 @@ pub struct FileActionMkFile {
     #[prost(int64, tag = "5")]
     pub timestamp: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileActionMkDir {
     /// path for the new directory
@@ -476,6 +511,7 @@ pub struct FileActionMkDir {
     #[prost(int64, tag = "5")]
     pub timestamp: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileActionRm {
     /// path to remove
@@ -488,6 +524,7 @@ pub struct FileActionRm {
     #[prost(bool, tag = "3")]
     pub allow_wildcard: bool,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChownOpt {
     #[prost(message, optional, tag = "1")]
@@ -495,6 +532,7 @@ pub struct ChownOpt {
     #[prost(message, optional, tag = "2")]
     pub group: ::core::option::Option<UserOpt>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UserOpt {
     #[prost(oneof = "user_opt::User", tags = "1, 2")]
@@ -502,6 +540,7 @@ pub struct UserOpt {
 }
 /// Nested message and enum types in `UserOpt`.
 pub mod user_opt {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum User {
         #[prost(message, tag = "1")]
@@ -510,6 +549,7 @@ pub mod user_opt {
         ById(u32),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedUserOpt {
     #[prost(string, tag = "1")]
@@ -517,26 +557,31 @@ pub struct NamedUserOpt {
     #[prost(int64, tag = "2")]
     pub input: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MergeInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MergeOp {
     #[prost(message, repeated, tag = "1")]
     pub inputs: ::prost::alloc::vec::Vec<MergeInput>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LowerDiffInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpperDiffInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiffOp {
     #[prost(message, optional, tag = "1")]
@@ -564,6 +609,15 @@ impl NetMode {
             NetMode::None => "NONE",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UNSET" => Some(Self::Unset),
+            "HOST" => Some(Self::Host),
+            "NONE" => Some(Self::None),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -581,6 +635,14 @@ impl SecurityMode {
         match self {
             SecurityMode::Sandbox => "SANDBOX",
             SecurityMode::Insecure => "INSECURE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SANDBOX" => Some(Self::Sandbox),
+            "INSECURE" => Some(Self::Insecure),
+            _ => None,
         }
     }
 }
@@ -608,6 +670,17 @@ impl MountType {
             MountType::Tmpfs => "TMPFS",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "BIND" => Some(Self::Bind),
+            "SECRET" => Some(Self::Secret),
+            "SSH" => Some(Self::Ssh),
+            "CACHE" => Some(Self::Cache),
+            "TMPFS" => Some(Self::Tmpfs),
+            _ => None,
+        }
+    }
 }
 /// CacheSharingOpt defines different sharing modes for cache mount
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -630,6 +703,15 @@ impl CacheSharingOpt {
             CacheSharingOpt::Shared => "SHARED",
             CacheSharingOpt::Private => "PRIVATE",
             CacheSharingOpt::Locked => "LOCKED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SHARED" => Some(Self::Shared),
+            "PRIVATE" => Some(Self::Private),
+            "LOCKED" => Some(Self::Locked),
+            _ => None,
         }
     }
 }
