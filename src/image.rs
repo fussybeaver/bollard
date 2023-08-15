@@ -442,17 +442,13 @@ where
 /// Builder Version to use
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum BuilderVersion {
     /// BuilderV1 is the first generation builder in docker daemon
+    #[default]
     BuilderV1 = 1,
     /// BuilderBuildKit is builder based on moby/buildkit project
     BuilderBuildKit = 2,
-}
-
-impl Default for BuilderVersion {
-    fn default() -> Self {
-        BuilderVersion::BuilderV1
-    }
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
