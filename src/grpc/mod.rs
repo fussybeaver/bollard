@@ -2,19 +2,19 @@
 #![cfg(feature = "buildkit")]
 #![allow(dead_code)]
 
-use crate::fsutil::types::Packet;
-//use crate::moby::filesync::v1::file_sync_server::DiffCopyStream;
-//use crate::moby::filesync::v1::file_sync_server::TarStreamStream;
-use crate::moby::filesync::v1::BytesMessage as FileSyncBytesMessage;
-use crate::moby::filesync::v1::file_sync_server::FileSync;
-use crate::moby::filesync::v1::file_send_server::FileSend;
-use crate::moby::upload::v1::upload_server::Upload;
-use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
+/// TODO
+pub mod export;
+
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
+use crate::moby::filesync::v1::file_send_server::FileSend;
+use crate::moby::filesync::v1::BytesMessage as FileSyncBytesMessage;
+use crate::moby::upload::v1::upload_server::Upload;
+use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -23,7 +23,34 @@ use rand::RngCore;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tonic::transport::server::Connected;
 use tonic::{Code, Request, Response, Status, Streaming};
-use tower::make::MakeConnection;
+
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
+use tokio_stream::wrappers::ReceiverStream;
+
+use http::request::Builder;
+use http::StatusCode;
+use hyper::{body::Bytes, Body, Method};
+use std::future::Future;
+use tower::Service;
+
+// GrpcServer is a helper to allow static dispatch
+pub(crate) enum GrpcServer {
+    Upload(crate::moby::upload::v1::upload_server::UploadServer<UploadProvider>),
+    FileSend(crate::moby::filesync::v1::file_send_server::FileSendServer<FileSendImpl>),
+}
+
+impl GrpcServer {
+    pub fn append(
+        self,
+        builder: tonic::transport::server::Router,
+    ) -> tonic::transport::server::Router {
+        match self {
+            GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
+            GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
+        }
+    }
+}
 
 #[allow(missing_debug_implementations)]
 pub(crate) struct GrpcTransport {
@@ -68,6 +95,7 @@ impl AsyncWrite for GrpcTransport {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct HealthServerImpl {
     service_map: HashMap<String, ServingStatus>,
     shutdown: bool,
@@ -115,66 +143,50 @@ impl Health for HealthServerImpl {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct FileSendImpl {
+    pub(crate) dest: PathBuf,
 }
 
 impl FileSendImpl {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(dest: &Path) -> Self {
+        Self {
+            dest: dest.to_owned(),
+        }
     }
 }
 
 #[tonic::async_trait]
-impl FileSend for FileSendImpl 
-{
+impl FileSend for FileSendImpl {
     type DiffCopyStream = Pin<Box<dyn Stream<Item = Result<FileSyncBytesMessage, Status>> + Send>>;
     async fn diff_copy(
         &self,
-        request: Request<Streaming<FileSyncBytesMessage>>
+        request: Request<Streaming<FileSyncBytesMessage>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
         debug!("Protobuf FileSend diff_copy triggered: {:#?}", request);
 
-        use tokio::sync::mpsc;
-        use futures_util::StreamExt;
-        use tokio_stream::wrappers::ReceiverStream;
-        use std::io::Write;
+        let path = self.dest.as_path();
 
         let mut in_stream = request.into_inner();
-        let (tx, rx) = mpsc::channel(128);
 
+        let mut file = tokio::fs::File::create(path).await?;
 
-        tokio::spawn(async move {
-            let file = std::fs::File::create("/tmp/bollard-oci.dump").expect("unable to create file");
-            let mut f = std::io::BufWriter::new(file);
-            while let Some(result) = in_stream.next().await {
-                match result {
-                    Ok(v) => {
-                        //debug!("string: {}", &String::from_utf8_lossy(&v.data));
-                        f.write_all(&v.data).expect("unable to write data");
-                        tx
-                        .send(Ok(v))
-                        .await
-                        .expect("working rx")
-                    },
-                    Err(err) => {
-                        unimplemented!("foo");
-                    }
+        while let Some(result) = in_stream.next().await {
+            match result {
+                Ok(v) => {
+                    file.write_all(&v.data).await?;
                 }
+                Err(err) => return Err(err.into()),
             }
-        });
+        }
 
-        let out_stream = ReceiverStream::new(rx);
-
-        Ok(Response::new(Box::pin(out_stream)))
-        //unimplemented!("Need to implement diff_copy");
+        Ok(Response::new(Box::pin(futures_util::stream::empty())))
     }
-
 }
 
-use std::io::Read;
-
+#[derive(Debug)]
 pub(crate) struct UploadProvider {
-    pub(crate) store: HashMap<String, Vec<u8>>
+    pub(crate) store: HashMap<String, Vec<u8>>,
 }
 
 impl UploadProvider {
@@ -195,34 +207,28 @@ impl UploadProvider {
 
 #[tonic::async_trait]
 impl Upload for UploadProvider {
-        type PullStream = Pin<Box<dyn Stream<Item = Result<UploadBytesMessage, Status>> + Send>>;
+    type PullStream = Pin<Box<dyn Stream<Item = Result<UploadBytesMessage, Status>> + Send>>;
 
-        async fn pull(
-            &self,
-            request: Request<Streaming<UploadBytesMessage>>,
-        ) -> Result<Response<Self::PullStream>, Status> {
-            let key = request.metadata().get("urlpath").unwrap();
-            debug!("found metadata key {:#?}", key);
+    async fn pull(
+        &self,
+        request: Request<Streaming<UploadBytesMessage>>,
+    ) -> Result<Response<Self::PullStream>, Status> {
+        let key = request.metadata().get("urlpath").unwrap();
+        debug!("found metadata key {:#?}", key);
 
-            let str: String = String::from(key.to_str().unwrap());
-            debug!("hashmap... {:#?}", self.store.keys());
-            
-            let read: &Vec<u8> = self.store.get(&str).unwrap();
-            debug!("trying to pull... {:#?}", request);
+        let str: String = String::from(key.to_str().unwrap());
+        debug!("hashmap... {:#?}", self.store.keys());
 
-            let out_stream = futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
-                data: read.to_owned(),
-            }));
+        let read: &Vec<u8> = self.store.get(&str).unwrap();
+        debug!("trying to pull... {:#?}", request);
 
-            Ok(Response::new(Box::pin(out_stream)))
-        }
+        let out_stream = futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
+            data: read.to_owned(),
+        }));
+
+        Ok(Response::new(Box::pin(out_stream)))
+    }
 }
-
-use http::StatusCode;
-use std::future::Future;
-use tower::Service;
-use http::request::Builder;
-use hyper::{body::Bytes, Body, Method};
 
 pub(crate) struct GrpcClient {
     pub(crate) client: crate::Docker,
@@ -234,11 +240,11 @@ impl Service<http::Uri> for GrpcClient {
     type Error = crate::errors::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: http::Uri) -> Self::Future {
+    fn call(&mut self, _req: http::Uri) -> Self::Future {
         // create the body
         let opt: Option<serde_json::Value> = None;
         let url = "/grpc";
@@ -254,15 +260,17 @@ impl Service<http::Uri> for GrpcClient {
             Ok(Body::empty()),
         );
         let fut = async move {
-            client.process_upgraded(req).await.and_then(|(read, write)| {
-                debug!("process upgraded");
-                        let output = Box::pin(read);
-                        let input = Box::pin(write);
-                        Ok(GrpcTransport {
-                            read: output,
-                            write: input,
-                        })
+            client
+                .process_upgraded(req)
+                .await
+                .and_then(|(read, write)| {
+                    let output = Box::pin(read);
+                    let input = Box::pin(write);
+                    Ok(GrpcTransport {
+                        read: output,
+                        write: input,
                     })
+                })
         };
 
         // Return the response as an immediate future

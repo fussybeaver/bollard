@@ -15,6 +15,13 @@ use crate::container::Config;
 use crate::errors::Error;
 use crate::models::*;
 
+#[cfg(feature = "buildkit")]
+use super::health;
+#[cfg(feature = "buildkit")]
+use super::moby;
+#[cfg(feature = "buildkit")]
+use crate::grpc;
+
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -1185,11 +1192,7 @@ impl Docker {
                 .method(Method::POST)
                 .header("Connection", "Upgrade")
                 .header("Upgrade", "h2c")
-                .header("X-Docker-Expose-Session-Uuid", &id)
-                .header(
-                    "X-Docker-Expose-Session-Grpc-Method",
-                    "/moby.filesync.v1.FileSend/diffcopy",
-                ),
+                .header("X-Docker-Expose-Session-Uuid", &id),
             opt,
             Ok(Body::empty()),
         );
@@ -1203,212 +1206,14 @@ impl Docker {
             write: input,
         };
         let service =
-            crate::health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
-        let filesend = crate::moby::filesync::v1::file_send_server::FileSendServer::new(
-            crate::grpc::FileSendImpl::new(),
-        );
-
-        /*
-         * *github.com/moby/buildkit/api/services/control.SolveRequest {
-                Ref: "uu0agdhi5rtq203c77emcwq59",
-                Definition: *github.com/moby/buildkit/solver/pb.Definition nil,
-                Exporter: "oci",
-                ExporterAttrs: map[string]string [
-                    "name": "docker.io/library/bollard-oci-export-buildkit-example:latest",
-                    "annotation.exporter": "Bollard",
-                    "dest": "/tmp/alpine-oci-image",
-                ],
-                Session: "bollard-oci-export-buildkit-example",
-                Frontend: "dockerfile.v0",
-                FrontendAttrs: map[string]string [
-                    "context": "http://build-context-u5jjzq0nmmw3mua6leiyw8lxj",
-                    "cache-from": "",
-                    "image-resolve-mode": "pull",
-                    "add-hosts": "",
-                ],
-                Cache: github.com/moby/buildkit/api/services/control.CacheOptions {
-                    ExportRefDeprecated: "",
-                    ImportRefsDeprecated: []string len: 0, cap: 0, nil,
-                    ExportAttrsDeprecated: map[string]string nil,
-                    Exports: []*github.com/moby/buildkit/api/services/control.CacheOptionsEntry len: 0, cap: 0, nil,
-                    Imports: []*github.com/moby/buildkit/api/services/control.CacheOptionsEntry len: 0, cap: 0, nil,
-                    XXX_NoUnkeyedLiteral: struct {} {},
-                    XXX_unrecognized: []uint8 len: 0, cap: 0, nil,
-                    XXX_sizecache: 0,},
-                Entitlements: []github.com/moby/buildkit/util/entitlements.Entitlement len: 0, cap: 0, nil,
-                FrontendInputs: map[string]*github.com/moby/buildkit/solver/pb.Definition nil,
-                Internal: false,
-                SourcePolicy: *github.com/moby/buildkit/sourcepolicy/pb.Policy nil,
-                XXX_NoUnkeyedLiteral: struct {} {},
-                XXX_unrecognized: []uint8 len: 0, cap: 0, nil,
-                XXX_sizecache: 0,}
-         */
+            health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
 
         Ok(tonic::transport::Server::builder()
             .add_service(service)
-            //.add_service(filesync)
-            .add_service(filesend)
             .serve_with_incoming(stream::iter(vec![Ok::<_, tonic::transport::Error>(
                 transport,
             )]))
             .await?)
-    }
-
-    /// TODO
-    #[cfg(feature = "buildkit")]
-    pub async fn export_oci_image<T>(&mut self, options: BuildImageOptions<T>, tar: Option<Vec<u8>>) -> Result<(), Error> // impl Stream<Item = Result<Bytes, Error>> + '_
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-        //R: std::io::Read + Send + Sync + 'static,
-    {
-
-        use std::sync::Arc;
-        use tonic::transport::{Endpoint, Uri};
-        use tower::service_fn;
-        use futures_util::future::ok;
-
-        let session_id = "bollard-oci-export-buildkit-example";
-
-        //type ClosureFut = Box<dyn std::future::Future<Output=Result<crate::grpc::GrpcTransport, Error>>>;
-        //let dyn_service_fn = Box::new(move |_| { async move { Box::new(self.process_upgraded(req).await.and_then(|(read, write)| {
-        //                let output = Box::pin(read);
-        //                let input = Box::pin(write);
-        //                Ok(crate::grpc::GrpcTransport {
-        //                    read: output,
-        //                    write: input,
-        //                })
-        //            })) } } as ClosureFut);
-        //
-        let grpc_client = crate::grpc::GrpcClient { 
-            client: self.clone(), 
-            session_id: String::from(session_id),
-
-        };
-
-        let channel = Endpoint::try_from("http://[::]:50051")?
-            .connect_with_connector(grpc_client)
-        .await?;
-
-        let mut control_client = crate::moby::buildkit::v1::control_client::ControlClient::new(channel);
-
-        let url = "/session";
-
-        let id = crate::grpc::new_id();
-
-        let opt: Option<serde_json::Value> = None;
-        let req = self.build_request(
-            &url,
-            Builder::new()
-                .method(Method::POST)
-                .header("Connection", "Upgrade")
-                .header("Upgrade", "h2c")
-                .header("X-Docker-Expose-Session-Uuid", session_id)
-                .header(
-                    "X-Docker-Expose-Session-Grpc-Method",
-                    "/moby.filesync.v1.FileSend/diffcopy",
-                ),
-            opt,
-            Ok(Body::empty()),
-        );
-
-        let (read, write) = self.process_upgraded(req).await?;
-
-        let output = Box::pin(read);
-        let input = Box::pin(write);
-        let transport = crate::grpc::GrpcTransport {
-            read: output,
-            write: input,
-        };
-        let service =
-            crate::health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
-        let filesend = crate::moby::filesync::v1::file_send_server::FileSendServer::new(
-            crate::grpc::FileSendImpl::new(),
-        );
-        let mut upload_provider = crate::grpc::UploadProvider::new();
-        let context = upload_provider.add(tar.unwrap());
-        let upload = crate::moby::upload::v1::upload_server::UploadServer::new(
-            upload_provider,
-        );
-
-        let mut attrs = HashMap::new();
-        attrs.insert(String::from("name"), String::from("docker.io/library/bollard-oci-export-buildkit-example:latest"));
-        attrs.insert(String::from("annotation.exporter"), String::from("Bollard"));
-        attrs.insert(String::from("dest"), String::from("/tmp/alpine-oci-image"));
-
-        let mut frontend_attrs = HashMap::new();
-        frontend_attrs.insert(String::from("context"), context);
-        frontend_attrs.insert(String::from("cache-from"), String::new());
-        frontend_attrs.insert(String::from("image-resolve-mode"), String::from("pull"));
-        frontend_attrs.insert(String::from("add-hosts"), String::new());
-
-
-        let solve_request = crate::moby::buildkit::v1::SolveRequest {
-            r#ref: String::from(id),
-            cache: None,
-            definition: None,
-            entitlements: vec![],
-            exporter: String::from("oci"), 
-            exporter_attrs: attrs,
-            frontend: String::from("dockerfile.v0"),
-            frontend_attrs,
-            frontend_inputs: HashMap::new(),
-            session: String::from(session_id),
-
-        };
-        /*
-         * *github.com/moby/buildkit/api/services/control.SolveRequest {
-                Ref: "uu0agdhi5rtq203c77emcwq59",
-                Definition: *github.com/moby/buildkit/solver/pb.Definition nil,
-                Exporter: "oci",
-                ExporterAttrs: map[string]string [
-                    "name": "docker.io/library/bollard-oci-export-buildkit-example:latest",
-                    "annotation.exporter": "Bollard",
-                    "dest": "/tmp/alpine-oci-image",
-                ],
-                Session: "bollard-oci-export-buildkit-example",
-                Frontend: "dockerfile.v0",
-                FrontendAttrs: map[string]string [
-                    "context": "http://build-context-u5jjzq0nmmw3mua6leiyw8lxj",
-                    "cache-from": "",
-                    "image-resolve-mode": "pull",
-                    "add-hosts": "",
-                ],
-                Cache: github.com/moby/buildkit/api/services/control.CacheOptions {
-                    ExportRefDeprecated: "",
-                    ImportRefsDeprecated: []string len: 0, cap: 0, nil,
-                    ExportAttrsDeprecated: map[string]string nil,
-                    Exports: []*github.com/moby/buildkit/api/services/control.CacheOptionsEntry len: 0, cap: 0, nil,
-                    Imports: []*github.com/moby/buildkit/api/services/control.CacheOptionsEntry len: 0, cap: 0, nil,
-                    XXX_NoUnkeyedLiteral: struct {} {},
-                    XXX_unrecognized: []uint8 len: 0, cap: 0, nil,
-                    XXX_sizecache: 0,},
-                Entitlements: []github.com/moby/buildkit/util/entitlements.Entitlement len: 0, cap: 0, nil,
-                FrontendInputs: map[string]*github.com/moby/buildkit/solver/pb.Definition nil,
-                Internal: false,
-                SourcePolicy: *github.com/moby/buildkit/sourcepolicy/pb.Policy nil,
-                XXX_NoUnkeyedLiteral: struct {} {},
-                XXX_unrecognized: []uint8 len: 0, cap: 0, nil,
-                XXX_sizecache: 0,}
-         */
-        //crate::moby::buildkit::v1::control_client::ControlClient::new
-        //
-
-        tokio::spawn(async {
-            tonic::transport::Server::builder()
-                .add_service(service)
-                .add_service(upload)
-                .add_service(filesend)
-                .serve_with_incoming(stream::iter(vec![Ok::<_, tonic::transport::Error>(
-                    transport,
-                )])).await;
-        });
-
-        debug!("sending solve request");
-        let res = control_client.solve(solve_request).await;
-        debug!("res: {:#?}", res);
-
-
-        return Ok(());
     }
 
     /// ---

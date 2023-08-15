@@ -38,38 +38,21 @@ ENTRYPOINT ls buildkit-bollard.txt
     c.write_all(&uncompressed).unwrap();
     let compressed = c.finish().unwrap();
 
-    let mut attrs = HashMap::new();
-    attrs.insert("name", "alpine-bollard");
-    attrs.insert("dest", "/tmp/alpine-oci-image");
-    attrs.insert("annotation.exporter", "Bollard");
+    let session_id = "bollard-oci-export-buildkit-example";
 
-    #[cfg(feature = "buildkit")]
-    let outputs = vec![
-        bollard::image::ImageBuildOutput { typ: "oci", attrs: attrs.clone() },
-    ];
+    let frontend_opts = bollard::grpc::export::ImageBuildFrontendOptions::builder()
+        .pull(true)
+        .build();
+    let output = bollard::grpc::export::ImageExporterOCIOutputBuilder::new(
+        "docker.io/library/bollard-oci-export-buildkit-example:latest",
+    )
+    .annotation("exporter", "Bollard")
+    .dest(&std::path::Path::new("/tmp/oci-image.tar"));
 
-    let id = "bollard-oci-export-buildkit-example";
-    let build_image_options = BuildImageOptions {
-        t: id,
-        version: BuilderVersion::BuilderBuildKit,
-        pull: true,
-        #[cfg(feature = "buildkit")]
-        session: Some(String::from(id)),
-        #[cfg(feature = "buildkit")]
-        outputs: Some(outputs),
-        ..Default::default()
-    };
+    let load_input =
+        bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
 
-    docker.export_oci_image(build_image_options, Some(compressed)).await;
-    //let mut image_build_stream =
-    //    docker.build_image(build_image_options, None, Some(compressed.into()));
-
-    //#[cfg(feature = "buildkit")]
-    //while let Some(Ok(bollard::models::BuildInfo {
-    //    aux: Some(BuildInfoAux::BuildKit(inner)),
-    //    ..
-    //})) = image_build_stream.next().await
-    //{
-    //    println!("Response: {:?}", inner);
-    //}
+    docker
+        .image_export_oci(session_id, frontend_opts, output, load_input)
+        .await;
 }
