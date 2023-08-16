@@ -3,7 +3,7 @@ version: 2
 jobs:
   test_ssl:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -15,7 +15,7 @@ jobs:
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl,ct_logs -- --test test_version_ssl
   test_http:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -24,7 +24,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
   test_unix:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -32,7 +32,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit --tests
   test_chrono:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -40,7 +40,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features chrono --tests
   test_time:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -48,7 +48,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features time --tests
   test_doc:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -56,7 +56,7 @@ jobs:
       - run: docker run -ti --rm bollard cargo test --all-features --target x86_64-unknown-linux-gnu --doc
   test_clippy:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -64,7 +64,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --all-targets -- -Dwarnings"
   test_audit:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
@@ -73,7 +73,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071"
   test_fmt:
     docker:
-      - image: docker:20.10.16
+      - image: docker:24.0.5
     steps:
       - checkout
       - setup_remote_docker
