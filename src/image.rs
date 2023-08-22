@@ -611,7 +611,7 @@ impl Docker {
     /// docker.inspect_image("hello-world");
     /// ```
     pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
-        let url = format!("/images/{}/json", image_name);
+        let url = format!("/images/{image_name}/json");
 
         let req = self.build_request(
             &url,
@@ -698,7 +698,7 @@ impl Docker {
     /// docker.image_history("hello-world");
     /// ```
     pub async fn image_history(&self, image_name: &str) -> Result<Vec<HistoryResponseItem>, Error> {
-        let url = format!("/images/{}/history", image_name);
+        let url = format!("/images/{image_name}/history");
 
         let req = self.build_request(
             &url,
@@ -803,7 +803,7 @@ impl Docker {
         options: Option<RemoveImageOptions>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
-        let url = format!("/images/{}", image_name);
+        let url = format!("/images/{image_name}");
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
@@ -862,7 +862,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/tag", image_name);
+        let url = format!("/images/{image_name}/tag");
 
         let req = self.build_request(
             &url,
@@ -922,7 +922,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/push", image_name);
+        let url = format!("/images/{image_name}/push");
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
@@ -1210,7 +1210,7 @@ impl Docker {
     /// # Returns
     ///  - An uncompressed TAR archive
     pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/images/{}/get", image_name);
+        let url = format!("/images/{image_name}/get");
         let req = self.build_request(
             &url,
             Builder::new()

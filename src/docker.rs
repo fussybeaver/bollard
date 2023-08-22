@@ -186,7 +186,7 @@ where
     S: serde::Serializer,
 {
     s.serialize_str(
-        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
+        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{e}")))?,
     )
 }
 

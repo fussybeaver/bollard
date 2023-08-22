@@ -281,7 +281,7 @@ impl Docker {
         service_name: &str,
         options: Option<InspectServiceOptions>,
     ) -> Result<Service, Error> {
-        let url = format!("/services/{}", service_name);
+        let url = format!("/services/{service_name}");
 
         let req = self.build_request(
             &url,
@@ -316,7 +316,7 @@ impl Docker {
     /// docker.delete_service("my-service");
     /// ```
     pub async fn delete_service(&self, service_name: &str) -> Result<(), Error> {
-        let url = format!("/services/{}", service_name);
+        let url = format!("/services/{service_name}");
 
         let req = self.build_request(
             &url,
@@ -395,7 +395,7 @@ impl Docker {
         options: UpdateServiceOptions,
         credentials: Option<DockerCredentials>,
     ) -> Result<ServiceUpdateResponse, Error> {
-        let url = format!("/services/{}/update", service_name);
+        let url = format!("/services/{service_name}/update");
 
         match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
             ..Default::default()
