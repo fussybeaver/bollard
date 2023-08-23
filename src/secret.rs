@@ -188,7 +188,7 @@ impl Docker {
     /// docker.inspect_secret("secret-name");
     /// ```
     pub async fn inspect_secret(&self, secret_id: &str) -> Result<Secret, Error> {
-        let url = format!("/secrets/{}", secret_id);
+        let url = format!("/secrets/{secret_id}");
 
         let req = self.build_request(
             &url,
@@ -224,7 +224,7 @@ impl Docker {
     /// docker.delete_secret("secret-name");
     /// ```
     pub async fn delete_secret(&self, secret_id: &str) -> Result<(), Error> {
-        let url = format!("/secrets/{}", secret_id);
+        let url = format!("/secrets/{secret_id}");
 
         let req = self.build_request(
             &url,
@@ -281,7 +281,7 @@ impl Docker {
         secret_spec: SecretSpec,
         options: UpdateSecretOptions,
     ) -> Result<(), Error> {
-        let url = format!("/secrets/{}/update", secret_id);
+        let url = format!("/secrets/{secret_id}/update");
 
         let req = self.build_request(
             &url,

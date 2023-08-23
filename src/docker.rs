@@ -186,7 +186,7 @@ where
     S: serde::Serializer,
 {
     s.serialize_str(
-        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
+        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{e}")))?,
     )
 }
 
@@ -457,7 +457,7 @@ impl Docker {
                 .map_err(|err| NoNativeCertsError { err })?;
         }
 
-        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
             rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                 ta.subject,
                 ta.spki,

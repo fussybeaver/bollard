@@ -47,12 +47,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     ))) = futures.next().await
     {
         if let Some(p) = p.get(0) {
-            print!("{}", name);
+            print!("{name}");
             for mut v in p.iter().cloned() {
                 if v.len() > 30 {
                     v.truncate(30);
                 }
-                print!("\t{}", v);
+                print!("\t{v}");
             }
             println!();
         }

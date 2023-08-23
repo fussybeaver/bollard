@@ -259,7 +259,7 @@ impl Docker {
     /// docker.remove_network("my_network_name");
     /// ```
     pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
-        let url = format!("/networks/{}", network_name);
+        let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
             &url,
@@ -309,7 +309,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/networks/{}", network_name);
+        let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
             &url,
@@ -417,7 +417,7 @@ impl Docker {
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
-        let url = format!("/networks/{}/connect", network_name);
+        let url = format!("/networks/{network_name}/connect");
 
         let req = self.build_request(
             &url,
@@ -466,7 +466,7 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/networks/{}/disconnect", network_name);
+        let url = format!("/networks/{network_name}/disconnect");
 
         let req = self.build_request(
             &url,

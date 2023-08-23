@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         .id;
     if let StartExecResults::Attached { mut output, .. } = docker.start_exec(&exec, None).await? {
         while let Some(Ok(msg)) = output.next().await {
-            print!("{}", msg);
+            print!("{msg}");
         }
     } else {
         unreachable!();
