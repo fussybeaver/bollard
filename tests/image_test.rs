@@ -574,6 +574,47 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn export_images_test(docker: Docker) -> Result<(), Error> {
+    // pull from registry
+    create_image_hello_world(&docker).await?;
+
+    let repo = format!("{}hello-world", registry_http_addr());
+    let image = format!("{repo}:linux");
+
+    docker
+        .tag_image(
+            &image,
+            Some(TagImageOptions {
+                repo: repo.as_ref(),
+                tag: "mycopy",
+            }),
+        )
+        .await?;
+
+    let copy = format!("{repo}:mycopy");
+    let images = vec![image.as_ref(), copy.as_ref()];
+    let res = docker.export_images(&images);
+
+    let temp_file = "/tmp/bollard_test_images_export.tar";
+    let mut archive_file = File::create(temp_file).unwrap();
+    // Shouldn't load the whole file into memory, stream it to disk instead
+    res.for_each(move |data| {
+        archive_file.write_all(&data.unwrap()).unwrap();
+        archive_file.sync_all().unwrap();
+        ready(())
+    })
+    .await;
+
+    // assert that the file containing the exported archive actually exists
+    let test_file = File::open(temp_file).unwrap();
+    // and metadata can be read
+    test_file.metadata().unwrap();
+
+    // And delete it to clean up
+    remove_file(temp_file).unwrap();
+    Ok(())
+}
+
 async fn issue_55_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = "FROM ubuntu:18.04
 RUN apt-get update && \
@@ -751,6 +792,12 @@ fn integration_test_buildkit_image_missing_session_test() {
 #[cfg(unix)]
 fn integration_test_export_image() {
     connect_to_docker_and_run!(export_image_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_export_images() {
+    connect_to_docker_and_run!(export_images_test);
 }
 
 #[test]

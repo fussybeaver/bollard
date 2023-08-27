@@ -1195,17 +1195,16 @@ impl Docker {
     ///
     /// Get a tarball containing all images and metadata for a repository.
     ///
-    /// The root of the resulting tar file will contain the file "mainifest.json". If the export is
-    /// of an image repository, rather than a signle image, there will also be a `repositories` file
+    /// The root of the resulting tar file will contain the file "manifest.json". If the export is
+    /// of an image repository, rather than a single image, there will also be a `repositories` file
     /// with a JSON description of the exported image repositories.
     /// Additionally, each layer of all exported images will have a sub directory in the archive
     /// containing the filesystem of the layer.
     ///
-    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageCommit)
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageGet)
     /// for more information.
     /// # Arguments
-    /// - The `image_name` string can refer to an individual image and tag (e.g. alpine:latest),
-    ///   an individual image by I
+    /// - The `image_name` string referring to an individual image and tag (e.g. alpine:latest)
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
@@ -1217,6 +1216,33 @@ impl Docker {
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
+            Ok(Body::empty()),
+        );
+        self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Export Images
+    ///
+    /// Get a tarball containing all images and metadata for several image repositories. Shared
+    /// layers will be deduplicated.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#tag/Image/operation/ImageGetAll)
+    /// for more information.
+    /// # Arguments
+    /// - The `image_names` Vec of image names.
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_images(&self, image_names: &[&str]) -> impl Stream<Item = Result<Bytes, Error>> {
+        let options: Vec<_> = image_names.iter().map(|name| ("names", name)).collect();
+        let req = self.build_request(
+            "/images/get",
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
             Ok(Body::empty()),
         );
         self.process_into_body(req)
