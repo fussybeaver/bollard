@@ -3,7 +3,11 @@
 #![allow(dead_code)]
 
 /// TODO
+pub mod driver;
+/// TODO
 pub mod export;
+/// TODO
+pub(crate) mod io;
 
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
@@ -52,7 +56,6 @@ impl GrpcServer {
     }
 }
 
-#[allow(missing_debug_implementations)]
 pub(crate) struct GrpcTransport {
     pub(crate) read: Pin<Box<dyn AsyncRead + Send>>,
     pub(crate) write: Pin<Box<dyn AsyncWrite + Send>>,

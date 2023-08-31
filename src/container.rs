@@ -1,7 +1,7 @@
 //! Container API: run docker containers and manage their lifecycle
 
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use hyper::{body::Bytes, Body, Method};
@@ -1510,7 +1510,7 @@ impl Docker {
         );
 
         let (read, write) = self.process_upgraded(req).await?;
-        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true));
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
 
         Ok(AttachContainerResults {
             output: Box::pin(log),

@@ -143,4 +143,12 @@ pub enum Error {
         #[from]
         err: tonic::transport::Error,
     },
+    #[cfg(feature = "buildkit")]
+    /// Error emitted when a GRPC network request emits a non-OK status code
+    #[error(transparent)]
+    TonicStatus {
+        /// The tonic status emitted.
+        #[from]
+        err: tonic::Status,
+    },
 }

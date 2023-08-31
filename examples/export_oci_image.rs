@@ -12,7 +12,7 @@ async fn main() {
 
         env_logger::init();
 
-        let mut docker = Docker::connect_with_http_defaults().unwrap();
+        let mut docker = Docker::connect_with_socket_defaults().unwrap();
 
         let dockerfile = String::from(
             "FROM alpine as builder1
@@ -41,6 +41,7 @@ async fn main() {
         let frontend_opts = bollard::grpc::export::ImageBuildFrontendOptions::builder()
             .pull(true)
             .build();
+
         let output = bollard::grpc::export::ImageExporterOCIOutputBuilder::new(
             "docker.io/library/bollard-oci-export-buildkit-example:latest",
         )

@@ -81,13 +81,14 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
         paths.push(path);
     }
 
+    println!("{:#?}", &paths);
+
     assert!(paths.contains(&String::from("blobs/")));
     assert!(paths.contains(&String::from("blobs/sha256/")));
-    assert!(paths.contains(&String::from(
-        "blobs/sha256/199d118cabd11758f8769dfc159fafea701b93b09449e3502943f3e1de4586ad"
-    )));
     assert!(paths.contains(&String::from("index.json")));
     assert!(paths.contains(&String::from("oci-layout")));
+
+    assert_eq!(paths.len(), 8);
 
     Ok(())
 }

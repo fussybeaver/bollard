@@ -30,7 +30,6 @@ pub mod moby {
             include!("generated/moby.upload.v1.rs");
         }
     }
-
 }
 
 pub mod google {
@@ -58,7 +57,6 @@ impl Display for moby::buildkit::v1::StatusResponse {
                 let mut next = iter.next();
                 let mut result = Ok(());
                 while next.is_some() {
-
                     result = result.and_then(|_| write!(f, "{}", next.unwrap()));
                     next = iter.next();
                     if iter.peek().is_some() {
@@ -84,3 +82,10 @@ impl Display for moby::buildkit::v1::VertexLog {
         )
     }
 }
+
+impl AsRef<[u8]> for moby::buildkit::v1::BytesMessage {
+    fn as_ref(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+}
+
