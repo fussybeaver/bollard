@@ -24,19 +24,17 @@ use std::task::{Context, Poll};
 
 use futures_core::Stream;
 use rand::RngCore;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tonic::transport::server::Connected;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
-use tokio_stream::wrappers::ReceiverStream;
 
 use http::request::Builder;
-use http::StatusCode;
-use hyper::{body::Bytes, Body, Method};
+use hyper::{Body, Method};
 use std::future::Future;
 use tower::Service;
+
+use self::io::GrpcTransport;
 
 // GrpcServer is a helper to allow static dispatch
 pub(crate) enum GrpcServer {
@@ -53,48 +51,6 @@ impl GrpcServer {
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
         }
-    }
-}
-
-pub(crate) struct GrpcTransport {
-    pub(crate) read: Pin<Box<dyn AsyncRead + Send>>,
-    pub(crate) write: Pin<Box<dyn AsyncWrite + Send>>,
-}
-
-impl Connected for GrpcTransport {
-    type ConnectInfo = ();
-
-    fn connect_info(&self) -> Self::ConnectInfo {}
-}
-
-impl AsyncRead for GrpcTransport {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.read).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for GrpcTransport {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        Pin::new(&mut self.write).poll_write(cx, buf)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.write).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        Pin::new(&mut self.write).poll_shutdown(cx)
     }
 }
 
@@ -129,7 +85,7 @@ impl Health for HealthServerImpl {
         &self,
         request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckResponse>, Status> {
-        debug!("Received GRPC Health Request: {:#?}", request);
+        trace!("Received GRPC Health Request: {:#?}", request);
         if let Some(status) = self.service_map.get(&request.get_ref().service) {
             Ok(Response::new(HealthCheckResponse {
                 status: *status as i32,
@@ -166,7 +122,7 @@ impl FileSend for FileSendImpl {
         &self,
         request: Request<Streaming<FileSyncBytesMessage>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
-        debug!("Protobuf FileSend diff_copy triggered: {:#?}", request);
+        trace!("Protobuf FileSend diff_copy triggered: {:#?}", request);
 
         let path = self.dest.as_path();
 
@@ -216,20 +172,24 @@ impl Upload for UploadProvider {
         &self,
         request: Request<Streaming<UploadBytesMessage>>,
     ) -> Result<Response<Self::PullStream>, Status> {
-        let key = request.metadata().get("urlpath").unwrap();
-        debug!("found metadata key {:#?}", key);
+        let key = request
+            .metadata()
+            .get("urlpath")
+            .and_then(|key| key.to_str().ok())
+            .map(String::from)
+            .and_then(|str| self.store.get(&str));
+        if let Some(read) = key {
+            let out_stream =
+                futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
+                    data: read.to_owned(),
+                }));
 
-        let str: String = String::from(key.to_str().unwrap());
-        debug!("hashmap... {:#?}", self.store.keys());
-
-        let read: &Vec<u8> = self.store.get(&str).unwrap();
-        debug!("trying to pull... {:#?}", request);
-
-        let out_stream = futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
-            data: read.to_owned(),
-        }));
-
-        Ok(Response::new(Box::pin(out_stream)))
+            Ok(Response::new(Box::pin(out_stream)))
+        } else {
+            Err(Status::invalid_argument(
+                "invalid 'urlpath' in uploadprovider request",
+            ))
+        }
     }
 }
 

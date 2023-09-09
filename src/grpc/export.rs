@@ -5,7 +5,6 @@ pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 
 use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
-use bollard_buildkit_proto::moby::buildkit::v1::BytesMessage;
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::request::Builder;
@@ -21,10 +20,10 @@ use std::net::IpAddr;
 use std::path::Path;
 
 use crate::errors::Error;
-use crate::grpc::driver::Driver;
-use crate::grpc::driver::DriverBuilder;
-use crate::grpc::driver::IntoAsyncRead;
+use crate::grpc::driver::docker_container::DockerContainerBuilder;
 use crate::grpc::GrpcTransport;
+
+use super::io::into_async_read::IntoAsyncRead;
 
 /// TODO
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -589,7 +588,7 @@ impl super::super::Docker {
         session_id: &str,
         services: Vec<super::GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, impl Interceptor>>, Error> {
-        let builder = DriverBuilder::new("bollard_buildkit", self, session_id);
+        let builder = DockerContainerBuilder::new("bollard_buildkit", self, session_id);
 
         let driver = builder.bootstrap().await?;
 
@@ -601,7 +600,7 @@ impl super::super::Docker {
             moby::buildkit::v1::control_client::ControlClient::with_interceptor(
                 channel,
                 move |mut req: tonic::Request<()>| {
-                    let mut metadata = req.metadata_mut();
+                    let metadata = req.metadata_mut();
 
                     metadata.insert(
                         "x-docker-expose-session-uuid",
@@ -617,12 +616,6 @@ impl super::super::Docker {
             );
 
         let (asyncwriter, asyncreader) = tokio::io::duplex(8 * 1024);
-        // let streamreader = tokio_util::io::ReaderStream::new(asyncreader).map(|v| {
-        //     debug!("something is happening: {:#?}", v.as_ref().unwrap());
-        //     BytesMessage {
-        //         data: v.unwrap().to_vec(),
-        //     }
-        // });
         let streamreader = super::io::reader_stream::ReaderStream::new(asyncreader);
         let stream = control_client.session(streamreader).await?;
         let stream = stream
@@ -642,7 +635,7 @@ impl super::super::Docker {
             for service in services {
                 router = service.append(router);
             }
-            debug!("router: {:#?}", router);
+            trace!("router: {:#?}", router);
             router
                 .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
                     _,
@@ -667,9 +660,6 @@ impl super::super::Docker {
     ) -> Result<(), Error> {
         let payload = match load_input {
             ImageExporterLoadInput::Upload(bytes) => bytes,
-            _ => unimplemented!(
-                "This form of loading docker images into buildkit is currently unimplemented"
-            ),
         };
 
         let mut upload_provider = super::UploadProvider::new();
@@ -677,7 +667,7 @@ impl super::super::Docker {
 
         let mut frontend_attrs = frontend_opts.to_map();
         frontend_attrs.insert(String::from("context"), context);
-        let mut exporter_attrs = exporter_request.output.to_map();
+        let exporter_attrs = exporter_request.output.to_map();
 
         let filesend = moby::filesync::v1::file_send_server::FileSendServer::new(
             super::FileSendImpl::new(exporter_request.path.as_path()),
@@ -689,13 +679,11 @@ impl super::super::Docker {
             super::GrpcServer::FileSend(filesend),
             super::GrpcServer::Upload(upload),
         ];
-        // let channel = self.raw_grpc_handle(session_id, services).await.unwrap();
+
         let mut control_client = self
             .container_grpc_handle(session_id, services)
             .await
             .unwrap();
-
-        // let mut control_client = moby::buildkit::v1::control_client::ControlClient::new(channel);
 
         let id = super::new_id();
 
@@ -712,9 +700,9 @@ impl super::super::Docker {
             session: String::from(session_id),
         };
 
-        println!("sending solve request: {:#?}", solve_request);
+        trace!("sending solve request: {:#?}", solve_request);
         let res = control_client.solve(solve_request).await;
-        println!("res: {:#?}", res);
+        trace!("solve res: {:#?}", res);
 
         Ok(())
     }

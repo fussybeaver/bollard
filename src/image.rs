@@ -17,10 +17,6 @@ use crate::models::*;
 
 #[cfg(feature = "buildkit")]
 use super::health;
-#[cfg(feature = "buildkit")]
-use super::moby;
-#[cfg(feature = "buildkit")]
-use crate::grpc;
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -1179,6 +1175,8 @@ impl Docker {
 
     #[cfg(feature = "buildkit")]
     async fn start_session(&self, id: String) -> Result<(), Error> {
+        use crate::grpc::io::GrpcTransport;
+
         let url = "/session";
 
         let opt: Option<serde_json::Value> = None;
@@ -1197,7 +1195,7 @@ impl Docker {
 
         let output = Box::pin(read);
         let input = Box::pin(write);
-        let transport = crate::grpc::GrpcTransport {
+        let transport = GrpcTransport {
             read: output,
             write: input,
         };

@@ -565,6 +565,17 @@ impl fmt::Display for LogOutput {
     }
 }
 
+impl AsRef<[u8]> for LogOutput {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            LogOutput::StdErr { message } => message.as_ref(),
+            LogOutput::StdOut { message } => message.as_ref(),
+            LogOutput::StdIn { message } => message.as_ref(),
+            LogOutput::Console { message } => message.as_ref(),
+        }
+    }
+}
+
 impl LogOutput {
     /// Get the raw bytes of the output
     pub fn into_bytes(self) -> Bytes {

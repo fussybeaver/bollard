@@ -1,12 +1,9 @@
 use bollard_buildkit_proto::moby::buildkit::v1::BytesMessage;
-use bytes::{BufMut, BytesMut};
-use futures_core::ready;
 use futures_core::stream::Stream;
 use pin_project_lite::pin_project;
-use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::AsyncRead;
 
 const DEFAULT_CAPACITY: usize = 4096;
 

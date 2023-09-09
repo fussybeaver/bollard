@@ -5,9 +5,7 @@
 async fn main() {
     #[cfg(feature = "buildkit")]
     {
-        use bollard::models::BuildInfoAux;
         use bollard::Docker;
-        use futures_util::stream::StreamExt;
         use std::io::Write;
 
         env_logger::init();
@@ -53,6 +51,7 @@ async fn main() {
 
         docker
             .image_export_oci(session_id, frontend_opts, output, load_input)
-            .await;
+            .await
+            .unwrap();
     }
 }
