@@ -4,26 +4,16 @@ pub use bollard_buildkit_proto::fsutil;
 pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 
-use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bytes::Bytes;
-use futures_util::TryStreamExt;
-use http::request::Builder;
-use hyper::Body;
-use hyper::Method;
-use tonic::codegen::InterceptedService;
-use tonic::service::Interceptor;
-use tonic::transport::Channel;
-use tonic::transport::Endpoint;
 
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::Path;
 
+use crate::container::KillContainerOptions;
 use crate::errors::Error;
-use crate::grpc::driver::docker_container::DockerContainerBuilder;
-use crate::grpc::GrpcTransport;
 
-use super::io::into_async_read::IntoAsyncRead;
+use super::driver::docker_container::DockerContainer;
 
 /// TODO
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -194,13 +184,11 @@ impl ImageBuildFrontendOptions {
 
 /// TODO
 #[derive(Debug, Clone, Default, PartialEq)]
-#[cfg(feature = "buildkit")]
 pub struct ImageBuildFrontendOptionsBuilder {
     inner: ImageBuildFrontendOptions,
 }
 
 /// TODO
-#[cfg(feature = "buildkit")]
 impl ImageBuildFrontendOptionsBuilder {
     /// TODO
     pub fn new() -> Self {
@@ -283,7 +271,6 @@ impl ImageBuildFrontendOptionsBuilder {
 
 /// TODO
 #[derive(Debug, Clone, Default, PartialEq)]
-#[cfg(feature = "buildkit")]
 pub struct ImageExporterOCIOutput {
     pub(crate) name: String,
     pub(crate) push: bool,
@@ -409,13 +396,11 @@ impl ImageExporterOCIOutput {
 
 /// TODO
 #[derive(Debug, Clone, Default, PartialEq)]
-#[cfg(feature = "buildkit")]
 pub struct ImageExporterOCIOutputBuilder {
     inner: ImageExporterOCIOutput,
 }
 
 /// TODO
-#[cfg(feature = "buildkit")]
 impl ImageExporterOCIOutputBuilder {
     /// TODO
     pub fn new(name: &str) -> Self {
@@ -518,146 +503,18 @@ pub enum ImageExporterLoadInput {
     Upload(Bytes),
 }
 
-impl super::super::Docker {
+impl<'a> super::super::Docker {
     /// TODO
-    async fn raw_grpc_handle(
-        &mut self,
-        session_id: &str,
-        services: Vec<super::GrpcServer>,
-    ) -> Result<Channel, Error> {
-        let grpc_client = super::GrpcClient {
-            client: self.clone(),
-            session_id: String::from(session_id),
-        };
-
-        let channel = Endpoint::try_from("http://[::]:50051")?
-            .connect_with_connector(grpc_client)
-            .await?;
-
-        let url = "/session";
-
-        let opt: Option<serde_json::Value> = None;
-        let req = self.build_request(
-            &url,
-            Builder::new()
-                .method(Method::POST)
-                .header("Connection", "Upgrade")
-                .header("Upgrade", "h2c")
-                .header("X-Docker-Expose-Session-Uuid", session_id)
-                .header(
-                    "X-Docker-Expose-Session-Grpc-Method",
-                    "/moby.filesync.v1.FileSend/diffcopy",
-                ),
-            opt,
-            Ok(Body::empty()),
-        );
-
-        let (read, write) = self.process_upgraded(req).await?;
-
-        let output = Box::pin(read);
-        let input = Box::pin(write);
-        let transport = GrpcTransport {
-            read: output,
-            write: input,
-        };
-
-        tokio::spawn(async {
-            let health = health::health_server::HealthServer::new(super::HealthServerImpl::new());
-            let mut builder = tonic::transport::Server::builder();
-            let mut router = builder.add_service(health);
-            for service in services {
-                router = service.append(router);
-            }
-            debug!("router: {:#?}", router);
-            router
-                .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
-                    _,
-                    tonic::transport::Error,
-                >(
-                    transport
-                )]))
-                .await;
-        });
-
-        Ok(channel)
-    }
-
-    /// TODO
-    async fn container_grpc_handle(
-        &mut self,
-        session_id: &str,
-        services: Vec<super::GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, impl Interceptor>>, Error> {
-        let builder = DockerContainerBuilder::new("bollard_buildkit", self, session_id);
-
-        let driver = builder.bootstrap().await?;
-
-        let channel = Endpoint::try_from("http://[::]:50051")?
-            .connect_with_connector(driver)
-            .await?;
-
-        let mut control_client =
-            moby::buildkit::v1::control_client::ControlClient::with_interceptor(
-                channel,
-                move |mut req: tonic::Request<()>| {
-                    let metadata = req.metadata_mut();
-
-                    metadata.insert(
-                        "x-docker-expose-session-uuid",
-                        "bollard-oci-export-buildkit-example".parse().unwrap(),
-                    );
-                    metadata.insert(
-                        "x-docker-expose-session-grpc-method",
-                        "/moby.filesync.v1.FileSend/diffcopy".parse().unwrap(),
-                    );
-
-                    Ok(req)
-                },
-            );
-
-        let (asyncwriter, asyncreader) = tokio::io::duplex(8 * 1024);
-        let streamreader = super::io::reader_stream::ReaderStream::new(asyncreader);
-        let stream = control_client.session(streamreader).await?;
-        let stream = stream
-            .into_inner()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
-        let asyncreader = IntoAsyncRead::new(stream);
-        let transport = GrpcTransport {
-            read: Box::pin(asyncreader),
-            write: Box::pin(asyncwriter),
-        };
-
-        tokio::spawn(async {
-            let health = health::health_server::HealthServer::new(super::HealthServerImpl::new());
-            let mut builder = tonic::transport::Server::builder();
-            let mut router = builder.add_service(health);
-            for service in services {
-                router = service.append(router);
-            }
-            trace!("router: {:#?}", router);
-            router
-                .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
-                    _,
-                    tonic::transport::Error,
-                >(
-                    transport
-                )]))
-                .await;
-        });
-
-        Ok(control_client)
-    }
-
-    /// TODO
-    #[cfg(feature = "buildkit")]
     pub async fn image_export_oci(
         &mut self,
+        driver: DockerContainer,
         session_id: &str,
         frontend_opts: ImageBuildFrontendOptions,
         exporter_request: ImageExporterOCIRequest,
         load_input: ImageExporterLoadInput,
     ) -> Result<(), Error> {
+        let buildkit_name = String::from(driver.name());
+
         let payload = match load_input {
             ImageExporterLoadInput::Upload(bytes) => bytes,
         };
@@ -680,10 +537,7 @@ impl super::super::Docker {
             super::GrpcServer::Upload(upload),
         ];
 
-        let mut control_client = self
-            .container_grpc_handle(session_id, services)
-            .await
-            .unwrap();
+        let mut control_client = driver.grpc_handle(session_id, services).await.unwrap();
 
         let id = super::new_id();
 
@@ -700,9 +554,19 @@ impl super::super::Docker {
             session: String::from(session_id),
         };
 
-        trace!("sending solve request: {:#?}", solve_request);
+        debug!("sending solve request: {:#?}", solve_request);
         let res = control_client.solve(solve_request).await;
-        trace!("solve res: {:#?}", res);
+        debug!("solve res: {:#?}", res);
+
+        // clean up
+        let kill = self
+            .kill_container(&buildkit_name, None::<KillContainerOptions<String>>)
+            .await;
+
+        trace!("kill res: {:#?}", kill);
+
+        res?;
+        kill?;
 
         Ok(())
     }

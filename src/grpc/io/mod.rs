@@ -1,3 +1,5 @@
+#![cfg(feature = "buildkit")]
+
 use std::{
     pin::Pin,
     task::{Context, Poll},

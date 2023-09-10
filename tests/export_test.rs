@@ -1,10 +1,9 @@
 #![cfg(feature = "buildkit")]
 
 use bollard::errors::Error;
-use bollard::models::BuildInfoAux;
 use bollard::Docker;
 
-use futures_util::stream::StreamExt;
+use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 use tokio::runtime::Runtime;
 
 use std::io::Write;
@@ -14,8 +13,6 @@ pub mod common;
 use crate::common::*;
 
 async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
-    env_logger::init();
-
     let dockerfile = String::from(
         "FROM alpine as builder1
         RUN touch bollard.txt
@@ -48,7 +45,7 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
 
     // cleanup - usually for local testing, the grpc handler will overwrite
     if dest_path.exists() {
-        std::fs::remove_file(&dest_path);
+        std::fs::remove_file(&dest_path).unwrap();
     }
     assert!(!dest_path.exists());
 
@@ -58,11 +55,15 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     .annotation("exporter", "Bollard")
     .dest(&dest_path);
 
+    let buildkit_builder =
+        DockerContainerBuilder::new("bollard_export_test_export_oci_image", &docker, session_id);
+    let driver = buildkit_builder.bootstrap().await.unwrap();
+
     let load_input =
         bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
 
     let res = docker
-        .image_export_oci(session_id, frontend_opts, output, load_input)
+        .image_export_oci(driver, session_id, frontend_opts, output, load_input)
         .await;
 
     assert!(res.is_ok());

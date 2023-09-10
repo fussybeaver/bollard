@@ -1,3 +1,5 @@
+#![cfg(feature = "buildkit")]
+
 use bollard_buildkit_proto::moby::buildkit::v1::BytesMessage;
 use futures_core::stream::Stream;
 use pin_project_lite::pin_project;

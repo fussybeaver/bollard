@@ -1,3 +1,5 @@
+#![cfg(feature = "buildkit")]
+
 use std::{
     cmp,
     pin::Pin,

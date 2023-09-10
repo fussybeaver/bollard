@@ -1,9 +1,14 @@
+#![cfg(feature = "buildkit")]
+
 use std::{
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
+use bollard_buildkit_proto::{
+    health::health_server::HealthServer, moby::buildkit::v1::control_client::ControlClient,
+};
 use bollard_stubs::models::{
     ExecInspectResponse, HostConfig, Mount, MountTypeEnum, SystemInfoCgroupDriverEnum,
 };
@@ -15,20 +20,28 @@ use http::{
     request::Builder,
     Method,
 };
+use tonic::{codegen::InterceptedService, transport::Channel};
+use tonic::{service::Interceptor, transport::Endpoint};
 use tower_service::Service;
 
 use crate::{
     container::{Config, CreateContainerOptions},
     errors::Error,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
-    grpc::io::GrpcFramedTransport,
+    grpc::{
+        io::{
+            into_async_read::IntoAsyncRead, reader_stream::ReaderStream, GrpcFramedTransport,
+            GrpcTransport,
+        },
+        GrpcServer, HealthServerImpl,
+    },
     image::CreateImageOptions,
     Docker,
 };
 
 const DEFAULT_IMAGE: &str = "moby/buildkit:master";
 const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
-const DEFAULT_BUILDKIT_CONFIG_DIR: &str = "/etc/buildkit";
+const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
 impl Service<http::Uri> for DockerContainer {
     type Response = GrpcFramedTransport;
@@ -200,9 +213,87 @@ pub struct DockerContainer {
     args: Vec<String>,
 }
 
-impl DockerContainer {
+impl<'a> DockerContainer {
     /// TODO
-    pub async fn create(&self) -> Result<(), Error> {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// TODO
+    pub(crate) async fn grpc_handle(
+        self,
+        session_id: &'a str,
+        services: Vec<GrpcServer>,
+    ) -> Result<ControlClient<InterceptedService<Channel, impl Interceptor + 'a>>, Error> {
+        let channel = Endpoint::try_from("http://[::]:50051")?
+            .connect_with_connector(self)
+            .await?;
+
+        let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
+
+        let mut control_client =
+            ControlClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
+                let metadata = req.metadata_mut();
+
+                metadata.insert(
+                    "x-docker-expose-session-uuid",
+                    session_id.parse().map_err(|_| {
+                        tonic::Status::invalid_argument("invalid 'session_id' argument")
+                    })?,
+                );
+
+                debug!("grpc-method: {:?}", &metadata_grpc_method.join(","));
+                for metadata_grpc_method_value in &metadata_grpc_method {
+                    metadata.append(
+                        "x-docker-expose-session-grpc-method",
+                        metadata_grpc_method_value.parse().map_err(|_| {
+                            tonic::Status::invalid_argument("invalid grpc method name")
+                        })?,
+                    );
+                }
+
+                Ok(req)
+            });
+
+        let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
+        let streamreader = ReaderStream::new(asyncreader);
+        let stream = control_client.session(streamreader).await?;
+        let stream = stream
+            .into_inner()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+
+        let asyncreader = IntoAsyncRead::new(stream);
+        let transport = GrpcTransport {
+            read: Box::pin(asyncreader),
+            write: Box::pin(asyncwriter),
+        };
+
+        tokio::spawn(async {
+            let health = HealthServer::new(HealthServerImpl::new());
+            let mut builder = tonic::transport::Server::builder();
+            let mut router = builder.add_service(health);
+            for service in services {
+                router = service.append(router);
+            }
+            trace!("router: {:#?}", router);
+            match router
+                .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
+                    _,
+                    tonic::transport::Error,
+                >(
+                    transport
+                )]))
+                .await
+            {
+                Err(e) => error!("Failed to serve grpc connection: {}", e),
+                _ => (),
+            }
+        });
+
+        Ok(control_client)
+    }
+
+    async fn create(&self) -> Result<(), Error> {
         let image_name = if let Some(image) = &self.image {
             image
         } else {

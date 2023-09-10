@@ -5,10 +5,9 @@
 async fn main() {
     #[cfg(feature = "buildkit")]
     {
+        use bollard::grpc::driver::docker_container::DockerContainerBuilder;
         use bollard::Docker;
         use std::io::Write;
-
-        env_logger::init();
 
         let mut docker = Docker::connect_with_socket_defaults().unwrap();
 
@@ -46,11 +45,15 @@ async fn main() {
         .annotation("exporter", "Bollard")
         .dest(&std::path::Path::new("/tmp/oci-image.tar"));
 
+        let buildkit_builder =
+            DockerContainerBuilder::new("bollard_buildkit_export_oci_image", &docker, session_id);
+        let driver = buildkit_builder.bootstrap().await.unwrap();
+
         let load_input =
             bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
 
         docker
-            .image_export_oci(session_id, frontend_opts, output, load_input)
+            .image_export_oci(driver, session_id, frontend_opts, output, load_input)
             .await
             .unwrap();
     }

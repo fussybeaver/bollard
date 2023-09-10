@@ -151,4 +151,12 @@ pub enum Error {
         #[from]
         err: tonic::Status,
     },
+    #[cfg(feature = "buildkit")]
+    /// Error emitted when a GRPC metadata value does not parse correctly
+    #[error(transparent)]
+    MetadataValue {
+        /// The tonic metadata value.
+        #[from]
+        err: tonic::metadata::errors::InvalidMetadataValue,
+    },
 }

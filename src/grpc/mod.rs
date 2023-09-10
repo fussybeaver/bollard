@@ -14,7 +14,7 @@ use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
 use crate::moby::filesync::v1::file_send_server::FileSend;
 use crate::moby::filesync::v1::BytesMessage as FileSyncBytesMessage;
-use crate::moby::upload::v1::upload_server::Upload;
+use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
 
 use std::collections::HashMap;
@@ -22,8 +22,10 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
 use futures_core::Stream;
 use rand::RngCore;
+use tonic::transport::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use futures_util::StreamExt;
@@ -37,12 +39,17 @@ use tower::Service;
 use self::io::GrpcTransport;
 
 // GrpcServer is a helper to allow static dispatch
-pub(crate) enum GrpcServer {
-    Upload(crate::moby::upload::v1::upload_server::UploadServer<UploadProvider>),
-    FileSend(crate::moby::filesync::v1::file_send_server::FileSendServer<FileSendImpl>),
+/// TODO
+#[derive(Debug)]
+pub enum GrpcServer {
+    /// TODO
+    Upload(UploadServer<UploadProvider>),
+    /// TODO
+    FileSend(FileSendServer<FileSendImpl>),
 }
 
 impl GrpcServer {
+    /// TODO
     pub fn append(
         self,
         builder: tonic::transport::server::Router,
@@ -50,6 +57,21 @@ impl GrpcServer {
         match self {
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
+        }
+    }
+
+    /// TODO
+    pub fn names(&self) -> Vec<String> {
+        match self {
+            GrpcServer::Upload(_upload_server) => {
+                vec![format!("/{}/pull", UploadServer::<UploadProvider>::NAME)]
+            }
+            GrpcServer::FileSend(_file_send_server) => {
+                vec![format!(
+                    "/{}/diffcopy",
+                    FileSendServer::<FileSendImpl>::NAME
+                )]
+            }
         }
     }
 }
@@ -103,11 +125,13 @@ impl Health for HealthServerImpl {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct FileSendImpl {
+/// TODO
+pub struct FileSendImpl {
     pub(crate) dest: PathBuf,
 }
 
 impl FileSendImpl {
+    /// TODO
     pub fn new(dest: &Path) -> Self {
         Self {
             dest: dest.to_owned(),
@@ -144,17 +168,20 @@ impl FileSend for FileSendImpl {
 }
 
 #[derive(Debug)]
-pub(crate) struct UploadProvider {
+/// TODO
+pub struct UploadProvider {
     pub(crate) store: HashMap<String, Vec<u8>>,
 }
 
 impl UploadProvider {
+    /// TODO
     pub fn new() -> Self {
         Self {
             store: HashMap::new(),
         }
     }
 
+    /// TODO
     pub fn add(&mut self, reader: Vec<u8>) -> String {
         let id = new_id();
         let key = format!("http://buildkit-session/{}", id);

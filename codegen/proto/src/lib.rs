@@ -88,4 +88,3 @@ impl AsRef<[u8]> for moby::buildkit::v1::BytesMessage {
         self.data.as_ref()
     }
 }
-
