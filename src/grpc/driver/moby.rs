@@ -11,11 +11,11 @@ use crate::{
     Docker,
 };
 
-/// TODO
+/// The Moby driver handles a GRPC connection with an upgraded `/session` and `/grpc` endpoints in
+/// Docker itself.
 #[derive(Debug)]
 pub struct Moby {
-    /// TODO
-    pub docker: Docker,
+    pub(crate) docker: Docker,
 }
 
 impl Moby {

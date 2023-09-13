@@ -223,12 +223,7 @@ impl Docker {
     /// # Ping
     ///
     /// This is a dummy endpoint you can use to test if the server is accessible.
-    ///
-    /// # Returns
-    ///
-    ///  - A [String](std::string::String), wrapped in a Future.
-    ///
-    /// # Examples
+    /// # Returns - A [String](std::string::String), wrapped in a Future. # Examples
     ///
     /// ```rust
     /// # use bollard::Docker;
@@ -257,7 +252,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [System Events Response](SystemEventsResponse),
+    ///  - [EventMessage](crate::models::EventMessage),
     ///  wrapped in a Stream.
     ///
     /// # Examples

@@ -39,7 +39,8 @@ use crate::{
     Docker,
 };
 
-const DEFAULT_IMAGE: &str = "moby/buildkit:master";
+/// The default `Buildkit` image to use for the [`DockerContainer] driver.
+pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
 const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
@@ -101,14 +102,40 @@ impl Service<http::Uri> for DockerContainer {
     }
 }
 
-/// TODO
+/// Builder used to create a driver, needed to communicate with `Buildkit`, such as with the
+/// [`image_export_oci`][crate::Docker::image_export_oci] functionality.
+///
+/// <div class="warning">
+///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only. 
+/// </div>
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::grpc::driver::docker_container::DockerContainerBuilder;
+/// use bollard::Docker;
+///
+/// // Use a connection function
+/// // let docker = Docker::connect_...;
+/// # let docker = Docker::connect_with_local_defaults().unwrap();
+///
+/// let builder = DockerContainerBuilder::new("buildkit_doctest", &docker, "buildkit_session_id");
+///
+/// ```
+///
 #[derive(Debug)]
 pub struct DockerContainerBuilder {
     inner: DockerContainer,
 }
 
 impl DockerContainerBuilder {
-    /// TODO
+    /// Construct a new `DockerContainerBuilder` to build a [`DockerContainer`]
+    ///
+    /// # Arguments
+    ///
+    ///  - The container name used to identify the buildkit in Docker
+    ///  - A reference to the docker client
+    ///  - A unique session id to identify the GRPC connection
     pub fn new(name: &str, docker: &Docker, session_id: &str) -> Self {
         Self {
             inner: DockerContainer {
@@ -124,7 +151,7 @@ impl DockerContainerBuilder {
         }
     }
 
-    /// TODO
+    /// Consume this builder to construct a [`DockerContainer`]
     pub async fn bootstrap(mut self) -> Result<DockerContainer, Error> {
         debug!("booting buildkit");
 
@@ -154,7 +181,7 @@ impl DockerContainerBuilder {
         Ok(self.inner)
     }
 
-    /// TODO
+    /// The network mode to apply to the `Buildkit` docker container.
     pub fn network(&mut self, net: &str) -> &mut DockerContainerBuilder {
         if net == "host" {
             self.inner
@@ -192,34 +219,32 @@ impl DockerContainerBuilder {
     }
 }
 
-/// TODO
+/// DockerContainer plumbing to communicate with `Buildkit` using an execution pipe.
+/// Underneath, the `buildkit` CLI will open a stdin/stdout pipe, which we can hook into to call
+/// further GRPC methods.
+///
+/// Construct a `DockerContainer` using a [`DockerContainerBuilder`].
+///
+///
 #[derive(Debug)]
 pub struct DockerContainer {
-    /// TODO
     name: String,
-    /// TODO
     docker: Docker,
-    /// TODO
     session_id: String,
-    /// TODO
     net_mode: Option<String>,
-    /// TODO
     image: Option<String>,
-    /// TODO
     cgroup_parent: Option<String>,
-    /// TODO
     env: Vec<String>,
-    /// TODO
     args: Vec<String>,
 }
 
 impl<'a> DockerContainer {
-    /// TODO
+    /// Identifies the docker container name that runs `Buildkit`. This should be unique if you
+    /// intend to run multiple instances building in parallel on the same host.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// TODO
     pub(crate) async fn grpc_handle(
         self,
         session_id: &'a str,

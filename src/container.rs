@@ -420,7 +420,7 @@ where
     /// If stream is also enabled, once all the previous output has been returned, it will seamlessly transition into streaming current output.
     pub logs: Option<bool>,
     /// Override the key sequence for detaching a container.
-    /// Format is a single character [a-Z] or ctrl-<value> where <value> is one of: a-z, @, ^, [, , or _.
+    /// Format is a single character [a-Z] or ctrl-\<value\> where \<value\> is one of: a-z, @, ^, [, , or _.
     #[serde(rename = "detachKeys")]
     pub detach_keys: Option<T>,
 }
@@ -1776,7 +1776,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An Option of Vector of [Container Change Response Item](ContainerChangeResponseItem) structs, wrapped in a
+    ///  - An Option of Vector of [File System Change](FilesystemChange) structs, wrapped in a
     ///  Future.
     ///
     /// # Examples

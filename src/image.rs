@@ -421,7 +421,7 @@ where
 }
 
 #[cfg(feature = "buildkit")]
-/// Buildkit Image Output configuration: https://docs.docker.com/build/exporters/oci-docker/
+/// Buildkit Image Output configuration: <https://docs.docker.com/build/exporters/oci-docker/>
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ImageBuildOutput<T>
 where

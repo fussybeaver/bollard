@@ -2,11 +2,11 @@
 #![cfg(feature = "buildkit")]
 #![allow(dead_code)]
 
-/// TODO
+/// A package of GRPC buildkit connection implementations
 pub mod driver;
-/// TODO
+/// End-user buildkit export functions 
 pub mod export;
-/// TODO
+/// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
 
 use crate::health::health_check_response::ServingStatus;
@@ -38,18 +38,14 @@ use tower::Service;
 
 use self::io::GrpcTransport;
 
-// GrpcServer is a helper to allow static dispatch
-/// TODO
+/// A static dispatch wrapper for GRPC implementations to generated GRPC traits
 #[derive(Debug)]
-pub enum GrpcServer {
-    /// TODO
+pub(crate) enum GrpcServer {
     Upload(UploadServer<UploadProvider>),
-    /// TODO
     FileSend(FileSendServer<FileSendImpl>),
 }
 
 impl GrpcServer {
-    /// TODO
     pub fn append(
         self,
         builder: tonic::transport::server::Router,
@@ -60,7 +56,6 @@ impl GrpcServer {
         }
     }
 
-    /// TODO
     pub fn names(&self) -> Vec<String> {
         match self {
             GrpcServer::Upload(_upload_server) => {
@@ -125,13 +120,11 @@ impl Health for HealthServerImpl {
 }
 
 #[derive(Clone, Debug)]
-/// TODO
-pub struct FileSendImpl {
+pub(crate) struct FileSendImpl {
     pub(crate) dest: PathBuf,
 }
 
 impl FileSendImpl {
-    /// TODO
     pub fn new(dest: &Path) -> Self {
         Self {
             dest: dest.to_owned(),
@@ -168,20 +161,17 @@ impl FileSend for FileSendImpl {
 }
 
 #[derive(Debug)]
-/// TODO
-pub struct UploadProvider {
+pub(crate) struct UploadProvider {
     pub(crate) store: HashMap<String, Vec<u8>>,
 }
 
 impl UploadProvider {
-    /// TODO
     pub fn new() -> Self {
         Self {
             store: HashMap::new(),
         }
     }
 
-    /// TODO
     pub fn add(&mut self, reader: Vec<u8>) -> String {
         let id = new_id();
         let key = format!("http://buildkit-session/{}", id);

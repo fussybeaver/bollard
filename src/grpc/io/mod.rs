@@ -59,7 +59,7 @@ impl AsyncWrite for GrpcTransport {
 }
 
 #[allow(missing_debug_implementations)]
-/// TODO
+/// An AsyncRead/AsyncWrite type allowing reads along a docker container exec pipe.
 pub struct GrpcFramedTransport {
     read: IntoAsyncRead<FramedRead<Pin<Box<dyn AsyncRead + Send>>, NewlineLogOutputDecoder>>,
     write: Pin<Box<dyn AsyncWrite + Send>>,
