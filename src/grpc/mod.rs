@@ -4,7 +4,9 @@
 
 /// A package of GRPC buildkit connection implementations
 pub mod driver;
-/// End-user buildkit export functions 
+/// Errors for the GRPC modules
+pub mod error;
+/// End-user buildkit export functions
 pub mod export;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
@@ -28,7 +30,7 @@ use rand::RngCore;
 use tonic::transport::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryFutureExt};
 use tokio::io::AsyncWriteExt;
 
 use http::request::Builder;
@@ -217,7 +219,7 @@ pub(crate) struct GrpcClient {
 
 impl Service<http::Uri> for GrpcClient {
     type Response = GrpcTransport;
-    type Error = crate::errors::Error;
+    type Error = error::GrpcError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -254,7 +256,7 @@ impl Service<http::Uri> for GrpcClient {
         };
 
         // Return the response as an immediate future
-        Box::pin(fut)
+        Box::pin(fut.map_err(From::from))
     }
 }
 

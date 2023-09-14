@@ -6,7 +6,7 @@ use hyper::Body;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::{
-    errors::Error,
+    grpc::error::GrpcError,
     grpc::{io::GrpcTransport, GrpcClient, GrpcServer, HealthServerImpl},
     Docker,
 };
@@ -23,7 +23,7 @@ impl Moby {
         &mut self,
         session_id: &str,
         services: Vec<GrpcServer>,
-    ) -> Result<ControlClient<Channel>, Error> {
+    ) -> Result<ControlClient<Channel>, GrpcError> {
         let grpc_client = GrpcClient {
             client: self.docker.clone(),
             session_id: String::from(session_id),

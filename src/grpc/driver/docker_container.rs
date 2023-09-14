@@ -14,7 +14,7 @@ use bollard_stubs::models::{
 };
 use bytes::BytesMut;
 use futures_core::Future;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::{StreamExt, TryFutureExt, TryStreamExt};
 use http::{
     header::{CONNECTION, UPGRADE},
     request::Builder,
@@ -26,8 +26,8 @@ use tower_service::Service;
 
 use crate::{
     container::{Config, CreateContainerOptions},
-    errors::Error,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
+    grpc::error::GrpcError,
     grpc::{
         io::{
             into_async_read::IntoAsyncRead, reader_stream::ReaderStream, GrpcFramedTransport,
@@ -46,7 +46,7 @@ const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
 impl Service<http::Uri> for DockerContainer {
     type Response = GrpcFramedTransport;
-    type Error = Error;
+    type Error = GrpcError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -98,7 +98,7 @@ impl Service<http::Uri> for DockerContainer {
                 })
         };
 
-        Box::pin(fut)
+        Box::pin(fut.map_err(From::from))
     }
 }
 
@@ -106,7 +106,7 @@ impl Service<http::Uri> for DockerContainer {
 /// [`image_export_oci`][crate::Docker::image_export_oci] functionality.
 ///
 /// <div class="warning">
-///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only. 
+///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.
 /// </div>
 ///
 /// ## Examples
@@ -152,7 +152,7 @@ impl DockerContainerBuilder {
     }
 
     /// Consume this builder to construct a [`DockerContainer`]
-    pub async fn bootstrap(mut self) -> Result<DockerContainer, Error> {
+    pub async fn bootstrap(mut self) -> Result<DockerContainer, GrpcError> {
         debug!("booting buildkit");
 
         if self.inner.net_mode.is_none() {
@@ -166,7 +166,7 @@ impl DockerContainerBuilder {
             .inspect_container(&self.inner.name, None)
             .await
         {
-            Err(Error::DockerResponseServerError {
+            Err(crate::errors::Error::DockerResponseServerError {
                 status_code: 404,
                 message: _,
             }) => self.inner.create().await?,
@@ -249,7 +249,7 @@ impl<'a> DockerContainer {
         self,
         session_id: &'a str,
         services: Vec<GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, impl Interceptor + 'a>>, Error> {
+    ) -> Result<ControlClient<InterceptedService<Channel, impl Interceptor + 'a>>, GrpcError> {
         let channel = Endpoint::try_from("http://[::]:50051")?
             .connect_with_connector(self)
             .await?;
@@ -318,7 +318,7 @@ impl<'a> DockerContainer {
         Ok(control_client)
     }
 
-    async fn create(&self) -> Result<(), Error> {
+    async fn create(&self) -> Result<(), GrpcError> {
         let image_name = if let Some(image) = &self.image {
             image
         } else {
@@ -410,7 +410,7 @@ impl<'a> DockerContainer {
         Ok(())
     }
 
-    async fn start(&self) -> Result<(), Error> {
+    async fn start(&self) -> Result<(), GrpcError> {
         self.docker
             .start_container::<String>(&self.name, None)
             .await?;
@@ -418,7 +418,7 @@ impl<'a> DockerContainer {
         Ok(())
     }
 
-    async fn wait(&self) -> Result<(), Error> {
+    async fn wait(&self) -> Result<(), GrpcError> {
         let mut attempts = 1;
         let mut stdout = BytesMut::new();
         loop {
@@ -457,10 +457,11 @@ impl<'a> DockerContainer {
                     ..
                 } if attempts > 15 => {
                     info!("{}", std::str::from_utf8(stdout.as_ref())?);
-                    return Err(Error::DockerContainerWaitError {
+                    return Err(crate::errors::Error::DockerContainerWaitError {
                         error: String::from(std::str::from_utf8(stdout.as_ref())?),
                         code: status_code,
-                    });
+                    }
+                    .into());
                 }
                 _ => {
                     tokio::time::sleep(Duration::from_millis(attempts * 120)).await;

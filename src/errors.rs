@@ -3,7 +3,7 @@
 #[cfg(feature = "ssl")]
 use std::path::PathBuf;
 
-/// The type of error embedded in an Error.
+/// Generic Docker errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
@@ -134,29 +134,5 @@ pub enum Error {
         /// The original error emitted.
         #[from]
         err: serde_urlencoded::ser::Error,
-    },
-    #[cfg(feature = "buildkit")]
-    /// Error emitted when a GRPC network request or response fails with docker's buildkit client
-    #[error(transparent)]
-    TonicError {
-        /// The tonic error emitted.
-        #[from]
-        err: tonic::transport::Error,
-    },
-    #[cfg(feature = "buildkit")]
-    /// Error emitted when a GRPC network request emits a non-OK status code
-    #[error(transparent)]
-    TonicStatus {
-        /// The tonic status emitted.
-        #[from]
-        err: tonic::Status,
-    },
-    #[cfg(feature = "buildkit")]
-    /// Error emitted when a GRPC metadata value does not parse correctly
-    #[error(transparent)]
-    MetadataValue {
-        /// The tonic metadata value.
-        #[from]
-        err: tonic::metadata::errors::InvalidMetadataValue,
     },
 }

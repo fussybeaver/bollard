@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::Path;
 
+use super::error::GrpcError;
 use crate::container::KillContainerOptions;
-use crate::errors::Error;
 
 use super::driver::docker_container::DockerContainer;
 
@@ -629,7 +629,7 @@ impl<'a> super::super::Docker {
         frontend_opts: ImageBuildFrontendOptions,
         exporter_request: ImageExporterOCIRequest,
         load_input: ImageExporterLoadInput,
-    ) -> Result<(), Error> {
+    ) -> Result<(), GrpcError> {
         let buildkit_name = String::from(driver.name());
 
         let payload = match load_input {
@@ -654,7 +654,7 @@ impl<'a> super::super::Docker {
             super::GrpcServer::Upload(upload),
         ];
 
-        let mut control_client = driver.grpc_handle(session_id, services).await.unwrap();
+        let mut control_client = driver.grpc_handle(session_id, services).await?;
 
         let id = super::new_id();
 
