@@ -34,9 +34,11 @@
 //!
 //! ### Latest
 //!
-//! Version `0.14` enables a `buildkit` feature for builds using public images (check the
-//! [buildkit example](https://github.com/fussybeaver/bollard/blob/v0.14.0/examples/build_buildkit.rs)
-//! for details on how to configure).
+//! Version `0.15` enables more `buildkit` features, including [exporting builds to OCI
+//! tarballs](https://docs.docker.com/build/exporters/oci-docker/) with the
+//! [`image_export_oci`](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.image_export_oci)
+//! method. Please note: all `buildkit` API's are under *developer preview*, feedback is
+//! encouraged.
 //!
 //! ## Feature flags
 //!
@@ -51,7 +53,7 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.41/) used by Bollard is using the latest
+//! The [Docker API](https://docs.docker.com/engine/api/v1.43/) used by Bollard is using the latest
 //! `1.43` documentation schema published by the [moby](https://github.com/moby/moby) project to
 //! generate its serialization interface.
 //!
