@@ -47,7 +47,7 @@ use std::hash::Hash;
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateImageOptions<T>
+pub struct CreateImageOptions<'a, T>
 where
     T: Into<String> + Serialize,
 {
@@ -66,6 +66,10 @@ where
     pub tag: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
+    /// URL-encoded! This parameter may only be used when importing an image.
+    #[serde(serialize_with = "crate::docker::serialize_join_newlines")]
+    pub changes: Vec<&'a str>,
 }
 
 /// Parameters to the [List Images
@@ -564,12 +568,12 @@ impl Docker {
     ///
     pub fn create_image<T>(
         &self,
-        options: Option<CreateImageOptions<T>>,
+        options: Option<CreateImageOptions<'_, T>>,
         root_fs: Option<Body>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + Serialize + std::fmt::Debug + Clone,
     {
         let url = "/images/create";
 

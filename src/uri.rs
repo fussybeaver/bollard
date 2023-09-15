@@ -14,9 +14,11 @@ pub struct Uri<'a> {
     encoded: Cow<'a, str>,
 }
 
-impl<'a> From<Uri<'a>> for HyperUri {
-    fn from(uri: Uri<'a>) -> Self {
-        uri.encoded.as_ref().parse().unwrap()
+impl<'a> TryFrom<Uri<'a>> for HyperUri {
+    type Error = http::uri::InvalidUri;
+
+    fn try_from(uri: Uri<'a>) -> Result<Self, Self::Error> {
+        uri.encoded.as_ref().parse()
     }
 }
 
@@ -39,15 +41,17 @@ impl<'a> Uri<'a> {
             client_version.minor_version,
             path
         );
-        let mut url = Url::parse(host_str.as_ref()).unwrap();
-        url = url.join(path).unwrap();
+        let mut url = Url::parse(host_str.as_ref())?;
+        url = url.join(path)?;
 
         if let Some(pairs) = query {
+            trace!("pairs: {}", serde_json::to_string(&pairs)?);
+
             let qs = serde_urlencoded::to_string(pairs)?;
             url.set_query(Some(&qs));
         }
 
-        debug!(
+        trace!(
             "Parsing uri: {}, client_type: {:?}, socket: {}",
             url.as_str(),
             client_type,

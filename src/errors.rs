@@ -61,11 +61,8 @@ pub enum Error {
         column: usize,
     },
     /// Error emitted when the docker is requested to build with buildkit without a session id
-    #[error("Failed to parse API version: {api_version}")]
-    APIVersionParseError {
-        /// The api version returned by the server.
-        api_version: String,
-    },
+    #[error("Failed to parse API version")]
+    APIVersionParseError {},
     /// Error emitted when a request times out.
     #[error("Timeout error")]
     RequestTimeoutError,
@@ -129,10 +126,24 @@ pub enum Error {
         err: hyper::Error,
     },
     /// Error emitted when serde fails to urlencod a struct of options
-    #[error(transparent)]
+    #[error("Unable to URLEncode: {}", err)]
     URLEncodedError {
         /// The original error emitted.
         #[from]
         err: serde_urlencoded::ser::Error,
+    },
+    /// Error encountered when parsing a URL
+    #[error("Unable to parse URL: {}", err)]
+    URLParseError {
+        /// The original error emitted.
+        #[from]
+        err: url::ParseError,
+    },
+    /// Error emitted when encoding a URI
+    #[error("Unable to parse URI: {}", err)]
+    InvalidURIError {
+        /// The original error emitted.
+        #[from]
+        err: http::uri::InvalidUri,
     },
 }

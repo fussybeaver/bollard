@@ -190,6 +190,13 @@ where
     )
 }
 
+pub(crate) fn serialize_join_newlines<S>(t: &[&str], s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_str(&t.join("\n"))
+}
+
 #[cfg(feature = "time")]
 pub fn deserialize_rfc3339<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -1068,14 +1075,15 @@ impl Docker {
             .process_into_value::<crate::system::Version>(req)
             .await?;
 
-        let err_api_version = res.api_version.as_ref().unwrap().clone();
-        let server_version: ClientVersion = match res.api_version.as_ref().unwrap().into() {
-            MaybeClientVersion::Some(client_version) => client_version,
-            MaybeClientVersion::None => {
-                return Err(APIVersionParseError {
-                    api_version: err_api_version,
-                });
+        let server_version: ClientVersion = if let Some(api_version) = res.api_version {
+            match api_version.into() {
+                MaybeClientVersion::Some(client_version) => client_version,
+                MaybeClientVersion::None => {
+                    return Err(APIVersionParseError {});
+                }
             }
+        } else {
+            return Err(APIVersionParseError {});
         };
 
         if server_version < self.client_version() {
@@ -1097,7 +1105,7 @@ impl Docker {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
-        debug!("request: {:?}", request.as_ref().unwrap());
+        trace!("request: {:?}", request.as_ref());
 
         async move {
             let request = request?;
@@ -1146,7 +1154,7 @@ impl Docker {
             query,
             &self.client_version(),
         )?;
-        let request_uri: hyper::Uri = uri.into();
+        let request_uri: hyper::Uri = uri.try_into()?;
         debug!("{}", &request_uri);
         Ok(builder
             .uri(request_uri)
