@@ -20,7 +20,7 @@ members = [
 
 [features]
 # Enable Buildkit-enabled docker image building
-buildkit = ["num", "rand", "tokio-stream", "tower", "tonic", "tower-service", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
+buildkit = ["num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tower", "tonic", "tower-service", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
@@ -61,13 +61,13 @@ serde_derive = "1.0"
 serde_json = "1.0"
 serde_repr = "0.1.6"
 serde_urlencoded = "0.7"
-tokio = { version = "1.7", features = ["time", "net", "io-util"] }
+tokio = { version = "1.7", features = ["time", "net"] }
 tonic = { version = "0.10", optional = true }
 tower = { version = "0.4", optional = true }
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
-tokio-util = { version = "0.7", features = ["codec", "io"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 tower-service = { version = "0.3", optional = true }
 url = "2.2"
 webpki-roots = { version = "0.25.2", optional = true }
@@ -78,7 +78,6 @@ flate2 = "1.0"
 tar = "0.4"
 tokio = { version = "1.7", features = ["fs", "rt-multi-thread", "macros"] }
 yup-hyper-mock = "6.0.0"
-env_logger = "*"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal =  { version = "0.8.0" }
