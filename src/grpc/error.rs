@@ -11,28 +11,28 @@ pub enum GrpcError {
         err: crate::errors::Error,
     },
     /// Error emitted when log output generates an I/O error.
-    #[error(transparent)]
+    #[error("Invalid UTF-8 string: {}", err)]
     StrParseError {
         /// The original error emitted.
         #[from]
         err: std::str::Utf8Error,
     },
     /// Error emitted when a GRPC network request or response fails with docker's buildkit client
-    #[error(transparent)]
+    #[error("Grpc network failure: description = {}", err)]
     TonicError {
         /// The tonic error emitted.
         #[from]
         err: tonic::transport::Error,
     },
     /// Error emitted when a GRPC network request emits a non-OK status code
-    #[error(transparent)]
+    #[error("Grpc response failure: status = {}, message = {}", err.code(), err.message())]
     TonicStatus {
         /// The tonic status emitted.
         #[from]
         err: tonic::Status,
     },
     /// Error emitted when a GRPC metadata value does not parse correctly
-    #[error(transparent)]
+    #[error("Invalid grpc metadata value: {}", err)]
     MetadataValue {
         /// The tonic metadata value.
         #[from]
