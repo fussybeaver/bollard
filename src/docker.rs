@@ -58,7 +58,7 @@ const DEFAULT_TIMEOUT: u64 = 120;
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 40,
+    minor_version: 42,
 };
 
 /// 2 years from ct_logs 0.9 release
@@ -1195,6 +1195,7 @@ impl Docker {
             StreamReader::new(res.into_body().map_err(Error::from)),
             NewlineLogOutputDecoder::new(false),
         )
+        .map_err(Error::from)
     }
 
     async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {

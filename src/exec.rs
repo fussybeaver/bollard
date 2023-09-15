@@ -1,5 +1,6 @@
 //! Exec API: Run new commands inside running containers
 
+use futures_util::TryStreamExt;
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
 use hyper::Body;
@@ -234,7 +235,9 @@ impl Docker {
                 let (read, write) = self.process_upgraded(req).await?;
 
                 let log =
-                    FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(true), capacity);
+                    FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(true), capacity)
+                        .map_err(|e| e.into());
+
                 Ok(StartExecResults::Attached {
                     output: Box::pin(log),
                     input: Box::pin(write),

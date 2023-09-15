@@ -14,9 +14,9 @@ name = "gen"
 required-features = ["build"]
 
 [dependencies]
-tonic = { version = "0.9" }
-prost = { version = "0.11" }
-prost-types = "0.11"
-tonic-build = { version = "0.9", optional = true }
+tonic = { version = "0.10" }
+prost = { version = "0.12" }
+prost-types = "0.12"
+tonic-build = { version = "0.10", optional = true }
 # bug: https://github.com/bluss/indexmap/issues/151#issuecomment-716691744
 indexmap = { version = "2.0.0", features = ["std"], optional = true }

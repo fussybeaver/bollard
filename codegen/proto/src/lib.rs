@@ -1,6 +1,12 @@
 #![allow(missing_docs, unused_qualifications)]
 #![cfg(not(feature = "build"))]
 
+pub mod fsutil {
+    pub mod types {
+        include!("generated/fsutil.types.rs");
+    }
+}
+
 pub mod health {
     include!("generated/grpc.health.v1.rs");
 }
@@ -12,6 +18,16 @@ pub mod moby {
             pub mod types {
                 include!("generated/moby.buildkit.v1.types.rs");
             }
+        }
+    }
+    pub mod filesync {
+        pub mod v1 {
+            include!("generated/moby.filesync.v1.rs");
+        }
+    }
+    pub mod upload {
+        pub mod v1 {
+            include!("generated/moby.upload.v1.rs");
         }
     }
 }
@@ -41,7 +57,6 @@ impl Display for moby::buildkit::v1::StatusResponse {
                 let mut next = iter.next();
                 let mut result = Ok(());
                 while next.is_some() {
-
                     result = result.and_then(|_| write!(f, "{}", next.unwrap()));
                     next = iter.next();
                     if iter.peek().is_some() {
@@ -65,5 +80,11 @@ impl Display for moby::buildkit::v1::VertexLog {
             self.stream,
             String::from_utf8_lossy(&self.msg).trim(),
         )
+    }
+}
+
+impl AsRef<[u8]> for moby::buildkit::v1::BytesMessage {
+    fn as_ref(&self) -> &[u8] {
+        self.data.as_ref()
     }
 }

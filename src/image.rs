@@ -15,6 +15,9 @@ use crate::container::Config;
 use crate::errors::Error;
 use crate::models::*;
 
+#[cfg(feature = "buildkit")]
+use super::health;
+
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -411,22 +414,37 @@ where
     pub platform: T,
     /// Builder version to use
     pub version: BuilderVersion,
+    #[cfg(feature = "buildkit")]
+    /// Buildkit output configuration for exporters
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
+    pub outputs: Option<Vec<ImageBuildOutput<T>>>,
+}
+
+#[cfg(feature = "buildkit")]
+/// Buildkit Image Output configuration: <https://docs.docker.com/build/exporters/oci-docker/>
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ImageBuildOutput<T>
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    /// The base type for a container image: [oci|docker]
+    #[serde(rename = "type")]
+    pub typ: T,
+    /// The set of parameters to export the image
+    #[serde(rename = "attrs")]
+    pub attrs: HashMap<T, T>,
 }
 
 /// Builder Version to use
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum BuilderVersion {
     /// BuilderV1 is the first generation builder in docker daemon
+    #[default]
     BuilderV1 = 1,
     /// BuilderBuildKit is builder based on moby/buildkit project
     BuilderBuildKit = 2,
-}
-
-impl Default for BuilderVersion {
-    fn default() -> Self {
-        BuilderVersion::BuilderV1
-    }
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -1156,7 +1174,9 @@ impl Docker {
     }
 
     #[cfg(feature = "buildkit")]
-    async fn start_session(&self, id: String) -> Result<(), Error> {
+    async fn start_session(&self, id: String) -> Result<(), crate::grpc::error::GrpcError> {
+        use crate::grpc::io::GrpcTransport;
+
         let url = "/session";
 
         let opt: Option<serde_json::Value> = None;
@@ -1170,16 +1190,17 @@ impl Docker {
             opt,
             Ok(Body::empty()),
         );
+
         let (read, write) = self.process_upgraded(req).await?;
 
         let output = Box::pin(read);
         let input = Box::pin(write);
-        let transport = crate::grpc::GrpcTransport {
+        let transport = GrpcTransport {
             read: output,
             write: input,
         };
         let service =
-            crate::health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
+            health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
 
         Ok(tonic::transport::Server::builder()
             .add_service(service)
