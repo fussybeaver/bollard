@@ -227,7 +227,7 @@ pub mod health_server {
             tonic::Status,
         >;
         /// Server streaming response type for the Watch method.
-        type WatchStream: futures_core::Stream<
+        type WatchStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::HealthCheckResponse, tonic::Status>,
             >
             + Send
@@ -348,7 +348,9 @@ pub mod health_server {
                             request: tonic::Request<super::HealthCheckRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).check(request).await };
+                            let fut = async move {
+                                <T as Health>::check(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -393,7 +395,9 @@ pub mod health_server {
                             request: tonic::Request<super::HealthCheckRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).watch(request).await };
+                            let fut = async move {
+                                <T as Health>::watch(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

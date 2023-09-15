@@ -125,7 +125,7 @@ pub mod upload_server {
     #[async_trait]
     pub trait Upload: Send + Sync + 'static {
         /// Server streaming response type for the Pull method.
-        type PullStream: futures_core::Stream<
+        type PullStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::BytesMessage, tonic::Status>,
             >
             + Send
@@ -232,7 +232,9 @@ pub mod upload_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).pull(request).await };
+                            let fut = async move {
+                                <T as Upload>::pull(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

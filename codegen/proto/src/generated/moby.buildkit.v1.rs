@@ -540,7 +540,7 @@ pub mod control_server {
             tonic::Status,
         >;
         /// Server streaming response type for the Prune method.
-        type PruneStream: futures_core::Stream<
+        type PruneStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::UsageRecord, tonic::Status>,
             >
             + Send
@@ -554,7 +554,7 @@ pub mod control_server {
             request: tonic::Request<super::SolveRequest>,
         ) -> std::result::Result<tonic::Response<super::SolveResponse>, tonic::Status>;
         /// Server streaming response type for the Status method.
-        type StatusStream: futures_core::Stream<
+        type StatusStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::StatusResponse, tonic::Status>,
             >
             + Send
@@ -564,7 +564,7 @@ pub mod control_server {
             request: tonic::Request<super::StatusRequest>,
         ) -> std::result::Result<tonic::Response<Self::StatusStream>, tonic::Status>;
         /// Server streaming response type for the Session method.
-        type SessionStream: futures_core::Stream<
+        type SessionStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::BytesMessage, tonic::Status>,
             >
             + Send
@@ -679,7 +679,9 @@ pub mod control_server {
                             request: tonic::Request<super::DiskUsageRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).disk_usage(request).await };
+                            let fut = async move {
+                                <T as Control>::disk_usage(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -724,7 +726,9 @@ pub mod control_server {
                             request: tonic::Request<super::PruneRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).prune(request).await };
+                            let fut = async move {
+                                <T as Control>::prune(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -766,7 +770,9 @@ pub mod control_server {
                             request: tonic::Request<super::SolveRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).solve(request).await };
+                            let fut = async move {
+                                <T as Control>::solve(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -811,7 +817,9 @@ pub mod control_server {
                             request: tonic::Request<super::StatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).status(request).await };
+                            let fut = async move {
+                                <T as Control>::status(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -856,7 +864,9 @@ pub mod control_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).session(request).await };
+                            let fut = async move {
+                                <T as Control>::session(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -901,7 +911,7 @@ pub mod control_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_workers(request).await
+                                <T as Control>::list_workers(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -944,7 +954,9 @@ pub mod control_server {
                             request: tonic::Request<super::InfoRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).info(request).await };
+                            let fut = async move {
+                                <T as Control>::info(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

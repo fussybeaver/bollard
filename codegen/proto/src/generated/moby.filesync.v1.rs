@@ -274,7 +274,7 @@ pub mod file_sync_server {
     #[async_trait]
     pub trait FileSync: Send + Sync + 'static {
         /// Server streaming response type for the DiffCopy method.
-        type DiffCopyStream: futures_core::Stream<
+        type DiffCopyStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<
                     super::super::super::super::fsutil::types::Packet,
                     tonic::Status,
@@ -289,7 +289,7 @@ pub mod file_sync_server {
             >,
         ) -> std::result::Result<tonic::Response<Self::DiffCopyStream>, tonic::Status>;
         /// Server streaming response type for the TarStream method.
-        type TarStreamStream: futures_core::Stream<
+        type TarStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<
                     super::super::super::super::fsutil::types::Packet,
                     tonic::Status,
@@ -406,7 +406,9 @@ pub mod file_sync_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).diff_copy(request).await };
+                            let fut = async move {
+                                <T as FileSync>::diff_copy(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -456,7 +458,9 @@ pub mod file_sync_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).tar_stream(request).await };
+                            let fut = async move {
+                                <T as FileSync>::tar_stream(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -532,7 +536,7 @@ pub mod file_send_server {
     #[async_trait]
     pub trait FileSend: Send + Sync + 'static {
         /// Server streaming response type for the DiffCopy method.
-        type DiffCopyStream: futures_core::Stream<
+        type DiffCopyStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::BytesMessage, tonic::Status>,
             >
             + Send
@@ -641,7 +645,9 @@ pub mod file_send_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).diff_copy(request).await };
+                            let fut = async move {
+                                <T as FileSend>::diff_copy(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
