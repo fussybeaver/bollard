@@ -568,7 +568,7 @@ impl Docker {
     ///
     pub fn create_image<T>(
         &self,
-        options: Option<CreateImageOptions<T>>,
+        options: Option<CreateImageOptions<'_, T>>,
         root_fs: Option<Body>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
