@@ -191,8 +191,10 @@ where
 }
 
 pub(crate) fn serialize_image_changes<T, S>(t: &Option<Vec<T>>, s: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_as_urlencoded<T, S>(t: &T, s: S) -> Result<S::Ok, S::Error>
 where
     T: Serialize + std::fmt::Debug + Clone + Into<String>,
+    T: Serialize,
     S: serde::Serializer,
 {
     if let Some(ref value) = t {
@@ -201,6 +203,9 @@ where
     } else {
         s.serialize_none()
     }
+    s.serialize_str(
+        &serde_urlencoded::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{e}")))?,
+    )
 }
 
 #[cfg(feature = "time")]
