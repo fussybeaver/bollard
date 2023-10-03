@@ -64,6 +64,8 @@ pub struct CreateExecResults {
 pub struct StartExecOptions {
     /// Detach from the command.
     pub detach: bool,
+    /// Allocate a pseudo-TTY.
+    pub tty: bool,
     /// The maximum size for a line of output. The default is 8 * 1024 (roughly 1024 characters).
     pub output_capacity: Option<usize>,
 }
