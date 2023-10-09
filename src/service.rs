@@ -50,9 +50,7 @@ where
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 
-		/// Include service status, with count of running and desired tasks.
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    #[serde(default)]
+    /// Include service status, with count of running and desired tasks.
     pub status: bool,
 }
 
