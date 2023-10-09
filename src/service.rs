@@ -28,6 +28,7 @@ use std::{collections::HashMap, hash::Hash};
 ///
 /// ListServicesOptions{
 ///     filters,
+///     ..Default::default()
 /// };
 /// ```
 ///
