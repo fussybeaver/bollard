@@ -14,9 +14,9 @@ use crate::common::*;
 
 async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
-        "FROM alpine as builder1
+        "FROM localhost:5000/alpine as builder1
         RUN touch bollard.txt
-        FROM alpine as builder2
+        FROM localhost:5000/alpine as builder2
         RUN --mount=type=bind,from=builder1,target=mnt cp mnt/bollard.txt buildkit-bollard.txt
         ENTRYPOINT ls buildkit-bollard.txt
         ",
@@ -62,8 +62,23 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     let load_input =
         bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
 
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000", credentials);
+
     let res = docker
-        .image_export_oci(driver, session_id, frontend_opts, output, load_input)
+        .image_export_oci(
+            driver,
+            session_id,
+            frontend_opts,
+            output,
+            load_input,
+            Some(creds_hsh),
+        )
         .await;
 
     assert!(res.is_ok());

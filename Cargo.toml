@@ -20,7 +20,7 @@ members = [
 
 [features]
 # Enable Buildkit-enabled docker image building
-buildkit = ["num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tower", "tonic", "tower-service", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
+buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tower", "tonic", "tower-service", "ssl", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls

@@ -11,6 +11,7 @@ use std::net::IpAddr;
 use std::path::Path;
 
 use super::error::GrpcError;
+use crate::auth::DockerCredentials;
 use crate::container::KillContainerOptions;
 
 use super::driver::docker_container::DockerContainer;
@@ -560,6 +561,8 @@ impl<'a> super::super::Docker {
     ///  buildkit options
     ///  - An owned instance of a [`ImageExporterLoadInput`], to upload the Dockerfile that should
     ///  be exported.
+    ///  - An optional hashmap of registry hosts to [credentials](crate::auth::DockerCredentials) to
+    ///  authenticate with, if using private images.
     ///
     /// ## Examples
     ///
@@ -616,7 +619,7 @@ impl<'a> super::super::Docker {
     /// async move {
     ///     let driver = buildkit_builder.bootstrap().await.unwrap();
     ///     docker
-    ///         .image_export_oci(driver, session_id, frontend_opts, output, load_input)
+    ///         .image_export_oci(driver, session_id, frontend_opts, output, load_input, None)
     ///         .await
     ///         .unwrap();
     /// };
@@ -629,6 +632,7 @@ impl<'a> super::super::Docker {
         frontend_opts: ImageBuildFrontendOptions,
         exporter_request: ImageExporterOCIRequest,
         load_input: ImageExporterLoadInput,
+        credentials: Option<HashMap<&str, DockerCredentials>>,
     ) -> Result<(), GrpcError> {
         let buildkit_name = String::from(driver.name());
 
@@ -643,6 +647,14 @@ impl<'a> super::super::Docker {
         frontend_attrs.insert(String::from("context"), context);
         let exporter_attrs = exporter_request.output.to_map();
 
+        let mut auth_provider = super::AuthProvider::new();
+        if let Some(creds) = credentials {
+            for (host, docker_credentials) in creds {
+                auth_provider.set_docker_credentials(host, docker_credentials);
+            }
+        }
+        let auth = moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
+
         let filesend = moby::filesync::v1::file_send_server::FileSendServer::new(
             super::FileSendImpl::new(exporter_request.path.as_path()),
         );
@@ -650,6 +662,7 @@ impl<'a> super::super::Docker {
         let upload = moby::upload::v1::upload_server::UploadServer::new(upload_provider);
 
         let services: Vec<super::GrpcServer> = vec![
+            super::GrpcServer::Auth(auth),
             super::GrpcServer::FileSend(filesend),
             super::GrpcServer::Upload(upload),
         ];

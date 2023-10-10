@@ -387,9 +387,9 @@ RUN touch bollard.txt
 #[cfg(feature = "buildkit")]
 async fn build_buildkit_image_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
-        "FROM alpine as builder1
+        "FROM localhost:5000/alpine as builder1
 RUN touch bollard.txt
-FROM alpine as builder2
+FROM localhost:5000/alpine as builder2
 RUN --mount=type=bind,from=builder1,target=mnt cp mnt/bollard.txt buildkit-bollard.txt
 ENTRYPOINT ls buildkit-bollard.txt
 ",
@@ -407,6 +407,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     c.write_all(&uncompressed).unwrap();
     let compressed = c.finish().unwrap();
 
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000".to_string(), credentials);
+
     let id = "build_buildkit_image_test";
     let build = &docker
         .build_image(
@@ -420,7 +428,7 @@ ENTRYPOINT ls buildkit-bollard.txt
                 session: Some(String::from(id)),
                 ..Default::default()
             },
-            None,
+            Some(creds_hsh),
             Some(compressed.into()),
         )
         .try_collect::<Vec<bollard::models::BuildInfo>>()
