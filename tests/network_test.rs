@@ -102,7 +102,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    let v = results.get(0).unwrap();
+    let v = results.first().unwrap();
 
     assert!(v
         .ipam

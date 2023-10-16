@@ -289,7 +289,7 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
         .await?;
 
     assert_eq!(
-        result.get(0).unwrap().id.as_ref().unwrap(),
+        result.first().unwrap().id.as_ref().unwrap(),
         if cfg!(windows) { "nanoserver" } else { "linux" }
     );
 

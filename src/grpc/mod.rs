@@ -2,6 +2,8 @@
 #![cfg(feature = "buildkit")]
 #![allow(dead_code)]
 
+/// End-user buildkit build functions
+pub mod build;
 /// A package of GRPC buildkit connection implementations
 pub mod driver;
 /// Errors for the GRPC modules
@@ -10,6 +12,8 @@ pub mod error;
 pub mod export;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
+/// End-user buildkit registry functions
+pub mod registry;
 
 use crate::auth::DockerCredentials;
 use crate::health::health_check_response::ServingStatus;
@@ -58,13 +62,17 @@ use self::io::GrpcTransport;
 
 /// A static dispatch wrapper for GRPC implementations to generated GRPC traits
 #[derive(Debug)]
-pub(crate) enum GrpcServer {
+pub enum GrpcServer {
+    /// TODO
     Auth(AuthServer<AuthProvider>),
+    /// TODO
     Upload(UploadServer<UploadProvider>),
+    /// TODO
     FileSend(FileSendServer<FileSendImpl>),
 }
 
 impl GrpcServer {
+    /// TODO
     pub fn append(
         self,
         builder: tonic::transport::server::Router,
@@ -76,6 +84,7 @@ impl GrpcServer {
         }
     }
 
+    /// TODO
     pub fn names(&self) -> Vec<String> {
         match self {
             GrpcServer::Auth(_auth_server) => {
@@ -147,12 +156,14 @@ impl Health for HealthServerImpl {
     }
 }
 
+/// TODO
 #[derive(Clone, Debug)]
-pub(crate) struct FileSendImpl {
+pub struct FileSendImpl {
     pub(crate) dest: PathBuf,
 }
 
 impl FileSendImpl {
+    /// TODO
     pub fn new(dest: &Path) -> Self {
         Self {
             dest: dest.to_owned(),
@@ -188,18 +199,21 @@ impl FileSend for FileSendImpl {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct UploadProvider {
+/// TODO
+#[derive(Default, Debug)]
+pub struct UploadProvider {
     pub(crate) store: HashMap<String, Vec<u8>>,
 }
 
 impl UploadProvider {
+    /// TODO
     pub fn new() -> Self {
         Self {
             store: HashMap::new(),
         }
     }
 
+    /// TODO
     pub fn add(&mut self, reader: Vec<u8>) -> String {
         let id = new_id();
         let key = format!("http://buildkit-session/{}", id);
@@ -238,10 +252,12 @@ impl Upload for UploadProvider {
     }
 }
 
+/// TODO
 #[derive(Debug, Default)]
-pub(crate) struct AuthProvider {
+pub struct AuthProvider {
     auth_config_cache: HashMap<String, DockerCredentials>,
     registry_token: Option<String>,
+    token_seeds: HashMap<String, Bytes>,
 }
 
 const DEFAULT_TOKEN_EXPIRATION: i64 = 60;
@@ -272,6 +288,7 @@ struct OAuthTokenResponse {
 }
 
 impl AuthProvider {
+    /// TODO
     pub fn new() -> Self {
         Self {
             ..Default::default()
@@ -482,7 +499,7 @@ impl Auth for AuthProvider {
         &self,
         _request: Request<GetTokenAuthorityRequest>,
     ) -> Result<Response<GetTokenAuthorityResponse>, Status> {
-        unimplemented!()
+        return Err(Status::unavailable("client-side authentication disabled"));
     }
 
     #[allow(clippy::diverging_sub_expression)]
@@ -490,7 +507,7 @@ impl Auth for AuthProvider {
         &self,
         _request: Request<VerifyTokenAuthorityRequest>,
     ) -> Result<Response<VerifyTokenAuthorityResponse>, Status> {
-        unimplemented!()
+        return Err(Status::unavailable("client-side authentication disabled"));
     }
 }
 
