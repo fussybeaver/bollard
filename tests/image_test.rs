@@ -447,7 +447,7 @@ ENTRYPOINT ls buildkit-bollard.txt
             }
         })
         .any(|status| status.id
-            == "naming to docker.io/library/integration_test_build_buildkit_image"));
+            == "naming to docker.io/library/integration_test_build_buildkit_image:latest"));
 
     let _ = &docker
         .create_container(
