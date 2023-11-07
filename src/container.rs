@@ -749,6 +749,10 @@ pub struct StorageStats {
     pub write_size_bytes: Option<u64>,
 }
 
+fn empty_string() -> String {
+    "".to_string()
+}
+
 /// Statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
@@ -782,10 +786,11 @@ pub struct Stats {
     pub cpu_stats: CPUStats,
     pub precpu_stats: CPUStats,
     pub storage_stats: StorageStats,
+    #[serde(default = "empty_string")]
     pub name: String,
 
     // Podman incorrectly capitalises the "id" field. See https://github.com/containers/podman/issues/17869
-    #[serde(alias = "Id")]
+    #[serde(alias = "Id", default = "empty_string")]
     pub id: String,
 }
 
