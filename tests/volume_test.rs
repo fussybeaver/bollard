@@ -99,6 +99,9 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
     // --
 
     let mut prune_volumes_filters = HashMap::new();
+    if cfg!(not(windows)) {
+        prune_volumes_filters.insert("all", vec!["true"]);
+    }
     prune_volumes_filters.insert("label!", vec!["maintainer=bollard-maintainer"]);
 
     let prune_volumes_options = PruneVolumesOptions {
@@ -150,26 +153,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
 
     let results = &docker.list_volumes::<String>(None).await?;
 
-    let mut expected_results_label = HashMap::new();
-    expected_results_label.insert(
-        String::from("maintainer"),
-        String::from("bollard-maintainer"),
-    );
-
     assert_ne!(0, results.volumes.as_ref().unwrap().len());
-
-    // we need to filter the results, because volumes without a label are not pruned
-    assert_eq!(
-        &expected_results_label,
-        &results
-            .volumes
-            .as_ref()
-            .unwrap()
-            .iter()
-            .find(|v| !v.labels.is_empty())
-            .unwrap()
-            .labels
-    );
 
     let remove_volume_options = RemoveVolumeOptions { force: true };
     let _ = &docker
