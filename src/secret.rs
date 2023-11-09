@@ -33,6 +33,7 @@ use std::{collections::HashMap, hash::Hash};
 /// let options: ListSecretsOptions<&str> = Default::default();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListSecretsOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -59,6 +60,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct UpdateSecretOptions {
     /// The version number of the secret object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the secret before the update.
     pub version: u64,

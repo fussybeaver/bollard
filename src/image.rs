@@ -46,6 +46,7 @@ use std::hash::Hash;
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateImageOptions<'a, T>
 where
@@ -102,6 +103,7 @@ where
 /// ```
 ///
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -146,6 +148,7 @@ where
 /// ```
 ///
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PruneImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -190,6 +193,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SearchImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -220,6 +224,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RemoveImageOptions {
     /// Remove the image even if it is being used by stopped containers or has other tags.
     pub force: bool,
@@ -249,6 +254,7 @@ pub struct RemoveImageOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TagImageOptions<T>
 where
     T: Into<String> + Serialize,
@@ -279,6 +285,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PushImageOptions<T>
 where
     T: Into<String> + Serialize,
@@ -309,6 +316,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CommitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -351,6 +359,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BuildImageOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -423,6 +432,7 @@ where
 #[cfg(feature = "buildkit")]
 /// Buildkit Image Output configuration: <https://docs.docker.com/build/exporters/oci-docker/>
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ImageBuildOutput<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -437,6 +447,7 @@ where
 
 /// Builder Version to use
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[repr(u8)]
 #[derive(Default)]
 pub enum BuilderVersion {
@@ -466,6 +477,7 @@ enum ImageBuildBuildkitEither {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ImportImageOptions {
     /// Suppress progress details during load.
     pub quiet: bool,
@@ -1470,7 +1482,7 @@ mod tests {
     async fn test_build_image_with_error() {
         let mut connector = HostToReplyConnector::default();
         connector.m.insert(
-            String::from("http://127.0.0.1"), 
+            String::from("http://127.0.0.1"),
             "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\n{\"stream\":\"\n\"}\n{\"status\":\"Pulling from library/alpine\",\"id\":\"latest\"}\n{\"status\":\"Digest: sha256:bc41182d7ef5ffc53a40b044e725193bc10142a1243f395ee852a8d9730fc2ad\"}\n{\"status\":\"Status: Image is up to date for alpine:latest\"}\n{\"stream\":\" --- 9c6f07244728\\n\"}\n{\"stream\":\"Step 2/2 : RUN cmd.exe /C copy nul bollard.txt\"}\n{\"stream\":\"\\n\"}\n{\"stream\":\" --- Running in d615794caf91\\n\"}\n{\"stream\":\"/bin/sh: cmd.exe: not found\\n\"}\n{\"errorDetail\":{\"code\":127,\"message\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"},\"error\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"}".to_string());
         let docker =
             Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)

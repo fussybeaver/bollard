@@ -14,6 +14,7 @@ use crate::models::*;
 
 /// Parameters used in the [List Volume API](Docker::list_volumes())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListVolumesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -30,6 +31,7 @@ where
 /// Volume configuration used in the [Create Volume
 /// API](Docker::create_volume())
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
 where
@@ -48,6 +50,7 @@ where
 
 /// Parameters used in the [Remove Volume API](super::Docker::remove_volume())
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveVolumeOptions {
     /// Force the removal of the volume.
@@ -80,6 +83,7 @@ pub struct RemoveVolumeOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PruneVolumesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,

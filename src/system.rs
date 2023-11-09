@@ -15,6 +15,7 @@ use crate::models::*;
 
 /// Response of Engine API: GET \"/version\"
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct Version {
     #[serde(rename = "Platform")]
@@ -81,6 +82,7 @@ pub struct Version {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct VersionComponents {
     /// Name of the component
@@ -115,6 +117,7 @@ pub struct VersionComponents {
 /// # }
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EventsOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -122,24 +125,30 @@ where
     /// Show events created since this timestamp then stream new events.
     #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub since: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created until this timestamp then stop streaming.
     #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub until: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created since this timestamp then stream new events.
     #[cfg(feature = "time")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub since: Option<time::OffsetDateTime>,
     /// Show events created until this timestamp then stop streaming.
     #[cfg(feature = "time")]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub until: Option<time::OffsetDateTime>,
     /// Show events created since this timestamp then stream new events.
     #[cfg(not(any(feature = "time", feature = "chrono")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub since: Option<String>,
     /// Show events created until this timestamp then stop streaming.
     #[cfg(not(any(feature = "time", feature = "chrono")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<Rfc3339>"))]
     pub until: Option<String>,
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
     ///  - `config=<string>` config name or ID

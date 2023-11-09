@@ -21,6 +21,7 @@ use tokio_util::codec::FramedRead;
 
 /// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateExecOptions<T>
 where
@@ -52,6 +53,7 @@ where
 
 /// Result type for the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct CreateExecResults {
@@ -60,6 +62,7 @@ pub struct CreateExecResults {
 
 /// Exec configuration used in the [Create Exec API](Docker::create_exec())
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct StartExecOptions {
     /// Detach from the command.
@@ -91,6 +94,7 @@ impl Debug for StartExecResults {
 
 /// Resize configuration used in the [Resize Exec API](Docker::resize_exec())
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct ResizeExecOptions {
     /// Height of the TTY session in characters

@@ -254,10 +254,12 @@ struct TokenOptions {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 struct OAuthTokenResponse {
     access_token: String,
     refresh_token: String,
     expires_in: i64,
+    #[cfg_attr(feature = "schemars", schemars(with = "crate::models::Rfc3339"))]
     issued_at: chrono::DateTime<chrono::Utc>,
     scope: String,
 }

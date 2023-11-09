@@ -15,6 +15,7 @@ use crate::models::*;
 
 /// Network configuration used in the [Create Network API](Docker::create_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
 where
@@ -69,6 +70,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct InspectNetworkOptions<T>
 where
     T: Into<String> + Serialize,
@@ -105,6 +107,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -122,6 +125,7 @@ where
 
 /// Network configuration used in the [Connect Network API](Docker::connect_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
@@ -135,6 +139,7 @@ where
 
 /// Network configuration used in the [Disconnect Network API](Docker::disconnect_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
@@ -172,6 +177,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PruneNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,

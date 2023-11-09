@@ -3,6 +3,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 /// DockerCredentials credentials and server URI to push images using the [Push Image
 /// API](crate::Docker::push_image()) or the [Build Image

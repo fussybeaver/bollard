@@ -49,6 +49,7 @@ use crate::read::NewlineLogOutputDecoder;
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -92,6 +93,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CreateContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -107,6 +109,7 @@ where
 
 /// This container's networking configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 #[allow(missing_docs)]
 pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
@@ -115,6 +118,7 @@ pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
 
 /// Container to create.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Config<T>
 where
     T: Into<String> + Eq + Hash,
@@ -300,6 +304,7 @@ impl From<ContainerConfig> for Config<String> {
 ///     t: 30,
 /// };
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct StopContainerOptions {
     /// Number of seconds to wait before killing the container
     pub t: i64,
@@ -317,6 +322,7 @@ pub struct StopContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StartContainerOptions<T>
 where
@@ -342,6 +348,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RemoveContainerOptions {
     /// Remove the volumes associated with the container.
     pub v: bool,
@@ -363,6 +370,7 @@ pub struct RemoveContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WaitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -403,6 +411,7 @@ impl fmt::Debug for AttachContainerResults {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AttachContainerOptions<T>
 where
     T: Into<String> + Serialize + Default,
@@ -438,6 +447,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResizeContainerTtyOptions {
     /// Width of the TTY session in characters
     #[serde(rename = "w")]
@@ -459,6 +469,7 @@ pub struct ResizeContainerTtyOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RestartContainerOptions {
     /// Number of seconds to wait before killing the container.
     pub t: isize,
@@ -476,6 +487,7 @@ pub struct RestartContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct InspectContainerOptions {
     /// Return the size of container as fields `SizeRw` and `SizeRootFs`
     pub size: bool,
@@ -493,6 +505,7 @@ pub struct InspectContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TopOptions<T>
 where
     T: Into<String> + Serialize,
@@ -520,6 +533,7 @@ fn is_zero(val: &i64) -> bool {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LogsOptions<T>
 where
     T: Into<String> + Serialize,
@@ -601,6 +615,7 @@ impl LogOutput {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct StatsOptions {
     /// Stream the output. If false, the stats will be output once and then it will disconnect.
     pub stream: bool,
@@ -611,6 +626,7 @@ pub struct StatsOptions {
 
 /// Granular memory statistics for the container.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 #[serde(untagged)]
 pub enum MemoryStatsStats {
@@ -622,6 +638,7 @@ pub enum MemoryStatsStats {
 ///
 /// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1436).
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryStatsStatsV1 {
@@ -665,6 +682,7 @@ pub struct MemoryStatsStatsV1 {
 ///
 /// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1542).
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryStatsStatsV2 {
@@ -703,6 +721,7 @@ pub struct MemoryStatsStatsV2 {
 
 /// General memory statistics for the container.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct MemoryStats {
     pub stats: Option<MemoryStatsStats>,
@@ -719,6 +738,7 @@ pub struct MemoryStats {
 
 /// Process ID statistics for the container.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct PidsStats {
     pub current: Option<u64>,
@@ -727,6 +747,7 @@ pub struct PidsStats {
 
 /// I/O statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct BlkioStats {
     pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
@@ -741,6 +762,7 @@ pub struct BlkioStats {
 
 /// File I/O statistics for the container.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct StorageStats {
     pub read_count_normalized: Option<u64>,
@@ -755,6 +777,7 @@ fn empty_string() -> String {
 
 /// Statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct Stats {
     #[cfg(feature = "time")]
@@ -762,20 +785,26 @@ pub struct Stats {
         deserialize_with = "crate::docker::deserialize_rfc3339",
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub read: time::OffsetDateTime,
     #[cfg(feature = "time")]
     #[serde(
         deserialize_with = "crate::docker::deserialize_rfc3339",
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub preread: time::OffsetDateTime,
     #[cfg(all(feature = "chrono", not(feature = "time")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub read: chrono::DateTime<chrono::Utc>,
     #[cfg(all(feature = "chrono", not(feature = "time")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub preread: chrono::DateTime<chrono::Utc>,
     #[cfg(not(any(feature = "chrono", feature = "time")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub read: String,
     #[cfg(not(any(feature = "chrono", feature = "time")))]
+    #[cfg_attr(feature = "schemars", schemars(with = "Rfc3339"))]
     pub preread: String,
     pub num_procs: u32,
     pub pids_stats: PidsStats,
@@ -796,6 +825,7 @@ pub struct Stats {
 
 /// Network statistics for the container.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct NetworkStats {
     pub rx_dropped: u64,
@@ -810,6 +840,7 @@ pub struct NetworkStats {
 
 /// CPU usage statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct CPUUsage {
     pub percpu_usage: Option<Vec<u64>>,
@@ -820,6 +851,7 @@ pub struct CPUUsage {
 
 /// CPU throttling statistics.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct ThrottlingData {
     pub periods: u64,
@@ -829,6 +861,7 @@ pub struct ThrottlingData {
 
 /// General CPU statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct CPUStats {
     pub cpu_usage: CPUUsage,
@@ -838,6 +871,7 @@ pub struct CPUStats {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(missing_docs)]
 pub struct BlkioStatsEntry {
     pub major: u64,
@@ -858,6 +892,7 @@ pub struct BlkioStatsEntry {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct KillContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -881,6 +916,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub struct UpdateContainerOptions<T>
 where
@@ -1065,6 +1101,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RenameContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -1090,6 +1127,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PruneContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -1119,6 +1157,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UploadToContainerOptions<T>
 where
@@ -1144,6 +1183,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DownloadFromContainerOptions<T>
 where
     T: Into<String> + Serialize,

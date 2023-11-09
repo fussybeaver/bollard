@@ -36,6 +36,7 @@ use std::{collections::HashMap, hash::Hash};
 /// let options: ListServicesOptions<&str> = Default::default();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ListServicesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -61,6 +62,7 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct InspectServiceOptions {
     /// Fill empty fields with default values.
@@ -80,6 +82,7 @@ pub struct InspectServiceOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.

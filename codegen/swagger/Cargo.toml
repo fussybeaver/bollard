@@ -8,6 +8,7 @@ edition = "2021"
 
 [features]
 buildkit = ["base64", "bytes", "bollard-buildkit-proto", "prost"]
+schemars = ["dep:schemars"]
 
 [dependencies]
 base64 = { version = "0.21", optional = true }
@@ -17,6 +18,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 serde = { version = "1.0", features = ["derive"] }
 prost = { version = "0.12", optional = true }
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
+schemars = { version = "0.8", optional = true }
 
 serde_with = {version = "3.0", default-features = false, features = ["std"]}
 serde_repr = "0.1"

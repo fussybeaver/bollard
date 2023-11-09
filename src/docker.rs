@@ -284,6 +284,7 @@ impl Clone for Docker {
 
 /// Internal model: Docker Server JSON payload when an error is emitted
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 struct DockerServerErrorMessage {
     message: String,
 }
