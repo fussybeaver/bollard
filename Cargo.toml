@@ -46,7 +46,7 @@ home = { version = "0.5", optional = true }
 futures-core = "0.3"
 futures-util = "0.3"
 hex = "0.4.2"
-http = "0.2"
+http = "1.0"
 hyper = { version = "0.14", features = ["client", "tcp", "http1", "http2", "stream"] }
 hyper-rustls = { version = "0.24", optional = true }
 log = "0.4"
