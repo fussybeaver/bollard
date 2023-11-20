@@ -27,6 +27,47 @@ async fn create_image_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
+    let image = "empty-wasm:latest";
+
+    let options = CreateImageOptions {
+        from_src: "-", // from_src must be "-" when sending the archive in the request body
+        repo: image,
+        ..Default::default()
+    };
+
+    let req_body = hyper::body::Body::from({
+        let mut buffer = Vec::new();
+
+        {
+            let mut builder = tar::Builder::new(&mut buffer);
+            let mut header = tar::Header::new_gnu();
+            header.set_path("entrypoint.wasm")?;
+            header.set_size(0);
+            header.set_cksum();
+
+            builder.append_data(&mut header, "entrypoint.wasm", [].as_slice())?;
+            builder.finish()?;
+        }
+
+        buffer
+    });
+
+    docker
+        .create_image(Some(options), Some(req_body), None)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, bollard::errors::Error>>()
+        .unwrap();
+
+    let result = &docker.inspect_image(image).await?;
+
+    assert!(result.repo_tags.as_ref().unwrap() == [image.to_owned()].as_slice());
+
+    Ok(())
+}
+
 async fn search_images_test(docker: Docker) -> Result<(), Error> {
     let result = &docker
         .search_images(SearchImagesOptions {
@@ -644,7 +685,7 @@ RUN apt-get update && \
         xutils-dev \
         gcc-multilib-arm-linux-gnueabihf \
         && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* 
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 ";
     let mut header = tar::Header::new_gnu();
     header.set_path("Dockerfile").unwrap();
@@ -731,6 +772,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
 
     Ok(())
 }
+
 // ND - Test sometimes hangs on appveyor.
 #[cfg(not(windows))]
 #[test]
@@ -741,6 +783,12 @@ fn integration_test_search_images() {
 #[test]
 fn integration_test_create_image() {
     connect_to_docker_and_run!(create_image_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_create_image_wasm() {
+    connect_to_docker_and_run!(create_image_wasm_test);
 }
 
 #[test]

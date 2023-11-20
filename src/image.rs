@@ -68,7 +68,10 @@ where
     pub platform: T,
     /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
     /// URL-encoded! This parameter may only be used when importing an image.
-    #[serde(serialize_with = "crate::docker::serialize_join_newlines")]
+    #[serde(
+        serialize_with = "crate::docker::serialize_join_newlines",
+        skip_serializing_if = "Vec::is_empty" // if an empty changes parameter is sent, Docker returns a 400 "file with no instructions" error
+    )]
     pub changes: Vec<&'a str>,
 }
 
@@ -1470,7 +1473,7 @@ mod tests {
     async fn test_build_image_with_error() {
         let mut connector = HostToReplyConnector::default();
         connector.m.insert(
-            String::from("http://127.0.0.1"), 
+            String::from("http://127.0.0.1"),
             "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\n{\"stream\":\"\n\"}\n{\"status\":\"Pulling from library/alpine\",\"id\":\"latest\"}\n{\"status\":\"Digest: sha256:bc41182d7ef5ffc53a40b044e725193bc10142a1243f395ee852a8d9730fc2ad\"}\n{\"status\":\"Status: Image is up to date for alpine:latest\"}\n{\"stream\":\" --- 9c6f07244728\\n\"}\n{\"stream\":\"Step 2/2 : RUN cmd.exe /C copy nul bollard.txt\"}\n{\"stream\":\"\\n\"}\n{\"stream\":\" --- Running in d615794caf91\\n\"}\n{\"stream\":\"/bin/sh: cmd.exe: not found\\n\"}\n{\"errorDetail\":{\"code\":127,\"message\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"},\"error\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"}".to_string());
         let docker =
             Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
