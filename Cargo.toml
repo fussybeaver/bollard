@@ -86,7 +86,7 @@ hyperlocal =  { version = "0.8.0" }
 termion = "2.0"
 
 [target.'cfg(windows)'.dependencies]
-winapi = "0.3.9"
+winapi = { version = "0.3.9", features = ["winerror"] }
 
 [package.metadata.docs.rs]
 features = ["ssl"]
