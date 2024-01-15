@@ -20,6 +20,7 @@ fn test_version_named_pipe() {
 
 #[cfg(all(unix, not(feature = "test_http")))]
 #[test]
+#[allow(clippy::redundant_closure_call)]
 fn test_version_unix() {
     rt_exec!(
         Docker::connect_with_unix_defaults().unwrap().version(),

@@ -39,6 +39,7 @@ pub enum Error {
     #[error("Could not load native certs")]
     NoNativeCertsError {
         /// The original error emitted.
+        #[from]
         err: rustls::Error,
     },
     /// Generic error emitted by the docker server.
@@ -148,5 +149,12 @@ pub enum Error {
         /// The original error emitted.
         #[from]
         err: http::uri::InvalidUri,
+    },
+    /// Error that is never emitted
+    #[error("Error in the hyper legacy client: {}", err)]
+    HyperLegacyError {
+        /// The original error emitted.
+        #[from]
+        err: hyper_util::client::legacy::Error,
     },
 }

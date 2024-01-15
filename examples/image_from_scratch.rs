@@ -4,9 +4,9 @@ use bollard::models::CreateImageInfo;
 /// This implementation streams the archive file piece by piece to the Docker daemon,
 /// but does so inefficiently. For best results, use `tokio::fs` instead of `std::fs`.
 use bollard::{image::CreateImageOptions, Docker};
+use bytes::Bytes;
 use futures_util::stream::{Stream, TryStreamExt};
 use futures_util::task::{Context, Poll};
-use hyper::body::Body;
 use std::env::args;
 use std::fs::File;
 use std::io::{Read, Result as IOResult};
@@ -68,12 +68,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     };
     // Create FileReader struct
     let reader = FileStreamer { file, done: false };
-    // A `Body` can be created from a `Stream<Item = Result<...>>`
-    let req_body: Body = Body::wrap_stream(reader);
+    // A `Bytes` can be created from a `Stream<Item = Result<...>>`
+    let v = reader.try_concat().await?;
+    let bytes = Bytes::from(v);
 
     // Finally, call Docker::create_image with the options and the body
     let result: Vec<CreateImageInfo> = docker
-        .create_image(Some(options), Some(req_body), None)
+        .create_image(Some(options), Some(bytes), None)
         .try_collect()
         .await?;
     // If all went well, the ID of the new image will be printed

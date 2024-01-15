@@ -5,6 +5,8 @@ pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 
 use bytes::Bytes;
+use log::debug;
+use log::trace;
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -61,13 +63,14 @@ impl ToString for ImageBuildHostIp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[non_exhaustive]
 /// Network mode to use for this container. Supported standard values are: `bridge`, `host`,
 /// `none`, and `container:<name|id>`. Any other value is taken as a custom network's name to which
 /// this container should connect to.
 pub enum ImageBuildNetworkMode {
     /// Bridge mode networking
+    #[default]
     Bridge,
     /// Host mode networking
     Host,
@@ -75,12 +78,6 @@ pub enum ImageBuildNetworkMode {
     None,
     /// Container mode networking, with container name as `name`
     Container(String),
-}
-
-impl Default for ImageBuildNetworkMode {
-    fn default() -> Self {
-        ImageBuildNetworkMode::Bridge
-    }
 }
 
 impl ToString for ImageBuildNetworkMode {
@@ -124,7 +121,7 @@ impl ImageBuildFrontendOptions {
         ImageBuildFrontendOptionsBuilder::new()
     }
 
-    pub(crate) fn to_map(self) -> HashMap<String, String> {
+    pub(crate) fn into_map(self) -> HashMap<String, String> {
         let mut attrs = HashMap::new();
 
         if self.image_resolve_mode {
@@ -319,24 +316,19 @@ pub struct ImageExporterOCIOutput {
     pub(crate) annotation: HashMap<String, String>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 #[non_exhaustive]
 /// Compression type for the exported image tar file
 pub enum ImageExporterOCIOutputCompression {
     /// Emit the tar file uncompressed
     Uncompressed,
     /// Emit the tar file GZIP compressed
+    #[default]
     Gzip,
     /// Emit the tar file as a stargz snapshot
     Estargz,
     /// Emit the tar file with lossless Zstandard compression
     Zstd,
-}
-
-impl Default for ImageExporterOCIOutputCompression {
-    fn default() -> Self {
-        ImageExporterOCIOutputCompression::Gzip
-    }
 }
 
 impl ToString for ImageExporterOCIOutputCompression {
@@ -389,7 +381,7 @@ impl ImageExporterOCIOutput {
         }
     }
 
-    pub(crate) fn to_map(self) -> HashMap<String, String> {
+    pub(crate) fn into_map(self) -> HashMap<String, String> {
         let mut attrs = HashMap::new();
 
         attrs.insert(String::from("name"), self.name);
@@ -636,16 +628,14 @@ impl<'a> super::super::Docker {
     ) -> Result<(), GrpcError> {
         let buildkit_name = String::from(driver.name());
 
-        let payload = match load_input {
-            ImageExporterLoadInput::Upload(bytes) => bytes,
-        };
+        let ImageExporterLoadInput::Upload(bytes) = load_input;
 
         let mut upload_provider = super::UploadProvider::new();
-        let context = upload_provider.add(payload.to_vec());
+        let context = upload_provider.add(bytes.to_vec());
 
-        let mut frontend_attrs = frontend_opts.to_map();
+        let mut frontend_attrs = frontend_opts.into_map();
         frontend_attrs.insert(String::from("context"), context);
-        let exporter_attrs = exporter_request.output.to_map();
+        let exporter_attrs = exporter_request.output.into_map();
 
         let mut auth_provider = super::AuthProvider::new();
         if let Some(creds) = credentials {
@@ -672,7 +662,7 @@ impl<'a> super::super::Docker {
         let id = super::new_id();
 
         let solve_request = moby::buildkit::v1::SolveRequest {
-            r#ref: String::from(id),
+            r#ref: id,
             cache: None,
             definition: None,
             entitlements: vec![],

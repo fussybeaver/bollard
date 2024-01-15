@@ -5,10 +5,12 @@ pub use crate::models::*;
 use super::Docker;
 use crate::auth::{base64_url_encode, DockerCredentials};
 use crate::errors::Error;
+use bytes::Bytes;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::Serialize;
 
 use std::{collections::HashMap, hash::Hash};
 
@@ -38,7 +40,7 @@ use std::{collections::HashMap, hash::Hash};
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListServicesOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the service list, encoded as JSON. Available filters:
     ///  - `id`=`<ID>` a services's ID
@@ -155,7 +157,7 @@ impl Docker {
         options: Option<ListServicesOptions<T>>,
     ) -> Result<Vec<Service>, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/services";
 
@@ -163,7 +165,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -287,7 +289,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -322,7 +324,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_unit(req).await

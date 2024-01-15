@@ -1,11 +1,13 @@
 //! Image API: creating, manipulating and pushing docker images
+use bytes::Bytes;
 use futures_core::Stream;
 #[cfg(feature = "buildkit")]
 use futures_util::future::{Either, FutureExt};
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{body::Bytes, Body, Method};
+use http_body_util::Full;
+use hyper::Method;
 use serde::Serialize;
 use serde_repr::*;
 
@@ -524,7 +526,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -573,7 +575,7 @@ impl Docker {
     pub fn create_image<T>(
         &self,
         options: Option<CreateImageOptions<'_, T>>,
-        root_fs: Option<Body>,
+        root_fs: Option<Bytes>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
@@ -592,8 +594,8 @@ impl Docker {
                         .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
                     match root_fs {
-                        Some(body) => Ok(body),
-                        None => Ok(Body::empty()),
+                        Some(body) => Ok(Full::new(body)),
+                        None => Ok(Full::new(Bytes::new())),
                     },
                 );
                 self.process_into_stream(req).boxed()
@@ -643,7 +645,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -694,7 +696,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -730,7 +732,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -785,7 +787,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             Some(options),
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -841,7 +843,7 @@ impl Docker {
                         .method(Method::DELETE)
                         .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
-                    Ok(Body::empty()),
+                    Ok(Full::new(Bytes::new())),
                 );
                 self.process_into_value(req).await
             }
@@ -894,7 +896,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -961,7 +963,7 @@ impl Docker {
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
                     options,
-                    Ok(Body::empty()),
+                    Ok(Full::new(Bytes::new())),
                 );
 
                 self.process_into_stream(req).boxed()
@@ -1091,7 +1093,7 @@ impl Docker {
         &self,
         options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
-        tar: Option<Body>,
+        tar: Option<Bytes>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
     where
         T: Into<String> + Eq + Hash + Serialize,
@@ -1124,7 +1126,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
-                    Ok(tar.unwrap_or_else(Body::empty)),
+                    Ok(Full::new(tar.unwrap_or_default())),
                 );
 
                 let session = stream::once(
@@ -1133,9 +1135,7 @@ impl Docker {
                         .fuse(),
                 );
 
-                let stream = self
-                    .process_into_stream::<BuildInfo>(req)
-                    .map(|data| Either::Left(data));
+                let stream = self.process_into_stream::<BuildInfo>(req).map(Either::Left);
 
                 futures_util::stream::select(stream, session)
                     .filter_map(|either| async move {
@@ -1165,7 +1165,7 @@ impl Docker {
                         .header(CONTENT_TYPE, "application/x-tar")
                         .header("X-Registry-Config", base64_url_encode(&ser_cred)),
                     Some(options),
-                    Ok(tar.unwrap_or_else(Body::empty)),
+                    Ok(Full::new(tar.unwrap_or_default())),
                 );
 
                 self.process_into_stream(req).boxed()
@@ -1198,7 +1198,7 @@ impl Docker {
 
         let opt: Option<serde_json::Value> = None;
         let req = self.build_request(
-            &url,
+            url,
             Builder::new()
                 .method(Method::POST)
                 .header("Connection", "Upgrade")
@@ -1214,7 +1214,7 @@ impl Docker {
                 )
                 .header("X-Docker-Expose-Session-Uuid", &id),
             opt,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         let (read, write) = self.process_upgraded(req).await?;
@@ -1273,7 +1273,7 @@ impl Docker {
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
         self.process_into_body(req)
     }
@@ -1300,7 +1300,7 @@ impl Docker {
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
         self.process_into_body(req)
     }
@@ -1331,7 +1331,7 @@ impl Docker {
     /// use bollard::errors::Error;
     ///
     /// use std::default::Default;
-    /// use futures_util::stream::StreamExt;
+    /// use futures_util::stream::{StreamExt, TryStreamExt};
     /// use tokio::fs::File;
     /// use tokio::io::AsyncWriteExt;
     /// use tokio_util::codec;
@@ -1343,19 +1343,19 @@ impl Docker {
     /// async move {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
     ///
-    ///     let byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///     let mut byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
     ///         let bytes = r.unwrap().freeze();
     ///         Ok::<_, Error>(bytes)
     ///     });
-
-    ///     let body = hyper::Body::wrap_stream(byte_stream);
-
+    ///
+    ///     let bytes = byte_stream.next().await.unwrap().unwrap();
+    ///
     ///     let mut stream = docker
     ///         .import_image(
     ///             ImportImageOptions {
     ///                 ..Default::default()
     ///             },
-    ///             body,
+    ///             bytes,
     ///             None,
     ///         );
     ///
@@ -1367,7 +1367,7 @@ impl Docker {
     pub fn import_image(
         &self,
         options: ImportImageOptions,
-        root_fs: Body,
+        root_fs: Bytes,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
         match serde_json::to_string(&credentials.unwrap_or_default()) {
@@ -1379,7 +1379,7 @@ impl Docker {
                         .header(CONTENT_TYPE, "application/json")
                         .header("X-Registry-Config", base64_url_encode(&ser_cred)),
                     Some(options),
-                    Ok(root_fs),
+                    Ok(Full::new(root_fs)),
                 );
                 self.process_into_stream(req).boxed()
             }

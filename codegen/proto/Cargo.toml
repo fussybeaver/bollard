@@ -1,13 +1,13 @@
 [package]
 name = "bollard-buildkit-proto"
 description = "Protobuf definitions to interact with buildkit using Bollard"
-version = "0.2.0"
+version = "0.2.1"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 edition = "2021"
 
 [features]
-build = ["tonic-build", "indexmap"]
+build = ["tonic-build"]
 
 [[bin]]
 name = "gen"
@@ -18,5 +18,3 @@ tonic = { version = "0.10" }
 prost = { version = "0.12" }
 prost-types = "0.12"
 tonic-build = { version = "0.10", optional = true }
-# bug: https://github.com/bluss/indexmap/issues/151#issuecomment-716691744
-indexmap = { version = "2.0.0", features = ["std"], optional = true }

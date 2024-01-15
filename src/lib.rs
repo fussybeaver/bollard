@@ -268,11 +268,6 @@
 #![allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
 #![warn(rust_2018_idioms)]
 
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate log;
-
 // declare modules
 pub mod auth;
 pub mod container;

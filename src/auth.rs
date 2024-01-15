@@ -1,6 +1,7 @@
 //! Credentials management, for access to the Docker Hub or a custom Registry.
 
 use base64::{engine::general_purpose::STANDARD, Engine};
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]

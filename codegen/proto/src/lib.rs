@@ -36,6 +36,7 @@ pub mod google {
     pub use prost_types as protobuf;
 }
 
+#[allow(clippy::all)]
 pub mod pb {
     include!("generated/pb.rs");
 }

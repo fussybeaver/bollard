@@ -1,8 +1,10 @@
 //! Volume API: Create and manage persistent storage that can be attached to containers.
 
+use bytes::Bytes;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::{Deserialize, Serialize};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -16,7 +18,7 @@ use crate::models::*;
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListVolumesOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// JSON encoded value of the filters (a `map[string][]string`) to process on the volumes list. Available filters:
     ///  - `dangling=<boolean>` When set to `true` (or `1`), returns all volumes that are not in use by a container. When set to `false` (or `0`), only volumes that are in use by one or more containers are returned.
@@ -33,7 +35,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// The new volume's name. If not specified, Docker generates a name.
     pub name: T,
@@ -82,7 +84,7 @@ pub struct RemoveVolumeOptions {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneVolumesOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
@@ -130,7 +132,7 @@ impl Docker {
         options: Option<ListVolumesOptions<T>>,
     ) -> Result<VolumeListResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/volumes";
 
@@ -138,7 +140,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -178,7 +180,7 @@ impl Docker {
     /// ```
     pub async fn create_volume<T>(&self, config: CreateVolumeOptions<T>) -> Result<Volume, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/volumes/create";
 
@@ -220,7 +222,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -267,7 +269,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -311,7 +313,7 @@ impl Docker {
         options: Option<PruneVolumesOptions<T>>,
     ) -> Result<VolumePruneResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/volumes/prune";
 
@@ -319,7 +321,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await

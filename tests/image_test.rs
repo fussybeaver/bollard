@@ -1,5 +1,6 @@
 #![type_length_limit = "2097152"]
 
+use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
 use tokio::runtime::Runtime;
@@ -36,7 +37,7 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    let req_body = hyper::body::Body::from({
+    let req_body = bytes::Bytes::from({
         let mut buffer = Vec::new();
 
         {
@@ -476,7 +477,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         .await?;
 
     assert!(build
-        .into_iter()
+        .iter()
         .flat_map(|build_info| {
             if let Some(aux) = &build_info.aux {
                 match aux {
@@ -562,7 +563,6 @@ ENTRYPOINT ls buildkit-bollard.txt
     c.write_all(&uncompressed).unwrap();
     let compressed = c.finish().unwrap();
 
-    let id = "build_buildkit_image_test";
     let build = &docker
         .build_image(
             BuildImageOptions {
@@ -728,30 +728,13 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
     } else {
         format!("{}hello-world:linux", registry_http_addr())
     };
-    let temp_file = if cfg!(windows) {
-        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_import_image.tar"
-    } else {
-        "/tmp/bollard_test_import_image.tar"
-    };
 
     let mut res = docker.export_image(&image);
-    use tokio::io::AsyncWriteExt;
-    use tokio_util::codec;
 
-    let mut archive_file = tokio::fs::File::create(temp_file).await?;
+    let mut buf = bytes::BytesMut::new();
     while let Some(data) = res.next().await {
-        archive_file.write_all(&data.unwrap()).await?;
-        archive_file.sync_all().await?;
+        buf.put_slice(&data.unwrap());
     }
-    drop(archive_file);
-
-    let archive_file = tokio::fs::File::open(temp_file).await?;
-    let byte_stream = codec::FramedRead::new(archive_file, codec::BytesCodec::new()).map(|r| {
-        let bytes = r.unwrap().freeze();
-        Ok::<_, Error>(bytes)
-    });
-
-    let body = hyper::Body::wrap_stream(byte_stream);
 
     let mut creds = HashMap::new();
     creds.insert(
@@ -764,7 +747,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
             ImportImageOptions {
                 ..Default::default()
             },
-            body,
+            buf.freeze(),
             Some(creds),
         )
         .try_collect::<Vec<_>>()
