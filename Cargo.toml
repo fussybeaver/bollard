@@ -47,10 +47,10 @@ futures-util = "0.3"
 hex = "0.4.2"
 home = { version = "0.5", optional = true }
 http = "1.0"
+http-body-util = "0.1.0"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-rustls = { version = "0.26", optional = true }
 hyper-util = { version = "0.1.2", features = ["http1", "client-legacy", "tokio"] }
-http-body-util = "0.1.0"
 log = "0.4"
 pin-project-lite = "0.2.8"
 num = { version = "0.4", optional = true }
@@ -86,6 +86,7 @@ hyperlocal = { git = "https://github.com/softprops/hyperlocal", rev = "34dc8579d
 termion = "2.0"
 
 [target.'cfg(windows)'.dependencies]
+hyper-named-pipe = { version = "0.1.0" }
 winapi = { version = "0.3.9", features = ["winerror"] }
 tower-service = { version = "0.3" }
 

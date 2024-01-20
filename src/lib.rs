@@ -279,7 +279,6 @@ mod docker;
 pub mod errors;
 pub mod exec;
 pub mod image;
-mod named_pipe;
 pub mod network;
 mod read;
 pub mod secret;

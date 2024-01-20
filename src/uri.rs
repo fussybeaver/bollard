@@ -1,5 +1,3 @@
-#[cfg(windows)]
-use hex::FromHex;
 use hyper::Uri as HyperUri;
 use log::trace;
 use url::Url;
@@ -88,29 +86,5 @@ impl<'a> Uri<'a> {
             #[cfg(windows)]
             ClientType::NamedPipe => "net.pipe",
         }
-    }
-
-    #[cfg(windows)]
-    fn socket_path(uri: &HyperUri) -> Option<String> {
-        uri.host()
-            .iter()
-            .filter_map(|host| {
-                Vec::from_hex(host)
-                    .ok()
-                    .map(|raw| String::from_utf8_lossy(&raw).into_owned())
-            })
-            .next()
-    }
-
-    #[cfg(windows)]
-    pub(crate) fn socket_path_dest(dest: &HyperUri, client_type: &ClientType) -> Option<String> {
-        format!(
-            "{}://{}",
-            Uri::socket_scheme(client_type),
-            dest.host().unwrap_or("UNKNOWN_HOST")
-        )
-        .parse()
-        .ok()
-        .and_then(|uri| Self::socket_path(&uri))
     }
 }
