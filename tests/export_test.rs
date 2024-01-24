@@ -12,7 +12,7 @@ use std::io::Write;
 pub mod common;
 use crate::common::*;
 
-async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
+async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
         "FROM localhost:5000/alpine as builder1
         RUN touch bollard.txt
@@ -35,9 +35,7 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     c.write_all(&uncompressed).unwrap();
     let compressed = c.finish().unwrap();
 
-    let session_id = "bollard-oci-export-buildkit-example";
-
-    let frontend_opts = bollard::grpc::export::ImageBuildFrontendOptions::builder()
+    let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
         .pull(true)
         .build();
 
@@ -49,18 +47,17 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     }
     assert!(!dest_path.exists());
 
-    let output = bollard::grpc::export::ImageExporterOCIOutputBuilder::new(
+    let output = bollard::grpc::export::ImageExporterOutputBuilder::new(
         "docker.io/library/bollard-oci-export-buildkit-example:latest",
     )
     .annotation("exporter", "Bollard")
     .dest(dest_path);
 
-    let buildkit_builder =
-        DockerContainerBuilder::new("bollard_export_test_export_oci_image", &docker, session_id);
+    let buildkit_builder = DockerContainerBuilder::new(&docker);
     let driver = buildkit_builder.bootstrap().await.unwrap();
 
     let load_input =
-        bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
+        bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
 
     let credentials = bollard::auth::DockerCredentials {
         username: Some("bollard".to_string()),
@@ -70,16 +67,14 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000", credentials);
 
-    let res = docker
-        .image_export_oci(
-            driver,
-            session_id,
-            frontend_opts,
-            output,
-            load_input,
-            Some(creds_hsh),
-        )
-        .await;
+    let res = bollard::grpc::driver::Export::export(
+        driver,
+        bollard::grpc::driver::ImageExporterEnum::OCI(output),
+        frontend_opts,
+        load_input,
+        Some(creds_hsh),
+    )
+    .await;
 
     assert!(res.is_ok());
 

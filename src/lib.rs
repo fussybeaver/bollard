@@ -261,11 +261,15 @@
     missing_copy_implementations,
     trivial_casts,
     trivial_numeric_casts,
-    unstable_features,
+    //unstable_features,
     unused_import_braces,
     unused_qualifications
 )]
-#![allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
+#![allow(
+    clippy::upper_case_acronyms,
+    clippy::derive_partial_eq_without_eq,
+    async_fn_in_trait
+)]
 #![warn(rust_2018_idioms)]
 
 // declare modules

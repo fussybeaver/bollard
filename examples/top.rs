@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         },
     ))) = futures.next().await
     {
-        if let Some(p) = p.get(0) {
+        if let Some(p) = p.first() {
             print!("{name}");
             for mut v in p.iter().cloned() {
                 if v.len() > 30 {

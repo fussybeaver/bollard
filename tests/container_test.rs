@@ -254,7 +254,7 @@ async fn stats_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    let value = vec.get(0);
+    let value = vec.first();
 
     assert_eq!(value.unwrap().name, "/integration_test_stats".to_string());
     kill_container(&docker, "integration_test_stats")
