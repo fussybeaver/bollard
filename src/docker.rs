@@ -38,12 +38,12 @@ use tokio_util::codec::FramedRead;
 use crate::container::LogOutput;
 use crate::errors::Error;
 use crate::errors::Error::*;
-#[cfg(windows)]
-use crate::named_pipe::NamedPipeConnector;
 use crate::read::{
     AsyncUpgraded, IncomingStream, JsonLineDecoder, NewlineLogOutputDecoder, StreamReader,
 };
 use crate::uri::Uri;
+#[cfg(windows)]
+use hyper_named_pipe::NamedPipeConnector;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
