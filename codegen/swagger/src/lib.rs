@@ -13,7 +13,7 @@ use std::io::Error;
 #[allow(unused_imports)]
 use std::collections::HashMap;
 
-pub const BASE_PATH: &str = "/v1.43";
+pub const BASE_PATH: &str = "/v1.44";
 
 pub mod models;
 
