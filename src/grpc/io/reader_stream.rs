@@ -2,6 +2,7 @@
 
 use bollard_buildkit_proto::moby::buildkit::v1::BytesMessage;
 use futures_core::stream::Stream;
+use log::error;
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};

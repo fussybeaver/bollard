@@ -80,7 +80,8 @@ fn deserialize_buildinfo_aux<'de, D: Deserializer<'de>>(
     d: D,
 ) -> Result<crate::moby::buildkit::v1::StatusResponse, D::Error> {
     let aux: String = serde::Deserialize::deserialize(d)?;
-    let raw = base64::decode(&aux).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &aux)
+        .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
     let buf = bytes::BytesMut::from(&raw[..]);
 
     let res = crate::moby::buildkit::v1::StatusResponse::decode(buf)

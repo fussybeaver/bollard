@@ -43,7 +43,7 @@ async fn main() {
             "docker.io/library/bollard-oci-export-buildkit-example:latest",
         )
         .annotation("exporter", "Bollard")
-        .dest(&std::path::Path::new("/tmp/oci-image.tar"));
+        .dest(std::path::Path::new("/tmp/oci-image.tar"));
 
         let buildkit_builder =
             DockerContainerBuilder::new("bollard_buildkit_export_oci_image", &docker, session_id);
@@ -53,7 +53,7 @@ async fn main() {
             bollard::grpc::export::ImageExporterLoadInput::Upload(bytes::Bytes::from(compressed));
 
         docker
-            .image_export_oci(driver, session_id, frontend_opts, output, load_input)
+            .image_export_oci(driver, session_id, frontend_opts, output, load_input, None)
             .await
             .unwrap();
     }

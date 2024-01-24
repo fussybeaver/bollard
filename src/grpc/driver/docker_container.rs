@@ -20,6 +20,7 @@ use http::{
     request::Builder,
     Method,
 };
+use log::{debug, error, info, trace};
 use tonic::{codegen::InterceptedService, transport::Channel};
 use tonic::{service::Interceptor, transport::Endpoint};
 use tower_service::Service;
@@ -44,7 +45,7 @@ pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
 const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
-impl Service<http::Uri> for DockerContainer {
+impl Service<tonic::transport::Uri> for DockerContainer {
     type Response = GrpcFramedTransport;
     type Error = GrpcError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -53,7 +54,7 @@ impl Service<http::Uri> for DockerContainer {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: http::Uri) -> Self::Future {
+    fn call(&mut self, _req: tonic::transport::Uri) -> Self::Future {
         let client = Docker::clone(&self.docker);
         let name = String::clone(&self.name);
 
@@ -88,14 +89,11 @@ impl Service<http::Uri> for DockerContainer {
                 })),
             );
 
-            client
-                .process_upgraded(req)
-                .await
-                .and_then(|(read, write)| {
-                    let output = Box::pin(read);
-                    let input = Box::pin(write);
-                    Ok(GrpcFramedTransport::new(output, input, capacity))
-                })
+            client.process_upgraded(req).await.map(|(read, write)| {
+                let output = Box::pin(read);
+                let input = Box::pin(write);
+                GrpcFramedTransport::new(output, input, capacity)
+            })
         };
 
         Box::pin(fut.map_err(From::from))
@@ -159,21 +157,19 @@ impl DockerContainerBuilder {
             self.network("host");
         }
 
-        let container_name = &self.inner.name;
-        match self
+        if let Err(crate::errors::Error::DockerResponseServerError {
+            status_code: 404,
+            message: _,
+        }) = self
             .inner
             .docker
             .inspect_container(&self.inner.name, None)
             .await
         {
-            Err(crate::errors::Error::DockerResponseServerError {
-                status_code: 404,
-                message: _,
-            }) => self.inner.create().await?,
-            _ => (),
+            self.inner.create().await?
         };
 
-        debug!("starting container {}", &container_name);
+        debug!("starting container {}", &self.inner.name);
 
         self.inner.start().await?;
         self.inner.wait().await?;
@@ -301,7 +297,7 @@ impl<'a> DockerContainer {
                 router = service.append(router);
             }
             trace!("router: {:#?}", router);
-            match router
+            if let Err(e) = router
                 .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
                     _,
                     tonic::transport::Error,
@@ -310,8 +306,7 @@ impl<'a> DockerContainer {
                 )]))
                 .await
             {
-                Err(e) => error!("Failed to serve grpc connection: {}", e),
-                _ => (),
+                error!("Failed to serve grpc connection: {}", e)
             }
         });
 
@@ -352,7 +347,7 @@ impl<'a> DockerContainer {
             // place all buildkit containers into this cgroup
             {
                 Some(if let Some(cgroup_parent) = &self.cgroup_parent {
-                    String::clone(&cgroup_parent)
+                    String::clone(cgroup_parent)
                 } else {
                     String::from("/docker/buildx")
                 })
@@ -360,11 +355,7 @@ impl<'a> DockerContainer {
             _ => None,
         };
 
-        let network_mode = if let Some(net_mode) = &self.net_mode {
-            Some(String::clone(&net_mode))
-        } else {
-            None
-        };
+        let network_mode = self.net_mode.as_ref().map(String::clone);
 
         let userns_mode = if let Some(security_options) = &info.security_options {
             if security_options.iter().any(|f| f == "userns") {
@@ -465,7 +456,7 @@ impl<'a> DockerContainer {
                 }
                 _ => {
                     tokio::time::sleep(Duration::from_millis(attempts * 120)).await;
-                    attempts = attempts + 1;
+                    attempts += 1;
                 }
             }
         }

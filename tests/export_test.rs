@@ -45,7 +45,7 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
 
     // cleanup - usually for local testing, the grpc handler will overwrite
     if dest_path.exists() {
-        std::fs::remove_file(&dest_path).unwrap();
+        std::fs::remove_file(dest_path).unwrap();
     }
     assert!(!dest_path.exists());
 
@@ -53,7 +53,7 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
         "docker.io/library/bollard-oci-export-buildkit-example:latest",
     )
     .annotation("exporter", "Bollard")
-    .dest(&dest_path);
+    .dest(dest_path);
 
     let buildkit_builder =
         DockerContainerBuilder::new("bollard_export_test_export_oci_image", &docker, session_id);
@@ -85,13 +85,13 @@ async fn export_buildkit_oci_test(mut docker: Docker) -> Result<(), Error> {
 
     assert!(dest_path.exists());
 
-    let oci_file = std::fs::File::open(&dest_path)?;
+    let oci_file = std::fs::File::open(dest_path)?;
     let mut oci_archive = tar::Archive::new(oci_file);
 
     let mut paths = vec![];
 
-    let mut iter = oci_archive.entries()?;
-    while let Some(entry) = iter.next() {
+    let iter = oci_archive.entries()?;
+    for entry in iter {
         let entry = entry?;
         let path = entry.path()?.display().to_string();
         paths.push(path);

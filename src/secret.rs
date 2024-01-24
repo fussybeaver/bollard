@@ -4,9 +4,11 @@ pub use crate::models::*;
 
 use super::Docker;
 use crate::errors::Error;
+use bytes::Bytes;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::Serialize;
 use std::{collections::HashMap, hash::Hash};
 
 /// Parameters used in the [List Secret API](super::Docker::list_secrets())
@@ -35,7 +37,7 @@ use std::{collections::HashMap, hash::Hash};
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListSecretsOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the secret list, encoded as JSON. Available filters:
     ///  - `id`=`<ID>` a secret's ID
@@ -104,7 +106,7 @@ impl Docker {
         options: Option<ListSecretsOptions<T>>,
     ) -> Result<Vec<Secret>, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/secrets";
 
@@ -112,7 +114,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -194,7 +196,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -230,7 +232,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_unit(req).await

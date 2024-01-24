@@ -1,13 +1,19 @@
 use bytes::Buf;
 use bytes::BytesMut;
 use futures_core::Stream;
+use hyper::body::Body;
 use hyper::body::Bytes;
+use hyper::body::Incoming;
+use hyper::upgrade::Upgraded;
+use log::debug;
+use log::trace;
 use pin_project_lite::pin_project;
 use serde::de::DeserializeOwned;
 use std::pin::Pin;
-use std::string::String;
 use std::task::{Context, Poll};
 use std::{cmp, io, marker::PhantomData};
+
+use tokio::io::AsyncWrite;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_util::codec::Decoder;
 
@@ -48,41 +54,31 @@ impl Decoder for NewlineLogOutputDecoder {
                     // `start_exec` API on unix socket will emit values without a header
                     if !src.is_empty() && src[0] > 2 {
                         if self.is_tcp {
-                            trace!("NewlineLogOutputDecoder: no header, but is_tcp is true returning raw data");
                             return Ok(Some(LogOutput::Console {
                                 message: src.split().freeze(),
                             }));
                         }
                         let nl_index = src.iter().position(|b| *b == b'\n');
                         if let Some(pos) = nl_index {
-                            trace!("NewlineLogOutputDecoder: newline found, pos = {}", pos + 1);
                             return Ok(Some(LogOutput::Console {
                                 message: src.split_to(pos + 1).freeze(),
                             }));
                         } else {
-                            trace!("NewlineLogOutputDecoder: no newline found");
                             return Ok(None);
                         }
                     }
 
                     if src.len() < 8 {
-                        trace!("NewlineLogOutputDecoder: not enough data for read header");
                         return Ok(None);
                     }
 
                     let header = src.split_to(8);
                     let length =
                         u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
-                    trace!(
-                        "NewlineLogOutputDecoder: read header, type = {}, length = {}",
-                        header[0],
-                        length
-                    );
                     self.state = NewlineLogOutputDecoderState::WaitingPayload(header[0], length);
                 }
                 NewlineLogOutputDecoderState::WaitingPayload(typ, length) => {
                     if src.len() < length {
-                        trace!("NewlineLogOutputDecoder: not enough data to read");
                         return Ok(None);
                     } else {
                         trace!("NewlineLogOutputDecoder: Reading payload");
@@ -190,19 +186,16 @@ enum ReadState {
 
 pin_project! {
     #[derive(Debug)]
-    pub(crate) struct StreamReader<S> {
+    pub(crate) struct StreamReader {
         #[pin]
-        stream: S,
+        stream: Incoming,
         state: ReadState,
     }
 }
 
-impl<S> StreamReader<S>
-where
-    S: Stream<Item = Result<Bytes, Error>>,
-{
+impl StreamReader {
     #[inline]
-    pub(crate) fn new(stream: S) -> StreamReader<S> {
+    pub(crate) fn new(stream: Incoming) -> StreamReader {
         StreamReader {
             stream,
             state: ReadState::NotReady,
@@ -210,18 +203,14 @@ where
     }
 }
 
-impl<S> AsyncRead for StreamReader<S>
-where
-    S: Stream<Item = Result<Bytes, Error>>,
-{
+impl AsyncRead for StreamReader {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         read_buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let mut this = self.project();
         loop {
-            match this.state {
+            match self.as_mut().project().state {
                 ReadState::Ready(ref mut chunk, ref mut pos) => {
                     let chunk_start = *pos;
                     let buf = read_buf.initialize_unfilled();
@@ -237,12 +226,14 @@ where
                     }
                 }
 
-                ReadState::NotReady => match this.stream.as_mut().poll_next(cx) {
-                    Poll::Ready(Some(Ok(chunk))) => {
-                        *this.state = ReadState::Ready(chunk, 0);
+                ReadState::NotReady => match self.as_mut().project().stream.poll_frame(cx) {
+                    Poll::Ready(Some(Ok(frame))) if frame.is_data() => {
+                        *self.as_mut().project().state =
+                            ReadState::Ready(frame.into_data().unwrap(), 0);
 
                         continue;
                     }
+                    Poll::Ready(Some(Ok(_frame))) => return Poll::Ready(Ok(())),
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         return Poll::Pending;
@@ -256,9 +247,88 @@ where
                 },
             }
 
-            *this.state = ReadState::NotReady;
+            *self.as_mut().project().state = ReadState::NotReady;
 
             return Poll::Ready(Ok(()));
+        }
+    }
+}
+
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct AsyncUpgraded {
+        #[pin]
+        inner: Upgraded,
+    }
+}
+
+impl AsyncUpgraded {
+    pub(crate) fn new(upgraded: Upgraded) -> Self {
+        Self { inner: upgraded }
+    }
+}
+
+impl AsyncRead for AsyncUpgraded {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        read_buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let n = {
+            let mut hbuf = hyper::rt::ReadBuf::new(read_buf.initialize_unfilled());
+            match hyper::rt::Read::poll_read(self.project().inner, cx, hbuf.unfilled()) {
+                Poll::Ready(Ok(())) => hbuf.filled().len(),
+                other => return other,
+            }
+        };
+        read_buf.advance(n);
+
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for AsyncUpgraded {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        hyper::rt::Write::poll_write(self.project().inner, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        hyper::rt::Write::poll_flush(self.project().inner, cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        hyper::rt::Write::poll_shutdown(self.project().inner, cx)
+    }
+}
+
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct IncomingStream {
+        #[pin]
+        inner: Incoming,
+    }
+}
+
+impl IncomingStream {
+    pub(crate) fn new(incoming: Incoming) -> Self {
+        Self { inner: incoming }
+    }
+}
+
+impl Stream for IncomingStream {
+    type Item = Result<Bytes, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match futures_util::ready!(self.as_mut().project().inner.poll_frame(cx)?) {
+            Some(frame) => match frame.into_data() {
+                Ok(data) => Poll::Ready(Some(Ok(data))),
+                Err(_) => Poll::Ready(None),
+            },
+            None => Poll::Ready(None),
         }
     }
 }

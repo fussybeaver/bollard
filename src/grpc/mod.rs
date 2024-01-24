@@ -32,9 +32,16 @@ use std::task::{Context, Poll};
 
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
+use bytes::Bytes;
 use futures_core::Stream;
-use hyper::client::HttpConnector;
+use http_body_util::{BodyExt, Full};
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
+use log::trace;
 use rand::RngCore;
+use rustls::ALL_VERSIONS;
+use serde_derive::Deserialize;
 use tonic::transport::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
@@ -42,9 +49,9 @@ use futures_util::{StreamExt, TryFutureExt};
 use tokio::io::AsyncWriteExt;
 
 use http::request::Builder;
-use hyper::{Body, Client, Method};
+use hyper::Method;
 use std::future::Future;
-use tower::Service;
+use tower_service::Service;
 
 use self::error::GrpcAuthError;
 use self::io::GrpcTransport;
@@ -130,6 +137,8 @@ impl Health for HealthServerImpl {
             Err(Status::new(Code::NotFound, "unknown service"))
         }
     }
+
+    #[allow(clippy::diverging_sub_expression)]
     async fn watch(
         &self,
         _request: Request<HealthCheckRequest>,
@@ -171,7 +180,7 @@ impl FileSend for FileSendImpl {
                 Ok(v) => {
                     file.write_all(&v.data).await?;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             }
         }
 
@@ -333,24 +342,34 @@ impl AuthProvider {
         }
     }
 
-    fn ssl_client() -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>>, GrpcAuthError> {
+    fn ssl_client(
+    ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>, GrpcAuthError>
+    {
         let mut root_store = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            root_store.add(&rustls::Certificate(cert.0))?;
-        }
 
-        let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
+        #[cfg(not(feature = "webpki"))]
+        for cert in rustls_native_certs::load_native_certs()? {
+            root_store
+                .add(cert)
+                .map_err(|err| GrpcAuthError::RustTlsError { err })?
+        }
+        #[cfg(feature = "webpki")]
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        let config = rustls::ClientConfig::builder_with_protocol_versions(ALL_VERSIONS)
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
         let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
 
-        let https_connector: hyper_rustls::HttpsConnector<HttpConnector> =
-            hyper_rustls::HttpsConnector::from((http_connector, config));
+        let https_connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(config)
+            .https_or_http()
+            .enable_http1()
+            .build();
 
-        let client_builder = Client::builder();
+        let client_builder = Client::builder(TokioExecutor::new());
         let client = client_builder.build(https_connector);
 
         Ok(client)
@@ -385,19 +404,19 @@ impl AuthProvider {
 
         let full_uri = format!("{}?{}", opts.realm, &params);
         let request_uri: hyper::Uri = full_uri.try_into()?;
-        let request = hyper::Request::post(request_uri).body(Body::empty())?;
+        let request = hyper::Request::post(request_uri).body(Full::new(Bytes::new()))?;
 
         let response = client.request(request).await?;
 
         let status = response.status().as_u16();
-        if status < 200 || status >= 400 {
+        if !(200..400).contains(&status) {
             // return custom error
             return Err(GrpcAuthError::BadRegistryResponse {
                 status_code: status,
             });
         }
 
-        let bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
 
         let oauth_token = serde_json::from_slice::<OAuthTokenResponse>(&bytes)?;
 
@@ -458,12 +477,15 @@ impl Auth for AuthProvider {
         }
     }
 
+    #[allow(clippy::diverging_sub_expression)]
     async fn get_token_authority(
         &self,
         _request: Request<GetTokenAuthorityRequest>,
     ) -> Result<Response<GetTokenAuthorityResponse>, Status> {
         unimplemented!()
     }
+
+    #[allow(clippy::diverging_sub_expression)]
     async fn verify_token_authority(
         &self,
         _request: Request<VerifyTokenAuthorityRequest>,
@@ -477,7 +499,7 @@ pub(crate) struct GrpcClient {
     pub(crate) session_id: String,
 }
 
-impl Service<http::Uri> for GrpcClient {
+impl Service<tonic::transport::Uri> for GrpcClient {
     type Response = GrpcTransport;
     type Error = error::GrpcError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -486,33 +508,30 @@ impl Service<http::Uri> for GrpcClient {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: http::Uri) -> Self::Future {
+    fn call(&mut self, _req: tonic::transport::Uri) -> Self::Future {
         // create the body
         let opt: Option<serde_json::Value> = None;
         let url = "/grpc";
         let client = self.client.clone();
         let req = client.build_request(
-            &url,
+            url,
             Builder::new()
                 .method(Method::POST)
                 .header("Connection", "Upgrade")
                 .header("Upgrade", "h2c")
                 .header("X-Docker-Expose-Session-Uuid", &self.session_id),
             opt,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
         let fut = async move {
-            client
-                .process_upgraded(req)
-                .await
-                .and_then(|(read, write)| {
-                    let output = Box::pin(read);
-                    let input = Box::pin(write);
-                    Ok(GrpcTransport {
-                        read: output,
-                        write: input,
-                    })
-                })
+            client.process_upgraded(req).await.map(|(read, write)| {
+                let output = Box::pin(read);
+                let input = Box::pin(write);
+                GrpcTransport {
+                    read: output,
+                    write: input,
+                }
+            })
         };
 
         // Return the response as an immediate future

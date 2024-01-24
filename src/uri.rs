@@ -1,6 +1,7 @@
 #[cfg(windows)]
 use hex::FromHex;
 use hyper::Uri as HyperUri;
+use log::trace;
 use url::Url;
 
 use std::borrow::Cow;

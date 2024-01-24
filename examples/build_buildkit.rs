@@ -13,7 +13,7 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let docker = Docker::connect_with_unix_defaults().unwrap();
+    let docker = Docker::connect_with_socket_defaults().unwrap();
 
     let dockerfile = String::from(
         "FROM alpine as builder1

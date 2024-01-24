@@ -1,8 +1,10 @@
 #![cfg(windows)]
 
-use hyper::client::connect::Connected;
+use hyper::rt::ReadBufCursor;
+use hyper_util::client::legacy::connect::{Connected, Connection};
+use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::AsyncWrite;
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tokio::time;
 
@@ -47,17 +49,18 @@ impl NamedPipeStream {
     }
 }
 
-impl AsyncRead for NamedPipeStream {
+impl hyper::rt::Read for NamedPipeStream {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
+        buf: ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_read(cx, buf)
+        let mut t = TokioIo::new(self.project().io);
+        Pin::new(&mut t).poll_read(cx, buf)
     }
 }
 
-impl AsyncWrite for NamedPipeStream {
+impl hyper::rt::Write for NamedPipeStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -86,7 +89,7 @@ impl AsyncWrite for NamedPipeStream {
 #[derive(Clone, Copy, Debug)]
 pub struct NamedPipeConnector;
 
-impl hyper::service::Service<hyper::Uri> for NamedPipeConnector {
+impl tower_service::Service<hyper::Uri> for NamedPipeConnector {
     type Response = NamedPipeStream;
     type Error = io::Error;
     type Future =
@@ -120,7 +123,7 @@ impl hyper::service::Service<hyper::Uri> for NamedPipeConnector {
     }
 }
 
-impl hyper::client::connect::Connection for NamedPipeStream {
+impl Connection for NamedPipeStream {
     fn connected(&self) -> Connected {
         Connected::new()
     }

@@ -1,8 +1,11 @@
 #![cfg(feature = "buildkit")]
 
 use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
+use bytes::Bytes;
 use http::{request::Builder, Method};
-use hyper::Body;
+use http_body_util::Full;
+use log::error;
+use log::trace;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::{
@@ -41,7 +44,7 @@ impl Moby {
         let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
 
         let req = self.docker.build_request(
-            &url,
+            url,
             Builder::new()
                 .method(Method::POST)
                 .header("Connection", "Upgrade")
@@ -52,7 +55,7 @@ impl Moby {
                     metadata_grpc_method.join(","),
                 ),
             opt,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         let (read, write) = self.docker.process_upgraded(req).await?;
@@ -72,7 +75,7 @@ impl Moby {
                 router = service.append(router);
             }
             trace!("router: {:#?}", router);
-            match router
+            if let Err(e) = router
                 .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
                     _,
                     tonic::transport::Error,
@@ -81,8 +84,7 @@ impl Moby {
                 )]))
                 .await
             {
-                Err(e) => error!("Failed to serve grpc connection: {}", e),
-                _ => (),
+                error!("Failed to serve grpc connection: {}", e)
             }
         });
 

@@ -1,8 +1,10 @@
 //! Network API: Networks are user-defined networks that containers can be attached to.
 
+use bytes::Bytes;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::{Deserialize, Serialize};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
@@ -71,7 +73,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct InspectNetworkOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + serde::ser::Serialize,
 {
     /// Detailed inspect output for troubleshooting.
     pub verbose: bool,
@@ -107,7 +109,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListNetworksOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// JSON encoded value of the filters (a `map[string][]string`) to process on the networks list. Available filters:
     ///  - `driver=<driver-name>` Matches a network's driver.
@@ -125,7 +127,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// The ID or name of the container to connect to the network.
     pub container: T,
@@ -138,7 +140,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + serde::ser::Serialize,
 {
     /// The ID or name of the container to disconnect from the network.
     pub container: T,
@@ -174,7 +176,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneNetworksOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
@@ -224,7 +226,7 @@ impl Docker {
         config: CreateNetworkOptions<T>,
     ) -> Result<NetworkCreateResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks/create";
 
@@ -265,7 +267,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -307,7 +309,7 @@ impl Docker {
         options: Option<InspectNetworkOptions<T>>,
     ) -> Result<Network, Error>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + serde::ser::Serialize,
     {
         let url = format!("/networks/{network_name}");
 
@@ -315,7 +317,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -358,7 +360,7 @@ impl Docker {
         options: Option<ListNetworksOptions<T>>,
     ) -> Result<Vec<Network>, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks";
 
@@ -366,7 +368,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -415,7 +417,7 @@ impl Docker {
         config: ConnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = format!("/networks/{network_name}/connect");
 
@@ -464,7 +466,7 @@ impl Docker {
         config: DisconnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + serde::ser::Serialize,
     {
         let url = format!("/networks/{network_name}/disconnect");
 
@@ -516,7 +518,7 @@ impl Docker {
         options: Option<PruneNetworksOptions<T>>,
     ) -> Result<NetworkPruneResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks/prune";
 
@@ -524,7 +526,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await

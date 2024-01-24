@@ -1,9 +1,11 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 
+use bytes::Bytes;
 use futures_core::Stream;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::{Deserialize, Serialize};
 use serde_json::value::Value;
 
 use std::collections::HashMap;
@@ -117,7 +119,7 @@ pub struct VersionComponents {
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct EventsOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Show events created since this timestamp then stream new events.
     #[cfg(all(feature = "chrono", not(feature = "time")))]
@@ -184,7 +186,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -212,7 +214,7 @@ impl Docker {
             "/info",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -238,7 +240,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_string(req).await
@@ -276,7 +278,7 @@ impl Docker {
         options: Option<EventsOptions<T>>,
     ) -> impl Stream<Item = Result<EventMessage, Error>>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/events";
 
@@ -284,7 +286,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_stream(req)
@@ -316,7 +318,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(Full::new(Bytes::new())),
         );
 
         self.process_into_value(req).await

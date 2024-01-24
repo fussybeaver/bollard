@@ -80,7 +80,8 @@ fn deserialize_buildinfo_aux<'de, D: Deserializer<'de>>(
     d: D,
 ) -> Result<crate::moby::buildkit::v1::StatusResponse, D::Error> {
     let aux: String = serde::Deserialize::deserialize(d)?;
-    let raw = base64::decode(&aux).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &aux)
+        .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
     let buf = bytes::BytesMut::from(&raw[..]);
 
     let res = crate::moby::buildkit::v1::StatusResponse::decode(buf)
@@ -978,7 +979,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_disabled: Option<bool>,
 
-    /// MAC address of the container.
+    /// MAC address of the container.  Deprecated: this field is deprecated in API v1.44 and up. Use EndpointSettings.MacAddress instead. 
     #[serde(rename = "MacAddress")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mac_address: Option<String>,
@@ -1279,6 +1280,23 @@ impl ::std::convert::AsRef<str> for ContainerStateStatusEnum {
             ContainerStateStatusEnum::DEAD => "dead",
         }
     }
+}
+
+/// represents the status of a container.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContainerStatus {
+    #[serde(rename = "ContainerID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_id: Option<String>,
+
+    #[serde(rename = "PID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<i64>,
+
+    #[serde(rename = "ExitCode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
+
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1668,6 +1686,11 @@ pub struct EndpointSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub links: Option<Vec<String>>,
 
+    /// MAC address for the endpoint on this network. The network driver might ignore this parameter. 
+    #[serde(rename = "MacAddress")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<String>,
+
     #[serde(rename = "Aliases")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aliases: Option<Vec<String>>,
@@ -1712,15 +1735,15 @@ pub struct EndpointSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_ipv6_prefix_len: Option<i64>,
 
-    /// MAC address for the endpoint on this network. 
-    #[serde(rename = "MacAddress")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mac_address: Option<String>,
-
     /// DriverOpts is a mapping of driver options and values. These options are passed directly to the driver and are driver specific. 
     #[serde(rename = "DriverOpts")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver_opts: Option<HashMap<String, String>>,
+
+    /// List of all DNS names an endpoint has on a specific network. This list is based on the container name, network aliases, container short ID, and hostname.  These DNS names are non-fully qualified but can contain several dots. You can get fully qualified DNS names by appending `.<network-name>`. For instance, if container name is `my.ctr` and the network is named `testnet`, `DNSNames` will contain `my.ctr` and the FQDN will be `my.ctr.testnet`. 
+    #[serde(rename = "DNSNames")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_names: Option<Vec<String>>,
 
 }
 
@@ -2310,6 +2333,11 @@ pub struct HealthConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_period: Option<i64>,
 
+    /// The time to wait between checks in nanoseconds during the start period. It should be 0 or at least 1000000 (1 ms). 0 means inherit. 
+    #[serde(rename = "StartInterval")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_interval: Option<i64>,
+
 }
 
 /// HealthcheckResult stores information about a single run of a healthcheck probe 
@@ -2895,11 +2923,12 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
 
-    /// The ID of the container that was used to create the image.  Depending on how the image was created, this field may be empty. 
+    /// The ID of the container that was used to create the image.  Depending on how the image was created, this field may be empty.  **Deprecated**: this field is kept for backward compatibility, but will be removed in API v1.45. 
     #[serde(rename = "Container")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
 
+    /// **Deprecated**: this field is kept for backward compatibility, but will be removed in API v1.45. 
     #[serde(rename = "ContainerConfig")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_config: Option<ContainerConfig>,
@@ -2943,7 +2972,7 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  > **Deprecated**: this field is kept for backward compatibility, but > will be removed in API v1.44. 
+    /// Total size of the image including all layers it is composed of.  Deprecated: this field is omitted in API v1.44, but kept for backward compatibility. Use Size instead. 
     #[serde(rename = "VirtualSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_size: Option<i64>,
@@ -3013,6 +3042,7 @@ pub struct ImageSearchResponseItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_official: Option<bool>,
 
+    /// Whether this repository has automated builds enabled.  <p><br /></p>  > **Deprecated**: This field is deprecated and will always > be \"false\" in future. 
     #[serde(rename = "is_automated")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_automated: Option<bool>,
@@ -3059,7 +3089,7 @@ pub struct ImageSummary {
     #[serde(rename = "SharedSize")]
     pub shared_size: i64,
 
-    /// Total size of the image including all layers it is composed of.  In versions of Docker before v1.10, this field was calculated from the image itself and all of its parent images. Images are now stored self-contained, and no longer use a parent-chain, making this field an equivalent of the Size field.  Deprecated: this field is kept for backward compatibility, and will be removed in API v1.44.
+    /// Total size of the image including all layers it is composed of.  Deprecated: this field is omitted in API v1.44, but kept for backward compatibility. Use Size instead.
     #[serde(rename = "VirtualSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_size: Option<i64>,
@@ -3363,6 +3393,16 @@ pub struct MountBindOptions {
     #[serde(rename = "CreateMountpoint")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub create_mountpoint: Option<bool>,
+
+    /// Make the mount non-recursively read-only, but still leave the mount recursive (unless NonRecursive is set to true in conjunction). 
+    #[serde(rename = "ReadOnlyNonRecursive")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_non_recursive: Option<bool>,
+
+    /// Raise an error if the mount cannot be made recursively read-only.
+    #[serde(rename = "ReadOnlyForceRecursive")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_force_recursive: Option<bool>,
 
 }
 
@@ -3707,7 +3747,7 @@ pub struct NetworkCreateRequest {
     #[serde(rename = "Name")]
     pub name: String,
 
-    /// Check for networks with duplicate names. Since Network is primarily keyed based on a random ID and not on the name, and network name is strictly a user-friendly alias to the network which is uniquely identified using ID, there is no guaranteed way to check for duplicates. CheckDuplicate is there to provide a best effort checking of any networks which has the same name but it is not guaranteed to catch all name collisions. 
+    /// Deprecated: CheckDuplicate is now always enabled. 
     #[serde(rename = "CheckDuplicate")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_duplicate: Option<bool>,
@@ -3793,7 +3833,7 @@ pub struct NetworkPruneResponse {
 /// NetworkSettings exposes the network settings in the API
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkSettings {
-    /// Name of the network's bridge (for example, `docker0`).
+    /// Name of the default bridge interface when dockerd's --bridge flag is set. 
     #[serde(rename = "Bridge")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bridge: Option<String>,
@@ -3803,17 +3843,17 @@ pub struct NetworkSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sandbox_id: Option<String>,
 
-    /// Indicates if hairpin NAT should be enabled on the virtual interface. 
+    /// Indicates if hairpin NAT should be enabled on the virtual interface.  Deprecated: This field is never set and will be removed in a future release. 
     #[serde(rename = "HairpinMode")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hairpin_mode: Option<bool>,
 
-    /// IPv6 unicast address using the link-local prefix.
+    /// IPv6 unicast address using the link-local prefix.  Deprecated: This field is never set and will be removed in a future release. 
     #[serde(rename = "LinkLocalIPv6Address")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_local_ipv6_address: Option<String>,
 
-    /// Prefix length of the IPv6 unicast address.
+    /// Prefix length of the IPv6 unicast address.  Deprecated: This field is never set and will be removed in a future release. 
     #[serde(rename = "LinkLocalIPv6PrefixLen")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_local_ipv6_prefix_len: Option<i64>,
@@ -3822,17 +3862,17 @@ pub struct NetworkSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ports: Option<PortMap>,
 
-    /// SandboxKey identifies the sandbox
+    /// SandboxKey is the full path of the netns handle
     #[serde(rename = "SandboxKey")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sandbox_key: Option<String>,
 
-    /// 
+    /// Deprecated: This field is never set and will be removed in a future release.
     #[serde(rename = "SecondaryIPAddresses")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary_ip_addresses: Option<Vec<Address>>,
 
-    /// 
+    /// Deprecated: This field is never set and will be removed in a future release.
     #[serde(rename = "SecondaryIPv6Addresses")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary_ipv6_addresses: Option<Vec<Address>>,
@@ -3887,7 +3927,7 @@ pub struct NetworkSettings {
 /// NetworkingConfig represents the container's networking configuration for each of its interfaces. It is used for the networking configs specified in the `docker create` and `docker network connect` commands. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkingConfig {
-    /// A mapping of network name to endpoint configuration for that network. 
+    /// A mapping of network name to endpoint configuration for that network. The endpoint configuration can be left empty to connect to that network with no particular endpoint configuration. 
     #[serde(rename = "EndpointsConfig")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoints_config: Option<HashMap<String, EndpointSettings>>,
@@ -4675,6 +4715,15 @@ pub struct PortBinding {
 // special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type PortMap = HashMap<String, Option<Vec<PortBinding>>>;
 
+/// represents the port status of a task's host ports whose service has published host ports
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PortStatus {
+    #[serde(rename = "Ports")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<EndpointPortConfig>>,
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProcessConfig {
     #[serde(rename = "privileged")]
@@ -5094,6 +5143,11 @@ pub struct Runtime {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_args: Option<Vec<String>>,
 
+    /// Information specific to the runtime.  While this API specification does not define data provided by runtimes, the following well-known properties may be provided by runtimes:  `org.opencontainers.runtime-spec.features`: features structure as defined in the [OCI Runtime Specification](https://github.com/opencontainers/runtime-spec/blob/main/features.md), in a JSON string representation.  <p><br /></p>  > **Note**: The information returned in this field, including the > formatting of values and labels, should not be considered stable, > and may change without notice. 
+    #[serde(rename = "status")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<HashMap<String, String>>,
+
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -5209,6 +5263,7 @@ pub struct Service {
 
 }
 
+/// contains the information returned to a client on the creation of a new service. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ServiceCreateResponse {
     /// The ID of the created service.
@@ -5216,10 +5271,10 @@ pub struct ServiceCreateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
-    /// Optional warning message
-    #[serde(rename = "Warning")]
+    /// Optional warning message.  FIXME(thaJeztah): this should have \"omitempty\" in the generated type. 
+    #[serde(rename = "Warnings")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    pub warnings: Option<Vec<String>>,
 
 }
 
@@ -5320,7 +5375,7 @@ pub struct ServiceSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rollback_config: Option<ServiceSpecRollbackConfig>,
 
-    /// Specifies which networks the service should attach to.
+    /// Specifies which networks the service should attach to.  Deprecated: This field is deprecated since v1.44. The Networks field in TaskSpec should be used instead. 
     #[serde(rename = "Networks")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub networks: Option<Vec<NetworkAttachmentConfig>>,
@@ -6342,12 +6397,12 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os_version: Option<String>,
 
-    /// Generic type of the operating system of the host, as returned by the Go runtime (`GOOS`).  Currently returned values are \"linux\" and \"windows\". A full list of possible values can be found in the [Go documentation](https://golang.org/doc/install/source#environment). 
+    /// Generic type of the operating system of the host, as returned by the Go runtime (`GOOS`).  Currently returned values are \"linux\" and \"windows\". A full list of possible values can be found in the [Go documentation](https://go.dev/doc/install/source#environment). 
     #[serde(rename = "OSType")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os_type: Option<String>,
 
-    /// Hardware architecture of the host, as returned by the Go runtime (`GOARCH`).  A full list of possible values can be found in the [Go documentation](https://golang.org/doc/install/source#environment). 
+    /// Hardware architecture of the host, as returned by the Go runtime (`GOARCH`).  A full list of possible values can be found in the [Go documentation](https://go.dev/doc/install/source#environment). 
     #[serde(rename = "Architecture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub architecture: Option<String>,
@@ -6405,20 +6460,10 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experimental_build: Option<bool>,
 
-    /// Version string of the daemon.  > **Note**: the [standalone Swarm API](https://docs.docker.com/swarm/swarm-api/) > returns the Swarm version instead of the daemon  version, for example > `swarm/1.2.8`. 
+    /// Version string of the daemon. 
     #[serde(rename = "ServerVersion")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
-
-    /// URL of the distributed storage backend.   The storage backend is used for multihost networking (to store network and endpoint information) and by the node discovery mechanism.  <p><br /></p>  > **Deprecated**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
-    #[serde(rename = "ClusterStore")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cluster_store: Option<String>,
-
-    /// The network endpoint that the Engine advertises for the purpose of node discovery. ClusterAdvertise is a `host:port` combination on which the daemon is reachable by other hosts.  <p><br /></p>  > **Deprecated**: This field is only propagated when using standalone Swarm > mode, and overlay networking using an external k/v store. Overlay > networks with Swarm mode enabled use the built-in raft store, and > this field will be empty. 
-    #[serde(rename = "ClusterAdvertise")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cluster_advertise: Option<String>,
 
     /// List of [OCI compliant](https://github.com/opencontainers/runtime-spec) runtimes configured on the daemon. Keys hold the \"name\" used to reference the runtime.  The Docker daemon relies on an OCI compliant runtime (invoked via the `containerd` daemon) as its interface to the Linux kernel namespaces, cgroups, and SELinux.  The default runtime is `runc`, and automatically configured. Additional runtimes can be configured by the user and will be listed here. 
     #[serde(rename = "Runtimes")]
@@ -6480,6 +6525,11 @@ pub struct SystemInfo {
     #[serde(rename = "Warnings")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warnings: Option<Vec<String>>,
+
+    /// List of directories where (Container Device Interface) CDI specifications are located.  These specifications define vendor-specific modifications to an OCI runtime specification for a container being created.  An empty list indicates that CDI device injection is disabled.  Note that since using CDI device injection requires the daemon to have experimental enabled. For non-experimental daemons an empty list will always be returned. 
+    #[serde(rename = "CDISpecDirs")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cdi_spec_dirs: Option<Vec<String>>,
 
 }
 
@@ -7141,6 +7191,72 @@ pub struct TaskSpecContainerSpecPrivileges {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub se_linux_context: Option<TaskSpecContainerSpecPrivilegesSeLinuxContext>,
 
+    #[serde(rename = "Seccomp")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seccomp: Option<TaskSpecContainerSpecPrivilegesSeccomp>,
+
+    #[serde(rename = "AppArmor")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_armor: Option<TaskSpecContainerSpecPrivilegesAppArmor>,
+
+    /// Configuration of the no_new_privs bit in the container
+    #[serde(rename = "NoNewPrivileges")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub no_new_privileges: Option<bool>,
+
+}
+
+/// Options for configuring AppArmor on the container
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskSpecContainerSpecPrivilegesAppArmor {
+    #[serde(rename = "Mode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<TaskSpecContainerSpecPrivilegesAppArmorModeEnum>,
+
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum TaskSpecContainerSpecPrivilegesAppArmorModeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "default")]
+    DEFAULT,
+    #[serde(rename = "disabled")]
+    DISABLED,
+}
+
+impl ::std::fmt::Display for TaskSpecContainerSpecPrivilegesAppArmorModeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::EMPTY => write!(f, ""),
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DEFAULT => write!(f, "{}", "default"),
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DISABLED => write!(f, "{}", "disabled"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for TaskSpecContainerSpecPrivilegesAppArmorModeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(TaskSpecContainerSpecPrivilegesAppArmorModeEnum::EMPTY),
+            "default" => Ok(TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DEFAULT),
+            "disabled" => Ok(TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DISABLED),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for TaskSpecContainerSpecPrivilegesAppArmorModeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::EMPTY => "",
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DEFAULT => "default",
+            TaskSpecContainerSpecPrivilegesAppArmorModeEnum::DISABLED => "disabled",
+        }
+    }
 }
 
 /// CredentialSpec for managed service account (Windows only)
@@ -7191,6 +7307,69 @@ pub struct TaskSpecContainerSpecPrivilegesSeLinuxContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<String>,
 
+}
+
+/// Options for configuring seccomp on the container
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskSpecContainerSpecPrivilegesSeccomp {
+    #[serde(rename = "Mode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<TaskSpecContainerSpecPrivilegesSeccompModeEnum>,
+
+    /// The custom seccomp profile as a json object
+    #[serde(rename = "Profile")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum TaskSpecContainerSpecPrivilegesSeccompModeEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "default")]
+    DEFAULT,
+    #[serde(rename = "unconfined")]
+    UNCONFINED,
+    #[serde(rename = "custom")]
+    CUSTOM,
+}
+
+impl ::std::fmt::Display for TaskSpecContainerSpecPrivilegesSeccompModeEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::EMPTY => write!(f, ""),
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::DEFAULT => write!(f, "{}", "default"),
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::UNCONFINED => write!(f, "{}", "unconfined"),
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::CUSTOM => write!(f, "{}", "custom"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for TaskSpecContainerSpecPrivilegesSeccompModeEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(TaskSpecContainerSpecPrivilegesSeccompModeEnum::EMPTY),
+            "default" => Ok(TaskSpecContainerSpecPrivilegesSeccompModeEnum::DEFAULT),
+            "unconfined" => Ok(TaskSpecContainerSpecPrivilegesSeccompModeEnum::UNCONFINED),
+            "custom" => Ok(TaskSpecContainerSpecPrivilegesSeccompModeEnum::CUSTOM),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for TaskSpecContainerSpecPrivilegesSeccompModeEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::EMPTY => "",
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::DEFAULT => "default",
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::UNCONFINED => "unconfined",
+            TaskSpecContainerSpecPrivilegesSeccompModeEnum::CUSTOM => "custom",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -7479,6 +7658,7 @@ impl std::default::Default for TaskState {
     }
 }
 
+/// represents the status of a task.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskStatus {
     #[serde(rename = "Timestamp")]
@@ -7504,23 +7684,11 @@ pub struct TaskStatus {
 
     #[serde(rename = "ContainerStatus")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub container_status: Option<TaskStatusContainerStatus>,
+    pub container_status: Option<ContainerStatus>,
 
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct TaskStatusContainerStatus {
-    #[serde(rename = "ContainerID")]
+    #[serde(rename = "PortStatus")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub container_id: Option<String>,
-
-    #[serde(rename = "PID")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pid: Option<i64>,
-
-    #[serde(rename = "ExitCode")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exit_code: Option<i64>,
+    pub port_status: Option<PortStatus>,
 
 }
 

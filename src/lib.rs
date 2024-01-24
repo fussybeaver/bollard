@@ -53,8 +53,8 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.43/) used by Bollard is using the latest
-//! `1.43` documentation schema published by the [moby](https://github.com/moby/moby) project to
+//! The [Docker API](https://docs.docker.com/engine/api/v1.44/) used by Bollard is using the latest
+//! `1.44` documentation schema published by the [moby](https://github.com/moby/moby) project to
 //! generate its serialization interface.
 //!
 //! This library also supports [version
@@ -267,11 +267,6 @@
 )]
 #![allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
 #![warn(rust_2018_idioms)]
-
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate log;
 
 // declare modules
 pub mod auth;

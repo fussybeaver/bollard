@@ -78,19 +78,12 @@ pub enum GrpcAuthError {
         #[from]
         err: url::ParseError,
     },
-    /// Error while building http headers when calling the registry
-    #[error("Invalid HTTP request failure during GRPC authentication with registry")]
-    HTTPError {
-        /// The original http error
-        #[from]
-        err: http::Error,
-    },
     /// Error emitted by the hyper library during authentication with the registry
     #[error("Hyper error during GRPC authentication with registry")]
     HyperError {
         /// The source hyper error
         #[from]
-        err: hyper::Error,
+        err: hyper::http::Error,
     },
     /// Error while deserializing the payload emitted by the registry
     #[error("Serde payload deserializing error during GRPC authentication")]
@@ -104,6 +97,13 @@ pub enum GrpcAuthError {
     InvalidUriError {
         /// The invalid uri error
         #[from]
-        err: http::uri::InvalidUri,
+        err: hyper::http::uri::InvalidUri,
+    },
+    /// Error that is emitted by the hyper-util legacy bridge client
+    #[error("Error in the hyper legacy client: {}", err)]
+    HyperLegacyError {
+        /// The original error emitted.
+        #[from]
+        err: hyper_util::client::legacy::Error,
     },
 }
