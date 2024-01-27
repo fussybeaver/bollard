@@ -2234,6 +2234,35 @@ impl Docker {
 
         self.process_into_body(req)
     }
+
+    /// ---
+    ///
+    /// # Export Container
+    ///
+    /// Get a tarball containing the filesystem contents of a container.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ContainerExport)
+    /// for more information.
+    /// # Arguments
+    /// - The `container_name` string referring to an individual container
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_container(
+        &self,
+        container_name: &str,
+    ) -> impl Stream<Item = Result<Bytes, Error>> {
+        let url = format!("/containers/{container_name}/export");
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            None::<String>,
+            Ok(Full::new(Bytes::new())),
+        );
+        self.process_into_body(req)
+    }
 }
 
 #[cfg(test)]
