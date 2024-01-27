@@ -12,10 +12,13 @@ use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
 use bollard::models::*;
 use bollard::Docker;
 
+use futures_util::future::ready;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio::runtime::Runtime;
 
+use std::fs::{remove_file, File};
 use std::io::Write;
 
 #[macro_use]
@@ -798,6 +801,41 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn export_container_test(docker: Docker) -> Result<(), Error> {
+    create_image_hello_world(&docker).await?;
+
+    let temp_file = if cfg!(windows) {
+        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_container_export.tar"
+    } else {
+        "/tmp/bollard_test_container_export.tar"
+    };
+
+    create_container_hello_world(&docker, "integration_test_export_container").await?;
+    let res = docker.export_container("integration_test_export_container");
+
+    let mut archive_file = File::create(temp_file).unwrap();
+    // Shouldn't load the whole file into memory, stream it to disk instead
+    res.for_each(move |data| {
+        archive_file.write_all(&data.unwrap()).unwrap();
+        archive_file.sync_all().unwrap();
+        ready(())
+    })
+    .await;
+
+    docker
+        .remove_container("integration_test_export_container", None)
+        .await?;
+
+    // assert that the file containg the exported archive actually exists
+    let test_file = File::open(temp_file).unwrap();
+    // and metadata can be read
+    test_file.metadata().unwrap();
+
+    // And delete it to clean up
+    remove_file(temp_file).unwrap();
+    Ok(())
+}
+
 #[test]
 fn integration_test_list_containers() {
     connect_to_docker_and_run!(list_containers_test);
@@ -887,4 +925,9 @@ fn integration_test_attach_container() {
 #[test]
 fn integration_test_resize_container_tty() {
     connect_to_docker_and_run!(resize_container_test);
+}
+
+#[test]
+fn integration_test_export_container() {
+    connect_to_docker_and_run!(export_container_test);
 }
