@@ -927,7 +927,9 @@ fn integration_test_resize_container_tty() {
     connect_to_docker_and_run!(resize_container_test);
 }
 
+// note: container exports aren't supported on Windows
 #[test]
+#[cfg(not(windows))]
 fn integration_test_export_container() {
     connect_to_docker_and_run!(export_container_test);
 }
