@@ -56,8 +56,16 @@ pub const DEFAULT_SOCKET: &str = "unix:///var/run/docker.sock";
 #[cfg(windows)]
 pub const DEFAULT_NAMED_PIPE: &str = "npipe:////./pipe/docker_engine";
 
+/// The default `DOCKER_TCP_ADDRESS` address that we will try to connect to.
+pub const DEFAULT_TCP_ADDRESS: &str = "tcp://localhost:2375";
+
 /// The default `DOCKER_HOST` address that we will try to connect to.
-pub const DEFAULT_DOCKER_HOST: &str = "tcp://localhost:2375";
+#[cfg(unix)]
+pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
+
+/// The default `DOCKER_HOST` address that we will try to connect to.
+#[cfg(windows)]
+pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_NAMED_PIPE;
 
 /// Default timeout for all requests is 2 minutes.
 const DEFAULT_TIMEOUT: u64 = 120;
@@ -401,7 +409,7 @@ impl Docker {
             if let Ok(ref host) = env::var("DOCKER_HOST") {
                 host
             } else {
-                DEFAULT_DOCKER_HOST
+                DEFAULT_TCP_ADDRESS
             },
             &cert_path.join("key.pem"),
             &cert_path.join("cert.pem"),
@@ -525,7 +533,7 @@ impl Docker {
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
-        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_TCP_ADDRESS.to_string());
         Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
@@ -634,6 +642,45 @@ impl Docker {
         let docker = Docker::connect_with_named_pipe(path, timeout, client_version);
 
         docker
+    }
+
+    /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
+    /// The connection method is determined by the `DOCKER_HOST` environment variable.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_defaults().unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_defaults() -> Result<Docker, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        match host {
+            #[cfg(unix)]
+            h if h.starts_with("unix://") => {
+                Docker::connect_with_unix(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(windows)]
+            h if h.starts_with("npipe://") => {
+                Docker::connect_with_named_pipe(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            h if h.starts_with("tcp://") || h.starts_with("http://") => {
+                #[cfg(feature = "ssl")]
+                if env::var("DOCKER_TLS_VERIFY").is_ok() {
+                    return Docker::connect_with_ssl_defaults();
+                }
+                Docker::connect_with_http_defaults()
+            }
+            #[cfg(feature = "ssl")]
+            h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
+            _ => Err(UnsupportedURISchemeError {
+                uri: host.to_string(),
+            }),
+        }
     }
 }
 

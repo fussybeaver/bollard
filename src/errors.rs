@@ -157,4 +157,10 @@ pub enum Error {
         #[from]
         err: hyper_util::client::legacy::Error,
     },
+    /// Error emitted when connecting to a URI with an unsupported scheme
+    #[error("URI scheme is not supported: {uri}")]
+    UnsupportedURISchemeError {
+        /// The URI that was attempted to be connected to
+        uri: String,
+    },
 }
