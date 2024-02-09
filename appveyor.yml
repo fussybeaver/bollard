@@ -41,3 +41,5 @@ test_script:
   - ps: Set-Item -path env:RUST_LOG -value "hyper=trace,bollard=debug"
   - ps: Set-Item -path env:REGISTRY_HTTP_ADDR -value localhost:5000
   - cargo test --verbose --tests -- --nocapture --test-threads 1
+  - ps: Set-Item -path env:DOCKER_HOST -value npipe:////./pipe/docker_engine
+  - cargo test --verbose --tests -- --nocapture --test-threads 1 --test test_connect_with_defaults

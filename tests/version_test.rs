@@ -76,3 +76,18 @@ fn test_downversioning() {
     };
     rt.block_on(fut);
 }
+
+#[test]
+#[allow(clippy::redundant_closure_call)]
+fn test_connect_with_defaults() {
+    #[cfg(unix)]
+    rt_exec!(
+        Docker::connect_with_defaults().unwrap().version(),
+        |version: Version| assert_eq!(version.os.unwrap(), "linux")
+    );
+    #[cfg(windows)]
+    rt_exec!(
+        Docker::connect_with_defaults().unwrap().version(),
+        |version: Version| assert_eq!(version.os.unwrap(), "windows")
+    )
+}
