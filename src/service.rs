@@ -28,6 +28,7 @@ use std::{collections::HashMap, hash::Hash};
 ///
 /// ListServicesOptions{
 ///     filters,
+///     ..Default::default()
 /// };
 /// ```
 ///
@@ -49,6 +50,9 @@ where
     ///  - `name`=`<name>` a services's name
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+
+    /// Include service status, with count of running and desired tasks.
+    pub status: bool,
 }
 
 /// Parameters used in the [Inspect Service API](Docker::inspect_service())
