@@ -182,12 +182,15 @@ pub(crate) async fn solve(
         }),
         definition: None,
         entitlements: vec![],
-        exporter: String::from(exporter),
-        exporter_attrs,
+        exporter_deprecated: String::from(exporter),
+        exporter_attrs_deprecated: exporter_attrs,
         frontend: String::from("dockerfile.v0"),
         frontend_attrs,
         frontend_inputs: HashMap::new(),
         session: session_id,
+        exporters: vec![],
+        internal: false,
+        source_policy: None,
     };
 
     debug!("sending solve request: {:#?}", solve_request);
