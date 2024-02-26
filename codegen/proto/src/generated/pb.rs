@@ -2,6 +2,7 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Op {
+    /// changes to this structure must be represented in json.go.
     /// inputs is a set of input edges.
     #[prost(message, repeated, tag = "1")]
     pub inputs: ::prost::alloc::vec::Vec<Input>,
@@ -41,7 +42,6 @@ pub struct Platform {
     pub os: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub variant: ::prost::alloc::string::String,
-    /// unused
     #[prost(string, tag = "4")]
     pub os_version: ::prost::alloc::string::String,
     /// unused
@@ -98,6 +98,8 @@ pub struct Meta {
     pub ulimit: ::prost::alloc::vec::Vec<Ulimit>,
     #[prost(string, tag = "10")]
     pub cgroup_parent: ::prost::alloc::string::String,
+    #[prost(bool, tag = "11")]
+    pub remove_mount_stubs_recursive: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -154,6 +156,8 @@ pub struct Mount {
     pub ssh_opt: ::core::option::Option<SshOpt>,
     #[prost(string, tag = "23")]
     pub result_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "MountContentCache", tag = "24")]
+    pub content_cache: i32,
 }
 /// TmpfsOpt defines options describing tpmfs mounts
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -307,6 +311,8 @@ pub struct SourceInfo {
     pub data: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "3")]
     pub definition: ::core::option::Option<Definition>,
+    #[prost(string, tag = "4")]
+    pub language: ::prost::alloc::string::String,
 }
 /// Location defines list of areas in to source file
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -400,6 +406,8 @@ pub struct FileOp {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileAction {
+    /// changes to this structure must be represented in json.go.
+    ///
     /// could be real input or target (target index + max input index)
     #[prost(int64, tag = "1")]
     pub input: i64,
@@ -535,11 +543,13 @@ pub struct ChownOpt {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UserOpt {
+    /// changes to this structure must be represented in json.go.
     #[prost(oneof = "user_opt::User", tags = "1, 2")]
     pub user: ::core::option::Option<user_opt::User>,
 }
 /// Nested message and enum types in `UserOpt`.
 pub mod user_opt {
+    /// changes to this structure must be represented in json.go.
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum User {
@@ -678,6 +688,36 @@ impl MountType {
             "SSH" => Some(Self::Ssh),
             "CACHE" => Some(Self::Cache),
             "TMPFS" => Some(Self::Tmpfs),
+            _ => None,
+        }
+    }
+}
+/// MountContentCache ...
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MountContentCache {
+    Default = 0,
+    On = 1,
+    Off = 2,
+}
+impl MountContentCache {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            MountContentCache::Default => "DEFAULT",
+            MountContentCache::On => "ON",
+            MountContentCache::Off => "OFF",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DEFAULT" => Some(Self::Default),
+            "ON" => Some(Self::On),
+            "OFF" => Some(Self::Off),
             _ => None,
         }
     }

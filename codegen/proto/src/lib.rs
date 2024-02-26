@@ -7,6 +7,15 @@ pub mod fsutil {
     }
 }
 
+pub mod google {
+    pub mod protobuf {
+        include!("generated/google.protobuf.rs");
+    }
+    pub mod rpc {
+        include!("generated/google.rpc.rs");
+    }
+}
+
 pub mod health {
     include!("generated/grpc.health.v1.rs");
 }
@@ -15,6 +24,9 @@ pub mod moby {
     pub mod buildkit {
         pub mod v1 {
             include!("generated/moby.buildkit.v1.rs");
+            pub mod sourcepolicy {
+                include!("generated/moby.buildkit.v1.sourcepolicy.rs");
+            }
             pub mod types {
                 include!("generated/moby.buildkit.v1.types.rs");
             }
@@ -30,10 +42,6 @@ pub mod moby {
             include!("generated/moby.upload.v1.rs");
         }
     }
-}
-
-pub mod google {
-    pub use prost_types as protobuf;
 }
 
 #[allow(clippy::all)]
