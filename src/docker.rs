@@ -25,7 +25,7 @@ use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(unix)]
-use hyperlocal::UnixConnector;
+use hyperlocal_next::UnixConnector;
 use log::{debug, trace};
 #[cfg(feature = "ssl")]
 use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey, ALL_VERSIONS};

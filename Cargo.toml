@@ -80,7 +80,7 @@ tokio = { version = "1.7", features = ["fs", "rt-multi-thread", "macros"] }
 yup-hyper-mock = { version = "8.0.0" }
 
 [target.'cfg(unix)'.dependencies]
-hyperlocal = { git = "https://github.com/softprops/hyperlocal", rev = "34dc8579d74f96b68ddbd55582c76019ae18cfdc", version = "0.9.0-alpha" }
+hyperlocal-next = { version = "0.9.0" }
 
 [target.'cfg(unix)'.dev-dependencies]
 termion = "3.0"
