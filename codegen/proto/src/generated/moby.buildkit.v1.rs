@@ -62,10 +62,13 @@ pub struct SolveRequest {
     pub r#ref: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub definition: ::core::option::Option<super::super::super::pb::Definition>,
+    /// ExporterDeprecated and ExporterAttrsDeprecated are deprecated in favor
+    /// of the new Exporters. If these fields are set, then they will be
+    /// appended to the Exporters field if Exporters was not explicitly set.
     #[prost(string, tag = "3")]
-    pub exporter: ::prost::alloc::string::String,
+    pub exporter_deprecated: ::prost::alloc::string::String,
     #[prost(map = "string, string", tag = "4")]
-    pub exporter_attrs: ::std::collections::HashMap<
+    pub exporter_attrs_deprecated: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -87,6 +90,13 @@ pub struct SolveRequest {
         ::prost::alloc::string::String,
         super::super::super::pb::Definition,
     >,
+    /// Internal builds are not recorded in build history
+    #[prost(bool, tag = "11")]
+    pub internal: bool,
+    #[prost(message, optional, tag = "12")]
+    pub source_policy: ::core::option::Option<sourcepolicy::Policy>,
+    #[prost(message, repeated, tag = "13")]
+    pub exporters: ::prost::alloc::vec::Vec<Exporter>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -268,6 +278,158 @@ pub struct InfoRequest {}
 pub struct InfoResponse {
     #[prost(message, optional, tag = "1")]
     pub buildkit_version: ::core::option::Option<types::BuildkitVersion>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryRequest {
+    #[prost(bool, tag = "1")]
+    pub active_only: bool,
+    #[prost(string, tag = "2")]
+    pub r#ref: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub early_exit: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryEvent {
+    #[prost(enumeration = "BuildHistoryEventType", tag = "1")]
+    pub r#type: i32,
+    #[prost(message, optional, tag = "2")]
+    pub record: ::core::option::Option<BuildHistoryRecord>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryRecord {
+    #[prost(string, tag = "1")]
+    pub r#ref: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub frontend: ::prost::alloc::string::String,
+    #[prost(map = "string, string", tag = "3")]
+    pub frontend_attrs: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(message, repeated, tag = "4")]
+    pub exporters: ::prost::alloc::vec::Vec<Exporter>,
+    #[prost(message, optional, tag = "5")]
+    pub error: ::core::option::Option<super::super::super::google::rpc::Status>,
+    #[prost(message, optional, tag = "6")]
+    pub created_at: ::core::option::Option<
+        super::super::super::google::protobuf::Timestamp,
+    >,
+    #[prost(message, optional, tag = "7")]
+    pub completed_at: ::core::option::Option<
+        super::super::super::google::protobuf::Timestamp,
+    >,
+    #[prost(message, optional, tag = "8")]
+    pub logs: ::core::option::Option<Descriptor>,
+    #[prost(map = "string, string", tag = "9")]
+    pub exporter_response: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(message, optional, tag = "10")]
+    pub result: ::core::option::Option<BuildResultInfo>,
+    #[prost(map = "string, message", tag = "11")]
+    pub results: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        BuildResultInfo,
+    >,
+    #[prost(int32, tag = "12")]
+    pub generation: i32,
+    #[prost(message, optional, tag = "13")]
+    pub trace: ::core::option::Option<Descriptor>,
+    #[prost(bool, tag = "14")]
+    pub pinned: bool,
+    #[prost(int32, tag = "15")]
+    pub num_cached_steps: i32,
+    #[prost(int32, tag = "16")]
+    pub num_total_steps: i32,
+    /// TODO: tags
+    /// TODO: unclipped logs
+    #[prost(int32, tag = "17")]
+    pub num_completed_steps: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateBuildHistoryRequest {
+    #[prost(string, tag = "1")]
+    pub r#ref: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub pinned: bool,
+    #[prost(bool, tag = "3")]
+    pub delete: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateBuildHistoryResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Descriptor {
+    #[prost(string, tag = "1")]
+    pub media_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub digest: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub size: i64,
+    #[prost(map = "string, string", tag = "5")]
+    pub annotations: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildResultInfo {
+    #[prost(message, optional, tag = "1")]
+    pub result_deprecated: ::core::option::Option<Descriptor>,
+    #[prost(message, repeated, tag = "2")]
+    pub attestations: ::prost::alloc::vec::Vec<Descriptor>,
+    #[prost(map = "int64, message", tag = "3")]
+    pub results: ::std::collections::HashMap<i64, Descriptor>,
+}
+/// Exporter describes the output exporter
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Exporter {
+    /// Type identifies the exporter
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// Attrs specifies exporter configuration
+    #[prost(map = "string, string", tag = "2")]
+    pub attrs: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BuildHistoryEventType {
+    Started = 0,
+    Complete = 1,
+    Deleted = 2,
+}
+impl BuildHistoryEventType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            BuildHistoryEventType::Started => "STARTED",
+            BuildHistoryEventType::Complete => "COMPLETE",
+            BuildHistoryEventType::Deleted => "DELETED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STARTED" => Some(Self::Started),
+            "COMPLETE" => Some(Self::Complete),
+            "DELETED" => Some(Self::Deleted),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod control_client {
@@ -523,6 +685,60 @@ pub mod control_client {
                 .insert(GrpcMethod::new("moby.buildkit.v1.Control", "Info"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn listen_build_history(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BuildHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::BuildHistoryEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/moby.buildkit.v1.Control/ListenBuildHistory",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("moby.buildkit.v1.Control", "ListenBuildHistory"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn update_build_history(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateBuildHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateBuildHistoryResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/moby.buildkit.v1.Control/UpdateBuildHistory",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("moby.buildkit.v1.Control", "UpdateBuildHistory"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -584,6 +800,26 @@ pub mod control_server {
             &self,
             request: tonic::Request<super::InfoRequest>,
         ) -> std::result::Result<tonic::Response<super::InfoResponse>, tonic::Status>;
+        /// Server streaming response type for the ListenBuildHistory method.
+        type ListenBuildHistoryStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::BuildHistoryEvent, tonic::Status>,
+            >
+            + Send
+            + 'static;
+        async fn listen_build_history(
+            &self,
+            request: tonic::Request<super::BuildHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::ListenBuildHistoryStream>,
+            tonic::Status,
+        >;
+        async fn update_build_history(
+            &self,
+            request: tonic::Request<super::UpdateBuildHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateBuildHistoryResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct ControlServer<T: Control> {
@@ -968,6 +1204,99 @@ pub mod control_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InfoSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/moby.buildkit.v1.Control/ListenBuildHistory" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListenBuildHistorySvc<T: Control>(pub Arc<T>);
+                    impl<
+                        T: Control,
+                    > tonic::server::ServerStreamingService<super::BuildHistoryRequest>
+                    for ListenBuildHistorySvc<T> {
+                        type Response = super::BuildHistoryEvent;
+                        type ResponseStream = T::ListenBuildHistoryStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BuildHistoryRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Control>::listen_build_history(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListenBuildHistorySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/moby.buildkit.v1.Control/UpdateBuildHistory" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateBuildHistorySvc<T: Control>(pub Arc<T>);
+                    impl<
+                        T: Control,
+                    > tonic::server::UnaryService<super::UpdateBuildHistoryRequest>
+                    for UpdateBuildHistorySvc<T> {
+                        type Response = super::UpdateBuildHistoryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateBuildHistoryRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Control>::update_build_history(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateBuildHistorySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

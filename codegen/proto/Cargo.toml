@@ -1,7 +1,7 @@
 [package]
 name = "bollard-buildkit-proto"
 description = "Protobuf definitions to interact with buildkit using Bollard"
-version = "0.2.1"
+version = "0.3.0"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 edition = "2021"
@@ -14,7 +14,7 @@ name = "gen"
 required-features = ["build"]
 
 [dependencies]
-tonic = { version = "0.10" }
+tonic = { version = "0.11" }
 prost = { version = "0.12" }
 prost-types = "0.12"
-tonic-build = { version = "0.10", optional = true }
+tonic-build = { version = "0.11", optional = true }

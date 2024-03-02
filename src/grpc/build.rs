@@ -219,7 +219,7 @@ impl ImageBuildFrontendOptions {
     }
 }
 
-/// Builder for the associated [`ImageBuildFrontendOptions`](ImageBuildFrontendOptions) type
+/// Builder for the associated [`ImageBuildFrontendOptions`] type
 ///
 /// ## Examples
 ///
@@ -294,7 +294,7 @@ impl ImageBuildFrontendOptionsBuilder {
         self
     }
 
-    /// Platform in the format [`ImageBuildPlatform`](ImageBuildPlatform)
+    /// Platform in the format [`ImageBuildPlatform`]
     pub fn platforms(mut self, value: &ImageBuildPlatform) -> Self {
         self.inner.platforms.push(value.to_owned());
         self
@@ -319,7 +319,7 @@ impl ImageBuildFrontendOptionsBuilder {
         self
     }
 
-    /// Consume the builder and emit an [`ImageBuildFrontendOptions`](ImageBuildFrontendOptions)
+    /// Consume the builder and emit an [`ImageBuildFrontendOptions`]
     pub fn build(self) -> ImageBuildFrontendOptions {
         self.inner
     }
@@ -328,7 +328,7 @@ impl ImageBuildFrontendOptionsBuilder {
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
 /// Dockerfile seed implementation to export OCI images as part of the
-/// [`image_export_oci`][crate::Docker::image_export_oci] Docker/buildkit functionality.
+/// [`crate::grpc::driver::Export::export`] Docker/buildkit functionality.
 ///
 /// Accepts a compressed Dockerfile as Bytes
 ///
@@ -365,91 +365,3 @@ pub enum ImageBuildLoadInput {
     /// Seed the exporter with a tarball containing the Dockerfile to build
     Upload(Bytes),
 }
-
-// impl super::super::Docker {
-//     /// TODO
-//     pub async fn image_build_buildkit(
-//         &mut self,
-//         driver: impl Driver,
-//         name: &str,
-//         frontend_opts: ImageBuildFrontendOptions,
-//         load_input: ImageBuildLoadInput,
-//         credentials: Option<HashMap<&str, DockerCredentials>>,
-//     ) -> Result<(), GrpcError> {
-//         let session_id = crate::grpc::new_id();
-
-//         let payload = match load_input {
-//             ImageBuildLoadInput::Upload(bytes) => bytes,
-//         };
-
-//         let mut upload_provider = super::UploadProvider::new();
-//         let context = upload_provider.add(payload.to_vec());
-
-//         let ImageBuildFrontendOptionsIngest {
-//             cache_to,
-//             cache_from,
-//             mut frontend_attrs,
-//         } = frontend_opts.consume();
-
-//         frontend_attrs.insert(String::from("context"), context);
-
-//         let mut auth_provider = super::AuthProvider::new();
-//         if let Some(creds) = credentials {
-//             for (host, docker_credentials) in creds {
-//                 auth_provider.set_docker_credentials(host, docker_credentials);
-//             }
-//         }
-//         let auth = moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
-
-//         let upload = moby::upload::v1::upload_server::UploadServer::new(upload_provider);
-//         let filesend = moby::filesync::v1::file_send_server::FileSendServer::new(
-//             super::FileSendImpl::new(Path::new("/tmp/foo")),
-//         );
-
-//         let services: Vec<super::GrpcServer> = vec![
-//             super::GrpcServer::Auth(auth),
-//             super::GrpcServer::FileSend(filesend),
-//             super::GrpcServer::Upload(upload),
-//         ];
-
-//         let tear_down_handler = driver.get_tear_down_handler();
-//         let mut control_client = driver.grpc_handle(&session_id, services).await?;
-
-//         let id = super::new_id();
-
-//         let mut exporter_attrs = HashMap::new();
-//         exporter_attrs.insert(String::from("type"), String::from("image"));
-//         exporter_attrs.insert(String::from("name"), String::from(name));
-
-//         let solve_request = moby::buildkit::v1::SolveRequest {
-//             r#ref: String::from(id),
-//             cache: Some(CacheOptions {
-//                 export_ref_deprecated: String::new(),
-//                 import_refs_deprecated: Vec::new(),
-//                 export_attrs_deprecated: HashMap::new(),
-//                 exports: cache_to,
-//                 imports: cache_from,
-//             }),
-//             definition: None,
-//             entitlements: vec![],
-//             exporter: String::from("docker"),
-//             exporter_attrs,
-//             frontend: String::from("dockerfile.v0"),
-//             frontend_attrs,
-//             frontend_inputs: HashMap::new(),
-//             session: String::from(session_id),
-//         };
-
-//         debug!("sending solve request: {:#?}", solve_request);
-//         let res = control_client.solve(solve_request).await;
-//         debug!("solve res: {:#?}", res);
-
-//         // clean up
-
-//         tear_down_handler.tear_down().await?;
-//         // tear_down?;
-//         res?;
-
-//         Ok(())
-//     }
-// }

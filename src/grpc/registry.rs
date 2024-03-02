@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use super::build::ImageBuildOutputCompression;
 
-/// TODO
+/// Consumable Configuration for the Buildkit Registry exporter. Exports the build result into a container image, and pushes it to the specified registry.
+///
+/// More details: <https://docs.docker.com/build/exporters/image-registry/>
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ImageRegistryOutput {
     pub(crate) name: String,
@@ -21,7 +23,8 @@ pub struct ImageRegistryOutput {
 }
 
 impl ImageRegistryOutput {
-    /// TODO
+    /// Creates a Builder instance for the [`ImageRegistryOutput`] Registry exporter
+    /// configuration instance.
     pub fn builder(name: &str) -> ImageRegistryOutputBuilder {
         ImageRegistryOutputBuilder::new(name)
     }
@@ -91,14 +94,15 @@ impl ImageRegistryOutput {
     }
 }
 
-/// TODO
+/// Builder instance for the [`ImageRegistryOutput`] Registry exporter configuration instance.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ImageRegistryOutputBuilder {
     inner: ImageRegistryOutput,
 }
 
 impl ImageRegistryOutputBuilder {
-    /// TODO
+    /// Creates a Builder instance for the [`ImageRegistryOutput`] Registry exporter
+    /// configuration instance.
     pub fn new(name: &str) -> Self {
         Self {
             inner: ImageRegistryOutput {
@@ -108,31 +112,31 @@ impl ImageRegistryOutputBuilder {
         }
     }
 
-    /// TODO
+    /// Push after creating the image.
     pub fn push(mut self, push: bool) -> Self {
         self.inner.push = push;
         self
     }
 
-    /// TODO
+    /// Push image without name.
     pub fn push_by_digest(mut self, push_by_digest: bool) -> Self {
         self.inner.push_by_digest = push_by_digest;
         self
     }
 
-    /// TODO
+    /// Allow pushing to insecure registry.
     pub fn insecure_registry(mut self, insecure_registry: bool) -> Self {
         self.inner.insecure_registry = insecure_registry;
         self
     }
 
-    /// TODO
+    /// Name image with `prefix@<digest>`, used for anonymous images
     pub fn dangling_name_prefix(mut self, dangling_name_prefix: &str) -> Self {
         self.inner.dangling_name_prefix = String::from(dangling_name_prefix);
         self
     }
 
-    /// TODO
+    /// Add additional canonical name `name@<digest>`
     pub fn name_canonical(mut self, name_canonical: bool) -> Self {
         self.inner.name_canonical = name_canonical;
         self
@@ -167,13 +171,15 @@ impl ImageRegistryOutputBuilder {
         self
     }
 
-    /// TODO
+    /// Unpack image after creation (for use with containerd)
     pub fn unpack(mut self, unpack: bool) -> Self {
         self.inner.unpack = unpack;
         self
     }
 
-    /// TODO
+    /// Store the result images to the worker's (for example, containerd) image store, and ensures
+    /// that the image has all blobs in the content store. Ignored if the worker doesn't have image
+    /// store (when using OCI workers, for example).
     pub fn store(mut self, store: bool) -> Self {
         self.inner.store = store;
         self
@@ -189,7 +195,7 @@ impl ImageRegistryOutputBuilder {
         self
     }
 
-    /// TODO
+    /// Consume this Builder instance to create an [`ImageRegistryOutput`] instance
     pub fn consume(self) -> ImageRegistryOutput {
         self.inner
     }
