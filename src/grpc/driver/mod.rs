@@ -28,29 +28,23 @@ pub mod docker_container;
 /// endpoints over the traditional docker socket.
 pub mod moby;
 
-/// TODO
-pub trait Driver {
-    /// TODO
+pub(crate) trait Driver {
     async fn grpc_handle(
         self,
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>;
-    /// TODO
     fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler>;
 }
 
-/// TODO
-pub trait DriverTearDownHandler {
-    /// TODO
+pub(crate) trait DriverTearDownHandler {
     fn tear_down<'a>(
         &'a self,
     ) -> std::pin::Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + 'a>>;
 }
 
-/// TODO
 #[derive(Debug, Clone)]
-pub struct DriverInterceptor {
+pub(crate) struct DriverInterceptor {
     session_id: String,
     metadata_grpc_method: Vec<String>,
 }
@@ -78,18 +72,19 @@ impl Interceptor for DriverInterceptor {
     }
 }
 
-/// TODO
+/// Parameterises the [`docker_container::DockerContainer`] or [`moby::Moby`] driver with an exporter configuration. See
+/// <https://docs.docker.com/build/exporters/oci-docker/>
 #[derive(Debug, Clone)]
 pub enum ImageExporterEnum {
-    /// TODO
+    /// Export using the `oci` exporter.
     OCI(ImageExporterRequest),
-    /// TODO
+    /// Export using the `docker` exporter.
     Docker(ImageExporterRequest),
 }
 
-/// TODO
+/// Trait enabling container exports.
 pub trait Export {
-    /// TODO
+    /// Export the container to a tar
     async fn export(
         self,
         exporter_request: ImageExporterEnum,
@@ -99,9 +94,9 @@ pub trait Export {
     ) -> Result<(), GrpcError>;
 }
 
-/// TODO
+/// Trait enabling docker builds.
 pub trait Build {
-    /// TODO
+    /// Build a docker container without exporting
     async fn docker_build(
         self,
         name: &str,
@@ -111,9 +106,9 @@ pub trait Build {
     ) -> Result<(), GrpcError>;
 }
 
-/// TODO
+/// Trait enabling registry facilities
 pub trait Image {
-    /// TODO
+    /// Push a container build to the registry
     async fn registry(
         self,
         output: ImageRegistryOutput,

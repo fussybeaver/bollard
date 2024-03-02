@@ -1209,7 +1209,7 @@ impl Docker {
                         "/{}/fetch_token",
                         <bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::<
                             crate::grpc::AuthProvider,
-                        > as tonic::transport::NamedService>::NAME
+                        > as tonic::server::NamedService>::NAME
                     ),
                 )
                 .header("X-Docker-Expose-Session-Uuid", &id),

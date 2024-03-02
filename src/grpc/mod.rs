@@ -46,7 +46,7 @@ use log::trace;
 use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
-use tonic::transport::NamedService;
+use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use futures_util::{StreamExt, TryFutureExt};
@@ -60,20 +60,15 @@ use tower_service::Service;
 use self::error::GrpcAuthError;
 use self::io::GrpcTransport;
 
-/// A static dispatch wrapper for GRPC implementations to generated GRPC traits
 #[derive(Debug)]
-pub enum GrpcServer {
-    /// TODO
+pub(crate) enum GrpcServer {
     Auth(AuthServer<AuthProvider>),
-    /// TODO
     Upload(UploadServer<UploadProvider>),
-    /// TODO
     FileSend(FileSendServer<FileSendImpl>),
 }
 
 impl GrpcServer {
-    /// TODO
-    pub fn append(
+    pub(crate) fn append(
         self,
         builder: tonic::transport::server::Router,
     ) -> tonic::transport::server::Router {
@@ -84,7 +79,7 @@ impl GrpcServer {
         }
     }
 
-    /// TODO
+    /// Internal name published as part of the GRPC communication
     pub fn names(&self) -> Vec<String> {
         match self {
             GrpcServer::Auth(_auth_server) => {
@@ -156,14 +151,12 @@ impl Health for HealthServerImpl {
     }
 }
 
-/// TODO
 #[derive(Clone, Debug)]
-pub struct FileSendImpl {
+pub(crate) struct FileSendImpl {
     pub(crate) dest: PathBuf,
 }
 
 impl FileSendImpl {
-    /// TODO
     pub fn new(dest: &Path) -> Self {
         Self {
             dest: dest.to_owned(),
@@ -199,22 +192,19 @@ impl FileSend for FileSendImpl {
     }
 }
 
-/// TODO
 #[derive(Default, Debug)]
-pub struct UploadProvider {
+pub(crate) struct UploadProvider {
     pub(crate) store: HashMap<String, Vec<u8>>,
 }
 
 impl UploadProvider {
-    /// TODO
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             store: HashMap::new(),
         }
     }
 
-    /// TODO
-    pub fn add(&mut self, reader: Vec<u8>) -> String {
+    pub(crate) fn add(&mut self, reader: Vec<u8>) -> String {
         let id = new_id();
         let key = format!("http://buildkit-session/{}", id);
 
@@ -252,9 +242,8 @@ impl Upload for UploadProvider {
     }
 }
 
-/// TODO
 #[derive(Debug, Default)]
-pub struct AuthProvider {
+pub(crate) struct AuthProvider {
     auth_config_cache: HashMap<String, DockerCredentials>,
     registry_token: Option<String>,
     token_seeds: HashMap<String, Bytes>,
@@ -288,8 +277,7 @@ struct OAuthTokenResponse {
 }
 
 impl AuthProvider {
-    /// TODO
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ..Default::default()
         }

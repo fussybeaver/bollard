@@ -30,7 +30,7 @@ pub struct Moby {
 }
 
 impl Moby {
-    /// TODO
+    /// Create a [`Moby`] driver instance.
     pub fn new(docker: &Docker) -> Self {
         Self {
             docker: Docker::clone(docker),

@@ -58,10 +58,10 @@ impl ToString for ImageExporterOCIOutputCompression {
     }
 }
 
-/// Request struct to parameterise export OCI images as part of the
-/// [`image_export_oci`][crate::Docker::image_export_oci] Docker/buildkit functionality.
+/// Request struct to parameterise export images as part of the
+/// [`crate::grpc::driver::Export::export`] Docker/buildkit functionality.
 ///
-/// Constructed through the [`ImageExporterOCIOutputBuilder`] type.
+/// Constructed through the [`ImageExporterOutputBuilder`] type.
 ///
 /// ## Examples
 ///
@@ -81,7 +81,7 @@ pub struct ImageExporterRequest {
 }
 
 impl ImageExporterOutput {
-    /// Constructs a [`ImageExporterOCIOutputBuilder`], the `name` parameter denotes the output
+    /// Constructs a [`ImageExporterOutputBuilder`], the `name` parameter denotes the output
     /// image target, e.g. "docker.io/library/my-image:latest".
     pub fn builder(name: &str) -> ImageExporterOutputBuilder {
         ImageExporterOutputBuilder::new(name)
@@ -125,7 +125,7 @@ impl ImageExporterOutput {
 }
 
 /// Builder used to parameterise export OCI images as part of the
-/// [`image_export_oci`][crate::Docker::image_export_oci] Docker/buildkit functionality.
+/// [`crate::grpc::driver::Export::export`] Docker/buildkit functionality.
 ///
 /// ## Examples
 ///
@@ -193,8 +193,8 @@ impl ImageExporterOutputBuilder {
         self
     }
 
-    /// Consume this builder to create an [`ImageExporterOCIOutput`] for the
-    /// [`image_export_oci`](crate::Docker::image_export_oci) method
+    /// Consume this builder to create an [`ImageExporterRequest`] for the
+    /// [`crate::grpc::driver::Export::export`] method
     pub fn dest(self, path: &Path) -> ImageExporterRequest {
         ImageExporterRequest {
             output: self.inner,

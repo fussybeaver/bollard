@@ -109,7 +109,8 @@ impl Service<tonic::transport::Uri> for DockerContainer {
 }
 
 /// Builder used to create a driver, needed to communicate with `Buildkit`, such as with the
-/// [`image_export_oci`][crate::Docker::image_export_oci] functionality.
+/// [`crate::grpc::driver::Export::export`] or [`crate::grpc::driver::Image::registry`]
+/// functionality.
 ///
 /// <div class="warning">
 ///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.

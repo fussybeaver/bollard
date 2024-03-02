@@ -219,7 +219,7 @@ impl ImageBuildFrontendOptions {
     }
 }
 
-/// Builder for the associated [`ImageBuildFrontendOptions`](ImageBuildFrontendOptions) type
+/// Builder for the associated [`ImageBuildFrontendOptions`] type
 ///
 /// ## Examples
 ///
@@ -294,7 +294,7 @@ impl ImageBuildFrontendOptionsBuilder {
         self
     }
 
-    /// Platform in the format [`ImageBuildPlatform`](ImageBuildPlatform)
+    /// Platform in the format [`ImageBuildPlatform`]
     pub fn platforms(mut self, value: &ImageBuildPlatform) -> Self {
         self.inner.platforms.push(value.to_owned());
         self
@@ -319,7 +319,7 @@ impl ImageBuildFrontendOptionsBuilder {
         self
     }
 
-    /// Consume the builder and emit an [`ImageBuildFrontendOptions`](ImageBuildFrontendOptions)
+    /// Consume the builder and emit an [`ImageBuildFrontendOptions`]
     pub fn build(self) -> ImageBuildFrontendOptions {
         self.inner
     }
@@ -328,7 +328,7 @@ impl ImageBuildFrontendOptionsBuilder {
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
 /// Dockerfile seed implementation to export OCI images as part of the
-/// [`image_export_oci`][crate::Docker::image_export_oci] Docker/buildkit functionality.
+/// [`crate::grpc::driver::Export::export`] Docker/buildkit functionality.
 ///
 /// Accepts a compressed Dockerfile as Bytes
 ///
