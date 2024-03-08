@@ -49,6 +49,7 @@
 //!  - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of
 //!    [Docker](https://github.com/moby/moby) when building images.
 //!  - `json_data_content`: Add JSON to errors on serialization failures.
+//!  - `webpki`: Use mozilla's root certificates instead of native root certs provided by the OS.
 //!
 //! ## Version
 //!
