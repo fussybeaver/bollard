@@ -49,8 +49,6 @@ encouraged.
  - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of
    [Docker](https://github.com/moby/moby) when building images.
  - `json_data_content`: Add JSON to errors on serialization failures.
- - `ct_logs`: [Certificate transparency](https://certificate.transparency.dev/howctworks/)
-   verification (requires `ssl`).
 
 ### Version
 
