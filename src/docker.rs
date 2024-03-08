@@ -76,10 +76,6 @@ pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     minor_version: 44,
 };
 
-/// 2 years from ct_logs 0.9 release
-#[cfg(feature = "ct_logs")]
-const TIMESTAMP_CT_LOGS_EXPIRY: u64 = 1681908462;
-
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
     #[cfg(unix)]
