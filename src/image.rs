@@ -653,6 +653,51 @@ impl Docker {
 
     /// ---
     ///
+    /// # Inspect an Image by contacting the registry
+    ///
+    /// Return image digest and platform information by contacting the registry
+    ///
+    /// # Arguments
+    ///
+    /// - Image name as a string slice.
+    ///
+    /// # Returns
+    ///
+    /// - [DistributionInspect](DistributionInspect), wrapped in a Future
+    ///
+    /// # Examples
+    /// ```rust
+    /// use bollard::Docker;
+    /// let docker = Docker::connect_with_http_defaults().unwrap();
+    /// docker.inspect_registry_image("ubuntu:jammy", None);
+    /// ```
+    pub async fn inspect_registry_image(
+        &self,
+        image_name: &str,
+        credentials: Option<DockerCredentials>,
+    ) -> Result<DistributionInspect, Error> {
+        let url = format!("/distribution/{image_name}/json");
+
+        // base64 encode docker credential json to add X-Registry-Auth header to request
+        let creds = &credentials.unwrap_or_else(|| DockerCredentials {
+            ..Default::default()
+        });
+        let creds = serde_json::to_string(creds)?;
+        let creds = base64_url_encode(&creds);
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header("X-Registry-Auth", creds),
+            None::<String>,
+            Ok(Full::new(Bytes::new())),
+        );
+
+        self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
     /// # Prune Images
     ///
     /// Delete unused images.
