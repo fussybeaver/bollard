@@ -71,7 +71,7 @@ where
 pub async fn create_container_hello_world(
     docker: &Docker,
     container_name: &'static str,
-) -> Result<(), Error> {
+) -> Result<String, Error> {
     let image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
     } else {
@@ -112,7 +112,7 @@ pub async fn create_container_hello_world(
             }),
             Config {
                 cmd,
-                image: Some(image),
+                image: Some(image.clone()),
                 ..Default::default()
             },
         )
@@ -130,8 +130,7 @@ pub async fn create_container_hello_world(
         .await?;
 
     assert_eq!(wait.first().unwrap().status_code, 0);
-
-    Ok(())
+    Ok(image)
 }
 
 #[allow(dead_code)]
@@ -265,7 +264,7 @@ pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Re
 }
 
 #[allow(dead_code)]
-pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
+pub async fn create_image_hello_world(docker: &Docker) -> Result<String, Error> {
     let image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
     } else {
@@ -293,7 +292,7 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<(), Error> {
         if cfg!(windows) { "nanoserver" } else { "linux" }
     );
 
-    Ok(())
+    Ok(image)
 }
 
 #[allow(dead_code)]
