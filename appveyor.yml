@@ -43,3 +43,4 @@ test_script:
   - cargo test --verbose --tests -- --nocapture --test-threads 1
   - ps: Set-Item -path env:DOCKER_HOST -value npipe:////./pipe/docker_engine
   - cargo test --verbose --tests -- --nocapture --test-threads 1 --test test_connect_with_defaults
+  - cargo test --verbose test_runtime
