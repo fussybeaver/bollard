@@ -1,6 +1,4 @@
 //! Stream stats for all running Docker containers asynchronously
-#![type_length_limit = "2097152"]
-
 use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
 
