@@ -37,7 +37,7 @@ chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]
 
 [dependencies]
-base64 = "0.21"
+base64 = "0.22"
 bollard-stubs = { path = "codegen/swagger", version = "=1.44.0-rc.2", default-features = false }
 bollard-buildkit-proto = { path = "codegen/proto", version = "=0.3.0", optional = true }
 bytes = "1"
