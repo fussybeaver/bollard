@@ -4,6 +4,7 @@ description = "Protobuf definitions to interact with buildkit using Bollard"
 version = "0.3.0"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
+repository = "https://github.com/fussybeaver/bollard"
 edition = "2021"
 
 [features]
