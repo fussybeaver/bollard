@@ -15,7 +15,6 @@ jobs:
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl,webpki -- --test test_version_ssl
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='tcp://test.example.com:2376' -e DOCKER_TLS_VERIFY=1 --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features webpki -- --test test_connect_with_defaults
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='https://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features webpki -- --test test_connect_with_defaults
-      - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='https://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl,webpki test_runtime
   test_http:
     docker:
       - image: docker:25.0.3
@@ -26,7 +25,6 @@ jobs:
       - run: docker build -t bollard .
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http -- --test test_version_http
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test -- --test test_connect_with_defaults
-      - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http test_runtime
   test_unix:
     docker:
       - image: docker:25.0.3
@@ -36,7 +34,6 @@ jobs:
       - run: docker build -t bollard .
       - run: resources/dockerfiles/bin/run_integration_tests.sh --tests
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test -- --test test_connect_with_defaults
-      - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test test_runtime
   test_buildkit:
     docker:
       - image: docker:25.0.3
@@ -61,6 +58,16 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features time --tests
+  test_race:
+    docker:
+      - image: docker:25.0.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay
+      - run: docker build -t bollard .
+      - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_http test_runtime
+      - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test test_runtime
   test_doc:
     docker:
       - image: docker:25.0.3
