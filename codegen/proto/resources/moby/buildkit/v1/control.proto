@@ -2,12 +2,13 @@ syntax = "proto3";
 
 package moby.buildkit.v1;
 
-import "gogoproto/gogo.proto";
-import "google/protobuf/timestamp.proto";
+// import "github.com/containerd/containerd/api/types/descriptor.proto";
 import "google/rpc/status.proto";
-import "pb/ops.proto";
+import "gogoproto/gogo.proto";
 import "moby/buildkit/v1/types/worker.proto";
+import "pb/ops.proto";
 import "moby/buildkit/v1/sourcepolicy/policy.proto";
+import "google/protobuf/timestamp.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
