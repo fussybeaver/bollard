@@ -57,6 +57,19 @@
 //! `1.44` documentation schema published by the [moby](https://github.com/moby/moby) project to
 //! generate its serialization interface.
 //!
+//! Breaking change releases in Bollard will depend on a moby API server version corresponding to the
+//! date of that release, so for example a January minor version change will use the
+//! matching [moby swagger API](https://github.com/moby/moby/blob/master/api/swagger.yaml)
+//! available in January. The associated [`bollard-stubs`](https://crates.io/crate/bollard-stubs)
+//! project will release separate versions that you can pin your project against, if you need a
+//! more modern or older API according to your docker server version.
+//!
+//! For example:
+//! ```nocompile
+//! [dependencies]
+//! bollard-stubs = { version = "=1.44.0-rc.26.0.0" }
+//! ```
+//!
 //! This library also supports [version
 //! negotiation](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.negotiate_version),
 //! to allow downgrading to an older API version.
