@@ -115,3 +115,4 @@ workflows:
       - test_clippy
       - test_audit
       - test_fmt
+      - test_race
