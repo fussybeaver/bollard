@@ -480,6 +480,9 @@ pub struct FileActionCopy {
     /// exclude files/dir matching any of these patterns (even if they match an include pattern)
     #[prost(string, repeated, tag = "13")]
     pub exclude_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// alwaysReplaceExistingDestPaths results in an existing dest path that differs in type from the src path being replaced rather than the default of returning an error
+    #[prost(bool, tag = "14")]
+    pub always_replace_existing_dest_paths: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

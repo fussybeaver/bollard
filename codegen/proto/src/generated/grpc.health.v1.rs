@@ -61,6 +61,9 @@ pub mod health_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// Health is gRPC's mechanism for checking whether a server is able to handle
+    /// RPCs. Its semantics are documented in
+    /// https://github.com/grpc/grpc/blob/master/doc/health-checking.md.
     #[derive(Debug, Clone)]
     pub struct HealthClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -141,8 +144,15 @@ pub mod health_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// If the requested service is unknown, the call will fail with status
-        /// NOT_FOUND.
+        /// Check gets the health of the specified service. If the requested service
+        /// is unknown, the call will fail with status NOT_FOUND. If the caller does
+        /// not specify a service name, the server should respond with its overall
+        /// health status.
+        ///
+        /// Clients should set a deadline when calling Check, and can declare the
+        /// server unhealthy if they do not receive a timely response.
+        ///
+        /// Check implementations should be idempotent and side effect free.
         pub async fn check(
             &mut self,
             request: impl tonic::IntoRequest<super::HealthCheckRequest>,
@@ -217,8 +227,15 @@ pub mod health_server {
     /// Generated trait containing gRPC methods that should be implemented for use with HealthServer.
     #[async_trait]
     pub trait Health: Send + Sync + 'static {
-        /// If the requested service is unknown, the call will fail with status
-        /// NOT_FOUND.
+        /// Check gets the health of the specified service. If the requested service
+        /// is unknown, the call will fail with status NOT_FOUND. If the caller does
+        /// not specify a service name, the server should respond with its overall
+        /// health status.
+        ///
+        /// Clients should set a deadline when calling Check, and can declare the
+        /// server unhealthy if they do not receive a timely response.
+        ///
+        /// Check implementations should be idempotent and side effect free.
         async fn check(
             &self,
             request: tonic::Request<super::HealthCheckRequest>,
@@ -252,6 +269,9 @@ pub mod health_server {
             request: tonic::Request<super::HealthCheckRequest>,
         ) -> std::result::Result<tonic::Response<Self::WatchStream>, tonic::Status>;
     }
+    /// Health is gRPC's mechanism for checking whether a server is able to handle
+    /// RPCs. Its semantics are documented in
+    /// https://github.com/grpc/grpc/blob/master/doc/health-checking.md.
     #[derive(Debug)]
     pub struct HealthServer<T: Health> {
         inner: _Inner<T>,

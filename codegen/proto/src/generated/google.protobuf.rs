@@ -474,12 +474,12 @@ pub struct FieldDescriptorProto {
     /// If true, this is a proto3 "optional". When a proto3 field is optional, it
     /// tracks presence regardless of field type.
     ///
-    /// When proto3_optional is true, this field must be belong to a oneof to
-    /// signal to old proto3 clients that presence is tracked for this field. This
-    /// oneof is known as a "synthetic" oneof, and this field must be its sole
-    /// member (each proto3 optional field gets its own synthetic oneof). Synthetic
-    /// oneofs exist in the descriptor only, and do not generate any API. Synthetic
-    /// oneofs must be ordered after all "real" oneofs.
+    /// When proto3_optional is true, this field must belong to a oneof to signal
+    /// to old proto3 clients that presence is tracked for this field. This oneof
+    /// is known as a "synthetic" oneof, and this field must be its sole member
+    /// (each proto3 optional field gets its own synthetic oneof). Synthetic oneofs
+    /// exist in the descriptor only, and do not generate any API. Synthetic oneofs
+    /// must be ordered after all "real" oneofs.
     ///
     /// For message fields, proto3_optional doesn't create any semantic change,
     /// since non-repeated message fields always track presence. However it still
@@ -761,12 +761,16 @@ pub struct FileOptions {
     #[deprecated]
     #[prost(bool, optional, tag = "20")]
     pub java_generate_equals_and_hash: ::core::option::Option<bool>,
-    /// If set true, then the Java2 code generator will generate code that
-    /// throws an exception whenever an attempt is made to assign a non-UTF-8
-    /// byte sequence to a string field.
-    /// Message reflection will do the same.
-    /// However, an extension field still accepts non-UTF-8 byte sequences.
-    /// This option has no effect on when used with the lite runtime.
+    /// A proto2 file can set this to true to opt in to UTF-8 checking for Java,
+    /// which will throw an exception if invalid UTF-8 is parsed from the wire or
+    /// assigned to a string field.
+    ///
+    /// TODO: clarify exactly what kinds of field types this option
+    /// applies to, and update these docs accordingly.
+    ///
+    /// Proto3 files already perform these checks. Setting the option explicitly to
+    /// false has no effect: it cannot be used to opt proto3 files out of UTF-8
+    /// checks.
     #[prost(bool, optional, tag = "27", default = "false")]
     pub java_string_check_utf8: ::core::option::Option<bool>,
     #[prost(
@@ -799,8 +803,6 @@ pub struct FileOptions {
     pub java_generic_services: ::core::option::Option<bool>,
     #[prost(bool, optional, tag = "18", default = "false")]
     pub py_generic_services: ::core::option::Option<bool>,
-    #[prost(bool, optional, tag = "42", default = "false")]
-    pub php_generic_services: ::core::option::Option<bool>,
     /// Is this file deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
     /// for everything in the file, or it will be completely ignored; in the very
@@ -933,10 +935,6 @@ pub struct MessageOptions {
     /// this is a formalization for deprecating messages.
     #[prost(bool, optional, tag = "3", default = "false")]
     pub deprecated: ::core::option::Option<bool>,
-    /// NOTE: Do not set the option in .proto files. Always use the maps syntax
-    /// instead. The option should only be implicitly set by the proto compiler
-    /// parser.
-    ///
     /// Whether the message is an automatically generated map entry type for the
     /// maps field.
     ///
@@ -954,6 +952,10 @@ pub struct MessageOptions {
     /// use a native map in the target language to hold the keys and values.
     /// The reflection APIs in such implementations still need to work as
     /// if the field is a repeated message field.
+    ///
+    /// NOTE: Do not set the option in .proto files. Always use the maps syntax
+    /// instead. The option should only be implicitly set by the proto compiler
+    /// parser.
     #[prost(bool, optional, tag = "7")]
     pub map_entry: ::core::option::Option<bool>,
     /// Enable the legacy handling of JSON field name conflicts.  This lowercases
@@ -1036,19 +1038,11 @@ pub struct FieldOptions {
     /// call from multiple threads concurrently, while non-const methods continue
     /// to require exclusive access.
     ///
-    /// Note that implementations may choose not to check required fields within
-    /// a lazy sub-message.  That is, calling IsInitialized() on the outer message
-    /// may return true even if the inner message has missing required fields.
-    /// This is necessary because otherwise the inner message would have to be
-    /// parsed in order to perform the check, defeating the purpose of lazy
-    /// parsing.  An implementation which chooses not to check required fields
-    /// must be consistent about it.  That is, for any particular sub-message, the
-    /// implementation must either *always* check its required fields, or *never*
-    /// check its required fields, regardless of whether or not the message has
-    /// been parsed.
-    ///
-    /// As of May 2022, lazy verifies the contents of the byte stream during
-    /// parsing.  An invalid byte stream will cause the overall parsing to fail.
+    /// Note that lazy message fields are still eagerly verified to check
+    /// ill-formed wireformat or missing required fields. Calling IsInitialized()
+    /// on the outer message would fail if the inner message has missing required
+    /// fields. Failed verification would result in parsing failure (except when
+    /// uninitialized messages are acceptable).
     #[prost(bool, optional, tag = "5", default = "false")]
     pub lazy: ::core::option::Option<bool>,
     /// unverified_lazy does no correctness checks on the byte stream. This should
@@ -1083,6 +1077,8 @@ pub struct FieldOptions {
     /// Any features defined in the specific edition.
     #[prost(message, optional, tag = "21")]
     pub features: ::core::option::Option<FeatureSet>,
+    #[prost(message, optional, tag = "22")]
+    pub feature_support: ::core::option::Option<field_options::FeatureSupport>,
     /// The parser stores options it doesn't recognize here. See above.
     #[prost(message, repeated, tag = "999")]
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
@@ -1097,6 +1093,29 @@ pub mod field_options {
         /// Textproto value.
         #[prost(string, optional, tag = "2")]
         pub value: ::core::option::Option<::prost::alloc::string::String>,
+    }
+    /// Information about the support window of a feature.
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct FeatureSupport {
+        /// The edition that this feature was first available in.  In editions
+        /// earlier than this one, the default assigned to EDITION_LEGACY will be
+        /// used, and proto files will not be able to override it.
+        #[prost(enumeration = "super::Edition", optional, tag = "1")]
+        pub edition_introduced: ::core::option::Option<i32>,
+        /// The edition this feature becomes deprecated in.  Using this after this
+        /// edition may trigger warnings.
+        #[prost(enumeration = "super::Edition", optional, tag = "2")]
+        pub edition_deprecated: ::core::option::Option<i32>,
+        /// The deprecation warning text if this feature is used after the edition it
+        /// was marked deprecated in.
+        #[prost(string, optional, tag = "3")]
+        pub deprecation_warning: ::core::option::Option<::prost::alloc::string::String>,
+        /// The edition this feature is no longer available in.  In editions after
+        /// this one, the last default assigned will be used, and proto files will
+        /// not be able to override it.
+        #[prost(enumeration = "super::Edition", optional, tag = "4")]
+        pub edition_removed: ::core::option::Option<i32>,
     }
     #[derive(
         Clone,
@@ -1641,8 +1660,8 @@ pub mod feature_set {
     #[repr(i32)]
     pub enum Utf8Validation {
         Unknown = 0,
-        None = 1,
         Verify = 2,
+        None = 3,
     }
     impl Utf8Validation {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -1652,16 +1671,16 @@ pub mod feature_set {
         pub fn as_str_name(&self) -> &'static str {
             match self {
                 Utf8Validation::Unknown => "UTF8_VALIDATION_UNKNOWN",
-                Utf8Validation::None => "NONE",
                 Utf8Validation::Verify => "VERIFY",
+                Utf8Validation::None => "NONE",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
         pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
             match value {
                 "UTF8_VALIDATION_UNKNOWN" => Some(Self::Unknown),
-                "NONE" => Some(Self::None),
                 "VERIFY" => Some(Self::Verify),
+                "NONE" => Some(Self::None),
                 _ => None,
             }
         }
@@ -1776,6 +1795,14 @@ pub mod feature_set_defaults {
     pub struct FeatureSetEditionDefault {
         #[prost(enumeration = "super::Edition", optional, tag = "3")]
         pub edition: ::core::option::Option<i32>,
+        /// Defaults of features that can be overridden in this edition.
+        #[prost(message, optional, tag = "4")]
+        pub overridable_features: ::core::option::Option<super::FeatureSet>,
+        /// Defaults of features that can't be overridden in this edition.
+        #[prost(message, optional, tag = "5")]
+        pub fixed_features: ::core::option::Option<super::FeatureSet>,
+        /// TODO Deprecate and remove this field, which is just the
+        /// above two merged.
         #[prost(message, optional, tag = "2")]
         pub features: ::core::option::Option<super::FeatureSet>,
     }
@@ -1840,7 +1867,7 @@ pub mod source_code_info {
         /// location.
         ///
         /// Each element is a field number or an index.  They form a path from
-        /// the root FileDescriptorProto to the place where the definition occurs.
+        /// the root FileDescriptorProto to the place where the definition appears.
         /// For example, this path:
         ///    \[ 4, 3, 2, 7, 1 \]
         /// refers to:
@@ -2014,6 +2041,9 @@ pub mod generated_code_info {
 pub enum Edition {
     /// A placeholder for an unknown edition value.
     Unknown = 0,
+    /// A placeholder edition for specifying default behaviors *before* a feature
+    /// was first introduced.  This is effectively an "infinite past".
+    Legacy = 900,
     /// Legacy syntax "editions".  These pre-date editions, but behave much like
     /// distinct editions.  These can't be used to specify the edition of proto
     /// files, but feature definitions must supply proto2/proto3 defaults for
@@ -2024,6 +2054,7 @@ pub enum Edition {
     /// should not be depended on, but they will always be time-ordered for easy
     /// comparison.
     Edition2023 = 1000,
+    Edition2024 = 1001,
     /// Placeholder editions for testing feature resolution.  These should not be
     /// used or relyed on outside of tests.
     Edition1TestOnly = 1,
@@ -2031,6 +2062,10 @@ pub enum Edition {
     Edition99997TestOnly = 99997,
     Edition99998TestOnly = 99998,
     Edition99999TestOnly = 99999,
+    /// Placeholder for specifying unbounded edition support.  This should only
+    /// ever be used by plugins that can expect to never require any changes to
+    /// support a new edition.
+    Max = 2147483647,
 }
 impl Edition {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2040,28 +2075,34 @@ impl Edition {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Edition::Unknown => "EDITION_UNKNOWN",
+            Edition::Legacy => "EDITION_LEGACY",
             Edition::Proto2 => "EDITION_PROTO2",
             Edition::Proto3 => "EDITION_PROTO3",
             Edition::Edition2023 => "EDITION_2023",
+            Edition::Edition2024 => "EDITION_2024",
             Edition::Edition1TestOnly => "EDITION_1_TEST_ONLY",
             Edition::Edition2TestOnly => "EDITION_2_TEST_ONLY",
             Edition::Edition99997TestOnly => "EDITION_99997_TEST_ONLY",
             Edition::Edition99998TestOnly => "EDITION_99998_TEST_ONLY",
             Edition::Edition99999TestOnly => "EDITION_99999_TEST_ONLY",
+            Edition::Max => "EDITION_MAX",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "EDITION_UNKNOWN" => Some(Self::Unknown),
+            "EDITION_LEGACY" => Some(Self::Legacy),
             "EDITION_PROTO2" => Some(Self::Proto2),
             "EDITION_PROTO3" => Some(Self::Proto3),
             "EDITION_2023" => Some(Self::Edition2023),
+            "EDITION_2024" => Some(Self::Edition2024),
             "EDITION_1_TEST_ONLY" => Some(Self::Edition1TestOnly),
             "EDITION_2_TEST_ONLY" => Some(Self::Edition2TestOnly),
             "EDITION_99997_TEST_ONLY" => Some(Self::Edition99997TestOnly),
             "EDITION_99998_TEST_ONLY" => Some(Self::Edition99998TestOnly),
             "EDITION_99999_TEST_ONLY" => Some(Self::Edition99999TestOnly),
+            "EDITION_MAX" => Some(Self::Max),
             _ => None,
         }
     }
