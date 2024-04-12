@@ -2918,10 +2918,15 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 
-    /// Date and time at which the image was created, formatted in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
+    /// Date and time at which the image was created, formatted in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds.  This information is only available if present in the image, and omitted otherwise. 
     #[serde(rename = "Created")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub created: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]
+    pub created: Option<BollardDate>,
 
     /// The ID of the container that was used to create the image.  Depending on how the image was created, this field may be empty.  **Deprecated**: this field is kept for backward compatibility, but will be removed in API v1.45. 
     #[serde(rename = "Container")]
