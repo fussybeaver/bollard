@@ -605,6 +605,7 @@ pub mod file_sync_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// FileSync exposes local files from the client to the server.
     #[derive(Debug, Clone)]
     pub struct FileSyncClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -754,6 +755,7 @@ pub mod file_send_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// FileSend allows sending files from the server back to the client.
     #[derive(Debug, Clone)]
     pub struct FileSendClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -899,6 +901,7 @@ pub mod file_sync_server {
             >,
         ) -> std::result::Result<tonic::Response<Self::TarStreamStream>, tonic::Status>;
     }
+    /// FileSync exposes local files from the client to the server.
     #[derive(Debug)]
     pub struct FileSyncServer<T: FileSync> {
         inner: _Inner<T>,
@@ -1141,6 +1144,7 @@ pub mod file_send_server {
             request: tonic::Request<tonic::Streaming<super::BytesMessage>>,
         ) -> std::result::Result<tonic::Response<Self::DiffCopyStream>, tonic::Status>;
     }
+    /// FileSend allows sending files from the server back to the client.
     #[derive(Debug)]
     pub struct FileSendServer<T: FileSend> {
         inner: _Inner<T>,
