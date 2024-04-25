@@ -28,7 +28,19 @@ build_script:
   - sleep 4
   - docker pull hello-world:nanoserver-sac2016
   - docker pull nanoserver/iis
-  - docker pull mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
+  - ps: |
+      $ErrorActionPreference = 'Stop'
+      $cnt = 0
+      while ($cnt -lt 5) {
+        $cnt++
+        try {
+          docker pull mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
+          break
+        } catch {
+          Start-Sleep 3
+          Write-Verbose("Retrying docker pull command")
+        }
+      }
   - docker tag hello-world:nanoserver-sac2016 localhost:5000/hello-world:nanoserver
   - docker tag nanoserver/iis localhost:5000/nanoserver/iis
   - docker tag mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2 localhost:5000/microsoft/nanoserver
