@@ -1801,10 +1801,6 @@ pub mod feature_set_defaults {
         /// Defaults of features that can't be overridden in this edition.
         #[prost(message, optional, tag = "5")]
         pub fixed_features: ::core::option::Option<super::FeatureSet>,
-        /// TODO Deprecate and remove this field, which is just the
-        /// above two merged.
-        #[prost(message, optional, tag = "2")]
-        pub features: ::core::option::Option<super::FeatureSet>,
     }
 }
 /// Encapsulates information about the original source file from which a

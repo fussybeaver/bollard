@@ -37,7 +37,19 @@ pub struct ImageBuildFrontendOptions {
     pub(crate) force_network_mode: ImageBuildNetworkMode,
     pub(crate) extrahosts: Vec<ImageBuildHostIp>,
     pub(crate) shmsize: u64,
+    pub(crate) secrets: HashMap<String, SecretSource>,
     //pub(crate) ulimit: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Specifies how secrets are populated into the buildkit build without persisting into the final image.
+pub enum SecretSource {
+    /// Sets the secret source as a local file, must be associated with appropriate Dockerfile
+    /// instruction: `RUN mount=type=secret,id=foo,target=/location/to/file`
+    File(std::path::PathBuf),
+    /// Sets the secret source as an environment variable, must be associated with appropriate
+    /// Dockerfile instruction: `RUN mount=type=secret,id=foo,env=MY_ENV_VAR`
+    Env(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,6 +150,7 @@ pub(crate) struct ImageBuildFrontendOptionsIngest {
     pub cache_to: Vec<CacheOptionsEntry>,
     pub cache_from: Vec<CacheOptionsEntry>,
     pub frontend_attrs: HashMap<String, String>,
+    pub secret_sources: HashMap<String, SecretSource>,
 }
 
 impl ImageBuildFrontendOptions {
@@ -215,6 +228,7 @@ impl ImageBuildFrontendOptions {
             cache_to: self.cacheto,
             cache_from: self.cachefrom,
             frontend_attrs: attrs,
+            secret_sources: self.secrets,
         }
     }
 }
@@ -316,6 +330,14 @@ impl ImageBuildFrontendOptionsBuilder {
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
     pub fn shmsize(mut self, value: u64) -> Self {
         self.inner.shmsize = value;
+        self
+    }
+
+    /// Set source of a single secret as part of the build, either a file or environment variable.
+    pub fn set_secret(mut self, key: &str, value: &SecretSource) -> Self {
+        self.inner
+            .secrets
+            .insert(String::from(key), value.to_owned());
         self
     }
 
