@@ -30,10 +30,13 @@ use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
 
 use std::collections::HashMap;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
+use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
 use bytes::Bytes;
@@ -60,11 +63,14 @@ use tower_service::Service;
 use self::error::GrpcAuthError;
 use self::io::GrpcTransport;
 
+const MAX_SECRET_SIZE: u64 = 500 * 1024; // 500KB
+
 #[derive(Debug)]
 pub(crate) enum GrpcServer {
     Auth(AuthServer<AuthProvider>),
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
+    Secrets(SecretsServer<SecretProvider>),
 }
 
 impl GrpcServer {
@@ -76,6 +82,7 @@ impl GrpcServer {
             GrpcServer::Auth(auth_server) => builder.add_service(auth_server),
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
+            GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
         }
     }
 
@@ -95,6 +102,12 @@ impl GrpcServer {
                 vec![format!(
                     "/{}/diffcopy",
                     FileSendServer::<FileSendImpl>::NAME
+                )]
+            }
+            GrpcServer::Secrets(_secret_server) => {
+                vec![format!(
+                    "/{}/GetSecret",
+                    SecretsServer::<SecretProvider>::NAME
                 )]
             }
         }
@@ -496,6 +509,64 @@ impl Auth for AuthProvider {
         _request: Request<VerifyTokenAuthorityRequest>,
     ) -> Result<Response<VerifyTokenAuthorityResponse>, Status> {
         return Err(Status::unavailable("client-side authentication disabled"));
+    }
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct SecretProvider {
+    pub(crate) store: HashMap<String, build::SecretSource>,
+}
+
+impl SecretProvider {
+    pub(crate) fn new(store: HashMap<String, build::SecretSource>) -> Self {
+        Self { store }
+    }
+}
+
+#[tonic::async_trait]
+impl Secrets for SecretProvider {
+    async fn get_secret(
+        &self,
+        request: Request<GetSecretRequest>,
+    ) -> Result<Response<GetSecretResponse>, Status> {
+        let id: &str = request.get_ref().id.as_ref();
+
+        match self.store.get(id) {
+            Some(build::SecretSource::File(path)) if path.exists() => {
+                match tokio::fs::metadata(&path).await {
+                    Ok(metadata) => {
+                        if metadata.len() > MAX_SECRET_SIZE {
+                            return Err(Status::failed_precondition(format!(
+                                "invalid secret size {}",
+                                metadata.len(),
+                            )));
+                        }
+                    }
+                    Err(e) => return Err(Status::from_error(e.into())),
+                }
+
+                match tokio::fs::read(path).await {
+                    Ok(contents) => Ok(Response::new(GetSecretResponse { data: contents })),
+                    Err(e) => Err(Status::from_error(e.into())),
+                }
+            }
+            Some(build::SecretSource::File(path)) => Err(Status::failed_precondition(format!(
+                "path does not exist '{:?}'",
+                path
+            ))),
+            Some(build::SecretSource::Env(v)) if env::var_os(v).is_some() => {
+                trace!("Getting secret env var {}", v);
+                Ok(Response::new(GetSecretResponse {
+                    data: env::var_os(v).unwrap().as_encoded_bytes().to_owned(),
+                }))
+            }
+            Some(build::SecretSource::Env(v)) => Err(Status::failed_precondition(format!(
+                "env var '{}' does not exist",
+                v
+            ))),
+
+            None => return Err(Status::not_found("secret missing ID")),
+        }
     }
 }
 

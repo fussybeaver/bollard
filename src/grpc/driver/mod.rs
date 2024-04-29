@@ -1,7 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bollard_buildkit_proto::moby::{
-    buildkit::v1::{control_client::ControlClient, CacheOptions, SolveRequest},
+    buildkit::{
+        secrets::v1::secrets_server::SecretsServer,
+        v1::{control_client::ControlClient, CacheOptions, SolveRequest},
+    },
     filesync::v1::{auth_server::AuthServer, file_send_server::FileSendServer},
     upload::v1::upload_server::UploadServer,
 };
@@ -138,6 +141,7 @@ pub(crate) async fn solve(
         cache_to,
         cache_from,
         mut frontend_attrs,
+        secret_sources,
     } = frontend_opts.consume();
 
     frontend_attrs.insert(String::from("context"), context);
@@ -148,13 +152,19 @@ pub(crate) async fn solve(
             auth_provider.set_docker_credentials(host, docker_credentials);
         }
     }
-    let auth = AuthServer::new(auth_provider);
 
+    let secret_provider = super::SecretProvider::new(secret_sources);
+
+    let auth = AuthServer::new(auth_provider);
     let upload = UploadServer::new(upload_provider);
+    let secret = SecretsServer::new(secret_provider);
+
     let mut services: Vec<GrpcServer> = vec![
         super::GrpcServer::Auth(auth),
         super::GrpcServer::Upload(upload),
+        super::GrpcServer::Secrets(secret),
     ];
+
     if let Some(path) = path {
         let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()));
 

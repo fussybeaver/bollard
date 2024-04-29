@@ -22,6 +22,11 @@ pub mod health {
 
 pub mod moby {
     pub mod buildkit {
+        pub mod secrets {
+            pub mod v1 {
+                include!("generated/moby.buildkit.secrets.v1.rs");
+            }
+        }
         pub mod v1 {
             include!("generated/moby.buildkit.v1.rs");
             pub mod sourcepolicy {
