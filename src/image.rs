@@ -78,7 +78,7 @@ where
 }
 
 /// Parameters to the [List Images
-// API](Docker::list_images())
+/// API](Docker::list_images())
 ///
 /// ## Examples
 ///
