@@ -103,6 +103,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             source: "https://raw.githubusercontent.com/moby/buildkit/master/session/secrets/secrets.proto",
             replacements: vec![]
         },
+        Resource {
+            destination: "moby/buildkit/v1/ssh.proto",
+            source: "https://raw.githubusercontent.com/moby/buildkit/master/session/sshforward/ssh.proto",
+            replacements: vec![]
+        },
     ];
 
     let resources_dir = std::env::current_dir().expect("Cannot determine current directory");
