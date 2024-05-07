@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "resources/google/rpc/status.proto",
                 "resources/moby/buildkit/v1/control.proto",
                 "resources/moby/buildkit/v1/secrets.proto",
+                "resources/moby/buildkit/v1/ssh.proto",
                 "resources/moby/buildkit/v1/types/worker.proto",
                 "resources/moby/buildkit/v1/sourcepolicy/policy.proto",
                 "resources/moby/filesync/v1/auth.proto",

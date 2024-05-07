@@ -14,6 +14,7 @@ pub mod export;
 pub(crate) mod io;
 /// End-user buildkit registry functions
 pub mod registry;
+mod ssh;
 
 use crate::auth::DockerCredentials;
 use crate::docker::BodyType;
@@ -32,6 +33,7 @@ use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
 
 use std::collections::HashMap;
 use std::env;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -40,8 +42,11 @@ use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secret
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
-use bytes::Bytes;
+use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
+use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
+use bytes::{Buf, Bytes};
 use futures_core::Stream;
+use futures_util::future::Either;
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
@@ -50,6 +55,11 @@ use log::trace;
 use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
+use ssh::SshAgentPacketDecoder;
+use tokio::net::UnixStream;
+use tokio::sync::mpsc;
+use tokio_util::codec::FramedRead;
+use tokio_util::io::{ReaderStream, StreamReader};
 use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
@@ -72,6 +82,7 @@ pub(crate) enum GrpcServer {
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
     Secrets(SecretsServer<SecretProvider>),
+    Ssh(SshServer<SshProvider>),
 }
 
 impl GrpcServer {
@@ -84,6 +95,7 @@ impl GrpcServer {
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
             GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
+            GrpcServer::Ssh(ssh_server) => builder.add_service(ssh_server),
         }
     }
 
@@ -110,6 +122,12 @@ impl GrpcServer {
                     "/{}/GetSecret",
                     SecretsServer::<SecretProvider>::NAME
                 )]
+            }
+            GrpcServer::Ssh(_ssh_server) => {
+                vec![
+                    format!("/{}/CheckAgent", SshServer::<SshProvider>::NAME),
+                    format!("/{}/ForwardAgent", SshServer::<SshProvider>::NAME),
+                ]
             }
         }
     }
@@ -569,6 +587,174 @@ impl Secrets for SecretProvider {
             None => return Err(Status::not_found("secret missing ID")),
         }
     }
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct SshProvider {}
+
+struct SshSource {
+    agent: (),
+    socket: (),
+}
+
+impl SshProvider {
+    pub(crate) fn new() -> Self {
+        Self {}
+    }
+}
+
+#[tonic::async_trait]
+impl Ssh for SshProvider {
+    async fn check_agent(
+        &self,
+        request: Request<CheckAgentRequest>,
+    ) -> Result<Response<CheckAgentResponse>, Status> {
+        let mut id: &str = request.get_ref().id.as_ref();
+        if id.is_empty() {
+            id = "default";
+        }
+        Ok(Response::new(CheckAgentResponse {}))
+    }
+
+    /// Server streaming response type for the ForwardAgent method.
+    type ForwardAgentStream = Pin<
+        Box<
+            dyn Stream<
+                    Item = Result<
+                        bollard_buildkit_proto::moby::sshforward::v1::BytesMessage,
+                        Status,
+                    >,
+                > + Send
+                + 'static,
+        >,
+    >;
+
+    async fn forward_agent(
+        &self,
+        request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
+    ) -> Result<Response<Self::ForwardAgentStream>, Status> {
+        log::debug!("forward_agent: {:?}", request);
+
+        // TODO: move to check_agent
+        let ssh_env_sock = env::var("SSH_AUTH_SOCK").expect("missing SSH_AUTH_SOCK");
+        let sock = UnixStream::connect(&ssh_env_sock).await?;
+
+        let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
+        let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
+            |res: Result<Bytes, _>| match res {
+                Ok(v) => {
+                    log::debug!("duplex reading: {:?}", &v);
+                    Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage {
+                        data: v.to_vec(),
+                    })
+                }
+                Err(e) => Err(Status::from_error(e.into())),
+            },
+        );
+
+        let in_stream = request.into_inner();
+        let mut in_framed = FramedRead::new(
+            StreamReader::new(in_stream.map(|res| match res {
+                Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: bytes }) => {
+                    log::trace!("in ssh agent: {:?}", &bytes);
+                    Ok(Bytes::from(bytes))
+                }
+                Err(e) => Err(std::io::Error::other(e)),
+            })),
+            SshAgentPacketDecoder::new(),
+        );
+
+        let (sock_read, sock_write) = sock.into_split();
+
+        log::debug!("start reading");
+
+        let output_reader = ReaderStream::new(sock_read).map(|res| match res {
+            Ok(v) => {
+                log::debug!("socket reading: {:?}", &v);
+                Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: v.to_vec() })
+            }
+            Err(e) => Err(Status::from_error(e.into())),
+        });
+
+        log::debug!("start writing");
+
+        tokio::spawn(async move {
+            if let Err(e) = sock_write.writable().await {
+                tx.send(Err(Status::from(e)))
+                    .await
+                    .unwrap_or_else(|e| log::error!("ssh agent socket not writable: {e}"));
+                panic!("ssh agent socket not writable");
+            }
+            while let Some(result) = in_framed.next().await {
+                log::trace!("readframe");
+                match result {
+                    Ok(data) => {
+                        log::debug!("writing: {:?}", &data);
+                        if let Err(e) = sock_write.try_write(&data) {
+                            tx.send(Err(Status::from(e))).await.unwrap_or_else(|e| {
+                                log::error!("Failed to send error to channel: {e}")
+                            });
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        tx.send(Err(Status::from(std::io::Error::other(err))))
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to send error to channel: {e}")
+                            });
+                        break;
+                    }
+                }
+            }
+            sock_write.forget();
+        });
+
+        let combined_output_stream =
+            futures_util::stream::iter(vec![output_reader.right_stream(), rx_stream.left_stream()])
+                .flatten_unordered(None)
+                .map(|v| match v {
+                    Ok(v) => {
+                        log::debug!("Output: {:?}", v);
+                        Ok(v)
+                    }
+                    Err(e) => Err(e),
+                });
+        Ok(Response::new(Box::pin(combined_output_stream)))
+    }
+}
+
+fn extract_bytesmessage(
+    res: Result<Bytes, impl Into<Box<dyn std::error::Error + Send + Sync>>>,
+) -> Result<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage, Status> {
+    match res {
+        Ok(v) => {
+            log::debug!("reading: {:?}", &v);
+            Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: v.to_vec() })
+        }
+        Err(e) => Err(Status::from_error(e.into())),
+    }
+}
+
+fn read_message_type(mut input: impl Read, size: usize) -> Result<u8, std::io::Error> {
+    let mut buf = [0u8; 5];
+    input.read_exact(&mut buf)?;
+    let mut buf = &buf[..];
+    let len = buf.get_u32();
+    let message_type = buf.get_u8();
+    log::debug!("Message type: {:?}", &message_type);
+    // TODO: re-enable this check
+    // if len > ssh::MAX_MESSAGE_SIZE {
+    //     // refusing to allocate more than MAX_MESSAGE_SIZE
+    //     return Err(error::GrpcSshError::InvalidMessage(format!(
+    //         "Refusing to read message with size larger than {}",
+    //         ssh::MAX_MESSAGE_SIZE
+    //     )));
+    // }
+    // let mut bytes: bytes::BytesMut = bytes::BytesMut::with_capacity(len as usize - 1);
+    log::debug!("len: {len}");
+    log::debug!("size: {}", size);
+    Ok(message_type)
 }
 
 pub(crate) struct GrpcClient {

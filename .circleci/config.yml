@@ -101,6 +101,20 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -- --check --verbose"
+  test_sshforward:
+    docker:
+      - image: docker:25.0.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker create -v /auth --name auth alpine:3.4 /bin/true
+      - run: |
+          docker run --rm -v auth:/auth alpine:3.4 touch /auth/authorized_keys
+          docker run --publish-all -d --rm --name git -v git-repositories:/srv/git -v auth:/home/git/.ssh -p 2222:22 rockstorm/git-server /usr/sbin/sshd -D -e
+          docker run --rm -v ssh-agent:/.ssh-agent -d --name ssh-agent nuodb/ssh-agent
+          docker run --rm -v auth:/auth --link git:git -v ssh-agent:/.ssh-agent --entrypoint=bash ubuntu -c "apt-get update && apt-get install -y openssh-client && ssh-keygen -t ecdsa -N \"\" -C \"test@example.com\" -f id_ecdsa && cat id_ecdsa.pub > /auth/authorized_keys && SSH_AUTH_SOCK=/.ssh-agent/socket ssh-add id_ecdsa && mkdir -p -m 0600 ~/.ssh && ssh-keyscan -t ecdsa -p 22 git >> ~/.ssh/known_hosts && SSH_AUTH_SOCK=/.ssh-agent/socket ssh -A -v -i id_ecdsa git@git -p 22 \"git-init --bare /srv/git/config.git\""
+      - run: docker build -t bollard .
+      - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,test_sshforward --verbose integration_test_build_buildkit_ssh 
 workflows:
   version: 2
   test-image:
@@ -116,3 +130,4 @@ workflows:
       - test_audit
       - test_fmt
       - test_race
+      - test_sshforward
