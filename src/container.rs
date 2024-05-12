@@ -382,7 +382,7 @@ pub struct AttachContainerResults {
 }
 
 impl fmt::Debug for AttachContainerResults {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AttachContainerResults")
     }
 }
@@ -2265,9 +2265,9 @@ impl Docker {
     }
 }
 
+#[cfg(not(target_arch = "windows"))]
 #[cfg(test)]
 mod tests {
-    #![cfg(not(target_arch = "windows"))]
 
     use futures_util::TryStreamExt;
     use yup_hyper_mock::HostToReplyConnector;

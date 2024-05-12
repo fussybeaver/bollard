@@ -45,7 +45,7 @@ impl NewlineLogOutputDecoder {
 
 impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {

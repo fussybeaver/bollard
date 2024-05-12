@@ -453,6 +453,7 @@ pub enum BuilderVersion {
 }
 
 enum ImageBuildBuildkitEither {
+    #[allow(dead_code)]
     Left(Option<HashMap<String, DockerCredentials>>),
     Right(Result<String, serde_json::Error>),
 }
@@ -1443,9 +1444,9 @@ impl Docker {
     }
 }
 
+#[cfg(not(target_arch = "windows"))]
 #[cfg(test)]
 mod tests {
-    #![cfg(not(target_arch = "windows"))]
 
     use std::io::Write;
 
