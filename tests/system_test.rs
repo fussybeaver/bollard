@@ -17,6 +17,7 @@ use common::*;
 
 #[derive(Debug)]
 enum Results {
+    #[allow(dead_code)]
     CreateImageResults(CreateImageInfo),
     EventsResults(EventMessage),
 }
