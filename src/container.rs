@@ -977,11 +977,6 @@ where
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.
-    #[serde(rename = "KernelMemory")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_memory: Option<i64>,
-
     /// Hard limit for kernel TCP buffer memory (in bytes).
     #[serde(rename = "KernelMemoryTCP")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1003,9 +998,9 @@ where
     pub memory_swappiness: Option<i64>,
 
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    #[serde(rename = "NanoCPUs")]
+    #[serde(rename = "NanoCpus")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     /// Disable OOM Killer for the container.
     #[serde(rename = "OomKillDisable")]
@@ -1040,7 +1035,7 @@ where
     /// Maximum IOps for the container system drive (Windows only)
     #[serde(rename = "IOMaximumIOps")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub io_maximum_i_ops: Option<i64>,
+    pub io_maximum_iops: Option<i64>,
 
     /// Maximum IO in bytes per second for the container system drive (Windows only)
     #[serde(rename = "IOMaximumBandwidth")]
