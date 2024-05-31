@@ -4,7 +4,6 @@ use futures_core::Stream;
 use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
-use http_body_util::Full;
 use hyper::{body::Bytes, Method};
 use serde::Serialize;
 use serde_derive::Deserialize;
@@ -18,6 +17,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 
 use super::Docker;
+use crate::docker::body_full;
 use crate::errors::Error;
 use crate::models::*;
 use crate::read::NewlineLogOutputDecoder;
@@ -1197,7 +1197,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -1299,7 +1299,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1344,7 +1344,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1393,7 +1393,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1444,7 +1444,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_stream(req).map(|res| match res {
@@ -1518,7 +1518,7 @@ impl Docker {
                 .header(CONNECTION, "Upgrade")
                 .header(UPGRADE, "tcp"),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         let (read, write) = self.process_upgraded(req).await?;
@@ -1567,7 +1567,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1613,7 +1613,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1658,7 +1658,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -1706,7 +1706,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -1759,7 +1759,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_stream_string(req)
@@ -1798,7 +1798,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -1846,7 +1846,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_stream(req)
@@ -1895,7 +1895,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -1996,7 +1996,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -2031,7 +2031,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -2066,7 +2066,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await
@@ -2117,7 +2117,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -2176,7 +2176,7 @@ impl Docker {
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
             options,
-            Ok(Full::new(tar)),
+            Ok(body_full(tar)),
         );
 
         self.process_into_unit(req).await
@@ -2224,7 +2224,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_body(req)
@@ -2254,7 +2254,7 @@ impl Docker {
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
         self.process_into_body(req)
     }

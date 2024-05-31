@@ -4,13 +4,13 @@ use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
-use http_body_util::Full;
 use hyper::Method;
 use serde_derive::{Deserialize, Serialize};
 
 use super::Docker;
 
 use crate::container::LogOutput;
+use crate::docker::body_full;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
 use crate::read::NewlineLogOutputDecoder;
@@ -290,7 +290,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -341,7 +341,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await

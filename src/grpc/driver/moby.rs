@@ -76,7 +76,7 @@ impl Driver for Moby {
                 .header("X-Docker-Expose-Session-Uuid", session_id)
                 .header("X-Docker-Expose-Session-Grpc-Method", joined_methods),
             opt,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         let (read, write) = self.docker.process_upgraded(req).await?;

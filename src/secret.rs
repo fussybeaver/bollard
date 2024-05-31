@@ -3,10 +3,9 @@
 pub use crate::models::*;
 
 use super::Docker;
-use crate::errors::Error;
+use crate::{docker::body_full, errors::Error};
 use bytes::Bytes;
 use http::request::Builder;
-use http_body_util::Full;
 use hyper::Method;
 use serde_derive::Serialize;
 use std::{collections::HashMap, hash::Hash};
@@ -114,7 +113,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -196,7 +195,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_value(req).await
@@ -232,7 +231,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
 
         self.process_into_unit(req).await

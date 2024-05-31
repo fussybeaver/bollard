@@ -422,7 +422,7 @@ impl AuthProvider {
 
         let full_uri = format!("{}?{}", opts.realm, &params);
         let request_uri: hyper::Uri = full_uri.try_into()?;
-        let request = hyper::Request::post(request_uri).body(Full::new(Bytes::new()))?;
+        let request = hyper::Request::post(request_uri).body(body_full(Bytes::new()))?;
 
         let response = client.request(request).await?;
 
@@ -597,7 +597,7 @@ impl Service<tonic::transport::Uri> for GrpcClient {
                 .header("Upgrade", "h2c")
                 .header("X-Docker-Expose-Session-Uuid", &self.session_id),
             opt,
-            Ok(Full::new(Bytes::new())),
+            Ok(body_full(Bytes::new())),
         );
         let fut = async move {
             client.process_upgraded(req).await.map(|(read, write)| {
