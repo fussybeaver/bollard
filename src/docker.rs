@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 #[cfg(feature = "ssl")]
 use std::fs;
 use std::future::Future;
@@ -5,6 +6,7 @@ use std::future::Future;
 use std::io;
 #[cfg(feature = "ssl")]
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -15,10 +17,11 @@ use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use http_body_util::{BodyExt, BodyStream, Full};
-use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full, StreamBody};
+use hyper::body::{Frame, Incoming};
 use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
@@ -1128,7 +1131,11 @@ impl Docker {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
-        trace!("request: {:?}", request.as_ref());
+        match request.as_ref().map(|b| b.body()) {
+            Ok(http_body_util::Either::Left(bytes)) => trace!("request: {:?}", bytes),
+            Ok(http_body_util::Either::Right(_)) => trace!("request: (stream)"),
+            Err(e) => trace!("request: Err({e:?}"),
+        };
 
         async move {
             let request = request?;
@@ -1255,12 +1262,15 @@ impl Docker {
     }
 }
 
-pub(crate) type BodyType = http_body_util::Either<Full<Bytes>, BodyStream<Full<Bytes>>>;
+pub(crate) type BodyType = http_body_util::Either<
+    Full<Bytes>,
+    StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
+>;
 
 pub(crate) fn body_full(body: Bytes) -> BodyType {
     BodyType::Left(Full::new(body))
 }
 
-pub(crate) fn body_stream(body: BodyStream<Full<Bytes>>) -> BodyType {
-    BodyType::Right(body)
+pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
+    BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))
 }

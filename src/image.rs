@@ -6,7 +6,6 @@ use futures_util::future::{Either, FutureExt};
 use futures_util::{stream, stream::StreamExt};
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use http_body_util::{BodyStream, Full};
 use hyper::Method;
 use serde::Serialize;
 use serde_repr::*;
@@ -1448,7 +1447,7 @@ impl Docker {
     pub fn import_image_stream(
         &self,
         options: ImportImageOptions,
-        root_fs: BodyStream<Full<Bytes>>,
+        root_fs: impl Stream<Item = Bytes> + Send + 'static,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
         match serde_json::to_string(&credentials.unwrap_or_default()) {
