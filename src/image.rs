@@ -1448,7 +1448,7 @@ impl Docker {
         &self,
         options: ImportImageOptions,
         root_fs: impl Stream<Item = Bytes> + Send + 'static,
-        credentials: Option<DockerCredentials>,
+        credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
         match serde_json::to_string(&credentials.unwrap_or_default()) {
             Ok(ser_cred) => {

@@ -1011,6 +1011,38 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn import_image_test_stream(docker: Docker) -> Result<(), Error> {
+    // round-trip test
+    create_image_hello_world(&docker).await?;
+
+    let image = if cfg!(windows) {
+        format!("{}hello-world:nanoserver", registry_http_addr())
+    } else {
+        format!("{}hello-world:linux", registry_http_addr())
+    };
+
+    let res = docker.export_image(&image);
+
+    let mut creds = HashMap::new();
+    creds.insert(
+        "localhost:5000".to_string(),
+        integration_test_registry_credentials(),
+    );
+
+    docker
+        .import_image_stream(
+            ImportImageOptions {
+                ..Default::default()
+            },
+            res.map(|b| b.unwrap()),
+            Some(creds),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    Ok(())
+}
+
 // ND - Test sometimes hangs on appveyor.
 #[cfg(not(windows))]
 #[test]
@@ -1118,4 +1150,10 @@ fn integration_test_issue_55() {
 #[cfg(unix)]
 fn integration_test_import_image() {
     connect_to_docker_and_run!(import_image_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_import_image_stream() {
+    connect_to_docker_and_run!(import_image_test_stream);
 }
