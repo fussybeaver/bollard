@@ -1478,7 +1478,7 @@ impl Docker {
     /// let options = ImportImageOptions{
     ///     ..Default::default()
     /// };
-    /// 
+    ///
     /// async move {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
     ///
