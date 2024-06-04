@@ -1370,7 +1370,7 @@ impl Docker {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ImportImageOptions;
@@ -1443,7 +1443,63 @@ impl Docker {
         })
     }
 
+    /// ---
     ///
+    /// # Import Image (stream)
+    ///
+    /// Load a set of images and tags into a repository, without holding it all in memory at a given point in time
+    ///
+    /// For details on the format, see the [export image
+    /// endpoint](struct.Docker.html#method.export_image).
+    ///
+    /// # Arguments
+    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - Stream producing `Bytes` of the image
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
+    ///  Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::ImportImageOptions;
+    /// use bollard::errors::Error;
+    ///
+    /// use std::default::Default;
+    /// use futures_util::stream::{StreamExt, TryStreamExt};
+    /// use tokio::fs::File;
+    /// use tokio::io::AsyncWriteExt;
+    /// use tokio_util::codec;
+    ///
+    /// let options = ImportImageOptions{
+    ///     ..Default::default()
+    /// };
+    /// 
+    /// async move {
+    ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
+    ///
+    ///     let mut byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///         r.unwrap().freeze()
+    ///     });
+    ///
+    ///     let mut stream = docker
+    ///         .import_image_stream(
+    ///             ImportImageOptions {
+    ///                 ..Default::default()
+    ///             },
+    ///             byte_stream,
+    ///             None,
+    ///         );
+    ///
+    ///     while let Some(response) = stream.next().await {
+    ///         // ...
+    ///     }
+    /// };
+    /// ```
     pub fn import_image_stream(
         &self,
         options: ImportImageOptions,
