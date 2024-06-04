@@ -16,6 +16,7 @@ pub(crate) mod io;
 pub mod registry;
 
 use crate::auth::DockerCredentials;
+use crate::docker::{body_full, BodyType};
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
@@ -41,7 +42,7 @@ use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
 use bytes::Bytes;
 use futures_core::Stream;
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
@@ -361,8 +362,7 @@ impl AuthProvider {
     }
 
     fn ssl_client(
-    ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>, GrpcAuthError>
-    {
+    ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, BodyType>, GrpcAuthError> {
         let mut root_store = rustls::RootCertStore::empty();
 
         #[cfg(not(feature = "webpki"))]

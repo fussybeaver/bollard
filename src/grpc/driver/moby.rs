@@ -6,12 +6,12 @@ use std::pin::Pin;
 use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
 use bytes::Bytes;
 use http::{request::Builder, Method};
-use http_body_util::Full;
 use log::error;
 use log::trace;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 
+use crate::docker::body_full;
 use crate::auth::DockerCredentials;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
 use crate::{
