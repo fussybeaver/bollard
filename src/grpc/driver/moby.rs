@@ -11,8 +11,8 @@ use log::trace;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::docker::body_full;
 use crate::auth::DockerCredentials;
+use crate::docker::body_full;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
 use crate::{
     grpc::error::GrpcError,
