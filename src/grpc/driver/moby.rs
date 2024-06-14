@@ -6,13 +6,14 @@ use std::pin::Pin;
 use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
 use bytes::Bytes;
 use http::{request::Builder, Method};
+use http_body_util::Full;
 use log::error;
 use log::trace;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::auth::DockerCredentials;
-use crate::docker::body_full;
+use crate::docker::BodyType;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
 use crate::{
     grpc::error::GrpcError,
@@ -76,7 +77,7 @@ impl Driver for Moby {
                 .header("X-Docker-Expose-Session-Uuid", session_id)
                 .header("X-Docker-Expose-Session-Grpc-Method", joined_methods),
             opt,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let (read, write) = self.docker.process_upgraded(req).await?;

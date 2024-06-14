@@ -1,6 +1,6 @@
 //! Service API: manage and inspect docker services within a swarm
 
-use crate::docker::body_full;
+use crate::docker::BodyType;
 pub use crate::models::*;
 
 use super::Docker;
@@ -9,6 +9,7 @@ use crate::errors::Error;
 use bytes::Bytes;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
+use http_body_util::Full;
 use hyper::Method;
 use serde_derive::Serialize;
 
@@ -169,7 +170,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -293,7 +294,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -328,7 +329,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await

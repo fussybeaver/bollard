@@ -1066,8 +1066,8 @@ impl Docker {
         .map(|payload| {
             debug!("{}", payload.clone().unwrap_or_default());
             payload
-                .map(|content| body_full(content.into()))
-                .unwrap_or(body_full(Bytes::new()))
+                .map(|content| BodyType::Left(Full::new(content.into())))
+                .unwrap_or(BodyType::Left(Full::new(Bytes::new())))
         })
     }
 
@@ -1094,7 +1094,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let res = self
@@ -1266,10 +1266,6 @@ pub(crate) type BodyType = http_body_util::Either<
     Full<Bytes>,
     StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
 >;
-
-pub(crate) fn body_full(body: Bytes) -> BodyType {
-    BodyType::Left(Full::new(body))
-}
 
 pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
     BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))

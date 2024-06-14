@@ -2,6 +2,7 @@
 
 use bytes::Bytes;
 use http::request::Builder;
+use http_body_util::Full;
 use hyper::Method;
 use serde_derive::{Deserialize, Serialize};
 
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
-use crate::docker::body_full;
+use crate::docker::BodyType;
 use crate::errors::Error;
 
 use crate::models::*;
@@ -267,7 +268,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -317,7 +318,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -368,7 +369,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -526,7 +527,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await

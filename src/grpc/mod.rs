@@ -16,7 +16,7 @@ pub(crate) mod io;
 pub mod registry;
 
 use crate::auth::DockerCredentials;
-use crate::docker::{body_full, BodyType};
+use crate::docker::BodyType;
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
@@ -42,7 +42,7 @@ use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
 use bytes::Bytes;
 use futures_core::Stream;
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
@@ -422,7 +422,8 @@ impl AuthProvider {
 
         let full_uri = format!("{}?{}", opts.realm, &params);
         let request_uri: hyper::Uri = full_uri.try_into()?;
-        let request = hyper::Request::post(request_uri).body(body_full(Bytes::new()))?;
+        let request =
+            hyper::Request::post(request_uri).body(BodyType::Left(Full::new(Bytes::new())))?;
 
         let response = client.request(request).await?;
 
@@ -597,7 +598,7 @@ impl Service<tonic::transport::Uri> for GrpcClient {
                 .header("Upgrade", "h2c")
                 .header("X-Docker-Expose-Session-Uuid", &self.session_id),
             opt,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         let fut = async move {
             client.process_upgraded(req).await.map(|(read, write)| {

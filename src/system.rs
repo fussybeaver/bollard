@@ -3,6 +3,7 @@
 use bytes::Bytes;
 use futures_core::Stream;
 use http::request::Builder;
+use http_body_util::Full;
 use hyper::Method;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::value::Value;
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
-use crate::docker::body_full;
+use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 
@@ -186,7 +187,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -214,7 +215,7 @@ impl Docker {
             "/info",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -240,7 +241,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_string(req).await
@@ -286,7 +287,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_stream(req)
@@ -318,7 +319,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(body_full(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
