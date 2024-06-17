@@ -1184,7 +1184,7 @@ impl Docker {
 
                 let stream = self.process_into_stream::<BuildInfo>(req).map(Either::Left);
 
-                futures_util::stream::select(stream, session)
+                stream::select(stream, session)
                     .filter_map(|either| async move {
                         match either {
                             Either::Left(data) => Some(data),

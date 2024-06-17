@@ -920,7 +920,7 @@ async fn export_images_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn issue_55_test(docker: Docker) -> Result<(), Error> {
-    let dockerfile = "FROM ubuntu:18.04
+    let dockerfile = "FROM ubuntu:24.04
 RUN apt-get update && \
     apt-get install -y \
         build-essential \
@@ -932,13 +932,13 @@ RUN apt-get update && \
         musl-dev \
         musl-tools \
         libpq-dev \
-        libsqlite-dev \
+        libsqlite3-dev \
         libssl-dev \
         linux-libc-dev \
         pkgconf \
         sudo \
         xutils-dev \
-        gcc-multilib-arm-linux-gnueabihf \
+        gcc-13-arm-linux-gnueabihf \
         && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 ";
