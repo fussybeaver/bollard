@@ -13,6 +13,7 @@ use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::auth::DockerCredentials;
+use crate::docker::BodyType;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
 use crate::{
     grpc::error::GrpcError,
@@ -76,7 +77,7 @@ impl Driver for Moby {
                 .header("X-Docker-Expose-Session-Uuid", session_id)
                 .header("X-Docker-Expose-Session-Grpc-Method", joined_methods),
             opt,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let (read, write) = self.docker.process_upgraded(req).await?;

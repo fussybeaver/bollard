@@ -16,6 +16,7 @@ pub(crate) mod io;
 pub mod registry;
 
 use crate::auth::DockerCredentials;
+use crate::docker::BodyType;
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};
@@ -361,8 +362,7 @@ impl AuthProvider {
     }
 
     fn ssl_client(
-    ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>, GrpcAuthError>
-    {
+    ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, BodyType>, GrpcAuthError> {
         let mut root_store = rustls::RootCertStore::empty();
 
         #[cfg(not(feature = "webpki"))]
@@ -422,7 +422,8 @@ impl AuthProvider {
 
         let full_uri = format!("{}?{}", opts.realm, &params);
         let request_uri: hyper::Uri = full_uri.try_into()?;
-        let request = hyper::Request::post(request_uri).body(Full::new(Bytes::new()))?;
+        let request =
+            hyper::Request::post(request_uri).body(BodyType::Left(Full::new(Bytes::new())))?;
 
         let response = client.request(request).await?;
 
@@ -597,7 +598,7 @@ impl Service<tonic::transport::Uri> for GrpcClient {
                 .header("Upgrade", "h2c")
                 .header("X-Docker-Expose-Session-Uuid", &self.session_id),
             opt,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         let fut = async move {
             client.process_upgraded(req).await.map(|(read, write)| {

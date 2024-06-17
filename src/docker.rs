@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 #[cfg(feature = "ssl")]
 use std::fs;
 use std::future::Future;
@@ -5,6 +6,7 @@ use std::future::Future;
 use std::io;
 #[cfg(feature = "ssl")]
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -15,10 +17,11 @@ use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full, StreamBody};
+use hyper::body::{Frame, Incoming};
 use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
@@ -94,23 +97,23 @@ pub(crate) enum ClientType {
 /// with various Connect traits fulfilled.
 pub(crate) enum Transport {
     Http {
-        client: Client<HttpConnector, Full<Bytes>>,
+        client: Client<HttpConnector, BodyType>,
     },
     #[cfg(feature = "ssl")]
     Https {
-        client: Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
+        client: Client<HttpsConnector<HttpConnector>, BodyType>,
     },
     #[cfg(unix)]
     Unix {
-        client: Client<UnixConnector, Full<Bytes>>,
+        client: Client<UnixConnector, BodyType>,
     },
     #[cfg(windows)]
     NamedPipe {
-        client: Client<NamedPipeConnector, Full<Bytes>>,
+        client: Client<NamedPipeConnector, BodyType>,
     },
     #[cfg(test)]
     Mock {
-        client: Client<yup_hyper_mock::HostToReplyConnector, Full<Bytes>>,
+        client: Client<yup_hyper_mock::HostToReplyConnector, BodyType>,
     },
 }
 
@@ -971,7 +974,7 @@ impl Docker {
 impl Docker {
     pub(crate) fn process_into_value<T>(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<T, Error>>
     where
         T: DeserializeOwned,
@@ -982,7 +985,7 @@ impl Docker {
 
     pub(crate) fn process_into_stream<T>(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<T, Error>> + Unpin
     where
         T: DeserializeOwned,
@@ -997,7 +1000,7 @@ impl Docker {
 
     pub(crate) fn process_into_stream_string(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
@@ -1008,7 +1011,7 @@ impl Docker {
 
     pub(crate) fn process_into_unit(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<(), Error>> {
         let fut = self.process_request(req);
         async move {
@@ -1019,7 +1022,7 @@ impl Docker {
 
     pub(crate) fn process_into_body(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<Bytes, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
@@ -1031,7 +1034,7 @@ impl Docker {
 
     pub(crate) fn process_into_string(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<String, Error>> {
         let fut = self.process_request(req);
         async move {
@@ -1042,7 +1045,7 @@ impl Docker {
 
     pub(crate) async fn process_upgraded(
         &self,
-        req: Result<Request<Full<Bytes>>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
         let res = self.process_request(req).await?;
         let upgraded = hyper::upgrade::on(res).await?;
@@ -1051,7 +1054,7 @@ impl Docker {
         Ok(split(tokio_upgraded))
     }
 
-    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Full<Bytes>, Error>
+    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<BodyType, Error>
     where
         S: Serialize,
     {
@@ -1063,8 +1066,8 @@ impl Docker {
         .map(|payload| {
             debug!("{}", payload.clone().unwrap_or_default());
             payload
-                .map(|content| Full::new(content.into()))
-                .unwrap_or(Full::new(Bytes::new()))
+                .map(|content| BodyType::Left(Full::new(content.into())))
+                .unwrap_or(BodyType::Left(Full::new(Bytes::new())))
         })
     }
 
@@ -1091,7 +1094,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let res = self
@@ -1123,12 +1126,16 @@ impl Docker {
 
     pub(crate) fn process_request(
         &self,
-        request: Result<Request<Full<Bytes>>, Error>,
+        request: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<Response<Incoming>, Error>> {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
-        trace!("request: {:?}", request.as_ref());
+        match request.as_ref().map(|b| b.body()) {
+            Ok(http_body_util::Either::Left(bytes)) => trace!("request: {:?}", bytes),
+            Ok(http_body_util::Either::Right(_)) => trace!("request: (stream)"),
+            Err(e) => trace!("request: Err({e:?}"),
+        };
 
         async move {
             let request = request?;
@@ -1165,8 +1172,8 @@ impl Docker {
         path: &str,
         builder: Builder,
         query: Option<O>,
-        payload: Result<Full<Bytes>, Error>,
-    ) -> Result<Request<Full<Bytes>>, Error>
+        payload: Result<BodyType, Error>,
+    ) -> Result<Request<BodyType>, Error>
     where
         O: Serialize,
     {
@@ -1187,7 +1194,7 @@ impl Docker {
 
     async fn execute_request(
         transport: Arc<Transport>,
-        req: Request<Full<Bytes>>,
+        req: Request<BodyType>,
         timeout: u64,
     ) -> Result<Response<Incoming>, Error> {
         // This is where we determine to which transport we issue the request.
@@ -1253,4 +1260,13 @@ impl Docker {
             }
         })
     }
+}
+
+pub(crate) type BodyType = http_body_util::Either<
+    Full<Bytes>,
+    StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
+>;
+
+pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
+    BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))
 }

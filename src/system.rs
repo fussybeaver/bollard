@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
+use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 
@@ -186,7 +187,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -214,7 +215,7 @@ impl Docker {
             "/info",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -240,7 +241,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_string(req).await
@@ -286,7 +287,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_stream(req)
@@ -318,7 +319,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await

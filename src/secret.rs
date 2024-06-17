@@ -3,7 +3,7 @@
 pub use crate::models::*;
 
 use super::Docker;
-use crate::errors::Error;
+use crate::{docker::BodyType, errors::Error};
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
@@ -114,7 +114,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -196,7 +196,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -232,7 +232,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await

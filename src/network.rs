@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
+use crate::docker::BodyType;
 use crate::errors::Error;
 
 use crate::models::*;
@@ -267,7 +268,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -317,7 +318,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -368,7 +369,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -526,7 +527,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Full::new(Bytes::new())),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
