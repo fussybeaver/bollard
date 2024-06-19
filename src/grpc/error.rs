@@ -83,7 +83,7 @@ pub enum GrpcAuthError {
     HyperError {
         /// The source hyper error
         #[from]
-        err: hyper::http::Error,
+        err: http::Error,
     },
     /// Error while deserializing the payload emitted by the registry
     #[error("Serde payload deserializing error during GRPC authentication")]
@@ -97,7 +97,7 @@ pub enum GrpcAuthError {
     InvalidUriError {
         /// The invalid uri error
         #[from]
-        err: hyper::http::uri::InvalidUri,
+        err: http::uri::InvalidUri,
     },
     /// Error that is emitted by the hyper-util legacy bridge client
     #[error("Error in the hyper legacy client: {}", err)]

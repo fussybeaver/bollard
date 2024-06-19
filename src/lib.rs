@@ -276,7 +276,6 @@
     trivial_numeric_casts,
     //unstable_features,
     unused_import_braces,
-    unused_qualifications
 )]
 #![allow(
     clippy::upper_case_acronyms,

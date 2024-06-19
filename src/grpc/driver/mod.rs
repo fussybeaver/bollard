@@ -160,15 +160,15 @@ pub(crate) async fn solve(
     let secret = SecretsServer::new(secret_provider);
 
     let mut services: Vec<GrpcServer> = vec![
-        super::GrpcServer::Auth(auth),
-        super::GrpcServer::Upload(upload),
-        super::GrpcServer::Secrets(secret),
+        GrpcServer::Auth(auth),
+        GrpcServer::Upload(upload),
+        GrpcServer::Secrets(secret),
     ];
 
     if let Some(path) = path {
         let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()));
 
-        services.push(super::GrpcServer::FileSend(filesend));
+        services.push(GrpcServer::FileSend(filesend));
     }
 
     let tear_down_handler = driver.get_tear_down_handler();

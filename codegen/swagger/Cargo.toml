@@ -18,5 +18,5 @@ serde = { version = "1.0", features = ["derive"] }
 prost = { version = "0.12", optional = true }
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
 
-serde_with = {version = "3.0", default-features = false, features = ["std"]}
+serde_with = {version = "3.8", default-features = false, features = ["std"]}
 serde_repr = "0.1"
