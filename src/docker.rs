@@ -4,6 +4,7 @@ use std::fs;
 use std::future::Future;
 #[cfg(feature = "ssl")]
 use std::io;
+use std::path::Path;
 #[cfg(feature = "ssl")]
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -641,12 +642,17 @@ impl Docker {
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        #[cfg(unix)]
-        let docker = Docker::connect_with_unix(path, timeout, client_version);
-        #[cfg(windows)]
-        let docker = Docker::connect_with_named_pipe(path, timeout, client_version);
+        // Check if the socket file exists
+        if !std::path::Path::new(path).exists() {
+            return Err(Error::SocketNotFoundError(path.to_string()));
+        }
 
-        docker
+        #[cfg(unix)]
+        let docker = Docker::connect_with_unix(path, timeout, client_version)?;
+        #[cfg(windows)]
+        let docker = Docker::connect_with_named_pipe(path, timeout, client_version)?;
+
+        Ok(docker)
     }
 
     /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
@@ -748,6 +754,11 @@ impl Docker {
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
         let client_addr = path.replacen("unix://", "", 1);
+
+        // check if the socket file exists and is accessible
+        if !Path::new(&client_addr).exists() {
+            return Err(Error::SocketNotFoundError(client_addr));
+        }
 
         let unix_connector = UnixConnector;
 
