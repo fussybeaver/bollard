@@ -642,9 +642,14 @@ impl Docker {
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
+        // Remove the scheme if present
+        let clean_path = path
+            .trim_start_matches("unix://")
+            .trim_start_matches("npipe://");
+
         // Check if the socket file exists
-        if !std::path::Path::new(path).exists() {
-            return Err(Error::SocketNotFoundError(path.to_string()));
+        if !std::path::Path::new(clean_path).exists() {
+            return Err(Error::SocketNotFoundError(clean_path.to_string()));
         }
 
         #[cfg(unix)]
