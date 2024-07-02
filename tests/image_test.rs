@@ -1,7 +1,3 @@
-#![type_length_limit = "2097152"]
-
-#[cfg(feature = "buildkit")]
-use bollard::grpc::build::{ImageBuildHostIp, ImageBuildNetworkMode};
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
@@ -703,7 +699,7 @@ COPY --from=builder1 /token /",
         .try_collect::<Vec<_>>()
         .await?;
 
-    let value = vec.get(0).unwrap();
+    let value = vec.first().unwrap();
 
     assert_eq!(format!("{value}"), token.to_string());
 
@@ -724,9 +720,8 @@ COPY --from=builder1 /token /",
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
 async fn build_buildkit_ssh_test(docker: Docker) -> Result<(), Error> {
-    env_logger::try_init();
     let git_host = std::env::var("GIT_HTTP_HOST").unwrap_or_else(|_| "localhost".to_string());
     let git_port = std::env::var("GIT_HTTP_PORT").unwrap_or_else(|_| "2222".to_string());
     let dockerfile = format!(
@@ -759,7 +754,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
 
     let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
         .pull(true)
-        .extrahost(&ImageBuildHostIp {
+        .extrahost(&bollard::grpc::build::ImageBuildHostIp {
             host: String::from("gitserver"),
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(172, 17, 0, 3)),
         })
@@ -1239,7 +1234,6 @@ fn integration_test_build_buildkit_secret() {
 
 #[test]
 #[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
-#[test]
 fn integration_test_build_buildkit_ssh() {
     connect_to_docker_and_run!(build_buildkit_ssh_test);
 }
