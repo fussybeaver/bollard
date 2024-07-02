@@ -46,7 +46,6 @@ use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::{Buf, Bytes};
 use futures_core::Stream;
-use futures_util::future::Either;
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;

@@ -145,7 +145,7 @@ impl ImageRegistryOutputBuilder {
     /// Compression type, see [buildkit compression
     /// docs](https://docs.docker.com/build/exporters/#compression)
     pub fn compression(mut self, compression: &ImageBuildOutputCompression) -> Self {
-        self.inner.compression = compression.to_owned();
+        compression.clone_into(&mut self.inner.compression);
         self
     }
 
