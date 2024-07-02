@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io;
 use std::path::Path;
 #[cfg(feature = "ssl")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
