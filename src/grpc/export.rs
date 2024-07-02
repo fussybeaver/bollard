@@ -5,6 +5,7 @@ pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::path::Path;
 
 use super::build::ImageBuildOutputCompression;
@@ -46,15 +47,14 @@ pub enum ImageExporterOCIOutputCompression {
     Zstd,
 }
 
-impl ToString for ImageExporterOCIOutputCompression {
-    fn to_string(&self) -> String {
+impl Display for ImageExporterOCIOutputCompression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImageExporterOCIOutputCompression::Uncompressed => "uncompressed",
-            ImageExporterOCIOutputCompression::Gzip => "gzip",
-            ImageExporterOCIOutputCompression::Estargz => "estargz",
-            ImageExporterOCIOutputCompression::Zstd => "zstd",
+            ImageExporterOCIOutputCompression::Uncompressed => write!(f, "uncompressed"),
+            ImageExporterOCIOutputCompression::Gzip => write!(f, "gzip"),
+            ImageExporterOCIOutputCompression::Estargz => write!(f, "estargz"),
+            ImageExporterOCIOutputCompression::Zstd => write!(f, "zstd"),
         }
-        .to_string()
     }
 }
 
@@ -157,7 +157,7 @@ impl ImageExporterOutputBuilder {
     /// Compression type, see [buildkit compression
     /// docs](https://docs.docker.com/build/exporters/#compression)
     pub fn compression(mut self, compression: &ImageBuildOutputCompression) -> Self {
-        self.inner.compression = compression.to_owned();
+        compression.clone_into(&mut self.inner.compression);
         self
     }
 

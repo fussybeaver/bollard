@@ -4,6 +4,7 @@ pub use bollard_buildkit_proto::moby;
 use bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry;
 
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::net::IpAddr;
 use std::path::Path;
 
@@ -61,9 +62,9 @@ pub struct ImageBuildHostIp {
     pub ip: IpAddr,
 }
 
-impl ToString for ImageBuildHostIp {
-    fn to_string(&self) -> String {
-        format!("{}={}", self.host, self.ip)
+impl Display for ImageBuildHostIp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}={}", self.host, self.ip)
     }
 }
 
@@ -84,13 +85,13 @@ pub enum ImageBuildNetworkMode {
     Container(String),
 }
 
-impl ToString for ImageBuildNetworkMode {
-    fn to_string(&self) -> String {
+impl Display for ImageBuildNetworkMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImageBuildNetworkMode::Bridge => String::from("default"),
-            ImageBuildNetworkMode::Host => String::from("host"),
-            ImageBuildNetworkMode::None => String::from("none"),
-            ImageBuildNetworkMode::Container(name) => format!("container:{name}"),
+            ImageBuildNetworkMode::Bridge => write!(f, "default"),
+            ImageBuildNetworkMode::Host => write!(f, "host"),
+            ImageBuildNetworkMode::None => write!(f, "none"),
+            ImageBuildNetworkMode::Container(name) => write!(f, "container:{name}"),
         }
     }
 }
@@ -106,16 +107,14 @@ pub struct ImageBuildPlatform {
     pub variant: Option<String>,
 }
 
-impl ToString for ImageBuildPlatform {
-    fn to_string(&self) -> String {
+impl Display for ImageBuildPlatform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let prefix = Path::new(&self.architecture).join(Path::new(&self.os));
         if let Some(variant) = &self.variant {
-            prefix.join(Path::new(&variant))
+            write!(f, "{}", prefix.join(Path::new(&variant)).display())
         } else {
-            prefix
+            write!(f, "{}", prefix.display())
         }
-        .display()
-        .to_string()
     }
 }
 
@@ -134,15 +133,14 @@ pub enum ImageBuildOutputCompression {
     Zstd,
 }
 
-impl ToString for ImageBuildOutputCompression {
-    fn to_string(&self) -> String {
+impl Display for ImageBuildOutputCompression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImageBuildOutputCompression::Uncompressed => "uncompressed",
-            ImageBuildOutputCompression::Gzip => "gzip",
-            ImageBuildOutputCompression::Estargz => "estargz",
-            ImageBuildOutputCompression::Zstd => "zstd",
+            ImageBuildOutputCompression::Uncompressed => write!(f, "uncompressed"),
+            ImageBuildOutputCompression::Gzip => write!(f, "gzip"),
+            ImageBuildOutputCompression::Estargz => write!(f, "estargz"),
+            ImageBuildOutputCompression::Zstd => write!(f, "zstd"),
         }
-        .to_string()
     }
 }
 
@@ -317,7 +315,7 @@ impl ImageBuildFrontendOptionsBuilder {
     /// Sets the networking mode for the run commands during build. Supported standard values are:
     /// `bridge`, `host`, `none`, and `container:<name|id>`.
     pub fn force_network_mode(mut self, value: &ImageBuildNetworkMode) -> Self {
-        self.inner.force_network_mode = value.to_owned();
+        value.clone_into(&mut self.inner.force_network_mode);
         self
     }
 
