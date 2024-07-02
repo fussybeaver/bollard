@@ -133,4 +133,7 @@ pub enum GrpcSshError {
         #[from]
         err: TryFromIntError,
     },
+    /// Failed to initialise ssh forwarding to local ssh agent
+    #[error("Failed to initialise ssh forwarding to local ssh agent: {0}")]
+    SshAgentSocketInit(String),
 }
