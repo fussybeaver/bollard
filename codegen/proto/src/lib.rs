@@ -47,6 +47,11 @@ pub mod moby {
             include!("generated/moby.upload.v1.rs");
         }
     }
+    pub mod sshforward {
+        pub mod v1 {
+            include!("generated/moby.sshforward.v1.rs");
+        }
+    }
 }
 
 #[allow(clippy::all)]

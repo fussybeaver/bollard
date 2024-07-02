@@ -14,6 +14,7 @@ pub mod export;
 pub(crate) mod io;
 /// End-user buildkit registry functions
 pub mod registry;
+mod ssh;
 
 use crate::auth::DockerCredentials;
 use crate::docker::BodyType;
@@ -40,7 +41,10 @@ use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secret
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
+use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
+use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::Bytes;
+use error::GrpcSshError;
 use futures_core::Stream;
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -50,6 +54,11 @@ use log::trace;
 use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
+use ssh::SshAgentPacketDecoder;
+use tokio::net::UnixStream;
+use tokio::sync::mpsc;
+use tokio_util::codec::FramedRead;
+use tokio_util::io::{ReaderStream, StreamReader};
 use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
@@ -72,6 +81,7 @@ pub(crate) enum GrpcServer {
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
     Secrets(SecretsServer<SecretProvider>),
+    Ssh(SshServer<SshProvider>),
 }
 
 impl GrpcServer {
@@ -84,6 +94,7 @@ impl GrpcServer {
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
             GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
+            GrpcServer::Ssh(ssh_server) => builder.add_service(ssh_server),
         }
     }
 
@@ -110,6 +121,12 @@ impl GrpcServer {
                     "/{}/GetSecret",
                     SecretsServer::<SecretProvider>::NAME
                 )]
+            }
+            GrpcServer::Ssh(_ssh_server) => {
+                vec![
+                    format!("/{}/CheckAgent", SshServer::<SshProvider>::NAME),
+                    format!("/{}/ForwardAgent", SshServer::<SshProvider>::NAME),
+                ]
             }
         }
     }
@@ -568,6 +585,133 @@ impl Secrets for SecretProvider {
 
             None => return Err(Status::not_found("secret missing ID")),
         }
+    }
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct SshProvider {
+    src: HashMap<String, PathBuf>,
+}
+
+struct SshSource {
+    agent: (),
+    socket: (),
+}
+
+impl SshProvider {
+    pub(crate) fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl Ssh for SshProvider {
+    async fn check_agent(
+        &self,
+        request: Request<CheckAgentRequest>,
+    ) -> Result<Response<CheckAgentResponse>, Status> {
+        let id: &str = request.get_ref().id.as_ref();
+        if !id.is_empty() && id != "default" {
+            return Err(Status::from(std::io::Error::other(
+                GrpcSshError::SshAgentSocketInit(String::from("This buildkit server only handles sshforwarding to the ssh-agent running on environment variable SSH_AUTH_SOCK on the host")),
+            )));
+        }
+
+        if env::var("SSH_AUTH_SOCK").is_err() {
+            return Err(Status::from(std::io::Error::other(
+                GrpcSshError::SshAgentSocketInit(String::from("The environment variable SSH_AUTH_SOCK is missing, and is required for the sshforwarding functionality")),
+            )));
+        }
+        Ok(Response::new(CheckAgentResponse {}))
+    }
+
+    /// Server streaming response type for the ForwardAgent method.
+    type ForwardAgentStream = Pin<
+        Box<
+            dyn Stream<
+                    Item = Result<
+                        bollard_buildkit_proto::moby::sshforward::v1::BytesMessage,
+                        Status,
+                    >,
+                > + Send
+                + 'static,
+        >,
+    >;
+
+    async fn forward_agent(
+        &self,
+        request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
+    ) -> Result<Response<Self::ForwardAgentStream>, Status> {
+        let ssh_env_sock = env::var("SSH_AUTH_SOCK").expect("missing SSH_AUTH_SOCK");
+        let sock = UnixStream::connect(&ssh_env_sock).await?;
+
+        let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
+        let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
+            |res: Result<Bytes, _>| match res {
+                Ok(v) => Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage {
+                    data: v.to_vec(),
+                }),
+                Err(e) => Err(Status::from_error(e.into())),
+            },
+        );
+
+        let in_stream = request.into_inner();
+        let mut in_framed = FramedRead::new(
+            StreamReader::new(in_stream.map(|res| match res {
+                Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: bytes }) => {
+                    Ok(Bytes::from(bytes))
+                }
+                Err(e) => Err(std::io::Error::other(e)),
+            })),
+            SshAgentPacketDecoder::new(),
+        );
+
+        let (sock_read, sock_write) = sock.into_split();
+
+        let output_reader = ReaderStream::new(sock_read).map(|res| match res {
+            Ok(v) => {
+                Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: v.to_vec() })
+            }
+            Err(e) => Err(Status::from_error(e.into())),
+        });
+
+        tokio::spawn(async move {
+            if let Err(e) = sock_write.writable().await {
+                tx.send(Err(Status::from(e)))
+                    .await
+                    .unwrap_or_else(|e| log::error!("ssh agent socket not writable: {e}"));
+                panic!("ssh agent socket not writable");
+            }
+            while let Some(result) = in_framed.next().await {
+                match result {
+                    Ok(data) => {
+                        if let Err(e) = sock_write.try_write(&data) {
+                            tx.send(Err(Status::from(e))).await.unwrap_or_else(|e| {
+                                log::error!("Failed to send error to channel: {e}")
+                            });
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        tx.send(Err(Status::from(std::io::Error::other(err))))
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to send error to channel: {e}")
+                            });
+                        break;
+                    }
+                }
+            }
+            sock_write.forget();
+        });
+
+        let combined_output_stream =
+            futures_util::stream::iter(vec![output_reader.right_stream(), rx_stream.left_stream()])
+                .flatten_unordered(None);
+
+        Ok(Response::new(Box::pin(combined_output_stream)))
     }
 }
 

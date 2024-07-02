@@ -18,9 +18,6 @@ use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
-#[cfg(feature = "buildkit")]
-use super::health;
-
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -1239,41 +1236,7 @@ impl Docker {
         id: String,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> Result<(), crate::grpc::error::GrpcError> {
-        use crate::grpc::io::GrpcTransport;
-
-        let url = "/session";
-
-        let opt: Option<serde_json::Value> = None;
-        let req = self.build_request(
-            url,
-            Builder::new()
-                .method(Method::POST)
-                .header("Connection", "Upgrade")
-                .header("Upgrade", "h2c")
-                .header(
-                    "X-Docker-Expose-Session-Grpc-Method",
-                    format!(
-                        "/{}/fetch_token",
-                        <bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::<
-                            crate::grpc::AuthProvider,
-                        > as tonic::server::NamedService>::NAME
-                    ),
-                )
-                .header("X-Docker-Expose-Session-Uuid", &id),
-            opt,
-            Ok(BodyType::Left(Full::new(Bytes::new()))),
-        );
-
-        let (read, write) = self.process_upgraded(req).await?;
-
-        let output = Box::pin(read);
-        let input = Box::pin(write);
-        let transport = GrpcTransport {
-            read: output,
-            write: input,
-        };
-        let service =
-            health::health_server::HealthServer::new(crate::grpc::HealthServerImpl::new());
+        let driver = crate::grpc::driver::moby::Moby::new(self);
 
         let mut auth_provider = crate::grpc::AuthProvider::new();
         if let Some(creds) = credentials {
@@ -1281,16 +1244,22 @@ impl Docker {
                 auth_provider.set_docker_credentials(&host, docker_credentials);
             }
         }
+
+        let ssh_provider = crate::grpc::SshProvider::new();
+
         let auth =
             bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
+        let ssh =
+            bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(ssh_provider);
 
-        Ok(tonic::transport::Server::builder()
-            .add_service(service)
-            .add_service(auth)
-            .serve_with_incoming(stream::iter(vec![Ok::<_, tonic::transport::Error>(
-                transport,
-            )]))
-            .await?)
+        let services: Vec<crate::grpc::GrpcServer> = vec![
+            crate::grpc::GrpcServer::Auth(auth),
+            crate::grpc::GrpcServer::Ssh(ssh),
+        ];
+
+        crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
+
+        Ok(())
     }
 
     /// ---
