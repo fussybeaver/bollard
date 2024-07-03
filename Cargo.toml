@@ -21,13 +21,15 @@ members = [
 [features]
 default = []
 # Enable Buildkit-enabled docker image building
-buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-util/io", "tonic", "tower-service", "ssl", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
+buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl", "bollard-stubs/buildkit", "bollard-buildkit-proto"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
 test_ssl = ["ssl"]
 # Enable tests specifically for macos
 test_macos = []
+# Enable tests specifically for buildkit's sshforward functionality
+test_sshforward = []
 # Enable JSON payload in deserialization errors
 json_data_content = []
 # Enable rustls / ssl
@@ -69,6 +71,7 @@ tonic = { version = "0.11", optional = true }
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
+tokio-stream = { version = "0.1", features = ["net"], optional = true }
 tower-service = { version = "0.3", optional = true }
 url = "2.5"
 webpki-roots = { version = "0.26", optional = true }

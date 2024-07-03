@@ -330,7 +330,7 @@ impl DockerClientCertResolver {
 
     fn certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
         Ok(rustls_pemfile::certs(&mut Self::open_buffered(path)?)
-            .collect::<Result<Vec<CertificateDer<'static>>, std::io::Error>>()?)
+            .collect::<Result<Vec<CertificateDer<'static>>, io::Error>>()?)
     }
 
     fn keys(path: &Path) -> Result<Vec<PrivateKeyDer<'static>>, Error> {

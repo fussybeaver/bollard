@@ -356,7 +356,7 @@ impl<'a> DockerContainer {
             _ => None,
         };
 
-        let network_mode = self.net_mode.as_ref().map(String::clone);
+        let network_mode = self.net_mode.clone();
 
         let userns_mode = if let Some(security_options) = &info.security_options {
             if security_options.iter().any(|f| f == "userns") {

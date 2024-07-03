@@ -1,5 +1,7 @@
 #![cfg(feature = "buildkit")]
 
+use std::num::TryFromIntError;
+
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
@@ -40,7 +42,7 @@ pub enum GrpcError {
     },
 }
 
-/// Errors related to the Grpc functionality
+/// Errors related to the Grpc Registry authentication functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcAuthError {
     /// Error triggered when the registry responds with a status code less than 200 or more than or
@@ -106,4 +108,32 @@ pub enum GrpcAuthError {
         #[from]
         err: hyper_util::client::legacy::Error,
     },
+}
+
+/// Errors related to the Grpc SSH forwarding functionality
+#[derive(Debug, thiserror::Error)]
+pub enum GrpcSshError {
+    /// Message validation error during SSH forwarding
+    #[error("Message validation failed: {0}")]
+    InvalidMessage(String),
+    /// Unsupported message type during SSH forwarding
+    #[error("Message type is not supported by this agent: {0}")]
+    InvalidMessageType(u8),
+    /// Generic I/O error during SSH forwarding
+    #[error("I/O failure during SSH forwarding")]
+    IOError {
+        /// The original I/O error
+        #[from]
+        err: std::io::Error,
+    },
+    /// Message decoding failed on parsing a u32
+    #[error("u32 conversion error")]
+    U32ParseError {
+        /// The original u32 parse error
+        #[from]
+        err: TryFromIntError,
+    },
+    /// Failed to initialise ssh forwarding to local ssh agent
+    #[error("Failed to initialise ssh forwarding to local ssh agent: {0}")]
+    SshAgentSocketInit(String),
 }

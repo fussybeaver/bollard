@@ -6,6 +6,7 @@ use bollard_buildkit_proto::moby::{
         v1::{control_client::ControlClient, CacheOptions, SolveRequest},
     },
     filesync::v1::{auth_server::AuthServer, file_send_server::FileSendServer},
+    sshforward::v1::ssh_server::SshServer,
     upload::v1::upload_server::UploadServer,
 };
 use log::debug;
@@ -142,6 +143,7 @@ pub(crate) async fn solve(
         cache_from,
         mut frontend_attrs,
         secret_sources,
+        ssh,
     } = frontend_opts.consume();
 
     frontend_attrs.insert(String::from("context"), context);
@@ -164,6 +166,12 @@ pub(crate) async fn solve(
         GrpcServer::Upload(upload),
         GrpcServer::Secrets(secret),
     ];
+
+    if ssh {
+        let ssh_provider = super::SshProvider::new();
+        let ssh = SshServer::new(ssh_provider);
+        services.push(GrpcServer::Ssh(ssh));
+    }
 
     if let Some(path) = path {
         let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()));
