@@ -163,4 +163,7 @@ pub enum Error {
         /// The URI that was attempted to be connected to
         uri: String,
     },
+    /// Error emitted when the Docker socket file is not found at the expected location.
+    #[error("Socket not found: {0}")]
+    SocketNotFoundError(String),
 }

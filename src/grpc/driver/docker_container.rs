@@ -118,7 +118,7 @@ impl Service<tonic::transport::Uri> for DockerContainer {
 ///
 /// ## Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 /// use bollard::Docker;
 ///
