@@ -143,6 +143,7 @@ pub(crate) async fn solve(
         cache_from,
         mut frontend_attrs,
         secret_sources,
+        ssh,
     } = frontend_opts.consume();
 
     frontend_attrs.insert(String::from("context"), context);
@@ -155,19 +156,22 @@ pub(crate) async fn solve(
     }
 
     let secret_provider = super::SecretProvider::new(secret_sources);
-    let ssh_provider = super::SshProvider::new();
 
     let auth = AuthServer::new(auth_provider);
     let upload = UploadServer::new(upload_provider);
     let secret = SecretsServer::new(secret_provider);
-    let ssh = SshServer::new(ssh_provider);
 
     let mut services: Vec<GrpcServer> = vec![
         GrpcServer::Auth(auth),
         GrpcServer::Upload(upload),
         GrpcServer::Secrets(secret),
-        GrpcServer::Ssh(ssh),
     ];
+
+    if ssh {
+        let ssh_provider = super::SshProvider::new();
+        let ssh = SshServer::new(ssh_provider);
+        services.push(GrpcServer::Ssh(ssh));
+    }
 
     if let Some(path) = path {
         let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()));

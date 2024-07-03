@@ -758,6 +758,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
             host: String::from("gitserver"),
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(172, 17, 0, 3)),
         })
+        .enable_ssh(true)
         .build();
 
     let driver = bollard::grpc::driver::moby::Moby::new(&docker);

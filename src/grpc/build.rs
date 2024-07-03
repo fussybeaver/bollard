@@ -39,6 +39,7 @@ pub struct ImageBuildFrontendOptions {
     pub(crate) extrahosts: Vec<ImageBuildHostIp>,
     pub(crate) shmsize: u64,
     pub(crate) secrets: HashMap<String, SecretSource>,
+    pub(crate) ssh: bool,
     //pub(crate) ulimit: Vec<String>,
 }
 
@@ -149,6 +150,7 @@ pub(crate) struct ImageBuildFrontendOptionsIngest {
     pub cache_from: Vec<CacheOptionsEntry>,
     pub frontend_attrs: HashMap<String, String>,
     pub secret_sources: HashMap<String, SecretSource>,
+    pub ssh: bool,
 }
 
 impl ImageBuildFrontendOptions {
@@ -227,6 +229,7 @@ impl ImageBuildFrontendOptions {
             cache_from: self.cachefrom,
             frontend_attrs: attrs,
             secret_sources: self.secrets,
+            ssh: self.ssh,
         }
     }
 }
@@ -336,6 +339,12 @@ impl ImageBuildFrontendOptionsBuilder {
         self.inner
             .secrets
             .insert(String::from(key), value.to_owned());
+        self
+    }
+
+    /// Enable sshforward to ssh agent.
+    pub fn enable_ssh(mut self, value: bool) -> Self {
+        self.inner.ssh = value;
         self
     }
 

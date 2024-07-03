@@ -1245,17 +1245,10 @@ impl Docker {
             }
         }
 
-        let ssh_provider = crate::grpc::SshProvider::new();
-
         let auth =
             bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
-        let ssh =
-            bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(ssh_provider);
 
-        let services: Vec<crate::grpc::GrpcServer> = vec![
-            crate::grpc::GrpcServer::Auth(auth),
-            crate::grpc::GrpcServer::Ssh(ssh),
-        ];
+        let services: Vec<crate::grpc::GrpcServer> = vec![crate::grpc::GrpcServer::Auth(auth)];
 
         crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
 
