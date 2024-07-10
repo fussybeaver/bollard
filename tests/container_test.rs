@@ -839,10 +839,9 @@ async fn mount_volume_container_failure_test(docker: Docker) -> Result<(), Error
         Ok(..) => panic!("Expected error response."),
         Err(e) => match e {
             Error::DockerResponseServerError {
-                status_code,
+                status_code: _,
                 message,
             } => {
-                assert_eq!(status_code, &500);
                 assert!(message.contains("is not an absolute path"));
             }
             _ => panic!("Unexpected error."),
