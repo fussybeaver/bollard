@@ -801,6 +801,57 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn mount_volume_container_failure_test(docker: Docker) -> Result<(), Error> {
+    let host_config = HostConfig {
+        mounts: Some(vec![Mount {
+            target: Some(if cfg!(windows) {
+                String::from("C:\\Windows\\Temp")
+            } else {
+                String::from("/tmp")
+            }),
+            source: Some(if cfg!(windows) {
+                String::from(".\\Temp")
+            } else {
+                String::from("./tmp")
+            }),
+            typ: Some(MountTypeEnum::BIND),
+            consistency: Some(String::from("default")),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+
+    let res = &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "mount_volume_container_failure_test",
+                platform: None,
+            }),
+            Config {
+                image: Some("some_image"),
+                host_config: Some(host_config),
+                ..Default::default()
+            },
+        )
+        .await;
+
+    match res {
+        Ok(..) => panic!("Expected error response."),
+        Err(e) => match e {
+            Error::DockerResponseServerError {
+                status_code,
+                message,
+            } => {
+                assert_eq!(status_code, &500);
+                assert!(message.contains("is not an absolute path"));
+            }
+            _ => panic!("Unexpected error."),
+        },
+    }
+
+    Ok(())
+}
+
 async fn export_container_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -915,6 +966,11 @@ fn integration_test_inspect_containers() {
 #[test]
 fn integration_test_mount_volume_containers() {
     connect_to_docker_and_run!(mount_volume_container_test);
+}
+
+#[test]
+fn integration_test_mount_volume_containers_failure() {
+    connect_to_docker_and_run!(mount_volume_container_failure_test);
 }
 
 #[test]

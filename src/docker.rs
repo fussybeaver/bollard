@@ -1172,7 +1172,13 @@ impl Docker {
                     if !contents.is_empty() {
                         message = serde_json::from_str::<DockerServerErrorMessage>(&contents)
                             .map(|msg| msg.message)
-                            .or_else(|e| if e.is_data() { Ok(contents) } else { Err(e) })?;
+                            .or_else(|e| {
+                                if e.is_data() || e.is_syntax() {
+                                    Ok(contents)
+                                } else {
+                                    Err(e)
+                                }
+                            })?;
                     }
                     Err(DockerResponseServerError {
                         status_code: status.as_u16(),
