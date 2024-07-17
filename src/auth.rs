@@ -1,8 +1,8 @@
 //! Credentials management, for access to the Docker Hub or a custom Registry.
 
-use std::collections::HashMap;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]

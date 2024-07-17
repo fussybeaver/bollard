@@ -49,9 +49,9 @@ use crate::uri::Uri;
 #[cfg(windows)]
 use hyper_named_pipe::NamedPipeConnector;
 
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]

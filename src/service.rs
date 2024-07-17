@@ -242,7 +242,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
             Docker::serialize_payload(Some(service_spec)),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
 
         self.process_into_value(req).await
@@ -404,7 +404,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
             Docker::serialize_payload(Some(service_spec)),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
 
         self.process_into_value(req).await

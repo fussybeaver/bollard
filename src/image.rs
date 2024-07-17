@@ -1,11 +1,11 @@
 //! Image API: creating, manipulating and pushing docker images
 use bytes::Bytes;
 use futures_core::Stream;
-use futures_util::stream::StreamExt;
 #[cfg(feature = "buildkit")]
 use futures_util::future::{Either, FutureExt};
 #[cfg(feature = "buildkit")]
 use futures_util::stream;
+use futures_util::stream::StreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use http_body_util::Full;
@@ -586,28 +586,25 @@ impl Docker {
 
         let req = self.build_request_with_registry_auth(
             url,
-            Builder::new()
-                .method(Method::POST),
+            Builder::new().method(Method::POST),
             options,
             Ok(BodyType::Left(Full::new(match root_fs {
                 Some(body) => body,
                 None => Bytes::new(),
             }))),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
 
-        self.process_into_stream(req)
-            .boxed()
-            .map(|res| {
-                if let Ok(CreateImageInfo {
-                    error: Some(error), ..
-                }) = res
-                {
-                    Err(Error::DockerStreamError { error })
-                } else {
-                    res
-                }
-            })
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(CreateImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -676,11 +673,10 @@ impl Docker {
 
         let req = self.build_request_with_registry_auth(
             &url,
-            Builder::new()
-                .method(Method::GET),
+            Builder::new().method(Method::GET),
             None::<String>,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
 
         self.process_into_value(req).await
@@ -870,11 +866,10 @@ impl Docker {
 
         let req = self.build_request_with_registry_auth(
             &url,
-            Builder::new()
-                .method(Method::DELETE),
+            Builder::new().method(Method::DELETE),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
         self.process_into_value(req).await
     }
@@ -987,21 +982,19 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+            credentials.map(DockerCredentialsHeader::Auth),
         );
 
-        self.process_into_stream(req)
-            .boxed()
-            .map(|res| {
-                if let Ok(PushImageInfo {
-                    error: Some(error), ..
-                }) = res
-                {
-                    Err(Error::DockerStreamError { error })
-                } else {
-                    res
-                }
-            })
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(PushImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -1185,7 +1178,7 @@ impl Docker {
                         .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
                     Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
-                    creds.map(|c| DockerCredentialsHeader::Config(c)),
+                    creds.map(DockerCredentialsHeader::Config),
                 );
 
                 self.process_into_stream(req).boxed()
@@ -1359,21 +1352,19 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
             Ok(BodyType::Left(Full::new(root_fs))),
-            credentials.map(|c| DockerCredentialsHeader::Config(c)),
+            credentials.map(DockerCredentialsHeader::Config),
         );
 
-        self.process_into_stream(req)
-            .boxed()
-            .map(|res| {
-                if let Ok(BuildInfo {
-                    error: Some(error), ..
-                }) = res
-                {
-                    Err(Error::DockerStreamError { error })
-                } else {
-                    res
-                }
-            })
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 
     /// ---
@@ -1446,21 +1437,19 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
             Ok(body_stream(root_fs)),
-            credentials.map(|c| DockerCredentialsHeader::Config(c)),
+            credentials.map(DockerCredentialsHeader::Config),
         );
 
-        self.process_into_stream(req)
-            .boxed()
-            .map(|res| {
-                if let Ok(BuildInfo {
-                    error: Some(error), ..
-                }) = res
-                {
-                    Err(Error::DockerStreamError { error })
-                } else {
-                    res
-                }
-            })
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
     }
 }
 
