@@ -4,7 +4,7 @@ use crate::docker::BodyType;
 pub use crate::models::*;
 
 use super::Docker;
-use crate::auth::{base64_url_encode, DockerCredentials};
+use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::errors::Error;
 use bytes::Bytes;
 use http::header::CONTENT_TYPE;
@@ -235,24 +235,17 @@ impl Docker {
     ) -> Result<ServiceCreateResponse, Error> {
         let url = "/services/create";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    None::<String>,
-                    Docker::serialize_payload(Some(service_spec)),
-                );
+        let req = self.build_request_with_registry_auth(
+            url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            None::<String>,
+            Docker::serialize_payload(Some(service_spec)),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+        );
 
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -404,23 +397,16 @@ impl Docker {
     ) -> Result<ServiceUpdateResponse, Error> {
         let url = format!("/services/{service_name}/update");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    Some(options),
-                    Docker::serialize_payload(Some(service_spec)),
-                );
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Docker::serialize_payload(Some(service_spec)),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+        );
 
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        self.process_into_value(req).await
     }
 }

@@ -51,6 +51,7 @@ use hyper_named_pipe::NamedPipeConnector;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
@@ -1206,6 +1207,32 @@ impl Docker {
             .uri(request_uri)
             .header(CONTENT_TYPE, "application/json")
             .body(payload?)?)
+    }
+
+    pub(crate) fn build_request_with_registry_auth<O>(
+        &self,
+        path: &str,
+        mut builder: Builder,
+        query: Option<O>,
+        payload: Result<BodyType, Error>,
+        credentials: Option<DockerCredentialsHeader>,
+    ) -> Result<Request<BodyType>, Error>
+    where
+        O: Serialize,
+    {
+        match credentials {
+            Some(DockerCredentialsHeader::Config(config)) => {
+                let ser_cred = serde_json::to_string(&config)?;
+                builder = builder.header("X-Registry-Config", base64_url_encode(&ser_cred))
+            }
+            Some(DockerCredentialsHeader::Auth(auth)) => {
+                let ser_cred = serde_json::to_string(&auth)?;
+                builder = builder.header("X-Registry-Auth", base64_url_encode(&ser_cred))
+            }
+            None => {}
+        }
+
+        self.build_request(path, builder, query, payload)
     }
 
     async fn execute_request(

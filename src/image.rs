@@ -1,9 +1,11 @@
 //! Image API: creating, manipulating and pushing docker images
 use bytes::Bytes;
 use futures_core::Stream;
+use futures_util::stream::StreamExt;
 #[cfg(feature = "buildkit")]
 use futures_util::future::{Either, FutureExt};
-use futures_util::{stream, stream::StreamExt};
+#[cfg(feature = "buildkit")]
+use futures_util::stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use http_body_util::Full;
@@ -12,7 +14,7 @@ use serde::Serialize;
 use serde_repr::*;
 
 use super::Docker;
-use crate::auth::{base64_url_encode, DockerCredentials};
+use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::container::Config;
 use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
@@ -453,7 +455,7 @@ pub enum BuilderVersion {
 enum ImageBuildBuildkitEither {
     #[allow(dead_code)]
     Left(Option<HashMap<String, DockerCredentials>>),
-    Right(Result<String, serde_json::Error>),
+    Right(Option<HashMap<String, DockerCredentials>>),
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -582,35 +584,30 @@ impl Docker {
     {
         let url = "/images/create";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    Ok(BodyType::Left(Full::new(match root_fs {
-                        Some(body) => body,
-                        None => Bytes::new(),
-                    }))),
-                );
-                self.process_into_stream(req).boxed()
-            }
-            Err(e) => stream::once(async move { Err(Error::from(e)) }).boxed(),
-        }
-        .map(|res| {
-            if let Ok(CreateImageInfo {
-                error: Some(error), ..
-            }) = res
-            {
-                Err(Error::DockerStreamError { error })
-            } else {
-                res
-            }
-        })
+        let req = self.build_request_with_registry_auth(
+            url,
+            Builder::new()
+                .method(Method::POST),
+            options,
+            Ok(BodyType::Left(Full::new(match root_fs {
+                Some(body) => body,
+                None => Bytes::new(),
+            }))),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+        );
+
+        self.process_into_stream(req)
+            .boxed()
+            .map(|res| {
+                if let Ok(CreateImageInfo {
+                    error: Some(error), ..
+                }) = res
+                {
+                    Err(Error::DockerStreamError { error })
+                } else {
+                    res
+                }
+            })
     }
 
     /// ---
@@ -677,19 +674,13 @@ impl Docker {
     ) -> Result<DistributionInspect, Error> {
         let url = format!("/distribution/{image_name}/json");
 
-        // base64 encode docker credential json to add X-Registry-Auth header to request
-        let creds = &credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        });
-        let creds = serde_json::to_string(creds)?;
-        let creds = base64_url_encode(&creds);
-        let req = self.build_request(
+        let req = self.build_request_with_registry_auth(
             &url,
             Builder::new()
-                .method(Method::GET)
-                .header("X-Registry-Auth", creds),
+                .method(Method::GET),
             None::<String>,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
         );
 
         self.process_into_value(req).await
@@ -877,22 +868,15 @@ impl Docker {
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
         let url = format!("/images/{image_name}");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::DELETE)
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    Ok(BodyType::Left(Full::new(Bytes::new()))),
-                );
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new()
+                .method(Method::DELETE),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+        );
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -996,34 +980,28 @@ impl Docker {
     {
         let url = format!("/images/{image_name}/push");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    Ok(BodyType::Left(Full::new(Bytes::new()))),
-                );
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+            credentials.map(|c| DockerCredentialsHeader::Auth(c)),
+        );
 
-                self.process_into_stream(req).boxed()
-            }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
-        }
-        .map(|res| {
-            if let Ok(PushImageInfo {
-                error: Some(error), ..
-            }) = res
-            {
-                Err(Error::DockerStreamError { error })
-            } else {
-                res
-            }
-        })
+        self.process_into_stream(req)
+            .boxed()
+            .map(|res| {
+                if let Ok(PushImageInfo {
+                    error: Some(error), ..
+                }) = res
+                {
+                    Err(Error::DockerStreamError { error })
+                } else {
+                    res
+                }
+            })
     }
 
     /// ---
@@ -1148,9 +1126,7 @@ impl Docker {
             if cfg!(feature = "buildkit") && options.version == BuilderVersion::BuilderBuildKit {
                 ImageBuildBuildkitEither::Left(credentials)
             } else {
-                ImageBuildBuildkitEither::Right(serde_json::to_string(
-                    &credentials.unwrap_or_default(),
-                ))
+                ImageBuildBuildkitEither::Right(credentials)
             },
             &options,
         ) {
@@ -1201,21 +1177,18 @@ impl Docker {
             (ImageBuildBuildkitEither::Left(_), _) => unimplemented!(
                 "a buildkit enabled build without the 'buildkit' feature should not be possible"
             ),
-            (ImageBuildBuildkitEither::Right(Ok(ser_cred)), _) => {
-                let req = self.build_request(
+            (ImageBuildBuildkitEither::Right(creds), _) => {
+                let req = self.build_request_with_registry_auth(
                     url,
                     Builder::new()
                         .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/x-tar")
-                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
+                        .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
                     Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
+                    creds.map(|c| DockerCredentialsHeader::Config(c)),
                 );
 
                 self.process_into_stream(req).boxed()
-            }
-            (ImageBuildBuildkitEither::Right(Err(e)), _) => {
-                stream::once(async move { Err(e.into()) }).boxed()
             }
         }
         .map(|res| {
@@ -1379,31 +1352,28 @@ impl Docker {
         root_fs: Bytes,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
-        match serde_json::to_string(&credentials.unwrap_or_default()) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    "/images/load",
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
-                    Some(options),
-                    Ok(BodyType::Left(Full::new(root_fs))),
-                );
-                self.process_into_stream(req).boxed()
-            }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
-        }
-        .map(|res| {
-            if let Ok(BuildInfo {
-                error: Some(error), ..
-            }) = res
-            {
-                Err(Error::DockerStreamError { error })
-            } else {
-                res
-            }
-        })
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Ok(BodyType::Left(Full::new(root_fs))),
+            credentials.map(|c| DockerCredentialsHeader::Config(c)),
+        );
+
+        self.process_into_stream(req)
+            .boxed()
+            .map(|res| {
+                if let Ok(BuildInfo {
+                    error: Some(error), ..
+                }) = res
+                {
+                    Err(Error::DockerStreamError { error })
+                } else {
+                    res
+                }
+            })
     }
 
     /// ---
@@ -1469,31 +1439,28 @@ impl Docker {
         root_fs: impl Stream<Item = Bytes> + Send + 'static,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
-        match serde_json::to_string(&credentials.unwrap_or_default()) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    "/images/load",
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
-                    Some(options),
-                    Ok(body_stream(root_fs)),
-                );
-                self.process_into_stream(req).boxed()
-            }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
-        }
-        .map(|res| {
-            if let Ok(BuildInfo {
-                error: Some(error), ..
-            }) = res
-            {
-                Err(Error::DockerStreamError { error })
-            } else {
-                res
-            }
-        })
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Ok(body_stream(root_fs)),
+            credentials.map(|c| DockerCredentialsHeader::Config(c)),
+        );
+
+        self.process_into_stream(req)
+            .boxed()
+            .map(|res| {
+                if let Ok(BuildInfo {
+                    error: Some(error), ..
+                }) = res
+                {
+                    Err(Error::DockerStreamError { error })
+                } else {
+                    res
+                }
+            })
     }
 }
 
