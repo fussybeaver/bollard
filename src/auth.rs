@@ -21,9 +21,9 @@ pub struct DockerCredentials {
 
 pub(crate) enum DockerCredentialsHeader {
     /// Credentials of a single registry sent as an X-Registry-Auth header
-    Auth(DockerCredentials),
+    Auth(Option<DockerCredentials>),
     /// Credentials of multiple registries sent as an X-Registry-Config header
-    Config(HashMap<String, DockerCredentials>),
+    Config(Option<HashMap<String, DockerCredentials>>),
 }
 
 pub(crate) fn base64_url_encode(payload: &str) -> String {

@@ -1215,21 +1215,28 @@ impl Docker {
         mut builder: Builder,
         query: Option<O>,
         payload: Result<BodyType, Error>,
-        credentials: Option<DockerCredentialsHeader>,
+        credentials: DockerCredentialsHeader,
     ) -> Result<Request<BodyType>, Error>
     where
         O: Serialize,
     {
         match credentials {
-            Some(DockerCredentialsHeader::Config(config)) => {
-                let ser_cred = serde_json::to_string(&config)?;
-                builder = builder.header("X-Registry-Config", base64_url_encode(&ser_cred))
+            DockerCredentialsHeader::Config(config) => {
+                let value = match config {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Config", value)
             }
-            Some(DockerCredentialsHeader::Auth(auth)) => {
-                let ser_cred = serde_json::to_string(&auth)?;
-                builder = builder.header("X-Registry-Auth", base64_url_encode(&ser_cred))
+            DockerCredentialsHeader::Auth(auth) => {
+                let value = match auth {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Auth", value)
             }
-            None => {}
         }
 
         self.build_request(path, builder, query, payload)

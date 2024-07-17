@@ -592,7 +592,7 @@ impl Docker {
                 Some(body) => body,
                 None => Bytes::new(),
             }))),
-            credentials.map(DockerCredentialsHeader::Auth),
+            DockerCredentialsHeader::Auth(credentials),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
@@ -676,7 +676,7 @@ impl Docker {
             Builder::new().method(Method::GET),
             None::<String>,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(DockerCredentialsHeader::Auth),
+            DockerCredentialsHeader::Auth(credentials),
         );
 
         self.process_into_value(req).await
@@ -869,7 +869,7 @@ impl Docker {
             Builder::new().method(Method::DELETE),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(DockerCredentialsHeader::Auth),
+            DockerCredentialsHeader::Auth(credentials),
         );
         self.process_into_value(req).await
     }
@@ -982,7 +982,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            credentials.map(DockerCredentialsHeader::Auth),
+            DockerCredentialsHeader::Auth(credentials),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
@@ -1178,7 +1178,7 @@ impl Docker {
                         .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
                     Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
-                    creds.map(DockerCredentialsHeader::Config),
+                    DockerCredentialsHeader::Config(creds),
                 );
 
                 self.process_into_stream(req).boxed()
@@ -1352,7 +1352,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
             Ok(BodyType::Left(Full::new(root_fs))),
-            credentials.map(DockerCredentialsHeader::Config),
+            DockerCredentialsHeader::Config(credentials),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
@@ -1437,7 +1437,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
             Ok(body_stream(root_fs)),
-            credentials.map(DockerCredentialsHeader::Config),
+            DockerCredentialsHeader::Config(credentials),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
