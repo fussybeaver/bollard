@@ -982,7 +982,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            DockerCredentialsHeader::Auth(credentials),
+            DockerCredentialsHeader::Auth(Some(credentials.unwrap_or_default())),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
