@@ -2,6 +2,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
@@ -16,6 +17,13 @@ pub struct DockerCredentials {
     pub serveraddress: Option<String>,
     pub identitytoken: Option<String>,
     pub registrytoken: Option<String>,
+}
+
+pub(crate) enum DockerCredentialsHeader {
+    /// Credentials of a single registry sent as an X-Registry-Auth header
+    Auth(Option<DockerCredentials>),
+    /// Credentials of multiple registries sent as an X-Registry-Config header
+    Config(Option<HashMap<String, DockerCredentials>>),
 }
 
 pub(crate) fn base64_url_encode(payload: &str) -> String {

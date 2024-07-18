@@ -49,6 +49,7 @@ use crate::uri::Uri;
 #[cfg(windows)]
 use hyper_named_pipe::NamedPipeConnector;
 
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -1206,6 +1207,39 @@ impl Docker {
             .uri(request_uri)
             .header(CONTENT_TYPE, "application/json")
             .body(payload?)?)
+    }
+
+    pub(crate) fn build_request_with_registry_auth<O>(
+        &self,
+        path: &str,
+        mut builder: Builder,
+        query: Option<O>,
+        payload: Result<BodyType, Error>,
+        credentials: DockerCredentialsHeader,
+    ) -> Result<Request<BodyType>, Error>
+    where
+        O: Serialize,
+    {
+        match credentials {
+            DockerCredentialsHeader::Config(config) => {
+                let value = match config {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Config", value)
+            }
+            DockerCredentialsHeader::Auth(auth) => {
+                let value = match auth {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Auth", value)
+            }
+        }
+
+        self.build_request(path, builder, query, payload)
     }
 
     async fn execute_request(
