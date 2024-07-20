@@ -955,6 +955,48 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     Ok(())
 }
+#[cfg(feature = "buildkit")]
+async fn build_buildkit_image_anonymous_auth_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = String::from(
+        "FROM node:alpine as builder1
+RUN touch bollard.txt
+",
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let name = "integration_test_build_buildkit_image_anonymous_auth";
+
+    let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
+        .pull(true)
+        .build();
+
+    let driver = bollard::grpc::driver::moby::Moby::new(&docker);
+
+    let load_input =
+        bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
+
+    let res =
+        bollard::grpc::driver::Build::docker_build(driver, name, frontend_opts, load_input, None)
+            .await;
+
+    assert!(res.is_ok());
+    let _ = &docker
+        .remove_image(name, None::<RemoveImageOptions>, None)
+        .await?;
+
+    Ok(())
+}
 
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
@@ -1243,6 +1285,12 @@ fn integration_test_build_buildkit_ssh() {
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_inline_driver() {
     connect_to_docker_and_run!(build_buildkit_image_inline_driver_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_build_buildkit_anonymous_auth() {
+    connect_to_docker_and_run!(build_buildkit_image_anonymous_auth_test);
 }
 
 #[test]

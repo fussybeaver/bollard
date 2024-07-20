@@ -323,17 +323,15 @@ impl AuthProvider {
             .insert(String::from(host), docker_credentials);
     }
 
-    fn get_auth_config(&self, mut host: &str) -> Result<DockerCredentials, Status> {
+    fn get_auth_config(&self, mut host: &str) -> Option<DockerCredentials> {
         if host == DOCKER_HUB_REGISTRY_HOST {
             host = DOCKER_HUB_CONFIG_FILE_KEY;
         }
 
         if let Some(creds) = self.auth_config_cache.get(host) {
-            Ok(DockerCredentials::to_owned(creds))
+            Some(DockerCredentials::to_owned(creds))
         } else {
-            Err(Status::permission_denied(format!(
-                "Could not find credentials for {host}"
-            )))
+            None
         }
     }
 
@@ -356,25 +354,31 @@ impl AuthProvider {
     }
 
     fn get_credentials(&self, host: &str) -> Result<CredentialsResponse, Status> {
-        let ac = self.get_auth_config(host)?;
-
-        match ac {
-            DockerCredentials {
-                identitytoken: Some(identitytoken),
-                ..
-            } => Ok(CredentialsResponse {
-                username: String::new(),
-                secret: identitytoken,
-            }),
-            DockerCredentials {
-                username: Some(username),
-                password: Some(password),
-                ..
-            } => Ok(CredentialsResponse {
-                username,
-                secret: password,
-            }),
-            DockerCredentials { .. } => Err(Status::unknown("Invalid DockerCredentials provided")),
+        if let Some(ac) = self.get_auth_config(host) {
+            match ac {
+                DockerCredentials {
+                    identitytoken: Some(identitytoken),
+                    ..
+                } => Ok(CredentialsResponse {
+                    username: String::new(),
+                    secret: identitytoken,
+                }),
+                DockerCredentials {
+                    username: Some(username),
+                    password: Some(password),
+                    ..
+                } => Ok(CredentialsResponse {
+                    username,
+                    secret: password,
+                }),
+                DockerCredentials { .. } => {
+                    Err(Status::unknown("Invalid DockerCredentials provided"))
+                }
+            }
+        } else {
+            Ok(CredentialsResponse {
+                ..Default::default()
+            })
         }
     }
 
