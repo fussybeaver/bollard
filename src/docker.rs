@@ -78,7 +78,7 @@ const DEFAULT_TIMEOUT: u64 = 120;
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 44,
+    minor_version: 45,
 };
 
 #[derive(Debug, Clone)]
