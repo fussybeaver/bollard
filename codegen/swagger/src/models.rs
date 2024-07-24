@@ -3047,7 +3047,7 @@ pub struct ImageSearchResponseItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_official: Option<bool>,
 
-    /// Whether this repository has automated builds enabled.  <p><br /></p>  > **Deprecated**: This field is deprecated and will always > be \"false\" in future. 
+    /// Whether this repository has automated builds enabled.  <p><br /></p>  > **Deprecated**: This field is deprecated and will always be \"false\". 
     #[serde(rename = "is_automated")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_automated: Option<bool>,
@@ -3399,7 +3399,7 @@ pub struct MountBindOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub create_mountpoint: Option<bool>,
 
-    /// Make the mount non-recursively read-only, but still leave the mount recursive (unless NonRecursive is set to true in conjunction). 
+    /// Make the mount non-recursively read-only, but still leave the mount recursive (unless NonRecursive is set to `true` in conjunction).  Addded in v1.44, before that version all read-only mounts were non-recursive by default. To match the previous behaviour this will default to `true` for clients on versions prior to v1.44. 
     #[serde(rename = "ReadOnlyNonRecursive")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_only_non_recursive: Option<bool>,
@@ -3610,6 +3610,11 @@ pub struct MountVolumeOptions {
     #[serde(rename = "DriverConfig")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver_config: Option<MountVolumeOptionsDriverConfig>,
+
+    /// Source path inside the volume. Must be relative without any back traversals.
+    #[serde(rename = "Subpath")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subpath: Option<String>,
 
 }
 

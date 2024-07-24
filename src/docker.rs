@@ -29,7 +29,7 @@ use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(unix)]
-use hyperlocal_next::UnixConnector;
+use hyperlocal::UnixConnector;
 use log::{debug, trace};
 #[cfg(feature = "ssl")]
 use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey, ALL_VERSIONS};
@@ -78,7 +78,7 @@ const DEFAULT_TIMEOUT: u64 = 120;
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 44,
+    minor_version: 45,
 };
 
 #[derive(Debug, Clone)]
