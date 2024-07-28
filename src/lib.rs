@@ -34,10 +34,8 @@
 //!
 //! ### Latest
 //!
-//! Version `0.16` enables more `buildkit` features, including using the Registry as a [cache
-//! storage for intermediate container build
-//! stages](https://docs.docker.com/build/cache/backends/registry/), syncs with [moby release
-//! 25.0.3](https://github.com/moby/moby/releases/tag/v25.0.3) and [API version 1.44.0](https://docs.docker.com/engine/api/v1.44/).
+//! Version `0.17` enables the [`secrets`](https://docs.docker.com/build/building/secrets/#secret-mounts) and [`sshforward`](https://docs.docker.com/build/building/secrets/#ssh-mounts) components of
+//! `buildkit`, [API version 1.45.0](https://docs.docker.com/engine/api/v1.45/).
 //! Please note: all `buildkit` API's are under *developer preview*, feedback is
 //! encouraged.
 //!

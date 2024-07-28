@@ -1415,7 +1415,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [ContainerWaitResponse](ContainerWaitResponse), wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1727,7 +1727,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Log Output](LogOutput) enum, wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1779,7 +1779,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - An Option of Vector of [File System Change](FilesystemChange) structs, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -1819,7 +1819,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Stats](Stats) struct, wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -2261,7 +2261,7 @@ impl Docker {
     }
 }
 
-#[cfg(not(target_arch = "windows"))]
+#[cfg(not(windows))]
 #[cfg(test)]
 mod tests {
 

@@ -181,10 +181,10 @@ where
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
-    ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
-    ///  computed relative to the daemon machine’s time.
+    ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///    computed relative to the daemon machine’s time.
     ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`)
-    ///  Prune networks with (or without, in case `label!=...` is used) the specified labels.
+    ///    Prune networks with (or without, in case `label!=...` is used) the specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
@@ -203,7 +203,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Network Create Response](NetworkCreateResponse) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -285,7 +285,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Models](Network) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -335,7 +335,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A vector of [Network](Network) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///

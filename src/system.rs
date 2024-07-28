@@ -256,7 +256,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [EventMessage](crate::models::EventMessage),
-    ///  wrapped in a Stream.
+    ///    wrapped in a Stream.
     ///
     /// # Examples
     ///
@@ -302,8 +302,8 @@ impl Docker {
     /// # Returns
     ///
     ///  - [System Data Usage
-    ///  Response](SystemDataUsageResponse), wrapped in a
-    ///  Future.
+    ///    Response](SystemDataUsageResponse), wrapped in a
+    ///    Future.
     ///
     /// # Examples
     ///

@@ -89,8 +89,8 @@ where
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
-    ///  `label!=<key>=<value>`) Prune volumes with (or without, in case `label!=...` is used) the
-    ///  specified labels.
+    ///    `label!=<key>=<value>`) Prune volumes with (or without, in case `label!=...` is used) the
+    ///    specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
@@ -107,7 +107,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Volume List Response]VolumeListResponse) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -160,7 +160,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Volume](Volume) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -206,7 +206,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Volume](Volume) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///

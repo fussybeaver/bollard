@@ -6,7 +6,6 @@ use std::{
 };
 
 use hyper::rt::{Read, Write};
-use hyper_util::rt::TokioIo;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 use tonic::transport::server::Connected;
