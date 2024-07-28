@@ -190,7 +190,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Service Create Response](ServiceCreateResponse) struct,
-    ///  wrapped in a Future.
+    ///    wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -344,7 +344,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Service Update Response](ServiceUpdateResponse) struct,
-    ///  wrapped in a Future.
+    ///    wrapped in a Future.
     ///
     /// # Examples
     ///

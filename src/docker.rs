@@ -522,7 +522,7 @@ impl Docker {
     /// # Defaults
     ///
     ///  - The connection url is sourced from the `DOCKER_HOST` environment variable, and defaults
-    ///  to `localhost:2375`.
+    ///    to `localhost:2375`.
     ///  - The number of threads used for the HTTP connection pool defaults to 1.
     ///  - The request timeout defaults to 2 minutes.
     ///
@@ -598,7 +598,7 @@ impl Docker {
     /// # Defaults
     ///
     ///  - The unix socket location defaults to `/var/run/docker.sock`. The windows named pipe
-    ///  location defaults to `//./pipe/docker_engine`.
+    ///    location defaults to `//./pipe/docker_engine`.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples

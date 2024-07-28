@@ -157,13 +157,13 @@ where
 {
     /// Filters to process on the prune list, encoded as JSON. Available filters:
     ///  - `dangling=<boolean>` When set to `true` (or `1`), prune only unused *and* untagged
-    ///  images. When set to `false` (or `0`), all unused images are pruned.
+    ///    images. When set to `false` (or `0`), all unused images are pruned.
     ///  - `until=<string>` Prune images created before this timestamp. The `<timestamp>` can be
-    ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
-    ///  computed relative to the daemon machine’s time.
+    ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///    computed relative to the daemon machine’s time.
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
-    ///  `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
-    ///  specified labels.
+    ///    `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
+    ///    specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
@@ -548,7 +548,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -746,7 +746,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [History Response Item](HistoryResponseItem), wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -782,7 +782,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [Image Search Response Item](ImageSearchResponseItem) results, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -838,7 +838,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [Image Delete Response Item](ImageDeleteResponseItem), wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -1077,7 +1077,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1295,7 +1295,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Build Info](BuildInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1383,7 +1383,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Build Info](BuildInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1453,7 +1453,7 @@ impl Docker {
     }
 }
 
-#[cfg(not(target_arch = "windows"))]
+#[cfg(not(windows))]
 #[cfg(test)]
 mod tests {
 

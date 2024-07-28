@@ -118,7 +118,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Create Exec Results](CreateExecResults) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
