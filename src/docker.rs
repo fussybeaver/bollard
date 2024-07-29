@@ -32,7 +32,7 @@ use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use hyperlocal::UnixConnector;
 use log::{debug, trace};
 #[cfg(feature = "ssl")]
-use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey, ALL_VERSIONS};
+use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey};
 #[cfg(feature = "ssl")]
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use serde_derive::{Deserialize, Serialize};
@@ -479,15 +479,12 @@ impl Docker {
             rustls_pemfile::certs(&mut ca_pem).collect::<Result<Vec<_>, _>>()?,
         );
 
-        let config = rustls::ClientConfig::builder_with_provider(
-            rustls::crypto::aws_lc_rs::default_provider().into(),
-        )
-        .with_protocol_versions(ALL_VERSIONS)?
-        .with_root_certificates(root_store)
-        .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
-            ssl_key: ssl_key.to_owned(),
-            ssl_cert: ssl_cert.to_owned(),
-        }));
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
+                ssl_key: ssl_key.to_owned(),
+                ssl_cert: ssl_cert.to_owned(),
+            }));
 
         let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);
