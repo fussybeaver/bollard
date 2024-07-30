@@ -41,7 +41,9 @@ encouraged.
 
 ### Feature flags
 
- - `ssl`: enable SSL support through [Rustls](https://github.com/rustls/rustls)
+ - `ssl`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [ring](https://github.com/briansmith/ring) provider.
+ - `aws-lc-rs`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider.
+ - `ssl_providerless`: enable SSL support through [Rustls](https://github.com/rustls/rustls) without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html). You are responsible to do so.
  - `chrono`: enable [Chrono](https://github.com/chronotope/chrono) for `DateTime` types.
  - `time`: enable [Time 0.3](https://github.com/time-rs/time) for `DateTime` types.
  - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of

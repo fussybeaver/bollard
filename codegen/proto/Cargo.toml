@@ -25,5 +25,5 @@ tonic = { version = "0.12" }
 prost = { version = "0.13" }
 prost-types = "0.13"
 tonic-build = { version = "0.12", optional = true }
-ureq = { version = "2.9.7", optional = true}
+ureq = { version = "2.9.7", optional = true, default-features = false }
 
