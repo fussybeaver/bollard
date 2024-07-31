@@ -55,6 +55,9 @@ use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
 use ssh::SshAgentPacketDecoder;
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::ClientOptions;
+#[cfg(not(windows))]
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::FramedRead;
@@ -328,11 +331,9 @@ impl AuthProvider {
             host = DOCKER_HUB_CONFIG_FILE_KEY;
         }
 
-        if let Some(creds) = self.auth_config_cache.get(host) {
-            Some(DockerCredentials::to_owned(creds))
-        } else {
-            None
-        }
+        self.auth_config_cache
+            .get(host)
+            .map(DockerCredentials::to_owned)
     }
 
     fn to_token_response(
@@ -648,8 +649,19 @@ impl Ssh for SshProvider {
         &self,
         request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
-        let ssh_env_sock = env::var("SSH_AUTH_SOCK").expect("missing SSH_AUTH_SOCK");
-        let sock = UnixStream::connect(&ssh_env_sock).await?;
+        let ssh_env_sock = env::var("SSH_AUTH_SOCK");
+        #[cfg(windows)]
+        let create_ssh_agent_named_pipe = || {
+            // Windows uses a named pipe with a static name unless overriden by SSH_AUTH_SOCK.
+            // Pipe name is defined here:
+            // https://github.com/PowerShell/openssh-portable/blob/e829ad267c97e7ecfee9ce1ac6511635a972714d/contrib/win32/win32compat/ssh-agent/agent.c#L48
+            let ssh_env_sock = ssh_env_sock
+                .clone()
+                .unwrap_or(r#"\\.\pipe\openssh-ssh-agent"#.to_string());
+            ClientOptions::new().open(&ssh_env_sock)
+        };
+        #[cfg(not(windows))]
+        let sock = UnixStream::connect(&ssh_env_sock.expect("missing SSH_AUTH_SOCK")).await?;
 
         let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
         let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
@@ -672,7 +684,14 @@ impl Ssh for SshProvider {
             SshAgentPacketDecoder::new(),
         );
 
+        #[cfg(not(windows))]
         let (sock_read, sock_write) = sock.into_split();
+
+        #[cfg(windows)]
+        let (sock_read, sock_write) = (
+            create_ssh_agent_named_pipe()?,
+            create_ssh_agent_named_pipe()?,
+        );
 
         let output_reader = ReaderStream::new(sock_read).map(|res| match res {
             Ok(v) => {
@@ -708,6 +727,7 @@ impl Ssh for SshProvider {
                     }
                 }
             }
+            #[cfg(not(windows))]
             sock_write.forget();
         });
 
