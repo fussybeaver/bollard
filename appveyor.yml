@@ -2,15 +2,48 @@ image: Visual Studio 2017
 
 install:
   - docker version
-  - ps: Start-FileDownload "https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe"
-  - rustup-init.exe -y --default-host i686-pc-windows-msvc
-  - SET PATH=%PATH%;C:\Users\appveyor\.cargo\bin
-  - SET PATH=%PATH%;C:\MinGW\bin
-  - rustc -V
-  - cargo -V
+
 
 build_script:
   - ver
+  - SET PATH=%PATH%;C:\Program Files\Git\usr\bin
+  - ps: Get-Command ssh-add
+  - ps: Get-Command ssh-keygen
+  - ps: Get-Command ssh-keyscan
+  - ps: |
+      $sshagentres = ssh-agent
+      $env:SSH_AUTH_SOCK = [System.Text.RegularExpressions.Regex]::Match($sshagentres, "(?<=SSH_AUTH_SOCK=).+?(?=;)").Value
+      $env:SSH_AGENT_PID = [System.Text.RegularExpressions.Regex]::Match($sshagentres, "(?<=SSH_AGENT_PID=).+?(?=;)").Value
+  - ps: |
+      cd ${env:USERPROFILE}/.ssh
+      ssh-keygen -t ecdsa -N '""' -C "test@example.com" -f id_ecdsa
+      cat id_ecdsa.pub
+      cat id_ecdsa
+      ls
+      echo $env:USERPROFILE
+      echo $env:SSH_AUTH_SOCK
+      echo $env:SSH_AGENT_PID
+      cat id_ecdsa.pub > "${env:USERPROFILE}/.ssh/authorized_keys"
+      echo starting
+      ssh-add -L
+      echo ssh-add
+  - ps: |
+      $ErrorActionPreference = 'SilentlyContinue'
+      ssh-add -q
+  - ps: ssh-add -L
+  - ps: |
+      cd /projects/boondock
+      $ErrorActionPreference = 'Stop'
+      cd resources/dockerfiles/windows/git-server
+      docker build -t git-server -f Dockerfile .
+      cd /projects/boondock
+      mkdir host_key
+      ssh-keygen -t ecdsa -N '""' -f host_key/ssh_host_ecdsa_key
+      docker run -d --rm --name git -v C:\projects\boondock\host_key:C:\host_key -v ${env:USERPROFILE}\.ssh:C:\Users\ContainerAdministrator\.ssh -p 2222:22 git-server C:/OpenSSH-Win64/sshd.exe -h C:\host_key\ssh_host_ecdsa_key -f C:\git\etc\ssh\sshd_config
+
+  - ps: ssh-keyscan -t ecdsa -p 2222 -v localhost
+  - ps: ssh-keyscan -t ecdsa -p 2222 localhost > "${env:USERPROFILE}/.ssh/known_hosts"
+  - ps: ssh -A -v -i id_ecdsa git@localhost -p 2222 'git init --bare /srv/git/config.git'
   - ps: systeminfo /fo csv | ConvertFrom-Csv | select OS*, System*, Hotfix* | Format-List
   - ps: Get-VMNetworkAdapter -VMName *
   - ps: Get-VMNetworkAdapter -All
