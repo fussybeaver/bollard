@@ -55,7 +55,6 @@ use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
 use ssh::SshAgentPacketDecoder;
-use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::FramedRead;
 use tokio_util::io::{ReaderStream, StreamReader};
@@ -644,12 +643,13 @@ impl Ssh for SshProvider {
         >,
     >;
 
+    #[cfg(not(windows))]
     async fn forward_agent(
         &self,
         request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
         let ssh_env_sock = env::var("SSH_AUTH_SOCK").expect("missing SSH_AUTH_SOCK");
-        let sock = UnixStream::connect(&ssh_env_sock).await?;
+        let sock = tokio::net::UnixStream::connect(&ssh_env_sock).await?;
 
         let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
         let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
@@ -716,6 +716,14 @@ impl Ssh for SshProvider {
                 .flatten_unordered(None);
 
         Ok(Response::new(Box::pin(combined_output_stream)))
+    }
+
+    #[cfg(windows)]
+    async fn forward_agent(
+        &self,
+        request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
+    ) -> Result<Response<Self::ForwardAgentStream>, Status> {
+        unimplemented!();
     }
 }
 
