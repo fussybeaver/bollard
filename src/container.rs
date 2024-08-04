@@ -18,7 +18,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 
 use super::Docker;
-use crate::docker::BodyType;
+use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 use crate::read::NewlineLogOutputDecoder;
@@ -2122,6 +2122,43 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Stream Upload To Container
+    ///
+    /// Stream an upload of a tar archive to be extracted to a path in the filesystem of container
+    /// id.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    pub async fn upload_to_container_streaming<T>(
+        &self,
+        container_name: &str,
+        options: Option<UploadToContainerOptions<T>>,
+        tar: impl Stream<Item = Bytes> + Send + 'static,
+    ) -> Result<(), Error>
+    where
+        T: Into<String> + Serialize,
+    {
+        let url = format!("/containers/{container_name}/archive");
+
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::PUT)
+                .header(CONTENT_TYPE, "application/x-tar"),
+            options,
+            Ok(body_stream(tar)),
+        );
+
+        self.process_into_unit(req).await
     }
 
     /// ---
