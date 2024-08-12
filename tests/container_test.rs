@@ -537,7 +537,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-async fn archive_container_test(docker: Docker) -> Result<(), Error> {
+async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}microsoft/nanoserver", registry_http_addr())
     } else {
@@ -588,20 +588,43 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let _ = &docker
-        .upload_to_container(
-            "integration_test_archive_container",
-            Some(UploadToContainerOptions {
-                path: if cfg!(windows) {
-                    "C:\\Windows\\Logs"
-                } else {
-                    "/tmp"
-                },
-                ..Default::default()
-            }),
-            payload.into(),
-        )
-        .await?;
+    if streaming_upload {
+        // Make payload live for the lifetime of the test and convert it to an async Bytes stream.
+        // Normally you would use an existing async stream.
+        let payload = Box::new(payload).leak();
+        let payload = payload.chunks(32);
+        let payload = futures_util::stream::iter(payload.map(bytes::Bytes::from));
+
+        let _ = &docker
+            .upload_to_container_streaming(
+                "integration_test_archive_container",
+                Some(UploadToContainerOptions {
+                    path: if cfg!(windows) {
+                        "C:\\Windows\\Logs"
+                    } else {
+                        "/tmp"
+                    },
+                    ..Default::default()
+                }),
+                payload,
+            )
+            .await?;
+    } else {
+        let _ = &docker
+            .upload_to_container(
+                "integration_test_archive_container",
+                Some(UploadToContainerOptions {
+                    path: if cfg!(windows) {
+                        "C:\\Windows\\Logs"
+                    } else {
+                        "/tmp"
+                    },
+                    ..Default::default()
+                }),
+                payload.into(),
+            )
+            .await?;
+    }
 
     let res = docker.download_from_container(
         "integration_test_archive_container",
@@ -904,7 +927,8 @@ fn integration_test_prune_containers() {
 
 #[test]
 fn integration_test_archive_containers() {
-    connect_to_docker_and_run!(archive_container_test);
+    connect_to_docker_and_run!(|docker| archive_container_test(docker, true));
+    connect_to_docker_and_run!(|docker| archive_container_test(docker, false));
 }
 
 #[test]
