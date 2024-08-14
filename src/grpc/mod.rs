@@ -30,17 +30,22 @@ use crate::moby::filesync::v1::{
 };
 use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
+use std::io::Write;
 
 use std::collections::HashMap;
 use std::env;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use bollard_buildkit_proto::fsutil::types::packet::PacketType;
+use bollard_buildkit_proto::fsutil::types::Packet;
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
+use bollard_buildkit_proto::moby::filesync::v1::{FileSendPacket, FileSendPacketServer};
 use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::Bytes;
@@ -79,6 +84,7 @@ pub(crate) enum GrpcServer {
     Auth(AuthServer<AuthProvider>),
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
+    FileSendPacket(FileSendPacketServer<FileSendPacketImpl>),
     Secrets(SecretsServer<SecretProvider>),
     Ssh(SshServer<SshProvider>),
 }
@@ -92,6 +98,9 @@ impl GrpcServer {
             GrpcServer::Auth(auth_server) => builder.add_service(auth_server),
             GrpcServer::Upload(upload_server) => builder.add_service(upload_server),
             GrpcServer::FileSend(file_send_server) => builder.add_service(file_send_server),
+            GrpcServer::FileSendPacket(file_send_packet_server) => {
+                builder.add_service(file_send_packet_server)
+            }
             GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
             GrpcServer::Ssh(ssh_server) => builder.add_service(ssh_server),
         }
@@ -113,6 +122,12 @@ impl GrpcServer {
                 vec![format!(
                     "/{}/diffcopy",
                     FileSendServer::<FileSendImpl>::NAME
+                )]
+            }
+            GrpcServer::FileSendPacket(_file_send_packet_server) => {
+                vec![format!(
+                    "/{}/diffcopy",
+                    FileSendPacketServer::<FileSendPacketImpl>::NAME
                 )]
             }
             GrpcServer::Secrets(_secret_server) => {
@@ -219,6 +234,99 @@ impl FileSend for FileSendImpl {
         }
 
         Ok(Response::new(Box::pin(futures_util::stream::empty())))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FileSendPacketImpl {
+    pub(crate) dest: PathBuf,
+}
+
+impl FileSendPacketImpl {
+    pub fn new(dest: &Path) -> Self {
+        Self {
+            dest: dest.to_owned(),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl FileSendPacket for FileSendPacketImpl {
+    type DiffCopyStream = Pin<Box<dyn Stream<Item = Result<Packet, Status>> + Send>>;
+    async fn diff_copy(
+        &self,
+        request: Request<Streaming<Packet>>,
+    ) -> Result<Response<Self::DiffCopyStream>, Status> {
+        let base_path = self.dest.clone();
+        std::fs::create_dir_all(&base_path).unwrap();
+        trace!(
+            "Protobuf FileSend (packet) diff_copy triggered: {:#?}",
+            request
+        );
+
+        let mut in_stream = request.into_inner();
+
+        // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
+        let out_stream = async_stream::try_stream! {
+            let mut file_id = 0;
+            let mut stats = HashMap::new();
+            let mut received_all_stats = false;
+
+            while let Some(Ok(packet)) = in_stream.next().await {
+                match PacketType::try_from(packet.r#type) {
+                    Ok(PacketType::PacketStat) => {
+                        if let Some(stat) = packet.stat {
+                            // MSB of `stat.mode` is set if packet describes a directory
+                            if (stat.mode >> (32 - 1)) == 1 {
+                                std::fs::create_dir(base_path.join(stat.path)).unwrap()
+                            } else {
+                                stats.insert(file_id, stat);
+                                yield Packet {
+                                    r#type: PacketType::PacketReq.into(),
+                                    stat: None,
+                                    id: file_id,
+                                    data: vec![]
+                                };
+                            };
+                            file_id += 1;
+                        } else {
+                            received_all_stats = true;
+                        }
+                    },
+                    Ok(PacketType::PacketReq) => panic!("server should not request"),
+                    Ok(PacketType::PacketData) => {
+                        if packet.data.len() == 0 {
+                            // all data for file has been received
+                            stats.remove(&packet.id);
+                        } else {
+                            let stat = stats.get(&packet.id).unwrap();
+                            let file_path = base_path.join(stat.path.clone());
+                            std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+                            let mut file = OpenOptions::new()
+                                .append(true)
+                                .create(true)
+                                .open(file_path)
+                                .unwrap();
+                            file.write_all(packet.data.as_slice()).unwrap();
+                        }
+
+                        if stats.is_empty() && received_all_stats {
+                            yield Packet {
+                                r#type: PacketType::PacketFin.into(),
+                                stat: None,
+                                id: 0,
+                                data: vec![]
+                            };
+                        }
+                    },
+                    Ok(PacketType::PacketFin) => return,
+                    Ok(PacketType::PacketErr) => panic!("{}", String::from_utf8(packet.data).unwrap()),
+                    Err(_) => panic!("unhandled packet type")
+                }
+            }
+        };
+
+        Ok(Response::new(Box::pin(out_stream)))
     }
 }
 
