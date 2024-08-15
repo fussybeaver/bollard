@@ -1113,9 +1113,11 @@ async fn build_buildkit_image_outputs_local_test(docker: Docker) -> Result<(), E
         "FROM localhost:5000/alpine as builder
 RUN echo hello > message-1.txt
 RUN echo world > message-2.txt
+RUN touch empty.txt
 FROM scratch as export
 COPY --from=builder message-1.txt .
 COPY --from=builder message-2.txt subfolder/message-2.txt
+COPY --from=builder empty.txt .
 ",
     );
     let mut header = tar::Header::new_gnu();
@@ -1194,6 +1196,11 @@ COPY --from=builder message-2.txt subfolder/message-2.txt
     assert_eq!(
         std::fs::read_to_string(dest_path.join("subfolder/message-2.txt")).unwrap(),
         String::from("world\n")
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(dest_path.join("empty.txt")).unwrap(),
+        String::from("")
     );
 
     Ok(())

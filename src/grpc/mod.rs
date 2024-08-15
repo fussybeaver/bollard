@@ -280,6 +280,7 @@ impl FileSendPacket for FileSendPacketImpl {
                             if (stat.mode >> (32 - 1)) == 1 {
                                 std::fs::create_dir(base_path.join(stat.path)).unwrap()
                             } else {
+                                std::fs::File::create(base_path.join(&stat.path)).unwrap();
                                 stats.insert(file_id, stat);
                                 yield Packet {
                                     r#type: PacketType::PacketReq.into(),
@@ -304,7 +305,6 @@ impl FileSendPacket for FileSendPacketImpl {
                             std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
                             let mut file = OpenOptions::new()
                                 .append(true)
-                                .create(true)
                                 .open(file_path)
                                 .unwrap();
                             file.write_all(packet.data.as_slice()).unwrap();
