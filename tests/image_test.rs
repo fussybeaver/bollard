@@ -1112,12 +1112,8 @@ async fn build_buildkit_image_outputs_local_test(docker: Docker) -> Result<(), E
     let dockerfile = String::from(
         "FROM localhost:5000/alpine as builder
 RUN echo hello > message-1.txt
-RUN echo world > message-2.txt
+RUN mkdir subfolder && echo world > subfolder/message-2.txt
 RUN touch empty.txt
-FROM scratch as export
-COPY --from=builder message-1.txt .
-COPY --from=builder message-2.txt subfolder/message-2.txt
-COPY --from=builder empty.txt .
 ",
     );
     let mut header = tar::Header::new_gnu();

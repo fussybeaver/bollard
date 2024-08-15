@@ -445,6 +445,9 @@ where
     /// The tar export type writes all result files as a single tarball on the client.
     /// On multi-platform builds all results will be put in subdirectories by their platform.
     /// It takes the destination directory as a first argument.
+    /// 
+    /// **Notice**: The implementation of the underlying `fsutil` protocol is not complete.
+    /// Therefore, special files, permissions, etc. are ignored or not handled correctly.
     Local(T),
 }
 

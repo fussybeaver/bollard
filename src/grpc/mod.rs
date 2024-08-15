@@ -10,6 +10,7 @@ pub mod driver;
 pub mod error;
 /// End-user buildkit export functions
 pub mod export;
+mod fsutil;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
 /// End-user buildkit registry functions
@@ -276,22 +277,23 @@ impl FileSendPacket for FileSendPacketImpl {
                 match PacketType::try_from(packet.r#type) {
                     Ok(PacketType::PacketStat) => {
                         if let Some(stat) = packet.stat {
-                            // MSB of `stat.mode` is set if packet describes a directory
-                            if (stat.mode >> (32 - 1)) == 1 {
-                                std::fs::create_dir(base_path.join(stat.path)).unwrap()
-                            } else {
+                            if fsutil::FileMode::Type.bits() & stat.mode == 0 {
                                 std::fs::File::create(base_path.join(&stat.path)).unwrap();
                                 stats.insert(file_id, stat);
-                                yield Packet {
-                                    r#type: PacketType::PacketReq.into(),
-                                    stat: None,
-                                    id: file_id,
-                                    data: vec![]
-                                };
+                            } else if fsutil::FileMode::Dir.bits() & stat.mode != 0 {
+                                std::fs::create_dir(base_path.join(stat.path)).unwrap()
                             };
                             file_id += 1;
                         } else {
                             received_all_stats = true;
+                            for id in stats.keys() {
+                                yield Packet {
+                                    r#type: PacketType::PacketReq.into(),
+                                    stat: None,
+                                    id: *id,
+                                    data: vec![]
+                                };
+                            }
                         }
                     },
                     Ok(PacketType::PacketReq) => panic!("server should not request"),
