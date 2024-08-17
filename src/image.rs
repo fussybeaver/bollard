@@ -421,6 +421,8 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// Target build stage
+    pub target: T,
     /// Builder version to use
     pub version: BuilderVersion,
 }
