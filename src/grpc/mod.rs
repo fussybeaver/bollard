@@ -44,9 +44,11 @@ use bollard_buildkit_proto::fsutil::types::packet::PacketType;
 use bollard_buildkit_proto::fsutil::types::Packet;
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
+use bollard_buildkit_proto::moby::filesync::packet::file_send_server::{
+    FileSend as FileSendPacket, FileSendServer as FileSendPacketServer,
+};
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
-use bollard_buildkit_proto::moby::filesync::v1::{FileSendPacket, FileSendPacketServer};
 use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::Bytes;

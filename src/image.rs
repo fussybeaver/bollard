@@ -1,6 +1,6 @@
 //! Image API: creating, manipulating and pushing docker images
 #[cfg(feature = "buildkit")]
-use bollard_buildkit_proto::moby::filesync::v1::FileSendPacketServer;
+use bollard_buildkit_proto::moby::filesync::packet::file_send_server::FileSendServer as FileSendPacketServer;
 use bytes::Bytes;
 use futures_core::Stream;
 #[cfg(feature = "buildkit")]
