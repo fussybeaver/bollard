@@ -35,7 +35,8 @@
 //! ### Latest
 //!
 //! Version `0.17` enables the [`secrets`](https://docs.docker.com/build/building/secrets/#secret-mounts) and [`sshforward`](https://docs.docker.com/build/building/secrets/#ssh-mounts) components of
-//! `buildkit`, [API version 1.45.0](https://docs.docker.com/engine/api/v1.45/).
+//! `buildkit`, [API version 1.45.0](https://docs.docker.com/engine/api/v1.45/) - (disabled for
+//! windows).
 //! Please note: all `buildkit` API's are under *developer preview*, feedback is
 //! encouraged.
 //!

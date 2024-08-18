@@ -1,7 +1,7 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.17.0"
+version = "0.17.1"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
@@ -84,6 +84,7 @@ bitflags = { version = "2.6.0", optional = true }
 flate2 = "1.0"
 tar = "0.4"
 tokio = { version = "1.38", features = ["fs", "rt-multi-thread", "macros"] }
+tokio-util = { version = "0.7", features = ["io"] }
 yup-hyper-mock = { version = "8.0.0" }
 once_cell = "1.19"
 
