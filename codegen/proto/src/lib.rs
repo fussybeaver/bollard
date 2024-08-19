@@ -41,6 +41,9 @@ pub mod moby {
         pub mod v1 {
             include!("generated/moby.filesync.v1.rs");
         }
+        pub mod packet {
+            include!("generated/moby.filesync.packet.rs");
+        }
     }
     pub mod upload {
         pub mod v1 {

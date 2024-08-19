@@ -998,6 +998,210 @@ RUN touch bollard.txt
     Ok(())
 }
 
+#[cfg(feature = "buildkit")]
+async fn build_buildkit_image_outputs_tar_test(docker: Docker) -> Result<(), Error> {
+    use std::io::Read;
+
+    let dockerfile = String::from(
+        "FROM localhost:5000/alpine as builder
+RUN echo hello > message-1.txt
+RUN echo world > message-2.txt
+FROM scratch as export
+COPY --from=builder message-1.txt .
+COPY --from=builder message-2.txt .
+",
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000".to_string(), credentials);
+
+    let dest_path = std::path::Path::new("/tmp/buildkit-outputs.tar");
+
+    // cleanup - usually for local testing, the grpc handler will overwrite
+    if dest_path.exists() {
+        std::fs::remove_file(dest_path).unwrap();
+    }
+    assert!(!dest_path.exists());
+
+    let id = "build_buildkit_image_outputs_tar_test";
+    let build = &docker
+        .build_image(
+            BuildImageOptions {
+                dockerfile: "Dockerfile".to_string(),
+                t: "integration_test_build_buildkit_image".to_string(),
+                pull: true,
+                version: BuilderVersion::BuilderBuildKit,
+                rm: true,
+                #[cfg(feature = "buildkit")]
+                session: Some(String::from(id)),
+                #[cfg(feature = "buildkit")]
+                outputs: Some(ImageBuildOutput::Tar(
+                    "/tmp/buildkit-outputs.tar".to_string(),
+                )),
+                ..Default::default()
+            },
+            Some(creds_hsh),
+            Some(compressed.into()),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await?;
+
+    assert!(build
+        .iter()
+        .flat_map(|build_info| {
+            if let Some(aux) = &build_info.aux {
+                match aux {
+                    bollard::models::BuildInfoAux::BuildKit(res) => Vec::clone(&res.statuses),
+                    _ => vec![],
+                }
+            } else {
+                vec![]
+            }
+        })
+        .any(|status| status.id == "sending tarball"));
+
+    assert!(dest_path.exists());
+
+    let export_file = std::fs::File::open(dest_path)?;
+    let mut export_archive = tar::Archive::new(export_file);
+
+    let mut results = vec![];
+
+    let iter = export_archive.entries()?;
+    for entry in iter {
+        let mut entry = entry?;
+        let path = entry.path()?.display().to_string();
+        let mut content = String::new();
+        assert!(entry.read_to_string(&mut content).is_ok());
+        results.push((path, content));
+    }
+
+    assert_eq!(
+        results[0],
+        (String::from("message-1.txt"), String::from("hello\n"))
+    );
+    assert_eq!(
+        results[1],
+        (String::from("message-2.txt"), String::from("world\n"))
+    );
+
+    assert_eq!(results.len(), 2);
+
+    Ok(())
+}
+
+#[cfg(feature = "buildkit")]
+async fn build_buildkit_image_outputs_local_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = String::from(
+        "FROM localhost:5000/alpine as builder
+RUN echo hello > message-1.txt
+RUN mkdir subfolder && echo world > subfolder/message-2.txt
+RUN touch empty.txt
+",
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000".to_string(), credentials);
+
+    let dest_path = std::path::Path::new("/tmp/buildkit-outputs");
+
+    // cleanup - usually for local testing, the grpc handler will overwrite
+    if dest_path.exists() {
+        if dest_path.is_file() {
+            std::fs::remove_file(dest_path).unwrap();
+        } else {
+            std::fs::remove_dir_all(dest_path).unwrap();
+        }
+    }
+    assert!(!dest_path.exists());
+
+    let id = "build_buildkit_image_outputs_local_test";
+    let build = &docker
+        .build_image(
+            BuildImageOptions {
+                dockerfile: "Dockerfile".to_string(),
+                t: "integration_test_build_buildkit_image".to_string(),
+                pull: true,
+                version: BuilderVersion::BuilderBuildKit,
+                rm: true,
+                #[cfg(feature = "buildkit")]
+                session: Some(String::from(id)),
+                #[cfg(feature = "buildkit")]
+                outputs: Some(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string())),
+                ..Default::default()
+            },
+            Some(creds_hsh),
+            Some(compressed.into()),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await?;
+
+    assert!(build
+        .iter()
+        .flat_map(|build_info| {
+            if let Some(aux) = &build_info.aux {
+                match aux {
+                    bollard::models::BuildInfoAux::BuildKit(res) => Vec::clone(&res.statuses),
+                    _ => vec![],
+                }
+            } else {
+                vec![]
+            }
+        })
+        .any(|status| status.id == "copying files"));
+
+    assert_eq!(
+        std::fs::read_to_string(dest_path.join("message-1.txt")).unwrap(),
+        String::from("hello\n")
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(dest_path.join("subfolder/message-2.txt")).unwrap(),
+        String::from("world\n")
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(dest_path.join("empty.txt")).unwrap(),
+        String::from("")
+    );
+
+    Ok(())
+}
+
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -1291,6 +1495,18 @@ fn integration_test_build_buildkit_inline_driver() {
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_anonymous_auth() {
     connect_to_docker_and_run!(build_buildkit_image_anonymous_auth_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_build_buildkit_image_outputs_tar() {
+    connect_to_docker_and_run!(build_buildkit_image_outputs_tar_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_build_buildkit_image_outputs_local() {
+    connect_to_docker_and_run!(build_buildkit_image_outputs_local_test);
 }
 
 #[test]

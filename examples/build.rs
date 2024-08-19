@@ -44,6 +44,8 @@ async fn main() {
         target: "",
         #[cfg(feature = "buildkit")]
         session: None,
+        #[cfg(feature = "buildkit")]
+        outputs: None,
         version: bollard::image::BuilderVersion::BuilderV1,
     };
 
