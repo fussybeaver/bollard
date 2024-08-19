@@ -423,6 +423,8 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// Target build stage
+    pub target: T,
     #[cfg(feature = "buildkit")]
     /// Specify a custom exporter.
     pub outputs: Option<ImageBuildOutput<T>>,
