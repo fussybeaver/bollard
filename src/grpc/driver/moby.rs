@@ -56,11 +56,9 @@ impl Driver for Moby {
 
         let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
 
-        let joined_methods = &metadata_grpc_method.join(",");
-
         let interceptor = DriverInterceptor {
             session_id: String::from(session_id),
-            metadata_grpc_method,
+            metadata_grpc_method: metadata_grpc_method.clone(),
         };
         let control_client = ControlClient::with_interceptor(channel, interceptor);
 
@@ -68,14 +66,19 @@ impl Driver for Moby {
 
         let opt: Option<serde_json::Value> = None;
 
+        let mut builder = Builder::new()
+            .method(Method::POST)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "h2c")
+            .header("X-Docker-Expose-Session-Uuid", session_id);
+
+        for method in metadata_grpc_method {
+            builder = builder.header("X-Docker-Expose-Session-Grpc-Method", method)
+        }
+
         let req = self.docker.build_request(
             url,
-            Builder::new()
-                .method(Method::POST)
-                .header("Connection", "Upgrade")
-                .header("Upgrade", "h2c")
-                .header("X-Docker-Expose-Session-Uuid", session_id)
-                .header("X-Docker-Expose-Session-Grpc-Method", joined_methods),
+            builder,
             opt,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );

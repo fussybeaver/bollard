@@ -83,7 +83,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             destination: "moby/filesync/v1/filesync.proto",
             source: "https://raw.githubusercontent.com/moby/buildkit/master/session/filesync/filesync.proto",
             replacements: vec![
-               ("github.com/tonistiigi/fsutil/types/wire.proto", "fsutil/types/wire.proto") 
+                ("github.com/tonistiigi/fsutil/types/wire.proto", "fsutil/types/wire.proto")
+            ]
+        },
+        Resource {
+            destination: "moby/filesync/v1/filesync.packet.proto",
+            source: "https://raw.githubusercontent.com/moby/buildkit/master/session/filesync/filesync.proto",
+            replacements: vec![
+                ("github.com/tonistiigi/fsutil/types/wire.proto", "fsutil/types/wire.proto"),
+                (
+                    "service FileSend{\n	rpc DiffCopy(stream BytesMessage) returns (stream BytesMessage);\n}",
+                    "service FileSend{\n	rpc DiffCopy(stream fsutil.types.Packet) returns (stream fsutil.types.Packet);\n}"
+                ) 
             ]
         },
         Resource {

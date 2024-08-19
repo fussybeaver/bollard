@@ -43,6 +43,8 @@ async fn main() {
         platform: "linux/x86_64",
         #[cfg(feature = "buildkit")]
         session: None,
+        #[cfg(feature = "buildkit")]
+        outputs: None,
         version: bollard::image::BuilderVersion::BuilderV1,
     };
 

@@ -1,4 +1,6 @@
 //! Image API: creating, manipulating and pushing docker images
+#[cfg(feature = "buildkit")]
+use bollard_buildkit_proto::moby::filesync::packet::file_send_server::FileSendServer as FileSendPacketServer;
 use bytes::Bytes;
 use futures_core::Stream;
 #[cfg(feature = "buildkit")]
@@ -421,23 +423,61 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    #[cfg(feature = "buildkit")]
+    /// Specify a custom exporter.
+    pub outputs: Option<ImageBuildOutput<T>>,
     /// Builder version to use
     pub version: BuilderVersion,
 }
 
 #[cfg(feature = "buildkit")]
-/// Buildkit Image Output configuration: <https://docs.docker.com/build/exporters/oci-docker/>
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct ImageBuildOutput<T>
+/// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageBuildOutput<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String>,
 {
-    /// The base type for a container image: [oci|docker]
-    #[serde(rename = "type")]
-    pub typ: T,
-    /// The set of parameters to export the image
-    #[serde(rename = "attrs")]
-    pub attrs: HashMap<T, T>,
+    /// The local export type writes all result files to a directory on the client.
+    /// The new files will be owned by the current user.
+    /// On multi-platform builds, all results will be put in subdirectories by their platform.
+    /// It takes the destination directory as a first argument.
+    Tar(T),
+    /// The tar export type writes all result files as a single tarball on the client.
+    /// On multi-platform builds all results will be put in subdirectories by their platform.
+    /// It takes the destination directory as a first argument.
+    ///
+    /// **Notice**: The implementation of the underlying `fsutil` protocol is not complete.
+    /// Therefore, special files, permissions, etc. are ignored or not handled correctly.
+    Local(T),
+}
+
+#[cfg(feature = "buildkit")]
+impl<T> Serialize for ImageBuildOutput<T>
+where
+    T: Into<String>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ImageBuildOutput::Tar(_) => serializer.serialize_str(r#"[{"type": "tar"}]"#),
+            ImageBuildOutput::Local(_) => serializer.serialize_str(r#"[{"type": "local"}]"#),
+        }
+    }
+}
+
+#[cfg(feature = "buildkit")]
+impl<T> ImageBuildOutput<T>
+where
+    T: Into<String>,
+{
+    fn into_string(self) -> ImageBuildOutput<String> {
+        match self {
+            ImageBuildOutput::Tar(path) => ImageBuildOutput::Tar(path.into()),
+            ImageBuildOutput::Local(path) => ImageBuildOutput::Local(path.into()),
+        }
+    }
 }
 
 /// Builder Version to use
@@ -1111,7 +1151,7 @@ impl Docker {
         tar: Option<Bytes>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize + Clone,
     {
         let url = "/build";
 
@@ -1132,6 +1172,7 @@ impl Docker {
                 },
             ) => {
                 let session_id = String::clone(sess);
+                let outputs = options.outputs.clone().map(ImageBuildOutput::into_string);
 
                 let req = self.build_request(
                     url,
@@ -1143,7 +1184,7 @@ impl Docker {
                 );
 
                 let session = stream::once(
-                    self.start_session(session_id, creds)
+                    self.start_session(session_id, creds, outputs)
                         .map(|_| Either::Right(()))
                         .fuse(),
                 );
@@ -1201,6 +1242,7 @@ impl Docker {
         &self,
         id: String,
         credentials: Option<HashMap<String, DockerCredentials>>,
+        outputs: Option<ImageBuildOutput<String>>,
     ) -> Result<(), crate::grpc::error::GrpcError> {
         let driver = crate::grpc::driver::moby::Moby::new(self);
 
@@ -1214,7 +1256,26 @@ impl Docker {
         let auth =
             bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
 
-        let services: Vec<crate::grpc::GrpcServer> = vec![crate::grpc::GrpcServer::Auth(auth)];
+        let mut services = match outputs {
+            Some(ImageBuildOutput::Tar(path)) => {
+                let filesend_impl =
+                    crate::grpc::FileSendImpl::new(std::path::PathBuf::from(path).as_path());
+                let filesend =
+                    bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer::new(
+                        filesend_impl,
+                    );
+                vec![crate::grpc::GrpcServer::FileSend(filesend)]
+            }
+            Some(ImageBuildOutput::Local(path)) => {
+                let filesendpacket_impl =
+                    crate::grpc::FileSendPacketImpl::new(std::path::PathBuf::from(path).as_path());
+                let filesendpacket = FileSendPacketServer::new(filesendpacket_impl);
+                vec![crate::grpc::GrpcServer::FileSendPacket(filesendpacket)]
+            }
+            None => vec![],
+        };
+
+        services.push(crate::grpc::GrpcServer::Auth(auth));
 
         crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
 
