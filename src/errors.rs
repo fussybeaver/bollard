@@ -150,6 +150,13 @@ pub enum Error {
         #[from]
         err: http::uri::InvalidUri,
     },
+    /// Error emitted when encoding a URIParts
+    #[error("Unable to parse URIParts: {}", err)]
+    InvalidURIPartsError {
+        /// The original error emitted.
+        #[from]
+        err: http::uri::InvalidUriParts,
+    },
     /// Error that is never emitted
     #[error("Error in the hyper legacy client: {}", err)]
     HyperLegacyError {

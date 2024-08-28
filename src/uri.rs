@@ -73,10 +73,11 @@ impl<'a> Uri<'a> {
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
             #[cfg(windows)]
             ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
+            ClientType::Callback { .. } => socket.as_ref().to_string_lossy().into_owned(),
         }
     }
 
-    fn socket_scheme(client_type: &ClientType) -> &'a str {
+    fn socket_scheme(client_type: &'a ClientType) -> &'a str {
         match client_type {
             ClientType::Http => "http",
             #[cfg(feature = "ssl")]
@@ -85,6 +86,7 @@ impl<'a> Uri<'a> {
             ClientType::Unix => "unix",
             #[cfg(windows)]
             ClientType::NamedPipe => "net.pipe",
+            ClientType::Callback { scheme } => scheme.as_str(),
         }
     }
 }
