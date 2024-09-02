@@ -90,26 +90,28 @@ pub(crate) enum ClientType {
     SSL,
     #[cfg(windows)]
     NamedPipe,
-    Callback {
+    Custom {
         scheme: String,
     },
 }
 
-type CallbackRetTy =
+type TransportReturnTy =
     Pin<Box<dyn Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send>>;
-/// The type of the callback for custom transport.
-type CallbackTy = Box<dyn Fn(Request<BodyType>) -> CallbackRetTy + Send + Sync>;
 
 /// Callback transport trait
-pub trait CallbackTransport: Send + Sync {
+pub trait TransportTrait: Send + Sync {
     /// Make a request, this returns a future
-    fn request(&self, request: Request<BodyType>) -> CallbackRetTy;
+    fn request(&self, request: Request<BodyType>) -> TransportReturnTy;
 }
 
-// auto impl for Fn(Request)
-impl CallbackTransport for CallbackTy {
-    fn request(&self, request: Request<BodyType>) -> CallbackRetTy {
-        self(request)
+// auto impl for Fn(Request) -> Future<Output = Result<_, _>
+impl<Callback, ReturnTy> TransportTrait for Callback
+where
+    Callback: Fn(Request<BodyType>) -> ReturnTy + Send + Sync,
+    ReturnTy: Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + 'static,
+{
+    fn request(&self, request: Request<BodyType>) -> TransportReturnTy {
+        Box::pin(self(request))
     }
 }
 
@@ -138,8 +140,8 @@ pub(crate) enum Transport {
     Mock {
         client: Client<yup_hyper_mock::HostToReplyConnector, BodyType>,
     },
-    Callback {
-        callback: Box<dyn CallbackTransport>,
+    Custom {
+        transport: Box<dyn TransportTrait>,
     },
 }
 
@@ -155,7 +157,7 @@ impl fmt::Debug for Transport {
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
             #[cfg(test)]
             Transport::Mock { .. } => write!(f, "Mock"),
-            Transport::Callback { .. } => write!(f, "Callback"),
+            Transport::Custom { .. } => write!(f, "Custom"),
         }
     }
 }
@@ -614,7 +616,8 @@ impl Docker {
         Ok(docker)
     }
 
-    /// Connect using callback transport.
+    /// Connect using custom transport implementation.
+    /// It has default implementation for `Fn(Request) -> Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + Sync`
     ///
     /// # Arguments
     ///
@@ -625,7 +628,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker, BollardRequest};
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     /// use futures_util::future::TryFutureExt;
     /// use futures_util::FutureExt;
 
@@ -636,8 +639,8 @@ impl Docker {
     ///
     /// let client = std::sync::Arc::new(client_builder.build(http_connector));
     ///
-    /// let connection = Docker::connect_with_callback(
-    ///     move |req: BollardRequest| {
+    /// let connection = Docker::connect_with_custom_transport(
+    ///     move |req: Request<BodyType>| {
     ///         let client = std::sync::Arc::clone(&client);
     ///         Box::pin(async move {
     ///             let (p, b) = req.into_parts();
@@ -647,7 +650,7 @@ impl Docker {
     ///             //   uri::PathAndQuery::try_from("/docker".to_owned() + paq.as_str())
     ///             // ).transpose().map_err(bollard::errors::Error::from)?;
     ///             // p.uri = uri.try_into().map_err(bollard::errors::Error::from)?;
-    ///             let req = BollardRequest::from_parts(p, b);
+    ///             let req = Request<BodyType>::from_parts(p, b);
     ///             client.request(req).await.map_err(bollard::errors::Error::from)
     ///         })
     ///     },
@@ -659,8 +662,8 @@ impl Docker {
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
-    pub fn connect_with_callback<S: Into<String>, CB: CallbackTransport + 'static>(
-        callback: CB,
+    pub fn connect_with_custom_transport<S: Into<String>>(
+        transport: impl TransportTrait + 'static,
         client_addr: Option<S>,
         timeout: u64,
         client_version: &ClientVersion,
@@ -671,11 +674,12 @@ impl Docker {
             .unwrap_or(("", client_addr.as_str()));
         let client_addr = client_addr.to_owned();
         let scheme = scheme.to_owned();
-        let callback = Box::new(callback);
-        let transport = Transport::Callback { callback };
+        let transport = Transport::Custom {
+            transport: Box::new(transport),
+        };
         let docker = Docker {
             transport: Arc::new(transport),
-            client_type: ClientType::Callback { scheme },
+            client_type: ClientType::Custom { scheme },
             client_addr,
             client_timeout: timeout,
             version: Arc::new((
@@ -1353,10 +1357,10 @@ impl Docker {
             Transport::NamedPipe { ref client } => client.request(req),
             #[cfg(test)]
             Transport::Mock { ref client } => client.request(req),
-            Transport::Callback { ref callback } => {
+            Transport::Custom { ref transport } => {
                 return match tokio::time::timeout(
                     Duration::from_secs(timeout),
-                    callback.request(req),
+                    transport.request(req),
                 )
                 .await
                 {
@@ -1427,6 +1431,3 @@ pub(crate) type BodyType = http_body_util::Either<
 pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
     BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))
 }
-
-/// A request from bollard used in callbacks
-pub type BollardRequest = Request<BodyType>;

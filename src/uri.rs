@@ -73,7 +73,7 @@ impl<'a> Uri<'a> {
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
             #[cfg(windows)]
             ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
-            ClientType::Callback { .. } => socket.as_ref().to_string_lossy().into_owned(),
+            ClientType::Custom { .. } => socket.as_ref().to_string_lossy().into_owned(),
         }
     }
 
@@ -86,7 +86,7 @@ impl<'a> Uri<'a> {
             ClientType::Unix => "unix",
             #[cfg(windows)]
             ClientType::NamedPipe => "net.pipe",
-            ClientType::Callback { scheme } => scheme.as_str(),
+            ClientType::Custom { scheme } => scheme.as_str(),
         }
     }
 }
