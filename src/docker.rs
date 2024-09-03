@@ -628,7 +628,8 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{API_DEFAULT_VERSION, Docker, BodyType};
+    /// use hyper::Request;
     /// use futures_util::future::TryFutureExt;
     /// use futures_util::FutureExt;
 
@@ -650,7 +651,7 @@ impl Docker {
     ///             //   uri::PathAndQuery::try_from("/docker".to_owned() + paq.as_str())
     ///             // ).transpose().map_err(bollard::errors::Error::from)?;
     ///             // p.uri = uri.try_into().map_err(bollard::errors::Error::from)?;
-    ///             let req = Request<BodyType>::from_parts(p, b);
+    ///             let req = Request::<BodyType>::from_parts(p, b);
     ///             client.request(req).await.map_err(bollard::errors::Error::from)
     ///         })
     ///     },
@@ -1423,7 +1424,7 @@ impl Docker {
 }
 
 /// Either a stream or a full response
-pub(crate) type BodyType = http_body_util::Either<
+pub type BodyType = http_body_util::Either<
     Full<Bytes>,
     StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
 >;
