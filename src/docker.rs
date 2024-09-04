@@ -95,22 +95,25 @@ pub(crate) enum ClientType {
     },
 }
 
+/// `Request` from bollard used with `CustomTransport`
+pub type BollardRequest = Request<BodyType>;
+
 type TransportReturnTy =
     Pin<Box<dyn Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send>>;
 
-/// Callback transport trait
-pub trait TransportTrait: Send + Sync {
+/// `CustomTransport` trait
+pub trait CustomTransport: Send + Sync {
     /// Make a request, this returns a future
-    fn request(&self, request: Request<BodyType>) -> TransportReturnTy;
+    fn request(&self, request: BollardRequest) -> TransportReturnTy;
 }
 
 // auto impl for Fn(Request) -> Future<Output = Result<_, _>
-impl<Callback, ReturnTy> TransportTrait for Callback
+impl<Callback, ReturnTy> CustomTransport for Callback
 where
-    Callback: Fn(Request<BodyType>) -> ReturnTy + Send + Sync,
+    Callback: Fn(BollardRequest) -> ReturnTy + Send + Sync,
     ReturnTy: Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + 'static,
 {
-    fn request(&self, request: Request<BodyType>) -> TransportReturnTy {
+    fn request(&self, request: BollardRequest) -> TransportReturnTy {
         Box::pin(self(request))
     }
 }
@@ -141,7 +144,7 @@ pub(crate) enum Transport {
         client: Client<yup_hyper_mock::HostToReplyConnector, BodyType>,
     },
     Custom {
-        transport: Box<dyn TransportTrait>,
+        transport: Box<dyn CustomTransport>,
     },
 }
 
@@ -628,8 +631,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker, BodyType};
-    /// use hyper::Request;
+    /// use bollard::{API_DEFAULT_VERSION, Docker, BollardRequest};
     /// use futures_util::future::TryFutureExt;
     /// use futures_util::FutureExt;
 
@@ -641,7 +643,7 @@ impl Docker {
     /// let client = std::sync::Arc::new(client_builder.build(http_connector));
     ///
     /// let connection = Docker::connect_with_custom_transport(
-    ///     move |req: Request<BodyType>| {
+    ///     move |req: BollardRequest| {
     ///         let client = std::sync::Arc::clone(&client);
     ///         Box::pin(async move {
     ///             let (p, b) = req.into_parts();
@@ -651,7 +653,7 @@ impl Docker {
     ///             //   uri::PathAndQuery::try_from("/docker".to_owned() + paq.as_str())
     ///             // ).transpose().map_err(bollard::errors::Error::from)?;
     ///             // p.uri = uri.try_into().map_err(bollard::errors::Error::from)?;
-    ///             let req = Request::<BodyType>::from_parts(p, b);
+    ///             let req = BollardRequest::from_parts(p, b);
     ///             client.request(req).await.map_err(bollard::errors::Error::from)
     ///         })
     ///     },
@@ -664,7 +666,7 @@ impl Docker {
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_custom_transport<S: Into<String>>(
-        transport: impl TransportTrait + 'static,
+        transport: impl CustomTransport + 'static,
         client_addr: Option<S>,
         timeout: u64,
         client_version: &ClientVersion,
@@ -1424,7 +1426,7 @@ impl Docker {
 }
 
 /// Either a stream or a full response
-pub type BodyType = http_body_util::Either<
+pub(crate) type BodyType = http_body_util::Either<
     Full<Bytes>,
     StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
 >;
