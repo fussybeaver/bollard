@@ -303,7 +303,7 @@ pub mod volume;
 pub mod grpc;
 
 // publicly re-export
-pub use crate::docker::{ClientVersion, Docker, API_DEFAULT_VERSION};
+pub use crate::docker::{BollardRequest, ClientVersion, Docker, API_DEFAULT_VERSION};
 pub use bollard_stubs::models;
 
 #[cfg(feature = "buildkit")]
