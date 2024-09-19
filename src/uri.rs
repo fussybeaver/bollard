@@ -68,7 +68,7 @@ impl<'a> Uri<'a> {
         match client_type {
             #[cfg(feature = "http")]
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
@@ -82,7 +82,7 @@ impl<'a> Uri<'a> {
         match client_type {
             #[cfg(feature = "http")]
             ClientType::Http => "http",
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             ClientType::SSL => "https",
             #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => "unix",

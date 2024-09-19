@@ -131,7 +131,7 @@ certificates - `key.pem` for the private key, `cert.pem` for the server certific
 
 ```rust
 use bollard::Docker;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 Docker::connect_with_ssl_defaults();
 ```
 

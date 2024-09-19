@@ -1,12 +1,12 @@
 use std::convert::Infallible;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::fs;
 use std::future::Future;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::io;
 #[cfg(feature = "pipe")]
 use std::path::Path;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
@@ -25,7 +25,7 @@ use http::request::Builder;
 use http_body_util::{BodyExt, Full, StreamBody};
 use hyper::body::{Frame, Incoming};
 use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use hyper_rustls::HttpsConnector;
 #[cfg(any(feature = "http", test))]
 use hyper_util::{
@@ -35,9 +35,9 @@ use hyper_util::{
 #[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
 use log::{debug, trace};
-#[cfg(feature = "ssl")]
-use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey};
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
+use rustls::{crypto::CryptoProvider, sign::CertifiedKey};
+#[cfg(feature = "ssl_providerless")]
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use serde_derive::{Deserialize, Serialize};
 use tokio::io::{split, AsyncRead, AsyncWrite};
@@ -93,7 +93,7 @@ pub(crate) enum ClientType {
     Unix,
     #[cfg(feature = "http")]
     Http,
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     SSL,
     #[cfg(all(feature = "pipe", windows))]
     NamedPipe,
@@ -135,7 +135,7 @@ pub(crate) enum Transport {
     Http {
         client: Client<HttpConnector, BodyType>,
     },
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     Https {
         client: Client<HttpsConnector<HttpConnector>, BodyType>,
     },
@@ -161,7 +161,7 @@ impl fmt::Debug for Transport {
         match self {
             #[cfg(feature = "http")]
             Transport::Http { .. } => write!(f, "HTTP"),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             Transport::Https { .. } => write!(f, "HTTPS(rustls)"),
             #[cfg(all(feature = "pipe", unix))]
             Transport::Unix { .. } => write!(f, "Unix"),
@@ -343,14 +343,14 @@ struct DockerServerErrorMessage {
     message: String,
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 #[derive(Debug)]
 struct DockerClientCertResolver {
     ssl_key: PathBuf,
     ssl_cert: PathBuf,
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 impl DockerClientCertResolver {
     /// The default directory in which to look for our Docker certificate
     /// files.
@@ -397,16 +397,19 @@ impl DockerClientCertResolver {
                 path: self.ssl_key.to_owned(),
             });
         };
-
-        let signing_key = any_supported_type(&key).map_err(|_| CertParseError {
-            path: self.ssl_key.to_owned(),
-        })?;
+        let signing_key = CryptoProvider::get_default()
+            .expect("no process-level CryptoProvider available -- call CryptoProvider::install_default() before this point")
+            .key_provider
+            .load_private_key(key)
+            .map_err(|_| CertParseError {
+                path: self.ssl_key.to_owned(),
+            })?;
 
         Ok(Arc::new(CertifiedKey::new(all_certs, signing_key)))
     }
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
     fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<CertifiedKey>> {
         self.docker_client_key().ok()
@@ -417,9 +420,9 @@ impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
     }
 }
 
-#[cfg(feature = "ssl")]
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `rustls`
 /// library.
+#[cfg(feature = "ssl_providerless")]
 impl Docker {
     /// Connect using secure HTTPS using defaults that are signalled by environment variables.
     ///
@@ -843,13 +846,13 @@ impl Docker {
             }
             #[cfg(feature = "http")]
             h if h.starts_with("tcp://") || h.starts_with("http://") => {
-                #[cfg(feature = "ssl")]
+                #[cfg(feature = "ssl_providerless")]
                 if env::var("DOCKER_TLS_VERIFY").is_ok() {
                     return Docker::connect_with_ssl_defaults();
                 }
                 Docker::connect_with_http_defaults()
             }
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
@@ -1370,7 +1373,7 @@ impl Docker {
         let request = match *transport {
             #[cfg(feature = "http")]
             Transport::Http { ref client } => client.request(req).map_err(Error::from).boxed(),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             Transport::Https { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(all(feature = "pipe", unix))]
             Transport::Unix { ref client } => client.request(req).map_err(Error::from).boxed(),
