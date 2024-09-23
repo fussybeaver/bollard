@@ -1367,32 +1367,20 @@ impl Docker {
         timeout: u64,
     ) -> Result<Response<Incoming>, Error> {
         // This is where we determine to which transport we issue the request.
-        #[allow(clippy::let_unit_value, unused_variables)]
         let request = match *transport {
             #[cfg(feature = "http")]
-            Transport::Http { ref client } => client.request(req),
+            Transport::Http { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(feature = "ssl")]
-            Transport::Https { ref client } => client.request(req),
+            Transport::Https { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(all(feature = "pipe", unix))]
-            Transport::Unix { ref client } => client.request(req),
+            Transport::Unix { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(all(feature = "pipe", windows))]
-            Transport::NamedPipe { ref client } => client.request(req),
+            Transport::NamedPipe { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(test)]
-            Transport::Mock { ref client } => client.request(req),
-            Transport::Custom { ref transport } => {
-                return match tokio::time::timeout(
-                    Duration::from_secs(timeout),
-                    transport.request(req),
-                )
-                .await
-                {
-                    Ok(v) => Ok(v?),
-                    Err(_) => Err(RequestTimeoutError),
-                };
-            }
+            Transport::Mock { ref client } => client.request(req).map_err(Error::from).boxed(),
+            Transport::Custom { ref transport } => transport.request(req).boxed(),
         };
 
-        #[cfg(any(feature = "http", feature = "ssl", feature = "pipe"))]
         match tokio::time::timeout(Duration::from_secs(timeout), request).await {
             Ok(v) => Ok(v?),
             Err(_) => Err(RequestTimeoutError),
