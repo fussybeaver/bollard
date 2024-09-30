@@ -40,6 +40,7 @@ pub struct ImageBuildFrontendOptions {
     pub(crate) shmsize: u64,
     pub(crate) secrets: HashMap<String, SecretSource>,
     pub(crate) ssh: bool,
+    pub(crate) named_contexts: HashMap<String, String>,
     //pub(crate) ulimit: Vec<String>,
 }
 
@@ -224,6 +225,16 @@ impl ImageBuildFrontendOptions {
             attrs.insert(String::from("shm-size"), self.shmsize.to_string());
         }
 
+        if !self.named_contexts.is_empty() {
+            attrs.insert(
+                String::from("frontend.caps"),
+                String::from("moby.buildkit.frontend.contexts+forward"),
+            );
+            for (k, v) in self.named_contexts {
+                attrs.insert(format!("context:{k}"), v);
+            }
+        }
+
         ImageBuildFrontendOptionsIngest {
             cache_to: self.cacheto,
             cache_from: self.cachefrom,
@@ -345,6 +356,14 @@ impl ImageBuildFrontendOptionsBuilder {
     /// Enable sshforward to ssh agent.
     pub fn enable_ssh(mut self, value: bool) -> Self {
         self.inner.ssh = value;
+        self
+    }
+
+    /// Add a named build context.
+    pub fn named_context(mut self, key: &str, value: &str) -> Self {
+        self.inner
+            .named_contexts
+            .insert(String::from(key), String::from(value));
         self
     }
 
