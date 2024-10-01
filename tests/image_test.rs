@@ -746,7 +746,12 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     let name = "integration_test_build_buildkit_named_context";
 
     let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
-        .named_context(&base_image, "docker-image://localhost:5000/alpine")
+        .named_context(
+            &base_image,
+            bollard::grpc::build::NamedContext {
+                path: String::from("docker-image://localhost:5000/alpine"),
+            },
+        )
         .build();
 
     let driver = bollard::grpc::driver::moby::Moby::new(&docker);
