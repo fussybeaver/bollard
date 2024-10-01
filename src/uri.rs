@@ -66,12 +66,13 @@ impl<'a> Uri<'a> {
         P: AsRef<OsStr>,
     {
         match client_type {
+            #[cfg(feature = "http")]
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
             #[cfg(feature = "ssl")]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
             ClientType::Custom { .. } => socket.as_ref().to_string_lossy().into_owned(),
         }
@@ -79,12 +80,13 @@ impl<'a> Uri<'a> {
 
     fn socket_scheme(client_type: &'a ClientType) -> &'a str {
         match client_type {
+            #[cfg(feature = "http")]
             ClientType::Http => "http",
             #[cfg(feature = "ssl")]
             ClientType::SSL => "https",
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => "unix",
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => "net.pipe",
             ClientType::Custom { scheme } => scheme.as_str(),
         }

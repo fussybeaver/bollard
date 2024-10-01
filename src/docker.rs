@@ -4,6 +4,7 @@ use std::fs;
 use std::future::Future;
 #[cfg(feature = "ssl")]
 use std::io;
+#[cfg(feature = "pipe")]
 use std::path::Path;
 #[cfg(feature = "ssl")]
 use std::path::PathBuf;
@@ -26,9 +27,12 @@ use hyper::body::{Frame, Incoming};
 use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl")]
 use hyper_rustls::HttpsConnector;
-use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-#[cfg(unix)]
+#[cfg(any(feature = "http", test))]
+use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client},
+    rt::TokioExecutor,
+};
+#[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
 use log::{debug, trace};
 #[cfg(feature = "ssl")]
@@ -46,7 +50,7 @@ use crate::read::{
     AsyncUpgraded, IncomingStream, JsonLineDecoder, NewlineLogOutputDecoder, StreamReader,
 };
 use crate::uri::Uri;
-#[cfg(windows)]
+#[cfg(all(feature = "pipe", windows))]
 use hyper_named_pipe::NamedPipeConnector;
 
 use crate::auth::{base64_url_encode, DockerCredentialsHeader};
@@ -62,6 +66,7 @@ pub const DEFAULT_SOCKET: &str = "unix:///var/run/docker.sock";
 pub const DEFAULT_NAMED_PIPE: &str = "npipe:////./pipe/docker_engine";
 
 /// The default `DOCKER_TCP_ADDRESS` address that we will try to connect to.
+#[cfg(feature = "http")]
 pub const DEFAULT_TCP_ADDRESS: &str = "tcp://localhost:2375";
 
 /// The default `DOCKER_HOST` address that we will try to connect to.
@@ -73,6 +78,7 @@ pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
 pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_NAMED_PIPE;
 
 /// Default timeout for all requests is 2 minutes.
+#[cfg(feature = "http")]
 const DEFAULT_TIMEOUT: u64 = 120;
 
 /// Default Client Version to communicate with the server.
@@ -83,12 +89,13 @@ pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
-    #[cfg(unix)]
+    #[cfg(all(feature = "pipe", unix))]
     Unix,
+    #[cfg(feature = "http")]
     Http,
     #[cfg(feature = "ssl")]
     SSL,
-    #[cfg(windows)]
+    #[cfg(all(feature = "pipe", windows))]
     NamedPipe,
     Custom {
         scheme: String,
@@ -124,6 +131,7 @@ where
 /// Each transport usually encapsulate a hyper client
 /// with various Connect traits fulfilled.
 pub(crate) enum Transport {
+    #[cfg(feature = "http")]
     Http {
         client: Client<HttpConnector, BodyType>,
     },
@@ -131,11 +139,11 @@ pub(crate) enum Transport {
     Https {
         client: Client<HttpsConnector<HttpConnector>, BodyType>,
     },
-    #[cfg(unix)]
+    #[cfg(all(feature = "pipe", unix))]
     Unix {
         client: Client<UnixConnector, BodyType>,
     },
-    #[cfg(windows)]
+    #[cfg(all(feature = "pipe", windows))]
     NamedPipe {
         client: Client<NamedPipeConnector, BodyType>,
     },
@@ -151,12 +159,13 @@ pub(crate) enum Transport {
 impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "http")]
             Transport::Http { .. } => write!(f, "HTTP"),
             #[cfg(feature = "ssl")]
             Transport::Https { .. } => write!(f, "HTTPS(rustls)"),
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             Transport::Unix { .. } => write!(f, "Unix"),
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
             #[cfg(test)]
             Transport::Mock { .. } => write!(f, "Mock"),
@@ -408,9 +417,9 @@ impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
     }
 }
 
+#[cfg(feature = "ssl")]
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `rustls`
 /// library.
-#[cfg(feature = "ssl")]
 impl Docker {
     /// Connect using secure HTTPS using defaults that are signalled by environment variables.
     ///
@@ -542,6 +551,7 @@ impl Docker {
     }
 }
 
+#[cfg(feature = "http")]
 /// A Docker implementation typed to connect to an unsecure Http connection.
 impl Docker {
     /// Connect using unsecured HTTP using defaults that are signalled by environment variables.
@@ -618,7 +628,10 @@ impl Docker {
 
         Ok(docker)
     }
+}
 
+/// A Docker implementation typed to custom connector.
+impl Docker {
     /// Connect using custom transport implementation.
     /// It has default implementation for `Fn(Request) -> Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + Sync`
     ///
@@ -693,7 +706,11 @@ impl Docker {
 
         Ok(docker)
     }
+}
 
+/// A Docker implementation that wraps away which local implementation we are calling.
+#[cfg(all(feature = "pipe", any(unix, windows)))]
+impl Docker {
     /// Connect using to either a Unix socket or a Windows named pipe using defaults common to the
     /// standard docker configuration.
     ///
@@ -763,6 +780,43 @@ impl Docker {
         Ok(docker)
     }
 
+    /// Connect using the local machine connection method with default arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix_defaults`]
+    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
+    ///
+    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
+    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
+    pub fn connect_with_local_defaults() -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix_defaults();
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe_defaults();
+    }
+
+    /// Connect using the local machine connection method with supplied arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix`]
+    ///  * Windows: [`Docker::connect_with_named_pipe`]
+    ///
+    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
+    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
+    pub fn connect_with_local(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix(addr, timeout, client_version);
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe(addr, timeout, client_version);
+    }
+}
+
+/// A Docker implementation with defaults.
+impl Docker {
     /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
     /// The connection method is determined by the `DOCKER_HOST` environment variable.
     ///
@@ -779,14 +833,15 @@ impl Docker {
     pub fn connect_with_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
         match host {
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             h if h.starts_with("unix://") => {
                 Docker::connect_with_unix(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             h if h.starts_with("npipe://") => {
                 Docker::connect_with_named_pipe(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
+            #[cfg(feature = "http")]
             h if h.starts_with("tcp://") || h.starts_with("http://") => {
                 #[cfg(feature = "ssl")]
                 if env::var("DOCKER_TLS_VERIFY").is_ok() {
@@ -803,7 +858,7 @@ impl Docker {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(feature = "pipe", unix))]
 /// A Docker implementation typed to connect to a Unix socket.
 impl Docker {
     /// Connect using a Unix socket using defaults common to the standard docker configuration.
@@ -890,7 +945,7 @@ impl Docker {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(feature = "pipe", windows))]
 /// A Docker implementation typed to connect to a Windows Named Pipe, exclusive to the windows
 /// target.
 impl Docker {
@@ -964,44 +1019,6 @@ impl Docker {
         };
 
         Ok(docker)
-    }
-}
-
-/// A Docker implementation that wraps away which local implementation we are calling.
-#[cfg(any(unix, windows))]
-impl Docker {
-    /// Connect using the local machine connection method with default arguments.
-    ///
-    /// This is a simple wrapper over the OS specific handlers:
-    ///  * Unix: [`Docker::connect_with_unix_defaults`]
-    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
-    ///
-    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
-    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
-    pub fn connect_with_local_defaults() -> Result<Docker, Error> {
-        #[cfg(unix)]
-        return Docker::connect_with_unix_defaults();
-        #[cfg(windows)]
-        return Docker::connect_with_named_pipe_defaults();
-    }
-
-    /// Connect using the local machine connection method with supplied arguments.
-    ///
-    /// This is a simple wrapper over the OS specific handlers:
-    ///  * Unix: [`Docker::connect_with_unix`]
-    ///  * Windows: [`Docker::connect_with_named_pipe`]
-    ///
-    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
-    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
-    pub fn connect_with_local(
-        addr: &str,
-        timeout: u64,
-        client_version: &ClientVersion,
-    ) -> Result<Docker, Error> {
-        #[cfg(unix)]
-        return Docker::connect_with_unix(addr, timeout, client_version);
-        #[cfg(windows)]
-        return Docker::connect_with_named_pipe(addr, timeout, client_version);
     }
 }
 
@@ -1351,26 +1368,17 @@ impl Docker {
     ) -> Result<Response<Incoming>, Error> {
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
-            Transport::Http { ref client } => client.request(req),
+            #[cfg(feature = "http")]
+            Transport::Http { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(feature = "ssl")]
-            Transport::Https { ref client } => client.request(req),
-            #[cfg(unix)]
-            Transport::Unix { ref client } => client.request(req),
-            #[cfg(windows)]
-            Transport::NamedPipe { ref client } => client.request(req),
+            Transport::Https { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(all(feature = "pipe", unix))]
+            Transport::Unix { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(all(feature = "pipe", windows))]
+            Transport::NamedPipe { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(test)]
-            Transport::Mock { ref client } => client.request(req),
-            Transport::Custom { ref transport } => {
-                return match tokio::time::timeout(
-                    Duration::from_secs(timeout),
-                    transport.request(req),
-                )
-                .await
-                {
-                    Ok(v) => Ok(v?),
-                    Err(_) => Err(RequestTimeoutError),
-                };
-            }
+            Transport::Mock { ref client } => client.request(req).map_err(Error::from).boxed(),
+            Transport::Custom { ref transport } => transport.request(req).boxed(),
         };
 
         match tokio::time::timeout(Duration::from_secs(timeout), request).await {
