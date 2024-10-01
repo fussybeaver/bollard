@@ -25,7 +25,9 @@ buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io"
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
-test_ssl = ["ssl"]
+test_ssl = ["dep:webpki-roots"]
+test_ring = ["test_ssl", "ssl"]
+test_aws_lc_rs = ["test_ssl", "aws-lc-rs"]
 # Enable tests specifically for macos
 test_macos = []
 # Enable tests specifically for buildkit's sshforward functionality

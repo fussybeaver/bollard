@@ -501,13 +501,13 @@ impl Docker {
 
         let mut root_store = rustls::RootCertStore::empty();
 
-        #[cfg(not(feature = "webpki"))]
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
         for cert in rustls_native_certs::load_native_certs()? {
             root_store
                 .add(cert)
                 .map_err(|err| NoNativeCertsError { err })?
         }
-        #[cfg(feature = "webpki")]
+        #[cfg(any(feature = "test_ssl", feature = "webpki"))]
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
