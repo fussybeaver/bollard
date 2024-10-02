@@ -40,6 +40,7 @@ pub struct ImageBuildFrontendOptions {
     pub(crate) shmsize: u64,
     pub(crate) secrets: HashMap<String, SecretSource>,
     pub(crate) ssh: bool,
+    pub(crate) named_contexts: HashMap<String, NamedContext>,
     //pub(crate) ulimit: Vec<String>,
 }
 
@@ -145,6 +146,13 @@ impl Display for ImageBuildOutputCompression {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+/// An additional build context. Can be used to override a named stage in the Dockerfile.
+pub struct NamedContext {
+    /// Container image (with `docker-image://` prefix), Git, or HTTP URL.
+    pub path: String,
+}
+
 pub(crate) struct ImageBuildFrontendOptionsIngest {
     pub cache_to: Vec<CacheOptionsEntry>,
     pub cache_from: Vec<CacheOptionsEntry>,
@@ -222,6 +230,16 @@ impl ImageBuildFrontendOptions {
 
         if self.shmsize > 0 {
             attrs.insert(String::from("shm-size"), self.shmsize.to_string());
+        }
+
+        if !self.named_contexts.is_empty() {
+            attrs.insert(
+                String::from("frontend.caps"),
+                String::from("moby.buildkit.frontend.contexts+forward"),
+            );
+            for (name, context) in self.named_contexts {
+                attrs.insert(format!("context:{name}"), context.path);
+            }
         }
 
         ImageBuildFrontendOptionsIngest {
@@ -345,6 +363,12 @@ impl ImageBuildFrontendOptionsBuilder {
     /// Enable sshforward to ssh agent.
     pub fn enable_ssh(mut self, value: bool) -> Self {
         self.inner.ssh = value;
+        self
+    }
+
+    /// Add a named build context.
+    pub fn named_context(mut self, key: &str, value: NamedContext) -> Self {
+        self.inner.named_contexts.insert(String::from(key), value);
         self
     }
 
