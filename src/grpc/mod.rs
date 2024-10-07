@@ -51,6 +51,7 @@ use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
 use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
+use bollard_stubs::models::BollardDate;
 use bytes::Bytes;
 use error::GrpcSshError;
 use futures_core::Stream;
@@ -90,6 +91,11 @@ pub(crate) enum GrpcServer {
     FileSendPacket(FileSendPacketServer<FileSendPacketImpl>),
     Secrets(SecretsServer<SecretProvider>),
     Ssh(SshServer<SshProvider>),
+}
+
+enum ToTokenDate {
+    Now,
+    Date(BollardDate),
 }
 
 impl GrpcServer {
@@ -414,7 +420,7 @@ struct OAuthTokenResponse {
     access_token: String,
     refresh_token: String,
     expires_in: i64,
-    issued_at: chrono::DateTime<chrono::Utc>,
+    issued_at: BollardDate,
     scope: String,
 }
 
@@ -449,19 +455,43 @@ impl AuthProvider {
     fn to_token_response(
         &self,
         token: &str,
-        issued_at: chrono::DateTime<chrono::Utc>,
+        issued_at: ToTokenDate,
         expires: TokenExpiry,
-    ) -> FetchTokenResponse {
+    ) -> Result<FetchTokenResponse, Status> {
         let expires = match expires {
             TokenExpiry::DEFAULT => DEFAULT_TOKEN_EXPIRATION,
             TokenExpiry::EXPIRES(expiry) => expiry,
         };
 
-        FetchTokenResponse {
+        #[cfg(feature = "chrono")]
+        let timestamp = match issued_at {
+            ToTokenDate::Now => chrono::Utc::now().timestamp(),
+            ToTokenDate::Date(date) => issued_at.timestamp(),
+        };
+
+        #[cfg(feature = "time")]
+        let timestamp = match issued_at {
+            ToTokenDate::Now => chrono::Utc::now().timestamp(),
+            ToTokenDate::Date(date) => issued_at.timestamp(),
+        };
+
+        #[cfg(not(any(feature = "time", feature = "chrono")))]
+        let timestamp = match issued_at {
+            ToTokenDate::Now => std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map_err(|e| Status::from_error(Box::new(e)))?
+                .as_secs() as i64,
+            ToTokenDate::Date(date) => std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map_err(|e| Status::from_error(Box::new(e)))?
+                .as_secs() as i64,
+        };
+
+        Ok(FetchTokenResponse {
             token: String::from(token),
             expires_in: expires,
-            issued_at: issued_at.timestamp(),
-        }
+            issued_at: timestamp,
+        })
     }
 
     fn get_credentials(&self, host: &str) -> Result<CredentialsResponse, Status> {
@@ -604,9 +634,9 @@ impl Auth for AuthProvider {
         if let Some(token) = self.registry_token.as_ref() {
             Ok(Response::new(self.to_token_response(
                 token,
-                chrono::Utc::now(),
+                ToTokenDate::Now,
                 TokenExpiry::DEFAULT,
-            )))
+            )?))
         } else {
             let to = TokenOptions {
                 realm: String::clone(realm),
@@ -620,9 +650,9 @@ impl Auth for AuthProvider {
             match self.fetch_token_with_oauth(&to).await {
                 Ok(res) => Ok(Response::new(self.to_token_response(
                     &res.access_token,
-                    res.issued_at,
+                    ToTokenDate::Date(res.issued_at),
                     TokenExpiry::EXPIRES(res.expires_in),
-                ))),
+                )?)),
                 Err(e) => Err(Status::from_error(Box::new(e))),
             }
         }
