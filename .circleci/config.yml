@@ -86,9 +86,9 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --all-targets --features ssl"
-      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --all-targets --features aws-lc-rs"
-      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --all-targets --features ssl_providerless"
+      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features ssl"
+      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features aws-lc-rs"
+      - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features ssl_providerless"
   test_clippy:
     docker:
       - image: docker:27.0

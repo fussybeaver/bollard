@@ -4,7 +4,7 @@ use std::fs;
 use std::future::Future;
 #[cfg(feature = "ssl_providerless")]
 use std::io;
-#[cfg(feature = "pipe")]
+#[cfg(any(feature = "pipe", feature = "ssl_providerless"))]
 use std::path::Path;
 #[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
