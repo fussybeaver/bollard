@@ -131,7 +131,7 @@
 //!
 //! ```rust
 //! use bollard::Docker;
-//! #[cfg(feature = "ssl_providerless")]
+//! #[cfg(feature = "ssl")]
 //! Docker::connect_with_ssl_defaults();
 //! ```
 //!

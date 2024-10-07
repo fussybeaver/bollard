@@ -445,6 +445,12 @@ impl Docker {
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if neither `ssl` nor `aws-lc-rs` features are activated,
+    /// or if you are using the `ssl_providerless` feature without installing the custom cryptographic
+    /// provider before with [`rustls::crypto::CryptoProvider::install_default()`]
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
         let cert_path = DockerClientCertResolver::default_cert_path()?;
         Docker::connect_with_ssl(
@@ -491,6 +497,12 @@ impl Docker {
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if neither `ssl` nor `aws-lc-rs` features are activated,
+    /// or if you are using the `ssl_providerless` feature without installing the custom cryptographic
+    /// provider before with [`rustls::crypto::CryptoProvider::install_default()`]
     pub fn connect_with_ssl(
         addr: &str,
         ssl_key: &Path,
