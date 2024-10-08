@@ -431,7 +431,7 @@ impl Docker {
     ///  - The connection url is sourced from the `DOCKER_HOST` environment variable.
     ///  - The certificate directory is sourced from the `DOCKER_CERT_PATH` environment variable.
     ///  - Certificates are named `key.pem`, `cert.pem` and `ca.pem` to indicate the private key,
-    ///  the server certificate and the certificate chain respectively.
+    ///    the server certificate and the certificate chain respectively.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
