@@ -34,13 +34,20 @@ pub enum Error {
         /// Path for the failing certificate file
         path: PathBuf,
     },
-    /// Error emitted when the client is unable to load native certs for SSL
+    /// Error emitted when the client is unable to parse a native pki cert for SSL
     #[cfg(feature = "ssl_providerless")]
-    #[error("Could not load native certs")]
+    #[error("Could not parse a pki native cert")]
     NoNativeCertsError {
         /// The original error emitted.
         #[from]
         err: rustls::Error,
+    },
+    /// Error emitted when the client is unable to load native certs for SSL
+    #[cfg(feature = "ssl_providerless")]
+    #[error("Could not load native certs")]
+    LoadNativeCertsErrors {
+        /// The original errors emitted.
+        errors: Vec<rustls_native_certs::Error>,
     },
     /// Generic error emitted by the docker server.
     #[error("Docker responded with status code {status_code}: {message}")]
