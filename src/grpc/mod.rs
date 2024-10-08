@@ -498,10 +498,19 @@ impl AuthProvider {
         let mut root_store = rustls::RootCertStore::empty();
 
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        for cert in rustls_native_certs::load_native_certs()? {
-            root_store
-                .add(cert)
-                .map_err(|err| GrpcAuthError::RustTlsError { err })?
+        let native_certs = rustls_native_certs::load_native_certs();
+
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
+        if native_certs.errors.is_empty() {
+            for cert in native_certs.certs {
+                root_store
+                    .add(cert)
+                    .map_err(|err| GrpcAuthError::RustTlsError { err })?
+            }
+        } else {
+            return Err(GrpcAuthError::RustlsNativeCertsErrors {
+                errors: native_certs.errors,
+            });
         }
         #[cfg(any(feature = "test_ssl", feature = "webpki"))]
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
