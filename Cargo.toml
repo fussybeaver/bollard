@@ -25,7 +25,9 @@ buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io"
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for rustls
-test_ssl = ["ssl"]
+test_ssl = ["dep:webpki-roots", "ssl_providerless"]
+test_ring = ["test_ssl", "ssl"]
+test_aws_lc_rs = ["test_ssl", "aws-lc-rs"]
 # Enable tests specifically for macos
 test_macos = []
 # Enable tests specifically for buildkit's sshforward functionality
@@ -35,7 +37,7 @@ json_data_content = []
 # Enable rustls / ssl
 ssl = ["ssl_providerless", "rustls/ring"]
 aws-lc-rs = ["ssl_providerless", "rustls/aws-lc-rs"]
-ssl_providerless = ["home", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "rustls-pki-types"]
+ssl_providerless = ["home", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "rustls-pki-types", "http"]
 webpki = ["ssl", "dep:webpki-roots"]
 chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]

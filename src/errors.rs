@@ -1,6 +1,6 @@
 //! Errors for this module.
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
 
 /// Generic Docker errors
@@ -8,18 +8,18 @@ use std::path::PathBuf;
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Could not find home directory")]
     NoHomePathError,
     /// Generic error when reading a certificate from the filesystem
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Cannot open/read certificate with path: {path}")]
     CertPathError {
         /// Path for the failing certificate file
         path: PathBuf,
     },
     /// Error emitted when multiple keys are found in a certificate file
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Found multiple keys ({count}), expected one: {path}")]
     CertMultipleKeys {
         /// Number of keys found in the certificate file
@@ -28,14 +28,14 @@ pub enum Error {
         path: PathBuf,
     },
     /// Parse error for RSA encrypted keys
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Could not parse key: {path}")]
     CertParseError {
         /// Path for the failing certificate file
         path: PathBuf,
     },
     /// Error emitted when the client is unable to load native certs for SSL
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Could not load native certs")]
     NoNativeCertsError {
         /// The original error emitted.

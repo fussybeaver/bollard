@@ -497,13 +497,13 @@ impl AuthProvider {
     ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, BodyType>, GrpcAuthError> {
         let mut root_store = rustls::RootCertStore::empty();
 
-        #[cfg(not(feature = "webpki"))]
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
         for cert in rustls_native_certs::load_native_certs()? {
             root_store
                 .add(cert)
                 .map_err(|err| GrpcAuthError::RustTlsError { err })?
         }
-        #[cfg(feature = "webpki")]
+        #[cfg(any(feature = "test_ssl", feature = "webpki"))]
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let config = rustls::ClientConfig::builder_with_protocol_versions(ALL_VERSIONS)
