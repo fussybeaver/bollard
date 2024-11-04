@@ -1316,7 +1316,13 @@ impl Docker {
                     if !contents.is_empty() {
                         message = serde_json::from_str::<DockerServerErrorMessage>(&contents)
                             .map(|msg| msg.message)
-                            .or_else(|e| if e.is_data() { Ok(contents) } else { Err(e) })?;
+                            .or_else(|e| {
+                                if e.is_data() || e.is_syntax() {
+                                    Ok(contents)
+                                } else {
+                                    Err(e)
+                                }
+                            })?;
                     }
                     Err(DockerResponseServerError {
                         status_code: status.as_u16(),
@@ -1443,7 +1449,7 @@ impl Docker {
         debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
 
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
-            if e.is_data() {
+            if e.is_data() || e.is_syntax() {
                 JsonDataError {
                     message: e.to_string(),
                     column: e.column(),
