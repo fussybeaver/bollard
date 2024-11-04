@@ -2364,4 +2364,52 @@ mod tests {
             Err(crate::errors::Error::DockerContainerWaitError { code: _, error: _ })
         ));
     }
+
+    #[tokio::test]
+    async fn test_output_non_json_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:plain/text\r\n\r\nthis is not json"
+                .to_string(),
+        );
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let host_config = bollard_stubs::models::HostConfig {
+            mounts: Some(vec![bollard_stubs::models::Mount {
+                target: Some(String::from("/tmp")),
+                source: Some(String::from("./tmp")),
+                typ: Some(bollard_stubs::models::MountTypeEnum::BIND),
+                consistency: Some(String::from("default")),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let result = &docker
+            .create_container(
+                Some(crate::container::CreateContainerOptions {
+                    name: "mount_volume_container_failure_test",
+                    platform: None,
+                }),
+                crate::container::Config {
+                    image: Some("some_image"),
+                    host_config: Some(host_config),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        println!("{result:#?}");
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::JsonDataError {
+                message: _,
+                column: 2
+            })
+        ));
+    }
 }
