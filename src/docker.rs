@@ -1449,7 +1449,7 @@ impl Docker {
         debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
 
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
-            if e.is_data() {
+            if e.is_data() || e.is_syntax() {
                 JsonDataError {
                     message: e.to_string(),
                     column: e.column(),
