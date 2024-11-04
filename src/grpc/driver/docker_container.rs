@@ -136,13 +136,12 @@ pub struct DockerContainerBuilder {
 }
 
 impl DockerContainerBuilder {
-    /// Construct a new `DockerContainerBuilder` to build a [`DockerContainer`]
+    /// Construct a new `DockerContainerBuilder` to build a [`DockerContainer`].
+    /// The docker context is torn down after solving a build.
     ///
     /// # Arguments
     ///
-    ///  - The container name used to identify the buildkit in Docker
     ///  - A reference to the docker client
-    ///  - A unique session id to identify the GRPC connection
     pub fn new(docker: &Docker) -> Self {
         Self {
             inner: DockerContainer {
@@ -154,6 +153,7 @@ impl DockerContainerBuilder {
                 cgroup_parent: None,
                 env: vec![],
                 args: vec![],
+                tear_down: true,
             },
         }
     }
@@ -241,6 +241,7 @@ pub struct DockerContainer {
     cgroup_parent: Option<String>,
     env: Vec<String>,
     args: Vec<String>,
+    tear_down: bool,
 }
 
 impl super::Driver for DockerContainer {
@@ -300,10 +301,14 @@ impl super::Driver for DockerContainer {
     }
 
     fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
-        Box::new(DockerContainerTearDownHandler {
-            name: String::from(&self.name),
-            docker: Docker::clone(&self.docker),
-        })
+        if self.tear_down {
+            Box::new(DockerContainerTearDownHandler {
+                name: String::from(&self.name),
+                docker: Docker::clone(&self.docker),
+            })
+        } else {
+            Box::new(NoopTearDownHandler {})
+        }
     }
 }
 
@@ -480,6 +485,14 @@ impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
                 .map_err(GrpcError::from)
                 .await
         })
+    }
+}
+
+struct NoopTearDownHandler {}
+
+impl super::DriverTearDownHandler for NoopTearDownHandler {
+    fn tear_down(&self) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>>>> {
+        Box::pin(futures_util::future::ok(()))
     }
 }
 
