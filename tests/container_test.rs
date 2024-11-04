@@ -526,7 +526,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
                 "stefanscherer/registry-windows",
                 "moby/buildkit:master",
                 // Containers existing on CircleCI after a prune
-                "docker:27.0",
+                "docker.io/library/docker:27.3",
                 "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
             ]
             .into_iter()
