@@ -111,7 +111,7 @@ pub struct ImageBuildPlatform {
 
 impl Display for ImageBuildPlatform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let prefix = Path::new(&self.architecture).join(Path::new(&self.os));
+        let prefix = Path::new(&self.os).join(Path::new(&self.architecture));
         if let Some(variant) = &self.variant {
             write!(f, "{}", prefix.join(Path::new(&variant)).display())
         } else {
@@ -417,4 +417,29 @@ impl ImageBuildFrontendOptionsBuilder {
 pub enum ImageBuildLoadInput {
     /// Seed the exporter with a tarball containing the Dockerfile to build
     Upload(Bytes),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ImageBuildPlatform;
+
+    #[test]
+    fn test_imagebuildplatform_display() {
+        let platform = ImageBuildPlatform {
+            architecture: String::from("amd64"),
+            os: String::from("linux"),
+            variant: None,
+        };
+        assert_eq!(platform.to_string(), "linux/amd64");
+    }
+
+    #[test]
+    fn test_imagebuildplatform_display_with_variant() {
+        let platform = ImageBuildPlatform {
+            architecture: String::from("arm64"),
+            os: String::from("linux"),
+            variant: Some(String::from("v8")),
+        };
+        assert_eq!(platform.to_string(), "linux/arm64/v8");
+    }
 }
