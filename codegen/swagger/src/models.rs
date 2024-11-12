@@ -1121,7 +1121,7 @@ pub struct ContainerInspectResponse {
 
     #[serde(rename = "GraphDriver")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub graph_driver: Option<GraphDriverData>,
+    pub graph_driver: Option<DriverData>,
 
     /// The size of files that have been created or changed by this container. 
     #[serde(rename = "SizeRw")]
@@ -1579,6 +1579,20 @@ pub struct Driver {
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, String>>,
+
+}
+
+/// Information about the storage driver used to store the container's and image's filesystem. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DriverData {
+    /// Name of the storage driver.
+    #[serde(rename = "Name")]
+    pub name: String,
+
+    /// Low-level storage metadata, provided as key/value pairs.  This information is driver-specific, and depends on the storage-driver in use, and should be used for informational purposes only. 
+    #[serde(rename = "Data")]
+    #[serde(deserialize_with = "deserialize_nonoptional_map")]
+    pub data: HashMap<String, String>,
 
 }
 
@@ -2258,20 +2272,6 @@ pub struct GenericResourcesInnerNamedResourceSpec {
     #[serde(rename = "Value")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
-
-}
-
-/// Information about the storage driver used to store the container's and image's filesystem. 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct GraphDriverData {
-    /// Name of the storage driver.
-    #[serde(rename = "Name")]
-    pub name: String,
-
-    /// Low-level storage metadata, provided as key/value pairs.  This information is driver-specific, and depends on the storage-driver in use, and should be used for informational purposes only. 
-    #[serde(rename = "Data")]
-    #[serde(deserialize_with = "deserialize_nonoptional_map")]
-    pub data: HashMap<String, String>,
 
 }
 
@@ -3147,7 +3147,7 @@ pub struct ImageInspect {
 
     #[serde(rename = "GraphDriver")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub graph_driver: Option<GraphDriverData>,
+    pub graph_driver: Option<DriverData>,
 
     #[serde(rename = "RootFS")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3183,6 +3183,134 @@ pub struct ImageInspectRootFs {
     #[serde(rename = "Layers")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Vec<String>>,
+
+}
+
+/// ImageManifestSummary represents a summary of an image manifest. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageManifestSummary {
+    /// ID is the content-addressable ID of an image and is the same as the digest of the image manifest. 
+    #[serde(rename = "ID")]
+    pub id: String,
+
+    #[serde(rename = "Descriptor")]
+    pub descriptor: OciDescriptor,
+
+    /// Indicates whether all the child content (image config, layers) is fully available locally.
+    #[serde(rename = "Available")]
+    pub available: bool,
+
+    #[serde(rename = "Size")]
+    pub size: ImageManifestSummarySize,
+
+    /// The kind of the manifest.  kind         | description -------------|----------------------------------------------------------- image        | Image manifest that can be used to start a container. attestation  | Attestation manifest produced by the Buildkit builder for a specific image manifest. 
+    #[serde(rename = "Kind")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
+    pub kind: Option<ImageManifestSummaryKindEnum>,
+
+    #[serde(rename = "ImageData")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_data: Option<ImageManifestSummaryImageData>,
+
+    #[serde(rename = "AttestationData")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attestation_data: Option<ImageManifestSummaryAttestationData>,
+
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum ImageManifestSummaryKindEnum { 
+    #[serde(rename = "")]
+    EMPTY,
+    #[serde(rename = "image")]
+    IMAGE,
+    #[serde(rename = "attestation")]
+    ATTESTATION,
+    #[serde(rename = "unknown")]
+    UNKNOWN,
+}
+
+impl ::std::fmt::Display for ImageManifestSummaryKindEnum {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            ImageManifestSummaryKindEnum::EMPTY => write!(f, ""),
+            ImageManifestSummaryKindEnum::IMAGE => write!(f, "{}", "image"),
+            ImageManifestSummaryKindEnum::ATTESTATION => write!(f, "{}", "attestation"),
+            ImageManifestSummaryKindEnum::UNKNOWN => write!(f, "{}", "unknown"),
+
+        }
+    }
+}
+
+impl ::std::str::FromStr for ImageManifestSummaryKindEnum {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s { 
+            "" => Ok(ImageManifestSummaryKindEnum::EMPTY),
+            "image" => Ok(ImageManifestSummaryKindEnum::IMAGE),
+            "attestation" => Ok(ImageManifestSummaryKindEnum::ATTESTATION),
+            "unknown" => Ok(ImageManifestSummaryKindEnum::UNKNOWN),
+            x => Err(format!("Invalid enum type: {}", x)),
+        }
+    }
+}
+
+impl ::std::convert::AsRef<str> for ImageManifestSummaryKindEnum {
+    fn as_ref(&self) -> &str {
+        match self { 
+            ImageManifestSummaryKindEnum::EMPTY => "",
+            ImageManifestSummaryKindEnum::IMAGE => "image",
+            ImageManifestSummaryKindEnum::ATTESTATION => "attestation",
+            ImageManifestSummaryKindEnum::UNKNOWN => "unknown",
+        }
+    }
+}
+
+/// The image data for the attestation manifest. This field is only populated when Kind is \"attestation\". 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageManifestSummaryAttestationData {
+    /// The digest of the image manifest that this attestation is for. 
+    #[serde(rename = "For")]
+    pub _for: String,
+
+}
+
+/// The image data for the image manifest. This field is only populated when Kind is \"image\". 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageManifestSummaryImageData {
+    /// OCI platform of the image. This will be the platform specified in the manifest descriptor from the index/manifest list. If it's not available, it will be obtained from the image config. 
+    #[serde(rename = "Platform")]
+    pub platform: OciPlatform,
+
+    /// The IDs of the containers that are using this image. 
+    #[serde(rename = "Containers")]
+    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
+    pub containers: Vec<String>,
+
+    #[serde(rename = "Size")]
+    pub size: ImageManifestSummaryImageDataSize,
+
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageManifestSummaryImageDataSize {
+    /// Unpacked is the size (in bytes) of the locally unpacked (uncompressed) image content that's directly usable by the containers running this image. It's independent of the distributable content - e.g. the image might still have an unpacked data that's still used by some container even when the distributable/compressed content is already gone. 
+    #[serde(rename = "Unpacked")]
+    pub unpacked: i64,
+
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageManifestSummarySize {
+    /// Total is the total size (in bytes) of all the locally present data (both distributable and non-distributable) that's related to this manifest and its children. This equal to the sum of [Content] size AND all the sizes in the [Size] struct present in the Kind-specific data struct. For example, for an image kind (Kind == \"image\") this would include the size of the image content and unpacked image snapshots ([Size.Content] + [ImageData.Size.Unpacked]). 
+    #[serde(rename = "Total")]
+    pub total: i64,
+
+    /// Content is the size (in bytes) of all the locally present content in the content store (e.g. image config, layers) referenced by this manifest and its children. This only includes blobs in the content store. 
+    #[serde(rename = "Content")]
+    pub content: i64,
 
 }
 
@@ -3270,6 +3398,11 @@ pub struct ImageSummary {
     /// Number of containers using this image. Includes both stopped and running containers.  This size is not calculated by default, and depends on which API endpoint is used. `-1` indicates that the value has not been set / calculated. 
     #[serde(rename = "Containers")]
     pub containers: i64,
+
+    /// Manifests is a list of manifests available in this image. It provides a more detailed view of the platform-specific image manifests or other image-attached data like build attestations.  WARNING: This is experimental and may change at any time without any backward compatibility. 
+    #[serde(rename = "Manifests")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifests: Option<Vec<ImageManifestSummary>>,
 
 }
 
@@ -3833,6 +3966,11 @@ pub struct Network {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver: Option<String>,
 
+    /// Whether the network was created with IPv4 enabled. 
+    #[serde(rename = "EnableIPv4")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_ipv4: Option<bool>,
+
     /// Whether the network was created with IPv6 enabled. 
     #[serde(rename = "EnableIPv6")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3990,6 +4128,11 @@ pub struct NetworkCreateRequest {
     #[serde(rename = "IPAM")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ipam: Option<Ipam>,
+
+    /// Enable IPv4 on the network. To disable IPv4, the daemon must be started with experimental features enabled. 
+    #[serde(rename = "EnableIPv4")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_ipv4: Option<bool>,
 
     /// Enable IPv6 on the network.
     #[serde(rename = "EnableIPv6")]
