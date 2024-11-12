@@ -40,7 +40,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
     let result = &docker
         .inspect_network(
-            result.id.as_ref().unwrap(),
+            <String as AsRef<str>>::as_ref(&result.id),
             Some(InspectNetworkOptions::<&str> {
                 verbose: true,
                 ..Default::default()
@@ -153,10 +153,13 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
 
     let _ = &docker
-        .connect_network(result.id.as_ref().unwrap(), connect_network_options)
+        .connect_network(
+            <String as AsRef<str>>::as_ref(&result.id),
+            connect_network_options,
+        )
         .await?;
 
-    let id = result.id.as_ref().unwrap();
+    let id = <String as AsRef<str>>::as_ref(&result.id);
 
     let result = &docker
         .inspect_network(
