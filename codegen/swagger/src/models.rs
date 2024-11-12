@@ -858,6 +858,16 @@ pub struct Config {
 
 }
 
+/// The config-only network source to provide the configuration for this network. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConfigReference {
+    /// The name of the config-only network that provides the network's configuration. The specified network must be an existing config-only network. Only network names are allowed, not network IDs. 
+    #[serde(rename = "Network")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ConfigSpec {
     /// User-defined name of the config.
@@ -882,7 +892,7 @@ pub struct ConfigSpec {
 
 }
 
-/// Configuration for a container that is portable between hosts.  When used as `ContainerConfig` field in an image, `ContainerConfig` is an optional field containing the configuration of the container that was last committed when creating the image.  Previous versions of Docker builder used this field to store build cache, and it is not in active use anymore. 
+/// Configuration for a container that is portable between hosts. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerConfig {
     /// The hostname to use for the container, as a valid RFC 1123 hostname. 
@@ -1381,6 +1391,11 @@ pub struct ContainerSummaryHostConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_mode: Option<String>,
 
+    /// Arbitrary key-value metadata attached to container
+    #[serde(rename = "Annotations")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
+
 }
 
 /// A summary of the container's network settings
@@ -1436,6 +1451,35 @@ pub struct ContainerWaitResponse {
     #[serde(rename = "Error")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ContainerWaitExitError>,
+
+}
+
+/// Information for connecting to the containerd instance that is used by the daemon. This is included for debugging purposes only. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContainerdInfo {
+    /// The address of the containerd socket.
+    #[serde(rename = "Address")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+
+    #[serde(rename = "Namespaces")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespaces: Option<ContainerdInfoNamespaces>,
+
+}
+
+/// The namespaces that the daemon uses for running containers and plugins in containerd. These namespaces can be configured in the daemon configuration, and are considered to be used exclusively by the daemon, Tampering with the containerd instance may cause unexpected behavior.  As these namespaces are considered to be exclusively accessed by the daemon, it is not recommended to change these values, or to change them to a value that is used by other systems, such as cri-containerd. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContainerdInfoNamespaces {
+    /// The default containerd namespace used for containers managed by the daemon.  The default namespace for containers is \"moby\", but will be suffixed with the `<uid>.<gid>` of the remapped `root` if user-namespaces are enabled and the containerd image-store is used. 
+    #[serde(rename = "Containers")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub containers: Option<String>,
+
+    /// The default containerd namespace used for plugins managed by the daemon.  The default namespace for plugins is \"plugins.moby\", but will be suffixed with the `<uid>.<gid>` of the remapped `root` if user-namespaces are enabled and the containerd image-store is used. 
+    #[serde(rename = "Plugins")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugins: Option<String>,
 
 }
 
@@ -1695,6 +1739,11 @@ pub struct EndpointSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aliases: Option<Vec<String>>,
 
+    /// DriverOpts is a mapping of driver options and values. These options are passed directly to the driver and are driver specific. 
+    #[serde(rename = "DriverOpts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver_opts: Option<HashMap<String, String>>,
+
     /// Unique ID of the network. 
     #[serde(rename = "NetworkID")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1734,11 +1783,6 @@ pub struct EndpointSettings {
     #[serde(rename = "GlobalIPv6PrefixLen")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_ipv6_prefix_len: Option<i64>,
-
-    /// DriverOpts is a mapping of driver options and values. These options are passed directly to the driver and are driver specific. 
-    #[serde(rename = "DriverOpts")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub driver_opts: Option<HashMap<String, String>>,
 
     /// List of all DNS names an endpoint has on a specific network. This list is based on the container name, network aliases, container short ID, and hostname.  These DNS names are non-fully qualified but can contain several dots. You can get fully qualified DNS names by appending `.<network-name>`. For instance, if container name is `my.ctr` and the network is named `testnet`, `DNSNames` will contain `my.ctr` and the FQDN will be `my.ctr.testnet`. 
     #[serde(rename = "DNSNames")]
@@ -2867,6 +2911,135 @@ pub struct IdResponse {
 
 }
 
+/// Configuration of the image. These fields are used as defaults when starting a container from the image. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageConfig {
+    /// The hostname to use for the container, as a valid RFC 1123 hostname.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "Hostname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+
+    /// The domain name to use for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "Domainname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domainname: Option<String>,
+
+    /// The user that commands are run as inside the container.
+    #[serde(rename = "User")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+
+    /// Whether to attach to `stdin`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "AttachStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stdin: Option<bool>,
+
+    /// Whether to attach to `stdout`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "AttachStdout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stdout: Option<bool>,
+
+    /// Whether to attach to `stderr`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "AttachStderr")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stderr: Option<bool>,
+
+    /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}` 
+    #[serde(rename = "ExposedPorts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
+
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "Tty")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<bool>,
+
+    /// Open `stdin`  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "OpenStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_stdin: Option<bool>,
+
+    /// Close `stdin` after one attached client disconnects.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "StdinOnce")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin_once: Option<bool>,
+
+    /// A list of environment variables to set inside the container in the form `[\"VAR=value\", ...]`. A variable without `=` is removed from the environment, rather than to have an empty value. 
+    #[serde(rename = "Env")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<String>>,
+
+    /// Command to run specified as a string or an array of strings. 
+    #[serde(rename = "Cmd")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<Vec<String>>,
+
+    #[serde(rename = "Healthcheck")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub healthcheck: Option<HealthConfig>,
+
+    /// Command is already escaped (Windows only)
+    #[serde(rename = "ArgsEscaped")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args_escaped: Option<bool>,
+
+    /// The name (or reference) of the image to use when creating the container, or which was used when the container was created.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "Image")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+
+    /// An object mapping mount point paths inside the container to empty objects. 
+    #[serde(rename = "Volumes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
+
+    /// The working directory for commands to run in.
+    #[serde(rename = "WorkingDir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+
+    /// The entry point for the container as a string or an array of strings.  If the array consists of exactly one empty string (`[\"\"]`) then the entry point is reset to system default (i.e., the entry point used by docker when there is no `ENTRYPOINT` instruction in the `Dockerfile`). 
+    #[serde(rename = "Entrypoint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Vec<String>>,
+
+    /// Disable networking for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "NetworkDisabled")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_disabled: Option<bool>,
+
+    /// MAC address of the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "MacAddress")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<String>,
+
+    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`. 
+    #[serde(rename = "OnBuild")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_build: Option<Vec<String>>,
+
+    /// User-defined key/value metadata.
+    #[serde(rename = "Labels")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<HashMap<String, String>>,
+
+    /// Signal to stop a container as a string or unsigned integer. 
+    #[serde(rename = "StopSignal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_signal: Option<String>,
+
+    /// Timeout to stop a container in seconds.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    #[serde(rename = "StopTimeout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_timeout: Option<i64>,
+
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell. 
+    #[serde(rename = "Shell")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<Vec<String>>,
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageDeleteResponseItem {
     /// The image ID of an image that was untagged
@@ -2928,16 +3101,6 @@ pub struct ImageInspect {
     )]
     pub created: Option<BollardDate>,
 
-    /// The ID of the container that was used to create the image.  Depending on how the image was created, this field may be empty.  **Deprecated**: this field is kept for backward compatibility, but will be removed in API v1.45. 
-    #[serde(rename = "Container")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub container: Option<String>,
-
-    /// **Deprecated**: this field is kept for backward compatibility, but will be removed in API v1.45. 
-    #[serde(rename = "ContainerConfig")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub container_config: Option<ContainerConfig>,
-
     /// The version of Docker that was used to build the image.  Depending on how the image was created, this field may be empty. 
     #[serde(rename = "DockerVersion")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2950,7 +3113,7 @@ pub struct ImageInspect {
 
     #[serde(rename = "Config")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<ContainerConfig>,
+    pub config: Option<ImageConfig>,
 
     /// Hardware CPU architecture that the image runs on. 
     #[serde(rename = "Architecture")]
@@ -3082,7 +3245,7 @@ pub struct ImageSummary {
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]
     pub repo_digests: Vec<String>,
 
-    /// Date and time at which the image was created as a Unix timestamp (number of seconds sinds EPOCH). 
+    /// Date and time at which the image was created as a Unix timestamp (number of seconds since EPOCH). 
     #[serde(rename = "Created")]
     pub created: i64,
 
@@ -3399,7 +3562,7 @@ pub struct MountBindOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub create_mountpoint: Option<bool>,
 
-    /// Make the mount non-recursively read-only, but still leave the mount recursive (unless NonRecursive is set to `true` in conjunction).  Addded in v1.44, before that version all read-only mounts were non-recursive by default. To match the previous behaviour this will default to `true` for clients on versions prior to v1.44. 
+    /// Make the mount non-recursively read-only, but still leave the mount recursive (unless NonRecursive is set to `true` in conjunction).  Added in v1.44, before that version all read-only mounts were non-recursive by default. To match the previous behaviour this will default to `true` for clients on versions prior to v1.44. 
     #[serde(rename = "ReadOnlyNonRecursive")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_only_non_recursive: Option<bool>,
@@ -3592,6 +3755,11 @@ pub struct MountTmpfsOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<i64>,
 
+    /// The options to be passed to the tmpfs mount. An array of arrays. Flag options should be provided as 1-length arrays. Other types should be provided as as 2-length arrays, where the first item is the key and the second the value. 
+    #[serde(rename = "Options")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<Vec<String>>>,
+
 }
 
 /// Optional configuration for the `volume` type.
@@ -3635,14 +3803,17 @@ pub struct MountVolumeOptionsDriverConfig {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Network {
+    /// Name of the network. 
     #[serde(rename = "Name")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
+    /// ID that uniquely identifies a network on a single machine. 
     #[serde(rename = "Id")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Date and time at which the network was created in [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format with nano-seconds. 
     #[serde(rename = "Created")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(
@@ -3652,14 +3823,17 @@ pub struct Network {
     )]
     pub created: Option<BollardDate>,
 
+    /// The level at which the network exists (e.g. `swarm` for cluster-wide or `local` for machine level) 
     #[serde(rename = "Scope")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
 
+    /// The name of the driver used to create the network (e.g. `bridge`, `overlay`). 
     #[serde(rename = "Driver")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver: Option<String>,
 
+    /// Whether the network was created with IPv6 enabled. 
     #[serde(rename = "EnableIPv6")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_ipv6: Option<bool>,
@@ -3668,29 +3842,49 @@ pub struct Network {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ipam: Option<Ipam>,
 
+    /// Whether the network is created to only allow internal networking connectivity. 
     #[serde(rename = "Internal")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal: Option<bool>,
 
+    /// Whether a global / swarm scope network is manually attachable by regular containers from workers in swarm mode. 
     #[serde(rename = "Attachable")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachable: Option<bool>,
 
+    /// Whether the network is providing the routing-mesh for the swarm cluster. 
     #[serde(rename = "Ingress")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<bool>,
 
+    #[serde(rename = "ConfigFrom")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_from: Option<ConfigReference>,
+
+    /// Whether the network is a config-only network. Config-only networks are placeholder networks for network configurations to be used by other networks. Config-only networks cannot be used directly to run containers or services. 
+    #[serde(rename = "ConfigOnly")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_only: Option<bool>,
+
+    /// Contains endpoints attached to the network. 
     #[serde(rename = "Containers")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub containers: Option<HashMap<String, NetworkContainer>>,
 
+    /// Network-specific options uses when creating the network. 
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, String>>,
 
+    /// User-defined key/value metadata.
     #[serde(rename = "Labels")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
+
+    /// List of peer nodes for an overlay network. This field is only present for overlay networks, and omitted for other network types. 
+    #[serde(rename = "Peers")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peers: Option<Vec<PeerInfo>>,
 
 }
 
@@ -3757,15 +3951,15 @@ pub struct NetworkCreateRequest {
     #[serde(rename = "Name")]
     pub name: String,
 
-    /// Deprecated: CheckDuplicate is now always enabled. 
-    #[serde(rename = "CheckDuplicate")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub check_duplicate: Option<bool>,
-
     /// Name of the network driver plugin to use.
     #[serde(rename = "Driver")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver: Option<String>,
+
+    /// The level at which the network exists (e.g. `swarm` for cluster-wide or `local` for machine level). 
+    #[serde(rename = "Scope")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 
     /// Restrict external access to the network.
     #[serde(rename = "Internal")]
@@ -3781,6 +3975,16 @@ pub struct NetworkCreateRequest {
     #[serde(rename = "Ingress")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<bool>,
+
+    /// Creates a config-only network. Config-only networks are placeholder networks for network configurations to be used by other networks. Config-only networks cannot be used directly to run containers or services. 
+    #[serde(rename = "ConfigOnly")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_only: Option<bool>,
+
+    /// Specifies the source which will provide the configuration for this network. The specified network must be an existing config-only network; see ConfigOnly. 
+    #[serde(rename = "ConfigFrom")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_from: Option<ConfigReference>,
 
     /// Optional custom IP scheme for the network.
     #[serde(rename = "IPAM")]
@@ -3804,16 +4008,16 @@ pub struct NetworkCreateRequest {
 
 }
 
+/// OK response to NetworkCreate operation
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkCreateResponse {
     /// The ID of the created network.
     #[serde(rename = "Id")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub id: String,
 
+    /// Warnings encountered when creating the container
     #[serde(rename = "Warning")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    pub warning: String,
 
 }
 
@@ -4256,6 +4460,21 @@ pub struct OciPlatform {
     #[serde(rename = "variant")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
+
+}
+
+/// PeerInfo represents one peer of an overlay network. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PeerInfo {
+    /// ID of the peer-node in the Swarm cluster.
+    #[serde(rename = "Name")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// IP-address of the peer-node in the Swarm cluster.
+    #[serde(rename = "IP")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
 
 }
 
@@ -6188,7 +6407,7 @@ pub struct SwarmSpecTaskDefaultsLogDriver {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
-    /// Driver-specific options for the selectd log driver, specified as key/value pairs. 
+    /// Driver-specific options for the selected log driver, specified as key/value pairs. 
     #[serde(rename = "Options")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, String>>,
@@ -6397,7 +6616,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel_version: Option<String>,
 
-    /// Name of the host's operating system, for example: \"Ubuntu 16.04.2 LTS\" or \"Windows Server 2016 Datacenter\" 
+    /// Name of the host's operating system, for example: \"Ubuntu 24.04 LTS\" or \"Windows Server 2016 Datacenter\" 
     #[serde(rename = "OperatingSystem")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operating_system: Option<String>,
@@ -6540,6 +6759,10 @@ pub struct SystemInfo {
     #[serde(rename = "CDISpecDirs")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cdi_spec_dirs: Option<Vec<String>>,
+
+    #[serde(rename = "Containerd")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub containerd: Option<ContainerdInfo>,
 
 }
 
@@ -7011,6 +7234,11 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secrets: Option<Vec<TaskSpecContainerSpecSecrets>>,
 
+    /// An integer value containing the score given to the container in order to tune OOM killer preferences. 
+    #[serde(rename = "OomScoreAdj")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oom_score_adj: Option<i64>,
+
     /// Configs contains references to zero or more configs that will be exposed to the service. 
     #[serde(rename = "Configs")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7425,7 +7653,7 @@ pub struct TaskSpecNetworkAttachmentSpec {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpecPlacement {
-    /// An array of constraint expressions to limit the set of nodes where a task can be scheduled. Constraint expressions can either use a _match_ (`==`) or _exclude_ (`!=`) rule. Multiple constraints find nodes that satisfy every expression (AND match). Constraints can match node or Docker Engine labels as follows:  node attribute       | matches                        | example ---------------------|--------------------------------|----------------------------------------------- `node.id`            | Node ID                        | `node.id==2ivku8v2gvtg4` `node.hostname`      | Node hostname                  | `node.hostname!=node-2` `node.role`          | Node role (`manager`/`worker`) | `node.role==manager` `node.platform.os`   | Node operating system          | `node.platform.os==windows` `node.platform.arch` | Node architecture              | `node.platform.arch==x86_64` `node.labels`        | User-defined node labels       | `node.labels.security==high` `engine.labels`      | Docker Engine's labels         | `engine.labels.operatingsystem==ubuntu-14.04`  `engine.labels` apply to Docker Engine labels like operating system, drivers, etc. Swarm administrators add `node.labels` for operational purposes by using the [`node update endpoint`](#operation/NodeUpdate). 
+    /// An array of constraint expressions to limit the set of nodes where a task can be scheduled. Constraint expressions can either use a _match_ (`==`) or _exclude_ (`!=`) rule. Multiple constraints find nodes that satisfy every expression (AND match). Constraints can match node or Docker Engine labels as follows:  node attribute       | matches                        | example ---------------------|--------------------------------|----------------------------------------------- `node.id`            | Node ID                        | `node.id==2ivku8v2gvtg4` `node.hostname`      | Node hostname                  | `node.hostname!=node-2` `node.role`          | Node role (`manager`/`worker`) | `node.role==manager` `node.platform.os`   | Node operating system          | `node.platform.os==windows` `node.platform.arch` | Node architecture              | `node.platform.arch==x86_64` `node.labels`        | User-defined node labels       | `node.labels.security==high` `engine.labels`      | Docker Engine's labels         | `engine.labels.operatingsystem==ubuntu-24.04`  `engine.labels` apply to Docker Engine labels like operating system, drivers, etc. Swarm administrators add `node.labels` for operational purposes by using the [`node update endpoint`](#operation/NodeUpdate). 
     #[serde(rename = "Constraints")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Vec<String>>,
