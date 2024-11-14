@@ -16,8 +16,6 @@ Pipes](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes) and HTTP
 [Docker](https://github.com/moby/moby) and [Buildkit](https://github.com/moby/buildkit) are
 generated through OpenAPI, protobuf and upstream documentation.
 
-
-
 ## Install
 
 Add the following to your `Cargo.toml` file
@@ -31,14 +29,6 @@ bollard = "*"
 ### Documentation
 
 [API docs](https://docs.rs/bollard/).
-
-#### Latest
-
-Version `0.17` enables the [`secrets`](https://docs.docker.com/build/building/secrets/#secret-mounts) and [`sshforward`](https://docs.docker.com/build/building/secrets/#ssh-mounts) components of
-`buildkit`, [API version 1.45.0](https://docs.docker.com/engine/api/v1.45/) - (disabled for
-windows).
-Please note: all `buildkit` API's are under *developer preview*, feedback is
-encouraged.
 
 ### Feature flags
 
