@@ -12,10 +12,13 @@ use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
 use bollard::models::*;
 use bollard::Docker;
 
+use futures_util::future::ready;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio::runtime::Runtime;
 
+use std::fs::{remove_file, File};
 use std::io::Write;
 
 #[macro_use]
@@ -208,7 +211,7 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     let value = vec.get(1).unwrap();
 
-    assert_eq!(format!("{}", value), "Hello from Docker!\n".to_string());
+    assert_eq!(format!("{value}"), "Hello from Docker!\n".to_string());
 
     let _ = &docker
         .remove_container("integration_test_logs", None::<RemoveContainerOptions>)
@@ -254,7 +257,7 @@ async fn stats_test(docker: Docker) -> Result<(), Error> {
         .try_collect::<Vec<_>>()
         .await?;
 
-    let value = vec.get(0);
+    let value = vec.first();
 
     assert_eq!(value.unwrap().name, "/integration_test_stats".to_string());
     kill_container(&docker, "integration_test_stats")
@@ -299,7 +302,7 @@ async fn attach_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     input
-        .write_all(format!("echo {}\n", unique_string).as_bytes())
+        .write_all(format!("echo {unique_string}\n").as_bytes())
         .await?;
     input.write_all("exit\n".as_bytes()).await?;
 
@@ -368,7 +371,7 @@ async fn resize_container_test(docker: Docker) -> Result<(), Error> {
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let _ = &docker
         .remove_container(
@@ -416,7 +419,7 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
             None::<WaitContainerOptions<String>>,
         )
         .try_collect::<Vec<_>>()
-        .await?;
+        .await;
 
     let result = &docker
         .inspect_container(
@@ -521,7 +524,10 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
                 "bollard",
                 "registry:2",
                 "stefanscherer/registry-windows",
-                "moby/buildkit:master"
+                "moby/buildkit:master",
+                // Containers existing on CircleCI after a prune
+                "docker.io/library/docker:27.3",
+                "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
             ]
             .into_iter()
             .all(|v| v != r.image.as_ref().unwrap()))
@@ -531,7 +537,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-async fn archive_container_test(docker: Docker) -> Result<(), Error> {
+async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}microsoft/nanoserver", registry_http_addr())
     } else {
@@ -573,6 +579,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_archive_container",
+                platform: None,
             }),
             Config {
                 image: Some(&image[..]),
@@ -581,20 +588,43 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
-    let _ = &docker
-        .upload_to_container(
-            "integration_test_archive_container",
-            Some(UploadToContainerOptions {
-                path: if cfg!(windows) {
-                    "C:\\Windows\\Logs"
-                } else {
-                    "/tmp"
-                },
-                ..Default::default()
-            }),
-            payload.into(),
-        )
-        .await?;
+    if streaming_upload {
+        // Make payload live for the lifetime of the test and convert it to an async Bytes stream.
+        // Normally you would use an existing async stream.
+        let payload = Box::new(payload).leak();
+        let payload = payload.chunks(32);
+        let payload = futures_util::stream::iter(payload.map(bytes::Bytes::from));
+
+        let _ = &docker
+            .upload_to_container_streaming(
+                "integration_test_archive_container",
+                Some(UploadToContainerOptions {
+                    path: if cfg!(windows) {
+                        "C:\\Windows\\Logs"
+                    } else {
+                        "/tmp"
+                    },
+                    ..Default::default()
+                }),
+                payload,
+            )
+            .await?;
+    } else {
+        let _ = &docker
+            .upload_to_container(
+                "integration_test_archive_container",
+                Some(UploadToContainerOptions {
+                    path: if cfg!(windows) {
+                        "C:\\Windows\\Logs"
+                    } else {
+                        "/tmp"
+                    },
+                    ..Default::default()
+                }),
+                payload.into(),
+            )
+            .await?;
+    }
 
     let res = docker.download_from_container(
         "integration_test_archive_container",
@@ -618,7 +648,7 @@ async fn archive_container_test(docker: Docker) -> Result<(), Error> {
         .map(|file| file.unwrap())
         .filter(|file| {
             let path = file.header().path().unwrap();
-            println!("{:?}", path);
+            println!("{path:?}");
             if path
                 == std::path::Path::new(if cfg!(windows) {
                     "Logs/readme.txt"
@@ -727,6 +757,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         .create_container(
             Some(CreateContainerOptions {
                 name: "integration_test_mount_volume_container",
+                platform: None,
             }),
             Config {
                 image: Some(&image[..]),
@@ -790,6 +821,41 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
+    Ok(())
+}
+
+async fn export_container_test(docker: Docker) -> Result<(), Error> {
+    create_image_hello_world(&docker).await?;
+
+    let temp_file = if cfg!(windows) {
+        "C:\\Users\\appveyor\\Appdata\\Local\\Temp\\bollard_test_container_export.tar"
+    } else {
+        "/tmp/bollard_test_container_export.tar"
+    };
+
+    create_container_hello_world(&docker, "integration_test_export_container").await?;
+    let res = docker.export_container("integration_test_export_container");
+
+    let mut archive_file = File::create(temp_file).unwrap();
+    // Shouldn't load the whole file into memory, stream it to disk instead
+    res.for_each(move |data| {
+        archive_file.write_all(&data.unwrap()).unwrap();
+        archive_file.sync_all().unwrap();
+        ready(())
+    })
+    .await;
+
+    docker
+        .remove_container("integration_test_export_container", None)
+        .await?;
+
+    // assert that the file containg the exported archive actually exists
+    let test_file = File::open(temp_file).unwrap();
+    // and metadata can be read
+    test_file.metadata().unwrap();
+
+    // And delete it to clean up
+    remove_file(temp_file).unwrap();
     Ok(())
 }
 
@@ -861,7 +927,8 @@ fn integration_test_prune_containers() {
 
 #[test]
 fn integration_test_archive_containers() {
-    connect_to_docker_and_run!(archive_container_test);
+    connect_to_docker_and_run!(|docker| archive_container_test(docker, true));
+    connect_to_docker_and_run!(|docker| archive_container_test(docker, false));
 }
 
 #[test]
@@ -882,4 +949,11 @@ fn integration_test_attach_container() {
 #[test]
 fn integration_test_resize_container_tty() {
     connect_to_docker_and_run!(resize_container_test);
+}
+
+// note: container exports aren't supported on Windows
+#[test]
+#[cfg(not(windows))]
+fn integration_test_export_container() {
+    connect_to_docker_and_run!(export_container_test);
 }

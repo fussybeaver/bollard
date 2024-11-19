@@ -1,25 +1,25 @@
 //! Errors for this module.
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
 
-/// The type of error embedded in an Error.
+/// Generic Docker errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Could not find home directory")]
     NoHomePathError,
     /// Generic error when reading a certificate from the filesystem
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Cannot open/read certificate with path: {path}")]
     CertPathError {
         /// Path for the failing certificate file
         path: PathBuf,
     },
     /// Error emitted when multiple keys are found in a certificate file
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Found multiple keys ({count}), expected one: {path}")]
     CertMultipleKeys {
         /// Number of keys found in the certificate file
@@ -28,18 +28,26 @@ pub enum Error {
         path: PathBuf,
     },
     /// Parse error for RSA encrypted keys
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     #[error("Could not parse key: {path}")]
     CertParseError {
         /// Path for the failing certificate file
         path: PathBuf,
     },
-    /// Error emitted when the client is unable to load native certs for SSL
-    #[cfg(feature = "ssl")]
-    #[error("Could not load native certs")]
+    /// Error emitted when the client is unable to parse a native pki cert for SSL
+    #[cfg(feature = "ssl_providerless")]
+    #[error("Could not parse a pki native cert")]
     NoNativeCertsError {
         /// The original error emitted.
-        err: webpki::Error,
+        #[from]
+        err: rustls::Error,
+    },
+    /// Error emitted when the client is unable to load native certs for SSL
+    #[cfg(feature = "ssl_providerless")]
+    #[error("Could not load native certs")]
+    LoadNativeCertsErrors {
+        /// The original errors emitted.
+        errors: Vec<rustls_native_certs::Error>,
     },
     /// Generic error emitted by the docker server.
     #[error("Docker responded with status code {status_code}: {message}")]
@@ -60,15 +68,32 @@ pub enum Error {
         /// Character sequence at error location.
         column: usize,
     },
-    /// Error emitted when the server version cannot be parsed when negotiating a version
-    #[error("Failed to parse API version: {api_version}")]
-    APIVersionParseError {
-        /// The api version returned by the server.
-        api_version: String,
-    },
+    /// Error emitted when the docker is requested to build with buildkit without a session id
+    #[error("Failed to parse API version")]
+    APIVersionParseError {},
     /// Error emitted when a request times out.
     #[error("Timeout error")]
     RequestTimeoutError,
+    /// Error emitted mid-stream as part of a successful docker operation
+    #[error("Docker stream error")]
+    DockerStreamError {
+        /// error string emitted by the Stream
+        error: String,
+    },
+    /// Error emitted as part of a container wait response
+    #[error("Docker container wait error")]
+    DockerContainerWaitError {
+        /// error string returned from container wait call
+        error: String,
+        /// error code returned from container wait call
+        code: i64,
+    },
+    /// Error emitted when a session is not provided to the buildkit engine
+    #[error("Buildkit requires a unique session")]
+    MissingSessionBuildkitError {},
+    /// Error emitted when a session is not provided to the buildkit engine
+    #[error("Buildkit requires a builder version set")]
+    MissingVersionBuildkitError {},
     /// Error emitted when JSON fails to serialize.
     #[error(transparent)]
     JsonSerdeError {
@@ -112,10 +137,48 @@ pub enum Error {
         err: hyper::Error,
     },
     /// Error emitted when serde fails to urlencod a struct of options
-    #[error(transparent)]
+    #[error("Unable to URLEncode: {}", err)]
     URLEncodedError {
         /// The original error emitted.
         #[from]
         err: serde_urlencoded::ser::Error,
     },
+    /// Error encountered when parsing a URL
+    #[error("Unable to parse URL: {}", err)]
+    URLParseError {
+        /// The original error emitted.
+        #[from]
+        err: url::ParseError,
+    },
+    /// Error emitted when encoding a URI
+    #[error("Unable to parse URI: {}", err)]
+    InvalidURIError {
+        /// The original error emitted.
+        #[from]
+        err: http::uri::InvalidUri,
+    },
+    /// Error emitted when encoding a URIParts
+    #[error("Unable to parse URIParts: {}", err)]
+    InvalidURIPartsError {
+        /// The original error emitted.
+        #[from]
+        err: http::uri::InvalidUriParts,
+    },
+    /// Error that is never emitted
+    #[cfg(feature = "http")]
+    #[error("Error in the hyper legacy client: {}", err)]
+    HyperLegacyError {
+        /// The original error emitted.
+        #[from]
+        err: hyper_util::client::legacy::Error,
+    },
+    /// Error emitted when connecting to a URI with an unsupported scheme
+    #[error("URI scheme is not supported: {uri}")]
+    UnsupportedURISchemeError {
+        /// The URI that was attempted to be connected to
+        uri: String,
+    },
+    /// Error emitted when the Docker socket file is not found at the expected location.
+    #[error("Socket not found: {0}")]
+    SocketNotFoundError(String),
 }

@@ -1,15 +1,18 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
 
+use bytes::Bytes;
 use futures_core::Stream;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::{Deserialize, Serialize};
 use serde_json::value::Value;
 
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
+use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 
@@ -117,14 +120,14 @@ pub struct VersionComponents {
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct EventsOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Show events created since this timestamp then stream new events.
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
     pub since: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created until this timestamp then stop streaming.
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     #[serde(serialize_with = "crate::docker::serialize_as_timestamp")]
     pub until: Option<chrono::DateTime<chrono::Utc>>,
     /// Show events created since this timestamp then stream new events.
@@ -184,7 +187,7 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -212,7 +215,7 @@ impl Docker {
             "/info",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -223,12 +226,7 @@ impl Docker {
     /// # Ping
     ///
     /// This is a dummy endpoint you can use to test if the server is accessible.
-    ///
-    /// # Returns
-    ///
-    ///  - A [String](std::string::String), wrapped in a Future.
-    ///
-    /// # Examples
+    /// # Returns - A [String](std::string::String), wrapped in a Future. # Examples
     ///
     /// ```rust
     /// # use bollard::Docker;
@@ -243,7 +241,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_string(req).await
@@ -257,8 +255,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [System Events Response](SystemEventsResponse),
-    ///  wrapped in a Stream.
+    ///  - [EventMessage](crate::models::EventMessage),
+    ///    wrapped in a Stream.
     ///
     /// # Examples
     ///
@@ -281,7 +279,7 @@ impl Docker {
         options: Option<EventsOptions<T>>,
     ) -> impl Stream<Item = Result<EventMessage, Error>>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/events";
 
@@ -289,7 +287,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_stream(req)
@@ -304,8 +302,8 @@ impl Docker {
     /// # Returns
     ///
     ///  - [System Data Usage
-    ///  Response](SystemDataUsageResponse), wrapped in a
-    ///  Future.
+    ///    Response](SystemDataUsageResponse), wrapped in a
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -321,7 +319,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await

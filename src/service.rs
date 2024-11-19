@@ -1,14 +1,17 @@
 //! Service API: manage and inspect docker services within a swarm
 
+use crate::docker::BodyType;
 pub use crate::models::*;
 
 use super::Docker;
-use crate::auth::{base64_url_encode, DockerCredentials};
+use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::errors::Error;
+use bytes::Bytes;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::Serialize;
 
 use std::{collections::HashMap, hash::Hash};
 
@@ -26,6 +29,7 @@ use std::{collections::HashMap, hash::Hash};
 ///
 /// ListServicesOptions{
 ///     filters,
+///     ..Default::default()
 /// };
 /// ```
 ///
@@ -38,7 +42,7 @@ use std::{collections::HashMap, hash::Hash};
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListServicesOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the service list, encoded as JSON. Available filters:
     ///  - `id`=`<ID>` a services's ID
@@ -47,6 +51,9 @@ where
     ///  - `name`=`<name>` a services's name
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+
+    /// Include service status, with count of running and desired tasks.
+    pub status: bool,
 }
 
 /// Parameters used in the [Inspect Service API](Docker::inspect_service())
@@ -155,7 +162,7 @@ impl Docker {
         options: Option<ListServicesOptions<T>>,
     ) -> Result<Vec<Service>, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/services";
 
@@ -163,7 +170,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -183,7 +190,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Service Create Response](ServiceCreateResponse) struct,
-    ///  wrapped in a Future.
+    ///    wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -228,24 +235,17 @@ impl Docker {
     ) -> Result<ServiceCreateResponse, Error> {
         let url = "/services/create";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    None::<String>,
-                    Docker::serialize_payload(Some(service_spec)),
-                );
+        let req = self.build_request_with_registry_auth(
+            url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            None::<String>,
+            Docker::serialize_payload(Some(service_spec)),
+            DockerCredentialsHeader::Auth(credentials),
+        );
 
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -281,13 +281,13 @@ impl Docker {
         service_name: &str,
         options: Option<InspectServiceOptions>,
     ) -> Result<Service, Error> {
-        let url = format!("/services/{}", service_name);
+        let url = format!("/services/{service_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -316,13 +316,13 @@ impl Docker {
     /// docker.delete_service("my-service");
     /// ```
     pub async fn delete_service(&self, service_name: &str) -> Result<(), Error> {
-        let url = format!("/services/{}", service_name);
+        let url = format!("/services/{service_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -344,7 +344,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Service Update Response](ServiceUpdateResponse) struct,
-    ///  wrapped in a Future.
+    ///    wrapped in a Future.
     ///
     /// # Examples
     ///
@@ -395,25 +395,18 @@ impl Docker {
         options: UpdateServiceOptions,
         credentials: Option<DockerCredentials>,
     ) -> Result<ServiceUpdateResponse, Error> {
-        let url = format!("/services/{}/update", service_name);
+        let url = format!("/services/{service_name}/update");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    Some(options),
-                    Docker::serialize_payload(Some(service_spec)),
-                );
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Docker::serialize_payload(Some(service_spec)),
+            DockerCredentialsHeader::Auth(credentials),
+        );
 
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        self.process_into_value(req).await
     }
 }

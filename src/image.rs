@@ -1,14 +1,24 @@
 //! Image API: creating, manipulating and pushing docker images
+#[cfg(feature = "buildkit")]
+use bollard_buildkit_proto::moby::filesync::packet::file_send_server::FileSendServer as FileSendPacketServer;
+use bytes::Bytes;
 use futures_core::Stream;
-use futures_util::{stream, stream::StreamExt};
+#[cfg(feature = "buildkit")]
+use futures_util::future::{Either, FutureExt};
+#[cfg(feature = "buildkit")]
+use futures_util::stream;
+use futures_util::stream::StreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::{body::Bytes, Body, Method};
+use http_body_util::Full;
+use hyper::Method;
 use serde::Serialize;
+use serde_repr::*;
 
 use super::Docker;
-use crate::auth::{base64_url_encode, DockerCredentials};
+use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::container::Config;
+use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
@@ -41,7 +51,7 @@ use std::hash::Hash;
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateImageOptions<T>
+pub struct CreateImageOptions<'a, T>
 where
     T: Into<String> + Serialize,
 {
@@ -60,6 +70,13 @@ where
     pub tag: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// A list of Dockerfile instructions to be applied to the image being created. Changes must be
+    /// URL-encoded! This parameter may only be used when importing an image.
+    #[serde(
+        serialize_with = "crate::docker::serialize_join_newlines",
+        skip_serializing_if = "Vec::is_empty" // if an empty changes parameter is sent, Docker returns a 400 "file with no instructions" error
+    )]
+    pub changes: Vec<&'a str>,
 }
 
 /// Parameters to the [List Images
@@ -142,13 +159,13 @@ where
 {
     /// Filters to process on the prune list, encoded as JSON. Available filters:
     ///  - `dangling=<boolean>` When set to `true` (or `1`), prune only unused *and* untagged
-    ///  images. When set to `false` (or `0`), all unused images are pruned.
+    ///    images. When set to `false` (or `0`), all unused images are pruned.
     ///  - `until=<string>` Prune images created before this timestamp. The `<timestamp>` can be
-    ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
-    ///  computed relative to the daemon machine’s time.
+    ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///    computed relative to the daemon machine’s time.
     ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
-    ///  `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
-    ///  specified labels.
+    ///    `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the
+    ///    specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
@@ -390,6 +407,9 @@ where
     /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub buildargs: HashMap<T, T>,
+    #[cfg(feature = "buildkit")]
+    /// Session ID
+    pub session: Option<String>,
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
     pub shmsize: Option<u64>,
     /// Squash the resulting images layers into a single layer.
@@ -403,6 +423,81 @@ where
     pub networkmode: T,
     /// Platform in the format `os[/arch[/variant]]`
     pub platform: T,
+    /// Target build stage
+    pub target: T,
+    #[cfg(feature = "buildkit")]
+    /// Specify a custom exporter.
+    pub outputs: Option<ImageBuildOutput<T>>,
+    /// Builder version to use
+    pub version: BuilderVersion,
+}
+
+#[cfg(feature = "buildkit")]
+/// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageBuildOutput<T>
+where
+    T: Into<String>,
+{
+    /// The local export type writes all result files to a directory on the client.
+    /// The new files will be owned by the current user.
+    /// On multi-platform builds, all results will be put in subdirectories by their platform.
+    /// It takes the destination directory as a first argument.
+    Tar(T),
+    /// The tar export type writes all result files as a single tarball on the client.
+    /// On multi-platform builds all results will be put in subdirectories by their platform.
+    /// It takes the destination directory as a first argument.
+    ///
+    /// **Notice**: The implementation of the underlying `fsutil` protocol is not complete.
+    /// Therefore, special files, permissions, etc. are ignored or not handled correctly.
+    Local(T),
+}
+
+#[cfg(feature = "buildkit")]
+impl<T> Serialize for ImageBuildOutput<T>
+where
+    T: Into<String>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ImageBuildOutput::Tar(_) => serializer.serialize_str(r#"[{"type": "tar"}]"#),
+            ImageBuildOutput::Local(_) => serializer.serialize_str(r#"[{"type": "local"}]"#),
+        }
+    }
+}
+
+#[cfg(feature = "buildkit")]
+impl<T> ImageBuildOutput<T>
+where
+    T: Into<String>,
+{
+    fn into_string(self) -> ImageBuildOutput<String> {
+        match self {
+            ImageBuildOutput::Tar(path) => ImageBuildOutput::Tar(path.into()),
+            ImageBuildOutput::Local(path) => ImageBuildOutput::Local(path.into()),
+        }
+    }
+}
+
+/// Builder Version to use
+#[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
+#[repr(u8)]
+#[derive(Default)]
+pub enum BuilderVersion {
+    /// BuilderV1 is the first generation builder in docker daemon
+    #[default]
+    BuilderV1 = 1,
+    /// BuilderBuildKit is builder based on moby/buildkit project
+    BuilderBuildKit = 2,
+}
+
+enum ImageBuildBuildkitEither {
+    #[allow(dead_code)]
+    Left(Option<HashMap<String, DockerCredentials>>),
+    Right(Option<HashMap<String, DockerCredentials>>),
 }
 
 /// Parameters to the [Import Image API](Docker::import_image())
@@ -474,7 +569,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -495,7 +590,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -522,34 +617,36 @@ impl Docker {
     ///
     pub fn create_image<T>(
         &self,
-        options: Option<CreateImageOptions<T>>,
-        root_fs: Option<Body>,
+        options: Option<CreateImageOptions<'_, T>>,
+        root_fs: Option<Bytes>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + Serialize + std::fmt::Debug + Clone,
     {
         let url = "/images/create";
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    match root_fs {
-                        Some(body) => Ok(body),
-                        None => Ok(Body::empty()),
-                    },
-                );
-                self.process_into_stream(req).boxed()
+        let req = self.build_request_with_registry_auth(
+            url,
+            Builder::new().method(Method::POST),
+            options,
+            Ok(BodyType::Left(Full::new(match root_fs {
+                Some(body) => body,
+                None => Bytes::new(),
+            }))),
+            DockerCredentialsHeader::Auth(credentials),
+        );
+
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(CreateImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
             }
-            Err(e) => stream::once(async move { Err(Error::from(e)) }).boxed(),
-        }
+        })
     }
 
     /// ---
@@ -577,13 +674,51 @@ impl Docker {
     /// docker.inspect_image("hello-world");
     /// ```
     pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
-        let url = format!("/images/{}/json", image_name);
+        let url = format!("/images/{image_name}/json");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Inspect an Image by contacting the registry
+    ///
+    /// Return image digest and platform information by contacting the registry
+    ///
+    /// # Arguments
+    ///
+    /// - Image name as a string slice.
+    ///
+    /// # Returns
+    ///
+    /// - [DistributionInspect](DistributionInspect), wrapped in a Future
+    ///
+    /// # Examples
+    /// ```rust
+    /// use bollard::Docker;
+    /// let docker = Docker::connect_with_http_defaults().unwrap();
+    /// docker.inspect_registry_image("ubuntu:jammy", None);
+    /// ```
+    pub async fn inspect_registry_image(
+        &self,
+        image_name: &str,
+        credentials: Option<DockerCredentials>,
+    ) -> Result<DistributionInspect, Error> {
+        let url = format!("/distribution/{image_name}/json");
+
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new().method(Method::GET),
+            None::<String>,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+            DockerCredentialsHeader::Auth(credentials),
         );
 
         self.process_into_value(req).await
@@ -634,7 +769,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -653,7 +788,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [History Response Item](HistoryResponseItem), wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -664,13 +799,13 @@ impl Docker {
     /// docker.image_history("hello-world");
     /// ```
     pub async fn image_history(&self, image_name: &str) -> Result<Vec<HistoryResponseItem>, Error> {
-        let url = format!("/images/{}/history", image_name);
+        let url = format!("/images/{image_name}/history");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -689,7 +824,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [Image Search Response Item](ImageSearchResponseItem) results, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -725,7 +860,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             Some(options),
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -745,7 +880,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - Vector of [Image Delete Response Item](ImageDeleteResponseItem), wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -769,24 +904,16 @@ impl Docker {
         options: Option<RemoveImageOptions>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
-        let url = format!("/images/{}", image_name);
+        let url = format!("/images/{image_name}");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::DELETE)
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    Ok(Body::empty()),
-                );
-                self.process_into_value(req).await
-            }
-            Err(e) => Err(e.into()),
-        }
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new().method(Method::DELETE),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+            DockerCredentialsHeader::Auth(credentials),
+        );
+        self.process_into_value(req).await
     }
 
     /// ---
@@ -828,13 +955,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/tag", image_name);
+        let url = format!("/images/{image_name}/tag");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -888,26 +1015,28 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/images/{}/push", image_name);
+        let url = format!("/images/{image_name}/push");
 
-        match serde_json::to_string(&credentials.unwrap_or_else(|| DockerCredentials {
-            ..Default::default()
-        })) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    &url,
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Auth", base64_url_encode(&ser_cred)),
-                    options,
-                    Ok(Body::empty()),
-                );
+        let req = self.build_request_with_registry_auth(
+            &url,
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+            DockerCredentialsHeader::Auth(Some(credentials.unwrap_or_default())),
+        );
 
-                self.process_into_stream(req).boxed()
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(PushImageInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
             }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
-        }
+        })
     }
 
     /// ---
@@ -978,6 +1107,8 @@ impl Docker {
     /// the archive's root, but can be at a different path or have a different name by specifying
     /// the `dockerfile` parameter.
     ///
+    /// By default, the call to build specifies using BuilderV1, the first generation builder in docker daemon.
+    ///
     /// # Arguments
     ///
     ///  - [Build Image Options](BuildImageOptions) struct.
@@ -988,7 +1119,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1019,29 +1150,138 @@ impl Docker {
         &self,
         options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
-        tar: Option<Body>,
-    ) -> impl Stream<Item = Result<BuildInfo, Error>>
+        tar: Option<Bytes>,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + Serialize + Clone,
     {
         let url = "/build";
 
-        match serde_json::to_string(&credentials.unwrap_or_default()) {
-            Ok(ser_cred) => {
+        match (
+            if cfg!(feature = "buildkit") && options.version == BuilderVersion::BuilderBuildKit {
+                ImageBuildBuildkitEither::Left(credentials)
+            } else {
+                ImageBuildBuildkitEither::Right(credentials)
+            },
+            &options,
+        ) {
+            #[cfg(feature = "buildkit")]
+            (
+                ImageBuildBuildkitEither::Left(creds),
+                BuildImageOptions {
+                    session: Some(ref sess),
+                    ..
+                },
+            ) => {
+                let session_id = String::clone(sess);
+                let outputs = options.outputs.clone().map(ImageBuildOutput::into_string);
+
                 let req = self.build_request(
                     url,
                     Builder::new()
                         .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/x-tar")
-                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
+                        .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
-                    Ok(tar.unwrap_or_else(Body::empty)),
+                    Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
+                );
+
+                let session = stream::once(
+                    self.start_session(session_id, creds, outputs)
+                        .map(|_| Either::Right(()))
+                        .fuse(),
+                );
+
+                let stream = self.process_into_stream::<BuildInfo>(req).map(Either::Left);
+
+                stream::select(stream, session)
+                    .filter_map(|either| async move {
+                        match either {
+                            Either::Left(data) => Some(data),
+                            _ => None,
+                        }
+                    })
+                    .boxed()
+            }
+            #[cfg(feature = "buildkit")]
+            (ImageBuildBuildkitEither::Left(_), BuildImageOptions { session: None, .. }) => {
+                stream::once(futures_util::future::err(
+                    Error::MissingSessionBuildkitError {},
+                ))
+                .boxed()
+            }
+            #[cfg(not(feature = "buildkit"))]
+            (ImageBuildBuildkitEither::Left(_), _) => unimplemented!(
+                "a buildkit enabled build without the 'buildkit' feature should not be possible"
+            ),
+            (ImageBuildBuildkitEither::Right(creds), _) => {
+                let req = self.build_request_with_registry_auth(
+                    url,
+                    Builder::new()
+                        .method(Method::POST)
+                        .header(CONTENT_TYPE, "application/x-tar"),
+                    Some(options),
+                    Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
+                    DockerCredentialsHeader::Config(creds),
                 );
 
                 self.process_into_stream(req).boxed()
             }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
         }
+        .map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
+    }
+
+    #[cfg(feature = "buildkit")]
+    async fn start_session(
+        &self,
+        id: String,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+        outputs: Option<ImageBuildOutput<String>>,
+    ) -> Result<(), crate::grpc::error::GrpcError> {
+        let driver = crate::grpc::driver::moby::Moby::new(self);
+
+        let mut auth_provider = crate::grpc::AuthProvider::new();
+        if let Some(creds) = credentials {
+            for (host, docker_credentials) in creds {
+                auth_provider.set_docker_credentials(&host, docker_credentials);
+            }
+        }
+
+        let auth =
+            bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
+
+        let mut services = match outputs {
+            Some(ImageBuildOutput::Tar(path)) => {
+                let filesend_impl =
+                    crate::grpc::FileSendImpl::new(std::path::PathBuf::from(path).as_path());
+                let filesend =
+                    bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer::new(
+                        filesend_impl,
+                    );
+                vec![crate::grpc::GrpcServer::FileSend(filesend)]
+            }
+            Some(ImageBuildOutput::Local(path)) => {
+                let filesendpacket_impl =
+                    crate::grpc::FileSendPacketImpl::new(std::path::PathBuf::from(path).as_path());
+                let filesendpacket = FileSendPacketServer::new(filesendpacket_impl);
+                vec![crate::grpc::GrpcServer::FileSendPacket(filesendpacket)]
+            }
+            None => vec![],
+        };
+
+        services.push(crate::grpc::GrpcServer::Auth(auth));
+
+        crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
+
+        Ok(())
     }
 
     /// ---
@@ -1050,29 +1290,55 @@ impl Docker {
     ///
     /// Get a tarball containing all images and metadata for a repository.
     ///
-    /// The root of the resulting tar file will contain the file "mainifest.json". If the export is
-    /// of an image repository, rather than a signle image, there will also be a `repositories` file
+    /// The root of the resulting tar file will contain the file "manifest.json". If the export is
+    /// of an image repository, rather than a single image, there will also be a `repositories` file
     /// with a JSON description of the exported image repositories.
     /// Additionally, each layer of all exported images will have a sub directory in the archive
     /// containing the filesystem of the layer.
     ///
-    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageCommit)
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageGet)
     /// for more information.
     /// # Arguments
-    /// - The `image_name` string can refer to an individual image and tag (e.g. alpine:latest),
-    ///   an individual image by I
+    /// - The `image_name` string referring to an individual image and tag (e.g. alpine:latest)
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
     pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/images/{}/get", image_name);
+        let url = format!("/images/{image_name}/get");
         let req = self.build_request(
             &url,
             Builder::new()
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+        self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Export Images
+    ///
+    /// Get a tarball containing all images and metadata for several image repositories. Shared
+    /// layers will be deduplicated.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#tag/Image/operation/ImageGetAll)
+    /// for more information.
+    /// # Arguments
+    /// - The `image_names` Vec of image names.
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_images(&self, image_names: &[&str]) -> impl Stream<Item = Result<Bytes, Error>> {
+        let options: Vec<_> = image_names.iter().map(|name| ("names", name)).collect();
+        let req = self.build_request(
+            "/images/get",
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         self.process_into_body(req)
     }
@@ -1092,18 +1358,18 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Build Info](BuildInfo), wrapped in an asynchronous
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ImportImageOptions;
     /// use bollard::errors::Error;
     ///
     /// use std::default::Default;
-    /// use futures_util::stream::StreamExt;
+    /// use futures_util::stream::{StreamExt, TryStreamExt};
     /// use tokio::fs::File;
     /// use tokio::io::AsyncWriteExt;
     /// use tokio_util::codec;
@@ -1115,19 +1381,19 @@ impl Docker {
     /// async move {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
     ///
-    ///     let byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///     let mut byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
     ///         let bytes = r.unwrap().freeze();
     ///         Ok::<_, Error>(bytes)
     ///     });
-
-    ///     let body = hyper::Body::wrap_stream(byte_stream);
-
+    ///
+    ///     let bytes = byte_stream.next().await.unwrap().unwrap();
+    ///
     ///     let mut stream = docker
     ///         .import_image(
     ///             ImportImageOptions {
     ///                 ..Default::default()
     ///             },
-    ///             body,
+    ///             bytes,
     ///             None,
     ///         );
     ///
@@ -1139,23 +1405,236 @@ impl Docker {
     pub fn import_image(
         &self,
         options: ImportImageOptions,
-        root_fs: Body,
+        root_fs: Bytes,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
-        match serde_json::to_string(&credentials.unwrap_or_default()) {
-            Ok(ser_cred) => {
-                let req = self.build_request(
-                    "/images/load",
-                    Builder::new()
-                        .method(Method::POST)
-                        .header(CONTENT_TYPE, "application/json")
-                        .header("X-Registry-Config", base64_url_encode(&ser_cred)),
-                    Some(options),
-                    Ok(root_fs),
-                );
-                self.process_into_stream(req).boxed()
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Ok(BodyType::Left(Full::new(root_fs))),
+            DockerCredentialsHeader::Config(credentials),
+        );
+
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
             }
-            Err(e) => stream::once(async move { Err(e.into()) }).boxed(),
-        }
+        })
+    }
+
+    /// ---
+    ///
+    /// # Import Image (stream)
+    ///
+    /// Load a set of images and tags into a repository, without holding it all in memory at a given point in time
+    ///
+    /// For details on the format, see the [export image
+    /// endpoint](struct.Docker.html#method.export_image).
+    ///
+    /// # Arguments
+    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - Stream producing `Bytes` of the image
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
+    ///    Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::ImportImageOptions;
+    /// use bollard::errors::Error;
+    ///
+    /// use std::default::Default;
+    /// use futures_util::stream::{StreamExt, TryStreamExt};
+    /// use tokio::fs::File;
+    /// use tokio::io::AsyncWriteExt;
+    /// use tokio_util::codec;
+    ///
+    /// let options = ImportImageOptions{
+    ///     ..Default::default()
+    /// };
+    ///
+    /// async move {
+    ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
+    ///
+    ///     let mut byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///         r.unwrap().freeze()
+    ///     });
+    ///
+    ///     let mut stream = docker
+    ///         .import_image_stream(
+    ///             ImportImageOptions {
+    ///                 ..Default::default()
+    ///             },
+    ///             byte_stream,
+    ///             None,
+    ///         );
+    ///
+    ///     while let Some(response) = stream.next().await {
+    ///         // ...
+    ///     }
+    /// };
+    /// ```
+    pub fn import_image_stream(
+        &self,
+        options: ImportImageOptions,
+        root_fs: impl Stream<Item = Bytes> + Send + 'static,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> {
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/json"),
+            Some(options),
+            Ok(body_stream(root_fs)),
+            DockerCredentialsHeader::Config(credentials),
+        );
+
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
+    }
+}
+
+#[cfg(not(windows))]
+#[cfg(test)]
+mod tests {
+
+    use std::io::Write;
+
+    use futures_util::TryStreamExt;
+    use yup_hyper_mock::HostToReplyConnector;
+
+    use crate::{
+        image::{BuildImageOptions, PushImageOptions},
+        Docker, API_DEFAULT_VERSION,
+    };
+
+    use super::CreateImageOptions;
+
+    #[tokio::test]
+    async fn test_create_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"status\":\"Pulling from localstack/localstack\",\"id\":\"0.14.2\"}\n{\"errorDetail\":{\"message\":\"Get \\\"[https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819](https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819/)\\\": EOF\"},\"error\":\"Get \\\"[https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819](https://registry-1.docker.io/v2/localstack/localstack/manifests/sha256:d7aefdaae6712891f13795f538fd855fe4e5a8722249e9ca965e94b69b83b819/)\\\": EOF\"}".to_string());
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let image = String::from("localstack");
+
+        let result = &docker
+            .create_image(
+                Some(CreateImageOptions {
+                    from_image: &image[..],
+                    ..Default::default()
+                }),
+                None,
+                None,
+            )
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_push_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"status\":\"The push refers to repository [localhost:5000/centos]\"}\n{\"status\":\"Preparing\",\"progressDetail\":{},\"id\":\"74ddd0ec08fa\"}\n{\"errorDetail\":{\"message\":\"EOF\"},\"error\":\"EOF\"}".to_string());
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let image = String::from("centos");
+
+        let result = docker
+            .push_image(&image[..], None::<PushImageOptions<String>>, None)
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_build_image_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"stream\":\"Step 1/2 : FROM alpine\"}\n{\"stream\":\"\n\"}\n{\"status\":\"Pulling from library/alpine\",\"id\":\"latest\"}\n{\"status\":\"Digest: sha256:bc41182d7ef5ffc53a40b044e725193bc10142a1243f395ee852a8d9730fc2ad\"}\n{\"status\":\"Status: Image is up to date for alpine:latest\"}\n{\"stream\":\" --- 9c6f07244728\\n\"}\n{\"stream\":\"Step 2/2 : RUN cmd.exe /C copy nul bollard.txt\"}\n{\"stream\":\"\\n\"}\n{\"stream\":\" --- Running in d615794caf91\\n\"}\n{\"stream\":\"/bin/sh: cmd.exe: not found\\n\"}\n{\"errorDetail\":{\"code\":127,\"message\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"},\"error\":\"The command '/bin/sh -c cmd.exe /C copy nul bollard.txt' returned a non-zero code: 127\"}".to_string());
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let dockerfile = String::from(
+            r#"FROM alpine
+            RUN cmd.exe /C copy nul bollard.txt"#,
+        );
+
+        let mut header = tar::Header::new_gnu();
+        header.set_path("Dockerfile").unwrap();
+        header.set_size(dockerfile.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        let mut tar = tar::Builder::new(Vec::new());
+        tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+        let uncompressed = tar.into_inner().unwrap();
+        let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        c.write_all(&uncompressed).unwrap();
+        let compressed = c.finish().unwrap();
+
+        let result = &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_image".to_string(),
+                    pull: true,
+                    rm: true,
+                    ..Default::default()
+                },
+                None,
+                Some(compressed.into()),
+            )
+            .try_collect::<Vec<_>>()
+            .await;
+
+        println!("{result:#?}");
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
     }
 }

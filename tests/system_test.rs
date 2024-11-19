@@ -17,6 +17,7 @@ use common::*;
 
 #[derive(Debug)]
 enum Results {
+    #[allow(dead_code)]
     CreateImageResults(CreateImageInfo),
     EventsResults(EventMessage),
 }
@@ -61,9 +62,8 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
 
     assert!(vec
         .iter()
-        .map(|value| {
-            println!("{:?}", value);
-            value
+        .inspect(|&value| {
+            println!("{value:?}");
         })
         .any(|value| matches!(value, Results::EventsResults(EventMessage { typ: _, .. }))));
 

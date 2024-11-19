@@ -1,14 +1,17 @@
 //! Exec API: Run new commands inside running containers
 
+use bytes::Bytes;
+use futures_util::TryStreamExt;
 use http::header::{CONNECTION, UPGRADE};
 use http::request::Builder;
-use hyper::Body;
+use http_body_util::Full;
 use hyper::Method;
-use serde::ser::Serialize;
+use serde_derive::{Deserialize, Serialize};
 
 use super::Docker;
 
 use crate::container::LogOutput;
+use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
 use crate::read::NewlineLogOutputDecoder;
@@ -23,7 +26,7 @@ use tokio_util::codec::FramedRead;
 #[serde(rename_all = "PascalCase")]
 pub struct CreateExecOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + serde::ser::Serialize,
 {
     /// Attach to `stdin` of the exec command.
     pub attach_stdin: Option<bool>,
@@ -63,6 +66,8 @@ pub struct CreateExecResults {
 pub struct StartExecOptions {
     /// Detach from the command.
     pub detach: bool,
+    /// Allocate a pseudo-TTY.
+    pub tty: bool,
     /// The maximum size for a line of output. The default is 8 * 1024 (roughly 1024 characters).
     pub output_capacity: Option<usize>,
 }
@@ -113,7 +118,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Create Exec Results](CreateExecResults) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -139,9 +144,9 @@ impl Docker {
         config: CreateExecOptions<T>,
     ) -> Result<CreateExecResults, Error>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + serde::ser::Serialize,
     {
-        let url = format!("/containers/{}/exec", container_name);
+        let url = format!("/containers/{container_name}/exec");
 
         let req = self.build_request(
             &url,
@@ -194,7 +199,7 @@ impl Docker {
         exec_id: &str,
         config: Option<StartExecOptions>,
     ) -> Result<StartExecResults, Error> {
-        let url = format!("/exec/{}/start", exec_id);
+        let url = format!("/exec/{exec_id}/start");
 
         match config {
             Some(StartExecOptions { detach: true, .. }) => {
@@ -233,7 +238,10 @@ impl Docker {
 
                 let (read, write) = self.process_upgraded(req).await?;
 
-                let log = FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(), capacity);
+                let log =
+                    FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(true), capacity)
+                        .map_err(|e| e.into());
+
                 Ok(StartExecResults::Attached {
                     output: Box::pin(log),
                     input: Box::pin(write),
@@ -277,13 +285,13 @@ impl Docker {
     /// };
     /// ```
     pub async fn inspect_exec(&self, exec_id: &str) -> Result<ExecInspectResponse, Error> {
-        let url = format!("/exec/{}/json", exec_id);
+        let url = format!("/exec/{exec_id}/json");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -328,13 +336,13 @@ impl Docker {
         exec_id: &str,
         options: ResizeExecOptions,
     ) -> Result<(), Error> {
-        let url = format!("/exec/{}/resize", exec_id);
+        let url = format!("/exec/{exec_id}/resize");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await

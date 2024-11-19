@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
             let mut stdin = async_stdin().bytes();
             loop {
                 if let Some(Ok(byte)) = stdin.next() {
-                    input.write(&[byte]).await.ok();
+                    input.write_all(&[byte]).await.ok();
                 } else {
                     sleep(Duration::from_nanos(10)).await;
                 }

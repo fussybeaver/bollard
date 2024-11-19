@@ -1,10 +1,13 @@
 //! Container API: run docker containers and manage their lifecycle
 
 use futures_core::Stream;
+use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
-use hyper::{body::Bytes, Body, Method};
+use http_body_util::Full;
+use hyper::{body::Bytes, Method};
 use serde::Serialize;
+use serde_derive::Deserialize;
 use tokio::io::AsyncWrite;
 use tokio_util::codec::FramedRead;
 
@@ -15,8 +18,8 @@ use std::hash::Hash;
 use std::pin::Pin;
 
 use super::Docker;
+use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
-
 use crate::models::*;
 use crate::read::NewlineLogOutputDecoder;
 
@@ -87,6 +90,7 @@ where
 ///
 /// CreateContainerOptions{
 ///     name: "my-new-container",
+///     platform: Some("linux/amd64"),
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -96,6 +100,11 @@ where
 {
     /// Assign the specified name to the container.
     pub name: T,
+
+    /// The platform to use for the container.
+    /// Added in API v1.41.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<T>,
 }
 
 /// This container's networking configuration.
@@ -107,7 +116,7 @@ pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
 }
 
 /// Container to create.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config<T>
 where
     T: Into<String> + Eq + Hash,
@@ -374,7 +383,7 @@ pub struct AttachContainerResults {
 }
 
 impl fmt::Debug for AttachContainerResults {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AttachContainerResults")
     }
 }
@@ -413,7 +422,7 @@ where
     /// If stream is also enabled, once all the previous output has been returned, it will seamlessly transition into streaming current output.
     pub logs: Option<bool>,
     /// Override the key sequence for detaching a container.
-    /// Format is a single character [a-Z] or ctrl-<value> where <value> is one of: a-z, @, ^, [, , or _.
+    /// Format is a single character [a-Z] or ctrl-\<value\> where \<value\> is one of: a-z, @, ^, [, , or _.
     #[serde(rename = "detachKeys")]
     pub detach_keys: Option<T>,
 }
@@ -486,7 +495,6 @@ pub struct InspectContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TopOptions<T>
 where
     T: Into<String> + Serialize,
@@ -538,7 +546,7 @@ where
 }
 
 /// Result type for the [Logs API](Docker::logs())
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub enum LogOutput {
     StdErr { message: Bytes },
@@ -556,6 +564,17 @@ impl fmt::Display for LogOutput {
             LogOutput::Console { message } => message,
         };
         write!(f, "{}", String::from_utf8_lossy(message))
+    }
+}
+
+impl AsRef<[u8]> for LogOutput {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            LogOutput::StdErr { message } => message.as_ref(),
+            LogOutput::StdOut { message } => message.as_ref(),
+            LogOutput::StdIn { message } => message.as_ref(),
+            LogOutput::Console { message } => message.as_ref(),
+        }
     }
 }
 
@@ -732,6 +751,10 @@ pub struct StorageStats {
     pub write_size_bytes: Option<u64>,
 }
 
+fn empty_string() -> String {
+    "".to_string()
+}
+
 /// Statistics for the container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
@@ -748,9 +771,9 @@ pub struct Stats {
         serialize_with = "crate::docker::serialize_rfc3339"
     )]
     pub preread: time::OffsetDateTime,
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     pub read: chrono::DateTime<chrono::Utc>,
-    #[cfg(feature = "chrono")]
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
     pub preread: chrono::DateTime<chrono::Utc>,
     #[cfg(not(any(feature = "chrono", feature = "time")))]
     pub read: String,
@@ -765,7 +788,11 @@ pub struct Stats {
     pub cpu_stats: CPUStats,
     pub precpu_stats: CPUStats,
     pub storage_stats: StorageStats,
+    #[serde(default = "empty_string")]
     pub name: String,
+
+    // Podman incorrectly capitalises the "id" field. See https://github.com/containers/podman/issues/17869
+    #[serde(alias = "Id", default = "empty_string")]
     pub id: String,
 }
 
@@ -951,11 +978,6 @@ where
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_requests: Option<Vec<DeviceRequest>>,
 
-    /// Kernel memory limit in bytes.
-    #[serde(rename = "KernelMemory")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_memory: Option<i64>,
-
     /// Hard limit for kernel TCP buffer memory (in bytes).
     #[serde(rename = "KernelMemoryTCP")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -977,9 +999,9 @@ where
     pub memory_swappiness: Option<i64>,
 
     /// CPU quota in units of 10<sup>-9</sup> CPUs.
-    #[serde(rename = "NanoCPUs")]
+    #[serde(rename = "NanoCpus")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nano_cp_us: Option<i64>,
+    pub nano_cpus: Option<i64>,
 
     /// Disable OOM Killer for the container.
     #[serde(rename = "OomKillDisable")]
@@ -1014,7 +1036,7 @@ where
     /// Maximum IOps for the container system drive (Windows only)
     #[serde(rename = "IOMaximumIOps")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub io_maximum_i_ops: Option<i64>,
+    pub io_maximum_iops: Option<i64>,
 
     /// Maximum IO in bytes per second for the container system drive (Windows only)
     #[serde(rename = "IOMaximumBandwidth")]
@@ -1176,7 +1198,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -1208,6 +1230,7 @@ impl Docker {
     ///
     /// let options = Some(CreateContainerOptions{
     ///     name: "my-new-container",
+    ///     platform: None,
     /// });
     ///
     /// let config = Config {
@@ -1271,13 +1294,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/start", container_name);
+        let url = format!("/containers/{container_name}/start");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1316,13 +1339,13 @@ impl Docker {
         container_name: &str,
         options: Option<StopContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/stop", container_name);
+        let url = format!("/containers/{container_name}/stop");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1365,13 +1388,13 @@ impl Docker {
         container_name: &str,
         options: Option<RemoveContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}", container_name);
+        let url = format!("/containers/{container_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1392,7 +1415,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [ContainerWaitResponse](ContainerWaitResponse), wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1416,16 +1439,32 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/wait", container_name);
+        let url = format!("/containers/{container_name}/wait");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_stream(req)
+        self.process_into_stream(req).map(|res| match res {
+            Ok(ContainerWaitResponse {
+                status_code: code,
+                error:
+                    Some(ContainerWaitExitError {
+                        message: Some(error),
+                    }),
+            }) if code > 0 => Err(Error::DockerContainerWaitError { error, code }),
+            Ok(ContainerWaitResponse {
+                status_code: code,
+                error: None,
+            }) if code > 0 => Err(Error::DockerContainerWaitError {
+                error: String::new(),
+                code,
+            }),
+            v => v,
+        })
     }
 
     /// ---
@@ -1471,7 +1510,7 @@ impl Docker {
     where
         T: Into<String> + Serialize + Default,
     {
-        let url = format!("/containers/{}/attach", container_name);
+        let url = format!("/containers/{container_name}/attach");
 
         let req = self.build_request(
             &url,
@@ -1480,11 +1519,11 @@ impl Docker {
                 .header(CONNECTION, "Upgrade")
                 .header(UPGRADE, "tcp"),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let (read, write) = self.process_upgraded(req).await?;
-        let log = FramedRead::new(read, NewlineLogOutputDecoder::new());
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
 
         Ok(AttachContainerResults {
             output: Box::pin(log),
@@ -1523,13 +1562,13 @@ impl Docker {
         container_name: &str,
         options: ResizeContainerTtyOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/resize", container_name);
+        let url = format!("/containers/{container_name}/resize");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1569,13 +1608,13 @@ impl Docker {
         container_name: &str,
         options: Option<RestartContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{}/restart", container_name);
+        let url = format!("/containers/{container_name}/restart");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1614,13 +1653,13 @@ impl Docker {
         container_name: &str,
         options: Option<InspectContainerOptions>,
     ) -> Result<ContainerInspectResponse, Error> {
-        let url = format!("/containers/{}/json", container_name);
+        let url = format!("/containers/{container_name}/json");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -1662,13 +1701,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/top", container_name);
+        let url = format!("/containers/{container_name}/top");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -1688,7 +1727,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Log Output](LogOutput) enum, wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1715,13 +1754,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/logs", container_name);
+        let url = format!("/containers/{container_name}/logs");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_stream_string(req)
@@ -1739,8 +1778,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - An Option of Vector of [Container Change Response Item](ContainerChangeResponseItem) structs, wrapped in a
-    ///  Future.
+    ///  - An Option of Vector of [File System Change](FilesystemChange) structs, wrapped in a
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -1753,14 +1792,14 @@ impl Docker {
     pub async fn container_changes(
         &self,
         container_name: &str,
-    ) -> Result<Option<Vec<ContainerChangeResponseItem>>, Error> {
-        let url = format!("/containers/{}/changes", container_name);
+    ) -> Result<Option<Vec<FilesystemChange>>, Error> {
+        let url = format!("/containers/{container_name}/changes");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -1780,7 +1819,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - [Stats](Stats) struct, wrapped in a
-    ///  Stream.
+    ///    Stream.
     ///
     /// # Examples
     ///
@@ -1802,13 +1841,13 @@ impl Docker {
         container_name: &str,
         options: Option<StatsOptions>,
     ) -> impl Stream<Item = Result<Stats, Error>> {
-        let url = format!("/containers/{}/stats", container_name);
+        let url = format!("/containers/{container_name}/stats");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_stream(req)
@@ -1851,13 +1890,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/kill", container_name);
+        let url = format!("/containers/{container_name}/kill");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1903,7 +1942,7 @@ impl Docker {
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
-        let url = format!("/containers/{}/update", container_name);
+        let url = format!("/containers/{container_name}/update");
 
         let req = self.build_request(
             &url,
@@ -1952,13 +1991,13 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/rename", container_name);
+        let url = format!("/containers/{container_name}/rename");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             Some(options),
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -1987,13 +2026,13 @@ impl Docker {
     /// docker.pause_container("postgres");
     /// ```
     pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/pause", container_name);
+        let url = format!("/containers/{container_name}/pause");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -2022,13 +2061,13 @@ impl Docker {
     /// docker.unpause_container("postgres");
     /// ```
     pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{}/unpause", container_name);
+        let url = format!("/containers/{container_name}/unpause");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -2079,10 +2118,76 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Stream Upload To Container
+    ///
+    /// Stream an upload of a tar archive to be extracted to a path in the filesystem of container
+    /// id.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// use bollard::container::UploadToContainerOptions;
+    /// use futures_util::{StreamExt, TryFutureExt};
+    /// use tokio::fs::File;
+    /// use tokio_util::io::ReaderStream;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// let options = Some(UploadToContainerOptions{
+    ///     path: "/opt",
+    ///     ..Default::default()
+    /// });
+    ///
+    /// let file = File::open("tarball.tar.gz")
+    ///     .map_ok(ReaderStream::new)
+    ///     .try_flatten_stream()
+    ///     .map(|x|x.expect("failed to stream file"));
+    ///
+    /// docker
+    ///     .upload_to_container_streaming("my-container", options, file)
+    ///     .await
+    ///     .expect("upload failed");
+    /// # }
+    /// ```
+    pub async fn upload_to_container_streaming<T>(
+        &self,
+        container_name: &str,
+        options: Option<UploadToContainerOptions<T>>,
+        tar: impl Stream<Item = Bytes> + Send + 'static,
+    ) -> Result<(), Error>
+    where
+        T: Into<String> + Serialize,
+    {
+        let url = format!("/containers/{container_name}/archive");
+
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::PUT)
+                .header(CONTENT_TYPE, "application/x-tar"),
+            options,
+            Ok(body_stream(tar)),
+        );
+
+        self.process_into_unit(req).await
     }
 
     /// ---
@@ -2103,13 +2208,13 @@ impl Docker {
     ///
     /// ```rust,no_run
     /// # use bollard::Docker;
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::container::UploadToContainerOptions;
-    ///
-    /// use std::default::Default;
     /// use std::fs::File;
     /// use std::io::Read;
     ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// let options = Some(UploadToContainerOptions{
     ///     path: "/opt",
     ///     ..Default::default()
@@ -2119,18 +2224,22 @@ impl Docker {
     /// let mut contents = Vec::new();
     /// file.read_to_end(&mut contents).unwrap();
     ///
-    /// docker.upload_to_container("my-container", options, contents.into());
+    /// docker
+    ///     .upload_to_container("my-container", options, contents.into())
+    ///     .await
+    ///     .expect("upload failed");
+    /// # }
     /// ```
     pub async fn upload_to_container<T>(
         &self,
         container_name: &str,
         options: Option<UploadToContainerOptions<T>>,
-        tar: Body,
+        tar: Bytes,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,
@@ -2138,7 +2247,7 @@ impl Docker {
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
             options,
-            Ok(tar),
+            Ok(BodyType::Left(Full::new(tar))),
         );
 
         self.process_into_unit(req).await
@@ -2180,15 +2289,127 @@ impl Docker {
     where
         T: Into<String> + Serialize,
     {
-        let url = format!("/containers/{}/archive", container_name);
+        let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Export Container
+    ///
+    /// Get a tarball containing the filesystem contents of a container.
+    ///
+    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ContainerExport)
+    /// for more information.
+    /// # Arguments
+    /// - The `container_name` string referring to an individual container
+    ///
+    /// # Returns
+    ///  - An uncompressed TAR archive
+    pub fn export_container(
+        &self,
+        container_name: &str,
+    ) -> impl Stream<Item = Result<Bytes, Error>> {
+        let url = format!("/containers/{container_name}/export");
+        let req = self.build_request(
+            &url,
+            Builder::new()
+                .method(Method::GET)
+                .header(CONTENT_TYPE, "application/json"),
+            None::<String>,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+        self.process_into_body(req)
+    }
+}
+
+#[cfg(not(windows))]
+#[cfg(test)]
+mod tests {
+
+    use futures_util::TryStreamExt;
+    use yup_hyper_mock::HostToReplyConnector;
+
+    use crate::{Docker, API_DEFAULT_VERSION};
+
+    use super::WaitContainerOptions;
+
+    #[tokio::test]
+    async fn test_container_wait_with_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/json\r\n\r\n{\"Error\":null,\"StatusCode\":1}".to_string(),
+        );
+
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let result = &docker
+            .wait_container("wait_container_test", None::<WaitContainerOptions<String>>)
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::DockerContainerWaitError { code: _, error: _ })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_output_non_json_error() {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:plain/text\r\n\r\nthis is not json"
+                .to_string(),
+        );
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let host_config = bollard_stubs::models::HostConfig {
+            mounts: Some(vec![bollard_stubs::models::Mount {
+                target: Some(String::from("/tmp")),
+                source: Some(String::from("./tmp")),
+                typ: Some(bollard_stubs::models::MountTypeEnum::BIND),
+                consistency: Some(String::from("default")),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let result = &docker
+            .create_container(
+                Some(crate::container::CreateContainerOptions {
+                    name: "mount_volume_container_failure_test",
+                    platform: None,
+                }),
+                crate::container::Config {
+                    image: Some("some_image"),
+                    host_config: Some(host_config),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        println!("{result:#?}");
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::JsonDataError {
+                message: _,
+                column: 2
+            })
+        ));
     }
 }

@@ -1,4 +1,4 @@
-FROM rust:1.61.0-buster
+FROM rust:1.82.0-slim
 
 WORKDIR /usr/src/bollard
 

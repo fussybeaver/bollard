@@ -75,7 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions { name: "zookeeper" }),
+            Some(CreateContainerOptions {
+                name: "zookeeper",
+                platform: None,
+            }),
             zookeeper_config,
         )
         .await?;
@@ -98,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions { name: "kafka1" }),
+            Some(CreateContainerOptions {
+                name: "kafka1",
+                platform: None,
+            }),
             broker1_config,
         )
         .await?;
@@ -131,7 +137,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions { name: "kafka2" }),
+            Some(CreateContainerOptions {
+                name: "kafka2",
+                platform: None,
+            }),
             broker2_config,
         )
         .await?;
@@ -153,7 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let mut stream = select(&mut stream1, &mut stream2);
 
     while let Some(msg) = stream.next().await {
-        println!("Message: {:?}", msg);
+        println!("Message: {msg:?}");
     }
 
     Ok(())

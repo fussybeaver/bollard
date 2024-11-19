@@ -41,11 +41,17 @@ async fn main() {
         labels: build_image_labels,
         networkmode: "host",
         platform: "linux/x86_64",
+        target: "",
+        #[cfg(feature = "buildkit")]
+        session: None,
+        #[cfg(feature = "buildkit")]
+        outputs: None,
+        version: bollard::image::BuilderVersion::BuilderV1,
     };
 
     let mut image_build_stream = docker.build_image(build_image_options, None, None);
 
     while let Some(msg) = image_build_stream.next().await {
-        println!("Message: {:?}", msg);
+        println!("Message: {msg:?}");
     }
 }

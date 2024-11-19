@@ -10,8 +10,11 @@ Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
 futures, streams and the async/await paradigm.
 
-The library also features Windows support through Named Pipes and HTTPS support through
-optional rustls bindings.
+This library features Windows support through [Named
+Pipes](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes) and HTTPS support through optional
+[Rustls](https://github.com/rustls/rustls) bindings. Serialization types for interfacing with
+[Docker](https://github.com/moby/moby) and [Buildkit](https://github.com/moby/buildkit) are
+generated through OpenAPI, protobuf and upstream documentation.
 
 ## Install
 
@@ -19,7 +22,7 @@ Add the following to your `Cargo.toml` file
 
 ```nocompile
 [dependencies]
-bollard = "0.13"
+bollard = "*"
 ```
 
 ## API
@@ -27,20 +30,25 @@ bollard = "0.13"
 
 [API docs](https://docs.rs/bollard/).
 
-Version 0.13 introduces an optional `chrono` and alternative mutually exclusive `time` feature
-flag to represent the date format. This version matches the moby v20.10.16 server API.
+### Feature flags
 
-Version 0.11 re-enables Windows Named Pipe support.
-
-As of version 0.6, this project now generates API stubs from the upstream Docker-maintained
-[Swagger OpenAPI specification](https://docs.docker.com/engine/api/v1.41.yaml). The generated
-models are committed to this repository, but packaged in a separate crate
-[bollard-stubs](https://crates.io/crates/bollard-stubs).
+ - `ssl`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [ring](https://github.com/briansmith/ring) provider.
+ - `aws-lc-rs`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider.
+ - `ssl_providerless`: enable SSL support through [Rustls](https://github.com/rustls/rustls) without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html). You are responsible to do so.
+ - `chrono`: enable [Chrono](https://github.com/chronotope/chrono) for `DateTime` types.
+ - `time`: enable [Time 0.3](https://github.com/time-rs/time) for `DateTime` types.
+ - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of
+   [Docker](https://github.com/moby/moby) when building images.
+ - `json_data_content`: Add JSON to errors on serialization failures.
+ - `webpki`: Use mozilla's root certificates instead of native root certs provided by the OS.
 
 ### Version
 
-The [Docker API](https://docs.docker.com/engine/api/v1.41/) is pegged at version `1.41`. The
-library also supports [version
+The [Docker API](https://docs.docker.com/engine/api/v1.46/) used by Bollard is using the latest
+`1.46` documentation schema published by the [moby](https://github.com/moby/moby) project to
+generate its serialization interface.
+
+This library also supports [version
 negotiation](https://docs.rs/bollard/latest/bollard/struct.Docker.html#method.negotiate_version),
 to allow downgrading to an older API version.
 
@@ -52,9 +60,8 @@ Connect to the docker server according to your architecture and security remit.
 
 #### Socket
 
-The client will connect to the standard unix socket location `/var/run/docker.sock` or windows
-named pipe location `//./pipe/docker_engine`. Use the `Docker::connect_with_socket` method API
-to parameterise the interface.
+The client will connect to the standard unix socket location `/var/run/docker.sock` or Windows
+named pipe location `//./pipe/docker_engine`.
 
 ```rust
 use bollard::Docker;
@@ -62,28 +69,33 @@ use bollard::Docker;
 Docker::connect_with_socket_defaults();
 ```
 
+Use the `Docker::connect_with_socket` method API to parameterise this interface.
+
 #### Local
 
 The client will connect to the OS specific handler it is compiled for.
+
 This is a convenience for localhost environment that should run on multiple
 operating systems.
-Use the `Docker::connect_with_local` method API to parameterise the interface.
+
 ```rust
 use bollard::Docker;
 Docker::connect_with_local_defaults();
 ```
 
+Use the `Docker::connect_with_local` method API to parameterise this interface.
+
 #### HTTP
 
 The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
-`localhost:2375` if missing. Use the
-`Docker::connect_with_http` method API to
-parameterise the interface.
+`localhost:2375` if missing.
 
 ```rust
 use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
+
+Use the `Docker::connect_with_http` method API to parameterise the interface.
 
 #### SSL via Rustls
 
@@ -94,14 +106,13 @@ The location pointed to by the `DOCKER_CERT_PATH` environment variable is search
 certificates - `key.pem` for the private key, `cert.pem` for the server certificate and
 `ca.pem` for the certificate authority chain.
 
-Use the `Docker::connect_with_ssl` method API
-to parameterise the interface.
-
 ```rust
 use bollard::Docker;
 #[cfg(feature = "ssl")]
 Docker::connect_with_ssl_defaults();
 ```
+
+Use the `Docker::connect_with_ssl` method API to parameterise the interface.
 
 ### Examples
 
@@ -191,23 +202,27 @@ tests](https://github.com/fussybeaver/bollard/tree/master/tests).
 
 ## Development
 
-Contributions are welcome, please observe the following advice.
+Contributions are welcome, please observe the following.
 
-## Building the stubs
+### Building the proto models
 
-Serialization stubs are generated through the [Swagger
-library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
-following in the `codegen` folder:
+Serialization models for the buildkit feature are generated through the [Tonic
+library](https://github.com/hyperium/tonic/). To generate these files, use the
+following in the `codegen/proto` folder:
 
 ```bash
-mvn -D org.slf4j.simpleLogger.defaultLogLevel=debug clean compiler:compile generate-resources
+cargo run --bin gen --features build
 ```
 
-## History
+### Building the swagger models
 
-This library was originally forked from the [boondock rust
-library](https://github.com/faradayio/boondock).  Many thanks to the original authors for the
-initial code and inspiration.
+Serialization models are generated through the [Swagger
+library](https://github.com/swagger-api/swagger-codegen/). To generate these files, use the
+following in the `codegen/swagger` folder:
+
+```bash
+mvn -D org.slf4j.simpleLogger.defaultLogLevel=error compiler:compile generate-resources
+```
 
 ## Integration tests
 

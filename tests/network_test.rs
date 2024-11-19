@@ -18,7 +18,7 @@ use crate::common::*;
 
 async fn create_network_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IpamConfig {
-        subnet: Some(String::from("10.10.10.10/24")),
+        subnet: Some(String::from("10.10.10.0/24")),
         ..Default::default()
     };
 
@@ -40,7 +40,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
     let result = &docker
         .inspect_network(
-            result.id.as_ref().unwrap(),
+            <String as AsRef<str>>::as_ref(&result.id),
             Some(InspectNetworkOptions::<&str> {
                 verbose: true,
                 ..Default::default()
@@ -57,7 +57,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
         .unwrap()
         .iter()
         .take(1)
-        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.10/24"));
+        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.0/24"));
 
     let _ = &docker
         .remove_network("integration_test_create_network")
@@ -68,7 +68,7 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
 
 async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IpamConfig {
-        subnet: Some(String::from("10.10.10.10/24")),
+        subnet: Some(String::from("10.10.10.0/24")),
         ..Default::default()
     };
 
@@ -102,7 +102,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         }))
         .await?;
 
-    let v = results.get(0).unwrap();
+    let v = results.first().unwrap();
 
     assert!(v
         .ipam
@@ -112,7 +112,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         .as_ref()
         .unwrap()
         .iter()
-        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.10/24"));
+        .any(|i| &i.subnet.as_ref().unwrap()[..] == "10.10.10.0/24"));
 
     let _ = &docker
         .remove_network("integration_test_list_network")
@@ -123,7 +123,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
 
 async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let ipam_config = IpamConfig {
-        subnet: Some(String::from("10.10.10.10/24")),
+        subnet: Some(String::from("10.10.10.0/24")),
         ..Default::default()
     };
 
@@ -153,10 +153,13 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let result = &docker.create_network(create_network_options).await?;
 
     let _ = &docker
-        .connect_network(result.id.as_ref().unwrap(), connect_network_options)
+        .connect_network(
+            <String as AsRef<str>>::as_ref(&result.id),
+            connect_network_options,
+        )
         .await?;
 
-    let id = result.id.as_ref().unwrap();
+    let id = <String as AsRef<str>>::as_ref(&result.id);
 
     let result = &docker
         .inspect_network(

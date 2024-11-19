@@ -1,6 +1,5 @@
-#[cfg(windows)]
-use hex::FromHex;
 use hyper::Uri as HyperUri;
+use log::trace;
 use url::Url;
 
 use std::borrow::Cow;
@@ -14,9 +13,11 @@ pub struct Uri<'a> {
     encoded: Cow<'a, str>,
 }
 
-impl<'a> From<Uri<'a>> for HyperUri {
-    fn from(uri: Uri<'a>) -> Self {
-        uri.encoded.as_ref().parse().unwrap()
+impl<'a> TryFrom<Uri<'a>> for HyperUri {
+    type Error = http::uri::InvalidUri;
+
+    fn try_from(uri: Uri<'a>) -> Result<Self, Self::Error> {
+        uri.encoded.as_ref().parse()
     }
 }
 
@@ -39,15 +40,17 @@ impl<'a> Uri<'a> {
             client_version.minor_version,
             path
         );
-        let mut url = Url::parse(host_str.as_ref()).unwrap();
-        url = url.join(path).unwrap();
+        let mut url = Url::parse(host_str.as_ref())?;
+        url = url.join(path)?;
 
         if let Some(pairs) = query {
+            trace!("pairs: {}", serde_json::to_string(&pairs)?);
+
             let qs = serde_urlencoded::to_string(pairs)?;
             url.set_query(Some(&qs));
         }
 
-        debug!(
+        trace!(
             "Parsing uri: {}, client_type: {:?}, socket: {}",
             url.as_str(),
             client_type,
@@ -63,49 +66,29 @@ impl<'a> Uri<'a> {
         P: AsRef<OsStr>,
     {
         match client_type {
+            #[cfg(feature = "http")]
             ClientType::Http => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             ClientType::SSL => socket.as_ref().to_string_lossy().into_owned(),
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
+            ClientType::Custom { .. } => socket.as_ref().to_string_lossy().into_owned(),
         }
     }
 
-    fn socket_scheme(client_type: &ClientType) -> &'a str {
+    fn socket_scheme(client_type: &'a ClientType) -> &'a str {
         match client_type {
+            #[cfg(feature = "http")]
             ClientType::Http => "http",
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             ClientType::SSL => "https",
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             ClientType::Unix => "unix",
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => "net.pipe",
+            ClientType::Custom { scheme } => scheme.as_str(),
         }
-    }
-
-    #[cfg(windows)]
-    fn socket_path(uri: &HyperUri) -> Option<String> {
-        uri.host()
-            .iter()
-            .filter_map(|host| {
-                Vec::from_hex(host)
-                    .ok()
-                    .map(|raw| String::from_utf8_lossy(&raw).into_owned())
-            })
-            .next()
-    }
-
-    #[cfg(windows)]
-    pub(crate) fn socket_path_dest(dest: &HyperUri, client_type: &ClientType) -> Option<String> {
-        format!(
-            "{}://{}",
-            Uri::socket_scheme(client_type),
-            dest.host().unwrap_or("UNKNOWN_HOST")
-        )
-        .parse()
-        .ok()
-        .and_then(|uri| Self::socket_path(&uri))
     }
 }

@@ -1,13 +1,19 @@
 use bytes::Buf;
 use bytes::BytesMut;
 use futures_core::Stream;
+use hyper::body::Body;
 use hyper::body::Bytes;
+use hyper::body::Incoming;
+use hyper::upgrade::Upgraded;
+use log::debug;
+use log::trace;
 use pin_project_lite::pin_project;
 use serde::de::DeserializeOwned;
 use std::pin::Pin;
-use std::string::String;
 use std::task::{Context, Poll};
 use std::{cmp, io, marker::PhantomData};
+
+use tokio::io::AsyncWrite;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_util::codec::Decoder;
 
@@ -25,19 +31,21 @@ enum NewlineLogOutputDecoderState {
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {
     state: NewlineLogOutputDecoderState,
+    is_tcp: bool,
 }
 
 impl NewlineLogOutputDecoder {
-    pub(crate) fn new() -> NewlineLogOutputDecoder {
+    pub(crate) fn new(is_tcp: bool) -> NewlineLogOutputDecoder {
         NewlineLogOutputDecoder {
             state: NewlineLogOutputDecoderState::WaitingHeader,
+            is_tcp,
         }
     }
 }
 
 impl Decoder for NewlineLogOutputDecoder {
     type Item = LogOutput;
-    type Error = Error;
+    type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
@@ -45,34 +53,35 @@ impl Decoder for NewlineLogOutputDecoder {
                 NewlineLogOutputDecoderState::WaitingHeader => {
                     // `start_exec` API on unix socket will emit values without a header
                     if !src.is_empty() && src[0] > 2 {
-                        debug!(
-                            "NewlineLogOutputDecoder: no header found, return LogOutput::Console"
-                        );
-                        return Ok(Some(LogOutput::Console {
-                            message: src.split().freeze(),
-                        }));
+                        if self.is_tcp {
+                            return Ok(Some(LogOutput::Console {
+                                message: src.split().freeze(),
+                            }));
+                        }
+                        let nl_index = src.iter().position(|b| *b == b'\n');
+                        if let Some(pos) = nl_index {
+                            return Ok(Some(LogOutput::Console {
+                                message: src.split_to(pos + 1).freeze(),
+                            }));
+                        } else {
+                            return Ok(None);
+                        }
                     }
 
                     if src.len() < 8 {
-                        debug!("NewlineLogOutputDecoder: not enough data for read header");
                         return Ok(None);
                     }
 
                     let header = src.split_to(8);
                     let length =
                         u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
-                    debug!(
-                        "NewlineLogOutputDecoder: read header, type = {}, length = {}",
-                        header[0], length
-                    );
                     self.state = NewlineLogOutputDecoderState::WaitingPayload(header[0], length);
                 }
                 NewlineLogOutputDecoderState::WaitingPayload(typ, length) => {
                     if src.len() < length {
-                        debug!("NewlineLogOutputDecoder: not enough data to read");
                         return Ok(None);
                     } else {
-                        debug!("NewlineLogOutputDecoder: Reading payload");
+                        trace!("NewlineLogOutputDecoder: Reading payload");
                         let message = src.split_to(length).freeze();
                         let item = match typ {
                             0 => LogOutput::StdIn { message },
@@ -177,19 +186,16 @@ enum ReadState {
 
 pin_project! {
     #[derive(Debug)]
-    pub(crate) struct StreamReader<S> {
+    pub(crate) struct StreamReader {
         #[pin]
-        stream: S,
+        stream: Incoming,
         state: ReadState,
     }
 }
 
-impl<S> StreamReader<S>
-where
-    S: Stream<Item = Result<Bytes, Error>>,
-{
+impl StreamReader {
     #[inline]
-    pub(crate) fn new(stream: S) -> StreamReader<S> {
+    pub(crate) fn new(stream: Incoming) -> StreamReader {
         StreamReader {
             stream,
             state: ReadState::NotReady,
@@ -197,18 +203,14 @@ where
     }
 }
 
-impl<S> AsyncRead for StreamReader<S>
-where
-    S: Stream<Item = Result<Bytes, Error>>,
-{
+impl AsyncRead for StreamReader {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         read_buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let mut this = self.project();
         loop {
-            match this.state {
+            match self.as_mut().project().state {
                 ReadState::Ready(ref mut chunk, ref mut pos) => {
                     let chunk_start = *pos;
                     let buf = read_buf.initialize_unfilled();
@@ -224,12 +226,14 @@ where
                     }
                 }
 
-                ReadState::NotReady => match this.stream.as_mut().poll_next(cx) {
-                    Poll::Ready(Some(Ok(chunk))) => {
-                        *this.state = ReadState::Ready(chunk, 0);
+                ReadState::NotReady => match self.as_mut().project().stream.poll_frame(cx) {
+                    Poll::Ready(Some(Ok(frame))) if frame.is_data() => {
+                        *self.as_mut().project().state =
+                            ReadState::Ready(frame.into_data().unwrap(), 0);
 
                         continue;
                     }
+                    Poll::Ready(Some(Ok(_frame))) => return Poll::Ready(Ok(())),
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         return Poll::Pending;
@@ -243,9 +247,88 @@ where
                 },
             }
 
-            *this.state = ReadState::NotReady;
+            *self.as_mut().project().state = ReadState::NotReady;
 
             return Poll::Ready(Ok(()));
+        }
+    }
+}
+
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct AsyncUpgraded {
+        #[pin]
+        inner: Upgraded,
+    }
+}
+
+impl AsyncUpgraded {
+    pub(crate) fn new(upgraded: Upgraded) -> Self {
+        Self { inner: upgraded }
+    }
+}
+
+impl AsyncRead for AsyncUpgraded {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        read_buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let n = {
+            let mut hbuf = hyper::rt::ReadBuf::new(read_buf.initialize_unfilled());
+            match hyper::rt::Read::poll_read(self.project().inner, cx, hbuf.unfilled()) {
+                Poll::Ready(Ok(())) => hbuf.filled().len(),
+                other => return other,
+            }
+        };
+        read_buf.advance(n);
+
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for AsyncUpgraded {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        hyper::rt::Write::poll_write(self.project().inner, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        hyper::rt::Write::poll_flush(self.project().inner, cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        hyper::rt::Write::poll_shutdown(self.project().inner, cx)
+    }
+}
+
+pin_project! {
+    #[derive(Debug)]
+    pub(crate) struct IncomingStream {
+        #[pin]
+        inner: Incoming,
+    }
+}
+
+impl IncomingStream {
+    pub(crate) fn new(incoming: Incoming) -> Self {
+        Self { inner: incoming }
+    }
+}
+
+impl Stream for IncomingStream {
+    type Item = Result<Bytes, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match futures_util::ready!(self.as_mut().project().inner.poll_frame(cx)?) {
+            Some(frame) => match frame.into_data() {
+                Ok(data) => Poll::Ready(Some(Ok(data))),
+                Err(_) => Poll::Ready(None),
+            },
+            None => Poll::Ready(None),
         }
     }
 }
@@ -257,7 +340,9 @@ mod tests {
     use bytes::{BufMut, BytesMut};
     use tokio_util::codec::Decoder;
 
-    use super::JsonLineDecoder;
+    use crate::container::LogOutput;
+
+    use super::{JsonLineDecoder, NewlineLogOutputDecoder};
 
     #[test]
     fn json_decode_empty() {
@@ -354,5 +439,37 @@ mod tests {
 
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn newline_decode_no_header() {
+        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..];
+        let mut buf = BytesMut::from(expected);
+        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(expected)
+            })
+        );
+
+        let mut buf =
+            BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
+        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(false);
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+
+        buf.put(
+            &b":17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..],
+        );
+
+        let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23:17:27 2023-01-14 23:17:26: server.c.1513) server started (lighttpd/1.4.59)\r\n"[..];
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(expected)
+            })
+        );
     }
 }

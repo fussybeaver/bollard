@@ -1,43 +1,59 @@
-#[cfg(feature = "ssl")]
+use std::convert::Infallible;
+#[cfg(feature = "ssl_providerless")]
 use std::fs;
 use std::future::Future;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 use std::io;
-#[cfg(feature = "ssl")]
-use std::path::{Path, PathBuf};
+#[cfg(any(feature = "pipe", feature = "ssl_providerless"))]
+use std::path::Path;
+#[cfg(feature = "ssl_providerless")]
+use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
-#[cfg(feature = "ct_logs")]
-use std::time::SystemTime;
 use std::{cmp, env, fmt};
 
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::future::TryFutureExt;
 use futures_util::stream::TryStreamExt;
+use futures_util::StreamExt;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
-use hyper::client::{Client, HttpConnector};
-use hyper::{self, body::Bytes, Body, Method, Request, Response, StatusCode};
-#[cfg(feature = "ssl")]
+use http_body_util::{BodyExt, Full, StreamBody};
+use hyper::body::{Frame, Incoming};
+use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
+#[cfg(feature = "ssl_providerless")]
 use hyper_rustls::HttpsConnector;
-#[cfg(unix)]
+#[cfg(any(feature = "http", test))]
+use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client},
+    rt::TokioExecutor,
+};
+#[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
-#[cfg(feature = "ssl")]
-use rustls::sign::{CertifiedKey, RsaSigningKey};
+use log::{debug, trace};
+#[cfg(feature = "ssl_providerless")]
+use rustls::{crypto::CryptoProvider, sign::CertifiedKey};
+#[cfg(feature = "ssl_providerless")]
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+use serde_derive::{Deserialize, Serialize};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio_util::codec::FramedRead;
 
 use crate::container::LogOutput;
 use crate::errors::Error;
 use crate::errors::Error::*;
-#[cfg(windows)]
-use crate::named_pipe::NamedPipeConnector;
-use crate::read::{JsonLineDecoder, NewlineLogOutputDecoder, StreamReader};
+use crate::read::{
+    AsyncUpgraded, IncomingStream, JsonLineDecoder, NewlineLogOutputDecoder, StreamReader,
+};
 use crate::uri::Uri;
+#[cfg(all(feature = "pipe", windows))]
+use hyper_named_pipe::NamedPipeConnector;
 
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -49,31 +65,64 @@ pub const DEFAULT_SOCKET: &str = "unix:///var/run/docker.sock";
 #[cfg(windows)]
 pub const DEFAULT_NAMED_PIPE: &str = "npipe:////./pipe/docker_engine";
 
+/// The default `DOCKER_TCP_ADDRESS` address that we will try to connect to.
+#[cfg(feature = "http")]
+pub const DEFAULT_TCP_ADDRESS: &str = "tcp://localhost:2375";
+
 /// The default `DOCKER_HOST` address that we will try to connect to.
-pub const DEFAULT_DOCKER_HOST: &str = "tcp://localhost:2375";
+#[cfg(unix)]
+pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
+
+/// The default `DOCKER_HOST` address that we will try to connect to.
+#[cfg(windows)]
+pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_NAMED_PIPE;
 
 /// Default timeout for all requests is 2 minutes.
+#[cfg(feature = "http")]
 const DEFAULT_TIMEOUT: u64 = 120;
 
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 40,
+    minor_version: 47,
 };
-
-/// 2 years from ct_logs 0.9 release
-#[cfg(feature = "ct_logs")]
-const TIMESTAMP_CT_LOGS_EXPIRY: u64 = 1681908462;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ClientType {
-    #[cfg(unix)]
+    #[cfg(all(feature = "pipe", unix))]
     Unix,
+    #[cfg(feature = "http")]
     Http,
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     SSL,
-    #[cfg(windows)]
+    #[cfg(all(feature = "pipe", windows))]
     NamedPipe,
+    Custom {
+        scheme: String,
+    },
+}
+
+/// `Request` from bollard used with `CustomTransport`
+pub type BollardRequest = Request<BodyType>;
+
+type TransportReturnTy =
+    Pin<Box<dyn Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send>>;
+
+/// `CustomTransport` trait
+pub trait CustomTransport: Send + Sync {
+    /// Make a request, this returns a future
+    fn request(&self, request: BollardRequest) -> TransportReturnTy;
+}
+
+// auto impl for Fn(Request) -> Future<Output = Result<_, _>
+impl<Callback, ReturnTy> CustomTransport for Callback
+where
+    Callback: Fn(BollardRequest) -> ReturnTy + Send + Sync,
+    ReturnTy: Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + 'static,
+{
+    fn request(&self, request: BollardRequest) -> TransportReturnTy {
+        Box::pin(self(request))
+    }
 }
 
 /// Transport is the type representing the means of communication
@@ -82,33 +131,45 @@ pub(crate) enum ClientType {
 /// Each transport usually encapsulate a hyper client
 /// with various Connect traits fulfilled.
 pub(crate) enum Transport {
+    #[cfg(feature = "http")]
     Http {
-        client: Client<HttpConnector>,
+        client: Client<HttpConnector, BodyType>,
     },
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "ssl_providerless")]
     Https {
-        client: Client<HttpsConnector<HttpConnector>>,
+        client: Client<HttpsConnector<HttpConnector>, BodyType>,
     },
-    #[cfg(unix)]
+    #[cfg(all(feature = "pipe", unix))]
     Unix {
-        client: Client<UnixConnector>,
+        client: Client<UnixConnector, BodyType>,
     },
-    #[cfg(windows)]
+    #[cfg(all(feature = "pipe", windows))]
     NamedPipe {
-        client: Client<NamedPipeConnector>,
+        client: Client<NamedPipeConnector, BodyType>,
+    },
+    #[cfg(test)]
+    Mock {
+        client: Client<yup_hyper_mock::HostToReplyConnector, BodyType>,
+    },
+    Custom {
+        transport: Box<dyn CustomTransport>,
     },
 }
 
 impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "http")]
             Transport::Http { .. } => write!(f, "HTTP"),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "ssl_providerless")]
             Transport::Https { .. } => write!(f, "HTTPS(rustls)"),
-            #[cfg(unix)]
+            #[cfg(all(feature = "pipe", unix))]
             Transport::Unix { .. } => write!(f, "Unix"),
-            #[cfg(windows)]
+            #[cfg(all(feature = "pipe", windows))]
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
+            #[cfg(test)]
+            Transport::Mock { .. } => write!(f, "Mock"),
+            Transport::Custom { .. } => write!(f, "Custom"),
         }
     }
 }
@@ -180,8 +241,15 @@ where
     S: serde::Serializer,
 {
     s.serialize_str(
-        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{}", e)))?,
+        &serde_json::to_string(t).map_err(|e| serde::ser::Error::custom(format!("{e}")))?,
     )
+}
+
+pub(crate) fn serialize_join_newlines<S>(t: &[&str], s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_str(&t.join("\n"))
 }
 
 #[cfg(feature = "time")]
@@ -223,7 +291,7 @@ where
     }
 }
 
-#[cfg(feature = "chrono")]
+#[cfg(all(feature = "chrono", not(feature = "time")))]
 pub(crate) fn serialize_as_timestamp<S>(
     opt: &Option<crate::models::BollardDate>,
     s: S,
@@ -275,13 +343,14 @@ struct DockerServerErrorMessage {
     message: String,
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
+#[derive(Debug)]
 struct DockerClientCertResolver {
     ssl_key: PathBuf,
     ssl_cert: PathBuf,
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 impl DockerClientCertResolver {
     /// The default directory in which to look for our Docker certificate
     /// files.
@@ -290,7 +359,7 @@ impl DockerClientCertResolver {
         if let Ok(ref path) = from_env {
             Ok(Path::new(path).to_owned())
         } else {
-            let home = dirs_next::home_dir().ok_or_else(|| NoHomePathError)?;
+            let home = home::home_dir().ok_or_else(|| NoHomePathError)?;
             Ok(home.join(".docker"))
         }
     }
@@ -299,28 +368,18 @@ impl DockerClientCertResolver {
         Ok(io::BufReader::new(fs::File::open(path)?))
     }
 
-    fn certs(path: &Path) -> Result<Vec<rustls::Certificate>, Error> {
+    fn certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
         Ok(rustls_pemfile::certs(&mut Self::open_buffered(path)?)
-            .map_err(|_| CertPathError {
-                path: path.to_path_buf(),
-            })?
-            .iter()
-            .map(|v| rustls::Certificate(v.clone()))
-            .collect())
+            .collect::<Result<Vec<CertificateDer<'static>>, io::Error>>()?)
     }
 
-    fn keys(path: &Path) -> Result<Vec<rustls::PrivateKey>, Error> {
+    fn keys(path: &Path) -> Result<Vec<PrivateKeyDer<'static>>, Error> {
         let mut rdr = Self::open_buffered(path)?;
         let mut keys = vec![];
-        loop {
-            match rustls_pemfile::read_one(&mut rdr).map_err(|_| CertPathError {
-                path: path.to_path_buf(),
-            })? {
-                Some(rustls_pemfile::Item::RSAKey(key)) => keys.push(rustls::PrivateKey(key)),
-                Some(rustls_pemfile::Item::PKCS8Key(key)) => keys.push(rustls::PrivateKey(key)),
-                None => break,
-                _ => {}
-            }
+        if let Some(key) = rustls_pemfile::private_key(&mut rdr).map_err(|_| CertPathError {
+            path: path.to_path_buf(),
+        })? {
+            keys.push(key);
         }
 
         Ok(keys)
@@ -338,19 +397,19 @@ impl DockerClientCertResolver {
                 path: self.ssl_key.to_owned(),
             });
         };
+        let signing_key = CryptoProvider::get_default()
+            .expect("no process-level CryptoProvider available -- call CryptoProvider::install_default() before this point")
+            .key_provider
+            .load_private_key(key)
+            .map_err(|_| CertParseError {
+                path: self.ssl_key.to_owned(),
+            })?;
 
-        let signing_key = RsaSigningKey::new(&key).map_err(|_| CertParseError {
-            path: self.ssl_key.to_owned(),
-        })?;
-
-        Ok(Arc::new(CertifiedKey::new(
-            all_certs,
-            Arc::new(signing_key),
-        )))
+        Ok(Arc::new(CertifiedKey::new(all_certs, signing_key)))
     }
 }
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
     fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<CertifiedKey>> {
         self.docker_client_key().ok()
@@ -363,7 +422,7 @@ impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
 
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `rustls`
 /// library.
-#[cfg(feature = "ssl")]
+#[cfg(feature = "ssl_providerless")]
 impl Docker {
     /// Connect using secure HTTPS using defaults that are signalled by environment variables.
     ///
@@ -372,8 +431,7 @@ impl Docker {
     ///  - The connection url is sourced from the `DOCKER_HOST` environment variable.
     ///  - The certificate directory is sourced from the `DOCKER_CERT_PATH` environment variable.
     ///  - Certificates are named `key.pem`, `cert.pem` and `ca.pem` to indicate the private key,
-    ///  the server certificate and the certificate chain respectively.
-    ///  - The number of threads used for the HTTP connection pool defaults to 1.
+    ///    the server certificate and the certificate chain respectively.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
@@ -387,13 +445,19 @@ impl Docker {
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if neither `ssl` nor `aws-lc-rs` features are activated,
+    /// or if you are using the `ssl_providerless` feature without installing the custom cryptographic
+    /// provider before with [`rustls::crypto::CryptoProvider::install_default()`]
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
         let cert_path = DockerClientCertResolver::default_cert_path()?;
         Docker::connect_with_ssl(
             if let Ok(ref host) = env::var("DOCKER_HOST") {
                 host
             } else {
-                DEFAULT_DOCKER_HOST
+                DEFAULT_TCP_ADDRESS
             },
             &cert_path.join("key.pem"),
             &cert_path.join("cert.pem"),
@@ -433,6 +497,12 @@ impl Docker {
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if neither `ssl` nor `aws-lc-rs` features are activated,
+    /// or if you are using the `ssl_providerless` feature without installing the custom cryptographic
+    /// provider before with [`rustls::crypto::CryptoProvider::install_default()`]
     pub fn connect_with_ssl(
         addr: &str,
         ssl_key: &Path,
@@ -445,46 +515,34 @@ impl Docker {
         let client_addr = addr.replacen("tcp://", "", 1).replacen("https://", "", 1);
 
         let mut root_store = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            root_store
-                .add(&rustls::Certificate(cert.0))
-                .map_err(|err| NoNativeCertsError { err })?;
-        }
 
-        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        }));
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
+        let native_certs = rustls_native_certs::load_native_certs();
+
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
+        if native_certs.errors.is_empty() {
+            for cert in native_certs.certs {
+                root_store
+                    .add(cert)
+                    .map_err(|err| NoNativeCertsError { err })?
+            }
+        } else {
+            return Err(LoadNativeCertsErrors {
+                errors: native_certs.errors,
+            });
+        }
+        #[cfg(any(feature = "test_ssl", feature = "webpki"))]
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
             path: ssl_ca.to_owned(),
         })?);
 
-        root_store.add_parsable_certificates(&rustls_pemfile::certs(&mut ca_pem).map_err(
-            |_| CertParseError {
-                path: ssl_ca.to_owned(),
-            },
-        )?);
+        root_store.add_parsable_certificates(
+            rustls_pemfile::certs(&mut ca_pem).collect::<Result<Vec<_>, _>>()?,
+        );
 
-        #[cfg(feature = "ct_logs")]
-        let config = {
-            let ct_logs_expiry =
-                SystemTime::UNIX_EPOCH + Duration::from_secs(TIMESTAMP_CT_LOGS_EXPIRY);
-            rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(root_store)
-                .with_certificate_transparency_logs(&ct_logs::LOGS, ct_logs_expiry)
-                .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
-                    ssl_key: ssl_key.to_owned(),
-                    ssl_cert: ssl_cert.to_owned(),
-                }))
-        };
-        #[cfg(not(feature = "ct_logs"))]
         let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_store)
             .with_client_cert_resolver(Arc::new(DockerClientCertResolver {
                 ssl_key: ssl_key.to_owned(),
@@ -497,7 +555,9 @@ impl Docker {
         let https_connector: HttpsConnector<HttpConnector> =
             HttpsConnector::from((http_connector, config));
 
-        let client_builder = Client::builder();
+        let mut client_builder = Client::builder(TokioExecutor::new());
+        client_builder.pool_max_idle_per_host(0);
+
         let client = client_builder.build(https_connector);
         let transport = Transport::Https { client };
         let docker = Docker {
@@ -515,6 +575,7 @@ impl Docker {
     }
 }
 
+#[cfg(feature = "http")]
 /// A Docker implementation typed to connect to an unsecure Http connection.
 impl Docker {
     /// Connect using unsecured HTTP using defaults that are signalled by environment variables.
@@ -522,7 +583,7 @@ impl Docker {
     /// # Defaults
     ///
     ///  - The connection url is sourced from the `DOCKER_HOST` environment variable, and defaults
-    ///  to `localhost:2375`.
+    ///    to `localhost:2375`.
     ///  - The number of threads used for the HTTP connection pool defaults to 1.
     ///  - The request timeout defaults to 2 minutes.
     ///
@@ -538,7 +599,7 @@ impl Docker {
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
-        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_TCP_ADDRESS.to_string());
         Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
@@ -573,7 +634,9 @@ impl Docker {
 
         let http_connector = HttpConnector::new();
 
-        let client_builder = Client::builder();
+        let mut client_builder = Client::builder(TokioExecutor::new());
+        client_builder.pool_max_idle_per_host(0);
+
         let client = client_builder.build(http_connector);
         let transport = Transport::Http { client };
         let docker = Docker {
@@ -589,14 +652,96 @@ impl Docker {
 
         Ok(docker)
     }
+}
 
+/// A Docker implementation typed to custom connector.
+impl Docker {
+    /// Connect using custom transport implementation.
+    /// It has default implementation for `Fn(Request) -> Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + Sync`
+    ///
+    /// # Arguments
+    ///
+    ///  - `transport`: transport.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker, BollardRequest};
+    /// use futures_util::future::TryFutureExt;
+    /// use futures_util::FutureExt;
+
+    /// let http_connector = hyper_util::client::legacy::connect::HttpConnector::new();
+    ///
+    /// let mut client_builder = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new());
+    /// client_builder.pool_max_idle_per_host(0);
+    ///
+    /// let client = std::sync::Arc::new(client_builder.build(http_connector));
+    ///
+    /// let connection = Docker::connect_with_custom_transport(
+    ///     move |req: BollardRequest| {
+    ///         let client = std::sync::Arc::clone(&client);
+    ///         Box::pin(async move {
+    ///             let (p, b) = req.into_parts();
+    ///             // let _prev = p.headers.insert("host", host);
+    ///             // let mut uri = p.uri.into_parts();
+    ///             //uri.path_and_query = uri.path_and_query.map(|paq|
+    ///             //   uri::PathAndQuery::try_from("/docker".to_owned() + paq.as_str())
+    ///             // ).transpose().map_err(bollard::errors::Error::from)?;
+    ///             // p.uri = uri.try_into().map_err(bollard::errors::Error::from)?;
+    ///             let req = BollardRequest::from_parts(p, b);
+    ///             client.request(req).await.map_err(bollard::errors::Error::from)
+    ///         })
+    ///     },
+    ///     Some("http://my-custom-docker-server:2735"),
+    ///     4,
+    ///     bollard::API_DEFAULT_VERSION,
+    /// ).unwrap();
+    ///
+    /// connection.ping()
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_custom_transport<S: Into<String>>(
+        transport: impl CustomTransport + 'static,
+        client_addr: Option<S>,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        let client_addr = client_addr.map(Into::into).unwrap_or_default();
+        let (scheme, client_addr) = client_addr
+            .split_once("://")
+            .unwrap_or(("", client_addr.as_str()));
+        let client_addr = client_addr.to_owned();
+        let scheme = scheme.to_owned();
+        let transport = Transport::Custom {
+            transport: Box::new(transport),
+        };
+        let docker = Docker {
+            transport: Arc::new(transport),
+            client_type: ClientType::Custom { scheme },
+            client_addr,
+            client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
+        };
+
+        Ok(docker)
+    }
+}
+
+/// A Docker implementation that wraps away which local implementation we are calling.
+#[cfg(all(feature = "pipe", any(unix, windows)))]
+impl Docker {
     /// Connect using to either a Unix socket or a Windows named pipe using defaults common to the
     /// standard docker configuration.
     ///
     /// # Defaults
     ///
     ///  - The unix socket location defaults to `/var/run/docker.sock`. The windows named pipe
-    ///  location defaults to `//./pipe/docker_engine`.
+    ///    location defaults to `//./pipe/docker_engine`.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
@@ -641,16 +786,103 @@ impl Docker {
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        #[cfg(unix)]
-        let docker = Docker::connect_with_unix(path, timeout, client_version);
-        #[cfg(windows)]
-        let docker = Docker::connect_with_named_pipe(path, timeout, client_version);
+        // Remove the scheme if present
+        let clean_path = path
+            .trim_start_matches("unix://")
+            .trim_start_matches("npipe://");
 
-        docker
+        // Check if the socket file exists
+        if !std::path::Path::new(clean_path).exists() {
+            return Err(Error::SocketNotFoundError(clean_path.to_string()));
+        }
+
+        #[cfg(unix)]
+        let docker = Docker::connect_with_unix(path, timeout, client_version)?;
+        #[cfg(windows)]
+        let docker = Docker::connect_with_named_pipe(path, timeout, client_version)?;
+
+        Ok(docker)
+    }
+
+    /// Connect using the local machine connection method with default arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix_defaults`]
+    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
+    ///
+    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
+    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
+    pub fn connect_with_local_defaults() -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix_defaults();
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe_defaults();
+    }
+
+    /// Connect using the local machine connection method with supplied arguments.
+    ///
+    /// This is a simple wrapper over the OS specific handlers:
+    ///  * Unix: [`Docker::connect_with_unix`]
+    ///  * Windows: [`Docker::connect_with_named_pipe`]
+    ///
+    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
+    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
+    pub fn connect_with_local(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        #[cfg(unix)]
+        return Docker::connect_with_unix(addr, timeout, client_version);
+        #[cfg(windows)]
+        return Docker::connect_with_named_pipe(addr, timeout, client_version);
     }
 }
 
-#[cfg(unix)]
+/// A Docker implementation with defaults.
+impl Docker {
+    /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
+    /// The connection method is determined by the `DOCKER_HOST` environment variable.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_defaults().unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_defaults() -> Result<Docker, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        match host {
+            #[cfg(all(feature = "pipe", unix))]
+            h if h.starts_with("unix://") => {
+                Docker::connect_with_unix(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(all(feature = "pipe", windows))]
+            h if h.starts_with("npipe://") => {
+                Docker::connect_with_named_pipe(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(feature = "http")]
+            h if h.starts_with("tcp://") || h.starts_with("http://") => {
+                #[cfg(feature = "ssl_providerless")]
+                if env::var("DOCKER_TLS_VERIFY").is_ok() {
+                    return Docker::connect_with_ssl_defaults();
+                }
+                Docker::connect_with_http_defaults()
+            }
+            #[cfg(feature = "ssl_providerless")]
+            h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
+            _ => Err(UnsupportedURISchemeError {
+                uri: host.to_string(),
+            }),
+        }
+    }
+}
+
+#[cfg(all(feature = "pipe", unix))]
 /// A Docker implementation typed to connect to a Unix socket.
 impl Docker {
     /// Connect using a Unix socket using defaults common to the standard docker configuration.
@@ -710,9 +942,14 @@ impl Docker {
     ) -> Result<Docker, Error> {
         let client_addr = path.replacen("unix://", "", 1);
 
+        // check if the socket file exists and is accessible
+        if !Path::new(&client_addr).exists() {
+            return Err(Error::SocketNotFoundError(client_addr));
+        }
+
         let unix_connector = UnixConnector;
 
-        let mut client_builder = Client::builder();
+        let mut client_builder = Client::builder(TokioExecutor::new());
         client_builder.pool_max_idle_per_host(0);
 
         let client = client_builder.build(unix_connector);
@@ -732,7 +969,7 @@ impl Docker {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(feature = "pipe", windows))]
 /// A Docker implementation typed to connect to a Windows Named Pipe, exclusive to the windows
 /// target.
 impl Docker {
@@ -788,9 +1025,10 @@ impl Docker {
 
         let named_pipe_connector = NamedPipeConnector;
 
-        let mut client_builder = Client::builder();
-        client_builder.pool_max_idle_per_host(0);
+        let mut client_builder = Client::builder(TokioExecutor::new());
         client_builder.http1_title_case_headers(true);
+        client_builder.pool_max_idle_per_host(0);
+
         let client = client_builder.build(named_pipe_connector);
         let transport = Transport::NamedPipe { client };
         let docker = Docker {
@@ -808,41 +1046,59 @@ impl Docker {
     }
 }
 
-/// A Docker implementation that wraps away which local implementation we are calling.
-#[cfg(any(unix, windows))]
+#[cfg(test)]
 impl Docker {
-    /// Connect using the local machine connection method with default arguments.
     ///
-    /// This is a simple wrapper over the OS specific handlers:
-    ///  * Unix: [`Docker::connect_with_unix_defaults`]
-    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
+    ///  - `connector`: a `HostToReplyConnector` as defined in `yup_hyper_mock`
+    ///  - `client_addr`: location to connect to.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
     ///
-    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
-    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
-    pub fn connect_with_local_defaults() -> Result<Docker, Error> {
-        #[cfg(unix)]
-        return Docker::connect_with_unix_defaults();
-        #[cfg(windows)]
-        return Docker::connect_with_named_pipe_defaults();
-    }
-
-    /// Connect using the local machine connection method with supplied arguments.
+    /// # Examples
     ///
-    /// This is a simple wrapper over the OS specific handlers:
-    ///  * Unix: [`Docker::connect_with_unix`]
-    ///  * Windows: [`Docker::connect_with_named_pipe`]
+    /// ```rust,no_run
+    /// # extern crate bollard;
+    /// # extern crate futures;
+    /// # extern crate yup_hyper_mock;
+    /// # fn main () {
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
     ///
-    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
-    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
-    pub fn connect_with_local(
-        addr: &str,
+    /// use futures::future::Future;
+    ///
+    /// # use yup_hyper_mock::HostToReplyConnector;
+    /// let mut connector = HostToReplyConnector::default();
+    /// connector.m.insert(
+    ///   String::from("http://127.0.0.1"),
+    ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
+    /// );
+    /// let connection = Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION).unwrap();
+    /// connection.ping()
+    ///   .and_then(|_| Ok(println!("Connected!")));
+    /// # }
+    /// ```
+    pub fn connect_with_mock(
+        connector: yup_hyper_mock::HostToReplyConnector,
+        client_addr: String,
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        #[cfg(unix)]
-        return Docker::connect_with_unix(addr, timeout, client_version);
-        #[cfg(windows)]
-        return Docker::connect_with_named_pipe(addr, timeout, client_version);
+        let client_builder = Client::builder(TokioExecutor::new());
+        let client = client_builder.build(connector);
+
+        let (transport, client_type) = (Transport::Mock { client }, ClientType::Http);
+
+        let docker = Docker {
+            transport: Arc::new(transport),
+            client_type,
+            client_addr,
+            client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
+        };
+
+        Ok(docker)
     }
 }
 
@@ -878,21 +1134,18 @@ impl Docker {
 impl Docker {
     pub(crate) fn process_into_value<T>(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<T, Error>>
     where
         T: DeserializeOwned,
     {
         let fut = self.process_request(req);
-        async move {
-            let response = fut.await?;
-            Docker::decode_response(response).await
-        }
+        async move { Docker::decode_response(fut.await?).await }
     }
 
     pub(crate) fn process_into_stream<T>(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<T, Error>> + Unpin
     where
         T: DeserializeOwned,
@@ -907,7 +1160,7 @@ impl Docker {
 
     pub(crate) fn process_into_stream_string(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
@@ -918,7 +1171,7 @@ impl Docker {
 
     pub(crate) fn process_into_unit(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<(), Error>> {
         let fut = self.process_request(req);
         async move {
@@ -929,11 +1182,11 @@ impl Docker {
 
     pub(crate) fn process_into_body(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Stream<Item = Result<Bytes, Error>> + Unpin {
         Box::pin(
             self.process_request(req)
-                .map_ok(|response| response.into_body().map_err(Error::from))
+                .map_ok(|response| IncomingStream::new(response.into_body()))
                 .into_stream()
                 .try_flatten(),
         )
@@ -941,7 +1194,7 @@ impl Docker {
 
     pub(crate) fn process_into_string(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> impl Future<Output = Result<String, Error>> {
         let fut = self.process_request(req);
         async move {
@@ -952,14 +1205,16 @@ impl Docker {
 
     pub(crate) async fn process_upgraded(
         &self,
-        req: Result<Request<Body>, Error>,
+        req: Result<Request<BodyType>, Error>,
     ) -> Result<(impl AsyncRead, impl AsyncWrite), Error> {
         let res = self.process_request(req).await?;
         let upgraded = hyper::upgrade::on(res).await?;
-        Ok(split(upgraded))
+        let tokio_upgraded = AsyncUpgraded::new(upgraded);
+
+        Ok(split(tokio_upgraded))
     }
 
-    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<Body, Error>
+    pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<BodyType, Error>
     where
         S: Serialize,
     {
@@ -971,8 +1226,8 @@ impl Docker {
         .map(|payload| {
             debug!("{}", payload.clone().unwrap_or_default());
             payload
-                .map(|content| content.into())
-                .unwrap_or_else(Body::empty)
+                .map(|content| BodyType::Left(Full::new(content.into())))
+                .unwrap_or(BodyType::Left(Full::new(Bytes::new())))
         })
     }
 
@@ -999,21 +1254,22 @@ impl Docker {
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         let res = self
             .process_into_value::<crate::system::Version>(req)
             .await?;
 
-        let err_api_version = res.api_version.as_ref().unwrap().clone();
-        let server_version: ClientVersion = match res.api_version.as_ref().unwrap().into() {
-            MaybeClientVersion::Some(client_version) => client_version,
-            MaybeClientVersion::None => {
-                return Err(APIVersionParseError {
-                    api_version: err_api_version,
-                });
+        let server_version: ClientVersion = if let Some(api_version) = res.api_version {
+            match api_version.into() {
+                MaybeClientVersion::Some(client_version) => client_version,
+                MaybeClientVersion::None => {
+                    return Err(APIVersionParseError {});
+                }
             }
+        } else {
+            return Err(APIVersionParseError {});
         };
 
         if server_version < self.client_version() {
@@ -1028,14 +1284,18 @@ impl Docker {
         Ok(self)
     }
 
-    fn process_request(
+    pub(crate) fn process_request(
         &self,
-        request: Result<Request<Body>, Error>,
-    ) -> impl Future<Output = Result<Response<Body>, Error>> {
+        request: Result<Request<BodyType>, Error>,
+    ) -> impl Future<Output = Result<Response<Incoming>, Error>> {
         let transport = self.transport.clone();
         let timeout = self.client_timeout;
 
-        debug!("request: {:?}", request.as_ref().unwrap());
+        match request.as_ref().map(|b| b.body()) {
+            Ok(http_body_util::Either::Left(bytes)) => trace!("request: {:?}", bytes),
+            Ok(http_body_util::Either::Right(_)) => trace!("request: (stream)"),
+            Err(e) => trace!("request: Err({e:?}"),
+        };
 
         async move {
             let request = request?;
@@ -1056,7 +1316,13 @@ impl Docker {
                     if !contents.is_empty() {
                         message = serde_json::from_str::<DockerServerErrorMessage>(&contents)
                             .map(|msg| msg.message)
-                            .or_else(|e| if e.is_data() { Ok(contents) } else { Err(e) })?;
+                            .or_else(|e| {
+                                if e.is_data() || e.is_syntax() {
+                                    Ok(contents)
+                                } else {
+                                    Err(e)
+                                }
+                            })?;
                     }
                     Err(DockerResponseServerError {
                         status_code: status.as_u16(),
@@ -1072,8 +1338,8 @@ impl Docker {
         path: &str,
         builder: Builder,
         query: Option<O>,
-        payload: Result<Body, Error>,
-    ) -> Result<Request<Body>, Error>
+        payload: Result<BodyType, Error>,
+    ) -> Result<Request<BodyType>, Error>
     where
         O: Serialize,
     {
@@ -1084,7 +1350,7 @@ impl Docker {
             query,
             &self.client_version(),
         )?;
-        let request_uri: hyper::Uri = uri.into();
+        let request_uri: hyper::Uri = uri.try_into()?;
         debug!("{}", &request_uri);
         Ok(builder
             .uri(request_uri)
@@ -1092,20 +1358,57 @@ impl Docker {
             .body(payload?)?)
     }
 
+    pub(crate) fn build_request_with_registry_auth<O>(
+        &self,
+        path: &str,
+        mut builder: Builder,
+        query: Option<O>,
+        payload: Result<BodyType, Error>,
+        credentials: DockerCredentialsHeader,
+    ) -> Result<Request<BodyType>, Error>
+    where
+        O: Serialize,
+    {
+        match credentials {
+            DockerCredentialsHeader::Config(config) => {
+                let value = match config {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Config", value)
+            }
+            DockerCredentialsHeader::Auth(auth) => {
+                let value = match auth {
+                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
+                    None => "".into(),
+                };
+
+                builder = builder.header("X-Registry-Auth", value)
+            }
+        }
+
+        self.build_request(path, builder, query, payload)
+    }
+
     async fn execute_request(
         transport: Arc<Transport>,
-        req: Request<Body>,
+        req: Request<BodyType>,
         timeout: u64,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<Response<Incoming>, Error> {
         // This is where we determine to which transport we issue the request.
         let request = match *transport {
-            Transport::Http { ref client } => client.request(req),
-            #[cfg(feature = "ssl")]
-            Transport::Https { ref client } => client.request(req),
-            #[cfg(unix)]
-            Transport::Unix { ref client } => client.request(req),
-            #[cfg(windows)]
-            Transport::NamedPipe { ref client } => client.request(req),
+            #[cfg(feature = "http")]
+            Transport::Http { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(feature = "ssl_providerless")]
+            Transport::Https { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(all(feature = "pipe", unix))]
+            Transport::Unix { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(all(feature = "pipe", windows))]
+            Transport::NamedPipe { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(test)]
+            Transport::Mock { ref client } => client.request(req).map_err(Error::from).boxed(),
+            Transport::Custom { ref transport } => transport.request(req).boxed(),
         };
 
         match tokio::time::timeout(Duration::from_secs(timeout), request).await {
@@ -1114,41 +1417,39 @@ impl Docker {
         }
     }
 
-    fn decode_into_stream<T>(res: Response<Body>) -> impl Stream<Item = Result<T, Error>>
+    fn decode_into_stream<T>(res: Response<Incoming>) -> impl Stream<Item = Result<T, Error>>
     where
         T: DeserializeOwned,
     {
-        FramedRead::new(
-            StreamReader::new(res.into_body().map_err(Error::from)),
-            JsonLineDecoder::new(),
-        )
+        FramedRead::new(StreamReader::new(res.into_body()), JsonLineDecoder::new())
     }
 
     fn decode_into_stream_string(
-        res: Response<Body>,
+        res: Response<Incoming>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
         FramedRead::new(
-            StreamReader::new(res.into_body().map_err(Error::from)),
-            NewlineLogOutputDecoder::new(),
+            StreamReader::new(res.into_body()),
+            NewlineLogOutputDecoder::new(false),
         )
+        .map_err(Error::from)
     }
 
-    async fn decode_into_string(response: Response<Body>) -> Result<String, Error> {
-        let body = hyper::body::to_bytes(response.into_body()).await?;
+    async fn decode_into_string(response: Response<Incoming>) -> Result<String, Error> {
+        let body = response.into_body().collect().await?.to_bytes();
 
         Ok(String::from_utf8_lossy(&body).to_string())
     }
 
-    async fn decode_response<T>(response: Response<Body>) -> Result<T, Error>
+    async fn decode_response<T>(response: Response<Incoming>) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        let bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let bytes = response.into_body().collect().await?.to_bytes();
 
         debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
 
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
-            if e.is_data() {
+            if e.is_data() || e.is_syntax() {
                 JsonDataError {
                     message: e.to_string(),
                     column: e.column(),
@@ -1160,4 +1461,14 @@ impl Docker {
             }
         })
     }
+}
+
+/// Either a stream or a full response
+pub(crate) type BodyType = http_body_util::Either<
+    Full<Bytes>,
+    StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
+>;
+
+pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
+    BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))
 }

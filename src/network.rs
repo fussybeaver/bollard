@@ -1,14 +1,17 @@
 //! Network API: Networks are user-defined networks that containers can be attached to.
 
+use bytes::Bytes;
 use http::request::Builder;
-use hyper::{Body, Method};
-use serde::ser::Serialize;
+use http_body_util::Full;
+use hyper::Method;
+use serde_derive::{Deserialize, Serialize};
 
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use super::Docker;
+use crate::docker::BodyType;
 use crate::errors::Error;
 
 use crate::models::*;
@@ -71,7 +74,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct InspectNetworkOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + serde::ser::Serialize,
 {
     /// Detailed inspect output for troubleshooting.
     pub verbose: bool,
@@ -107,7 +110,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ListNetworksOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// JSON encoded value of the filters (a `map[string][]string`) to process on the networks list. Available filters:
     ///  - `driver=<driver-name>` Matches a network's driver.
@@ -125,7 +128,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// The ID or name of the container to connect to the network.
     pub container: T,
@@ -138,7 +141,7 @@ where
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
-    T: Into<String> + Serialize,
+    T: Into<String> + serde::ser::Serialize,
 {
     /// The ID or name of the container to disconnect from the network.
     pub container: T,
@@ -174,14 +177,14 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PruneNetworksOptions<T>
 where
-    T: Into<String> + Eq + Hash + Serialize,
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
 {
     /// Filters to process on the prune list, encoded as JSON.
     ///  - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be
-    ///  Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
-    ///  computed relative to the daemon machine’s time.
+    ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///    computed relative to the daemon machine’s time.
     ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`)
-    ///  Prune networks with (or without, in case `label!=...` is used) the specified labels.
+    ///    Prune networks with (or without, in case `label!=...` is used) the specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
@@ -200,7 +203,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Network Create Response](NetworkCreateResponse) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -224,7 +227,7 @@ impl Docker {
         config: CreateNetworkOptions<T>,
     ) -> Result<NetworkCreateResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks/create";
 
@@ -259,13 +262,13 @@ impl Docker {
     /// docker.remove_network("my_network_name");
     /// ```
     pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
-        let url = format!("/networks/{}", network_name);
+        let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
             None::<String>,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_unit(req).await
@@ -282,7 +285,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A [Models](Network) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -307,15 +310,15 @@ impl Docker {
         options: Option<InspectNetworkOptions<T>>,
     ) -> Result<Network, Error>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + serde::ser::Serialize,
     {
-        let url = format!("/networks/{}", network_name);
+        let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -332,7 +335,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A vector of [Network](Network) struct, wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -358,7 +361,7 @@ impl Docker {
         options: Option<ListNetworksOptions<T>>,
     ) -> Result<Vec<Network>, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks";
 
@@ -366,7 +369,7 @@ impl Docker {
             url,
             Builder::new().method(Method::GET),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
@@ -415,9 +418,9 @@ impl Docker {
         config: ConnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
-        let url = format!("/networks/{}/connect", network_name);
+        let url = format!("/networks/{network_name}/connect");
 
         let req = self.build_request(
             &url,
@@ -464,9 +467,9 @@ impl Docker {
         config: DisconnectNetworkOptions<T>,
     ) -> Result<(), Error>
     where
-        T: Into<String> + Serialize,
+        T: Into<String> + serde::ser::Serialize,
     {
-        let url = format!("/networks/{}/disconnect", network_name);
+        let url = format!("/networks/{network_name}/disconnect");
 
         let req = self.build_request(
             &url,
@@ -516,7 +519,7 @@ impl Docker {
         options: Option<PruneNetworksOptions<T>>,
     ) -> Result<NetworkPruneResponse, Error>
     where
-        T: Into<String> + Eq + Hash + Serialize,
+        T: Into<String> + Eq + Hash + serde::ser::Serialize,
     {
         let url = "/networks/prune";
 
@@ -524,7 +527,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(Body::empty()),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
         self.process_into_value(req).await
