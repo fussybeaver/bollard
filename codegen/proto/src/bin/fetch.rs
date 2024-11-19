@@ -9,15 +9,24 @@ struct Resource<'a> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resources: Vec<Resource> = vec![
         Resource {
+            destination: "vtproto/vtproto/ext.proto",
+            source: "https://raw.githubusercontent.com/planetscale/vtprotobuf/refs/heads/main/include/github.com/planetscale/vtprotobuf/vtproto/ext.proto",
+            replacements: vec![
+            ],
+        },
+        Resource {
             destination: "fsutil/types/stat.proto",
             source: "https://raw.githubusercontent.com/tonistiigi/fsutil/master/types/stat.proto",
-            replacements: vec![],
+            replacements: vec![
+                ("github.com/planetscale/vtprotobuf/vtproto/ext.proto", "vtproto/vtproto/ext.proto")
+            ],
         },
         Resource {
             destination: "fsutil/types/wire.proto",
             source: "https://raw.githubusercontent.com/tonistiigi/fsutil/master/types/wire.proto",
             replacements: vec![
-                ("stat.proto", "fsutil/types/stat.proto")
+                ("github.com/tonistiigi/fsutil/types/stat.proto", "fsutil/types/stat.proto"),
+                ("github.com/planetscale/vtprotobuf/vtproto/ext.proto", "vtproto/vtproto/ext.proto")
             ],
         },
         Resource {
@@ -59,7 +68,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             destination: "moby/buildkit/v1/types/worker.proto",
             source: "https://raw.githubusercontent.com/moby/buildkit/master/api/types/worker.proto",
             replacements: vec![
-                ("github.com/gogo/protobuf/gogoproto/gogo.proto", "gogoproto/gogo.proto"),
                 ("github.com/moby/buildkit/solver/pb/ops.proto", "pb/ops.proto"),
             ]
         },
@@ -67,8 +75,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             destination: "moby/buildkit/v1/control.proto",
             source: "https://raw.githubusercontent.com/moby/buildkit/master/api/services/control/control.proto",
             replacements: vec![
-                ("github.com/gogo/googleapis/google/rpc/status.proto", "google/rpc/status.proto"),
-                ("github.com/gogo/protobuf/gogoproto/gogo.proto", "gogoproto/gogo.proto"),
                 ("github.com/moby/buildkit/api/types/worker.proto", "moby/buildkit/v1/types/worker.proto"),
                 ("github.com/moby/buildkit/solver/pb/ops.proto", "pb/ops.proto"),
                 ("github.com/moby/buildkit/sourcepolicy/pb/policy.proto", "moby/buildkit/v1/sourcepolicy/policy.proto"),
@@ -106,7 +112,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             destination: "pb/ops.proto",
             source: "https://raw.githubusercontent.com/moby/buildkit/master/solver/pb/ops.proto",
             replacements: vec![
-                ("github.com/gogo/protobuf/gogoproto/gogo.proto", "gogoproto/gogo.proto"),
             ]
         },
         Resource {
