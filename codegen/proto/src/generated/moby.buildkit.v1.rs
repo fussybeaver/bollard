@@ -9,7 +9,11 @@ pub struct PruneRequest {
     #[prost(int64, tag = "3")]
     pub keep_duration: i64,
     #[prost(int64, tag = "4")]
-    pub keep_bytes: i64,
+    pub reserved_space: i64,
+    #[prost(int64, tag = "5")]
+    pub max_used_space: i64,
+    #[prost(int64, tag = "6")]
+    pub min_free_space: i64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

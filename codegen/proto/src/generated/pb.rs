@@ -101,6 +101,8 @@ pub struct Meta {
     pub cgroup_parent: ::prost::alloc::string::String,
     #[prost(bool, tag = "11")]
     pub remove_mount_stubs_recursive: bool,
+    #[prost(int32, repeated, tag = "12")]
+    pub valid_exit_codes: ::prost::alloc::vec::Vec<i32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -484,6 +486,9 @@ pub struct FileActionCopy {
     /// alwaysReplaceExistingDestPaths results in an existing dest path that differs in type from the src path being replaced rather than the default of returning an error
     #[prost(bool, tag = "14")]
     pub always_replace_existing_dest_paths: bool,
+    /// mode in non-octal format
+    #[prost(string, tag = "15")]
+    pub mode_str: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -23,10 +23,15 @@ pub struct GcPolicy {
     pub all: bool,
     #[prost(int64, tag = "2")]
     pub keep_duration: i64,
-    #[prost(int64, tag = "3")]
-    pub keep_bytes: i64,
     #[prost(string, repeated, tag = "4")]
     pub filters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// reservedSpace was renamed from freeBytes
+    #[prost(int64, tag = "3")]
+    pub reserved_space: i64,
+    #[prost(int64, tag = "5")]
+    pub max_used_space: i64,
+    #[prost(int64, tag = "6")]
+    pub min_free_space: i64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
