@@ -43,8 +43,7 @@ where
 
 /// Swam configuration used in the [Leave Swarm API](Docker::leave_swarm())
 #[derive(Debug, Copy, Clone, Default, Serialize)]
-pub struct LeaveSwarmOptions
-{
+pub struct LeaveSwarmOptions {
     /// Force to leave to swarm.
     pub force: bool,
 }
@@ -81,10 +80,7 @@ impl Docker {
     ///
     /// docker.init_swarm(config);
     /// ```
-    pub async fn init_swarm<T>(
-        &self,
-        config: InitSwarmOptions<T>,
-    ) -> Result<String, Error>
+    pub async fn init_swarm<T>(&self, config: InitSwarmOptions<T>) -> Result<String, Error>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
@@ -121,10 +117,7 @@ impl Docker {
     /// use bollard::network::InitSwarmOptions;
     /// docker.inspect_swarm();
     /// ```
-    pub async fn inspect_swarm(
-        &self
-    ) -> Result<Swarm, Error>
-    {
+    pub async fn inspect_swarm(&self) -> Result<Swarm, Error> {
         let url = "/swarm";
 
         let req = self.build_request(
@@ -161,10 +154,7 @@ impl Docker {
     /// };
     /// docker.join_swarm(config);
     /// ```
-    pub async fn join_swarm<T>(
-        &self,
-        config: JoinSwarmOptions<T>,
-    ) -> Result<(), Error>
+    pub async fn join_swarm<T>(&self, config: JoinSwarmOptions<T>) -> Result<(), Error>
     where
         T: Into<String> + Eq + Hash + Serialize,
     {
@@ -198,10 +188,7 @@ impl Docker {
     ///
     /// docker.leave_swarm();
     /// ```
-    pub async fn leave_swarm(
-        &self,
-        options: Option<LeaveSwarmOptions>
-    ) -> Result<(), Error> {
+    pub async fn leave_swarm(&self, options: Option<LeaveSwarmOptions>) -> Result<(), Error> {
         let url = "/swarm/leave";
 
         let req = self.build_request(

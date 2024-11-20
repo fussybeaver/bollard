@@ -1,8 +1,8 @@
 #![type_length_limit = "2097152"]
 
 use bollard::errors::Error;
-use bollard::Docker;
 use bollard::swarm::*;
+use bollard::Docker;
 
 use tokio::runtime::Runtime;
 
@@ -16,23 +16,25 @@ async fn swarm_test(docker: Docker) -> Result<(), Error> {
         listen_addr: "0.0.0.0:2377",
         advertise_addr: "127.0.0.1",
     };
-    let _ = &docker
-        .init_swarm(config)
-        .await?;
+    let _ = &docker.init_swarm(config).await?;
 
     // inspect swarm
-    let inspection_result = &docker
-        .inspect_swarm()
-        .await?;
-    assert!(inspection_result.join_tokens.as_ref().unwrap().worker.as_ref().unwrap().len() > 0);
+    let inspection_result = &docker.inspect_swarm().await?;
+    assert!(
+        inspection_result
+            .join_tokens
+            .as_ref()
+            .unwrap()
+            .worker
+            .as_ref()
+            .unwrap()
+            .len()
+            > 0
+    );
 
     // leave swarm
-    let config = LeaveSwarmOptions {
-        force: true,
-    };
-    let _ = &docker
-        .leave_swarm(Some(config))
-        .await?;
+    let config = LeaveSwarmOptions { force: true };
+    let _ = &docker.leave_swarm(Some(config)).await?;
     Ok(())
 }
 
