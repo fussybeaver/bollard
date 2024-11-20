@@ -276,6 +276,7 @@ pub mod service;
 pub mod system;
 mod uri;
 pub mod volume;
+pub mod swarm;
 
 pub mod grpc;
 
