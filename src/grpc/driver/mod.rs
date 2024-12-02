@@ -25,6 +25,8 @@ use super::{
     GrpcServer,
 };
 
+/// The Buildkit Daemon driver opens a GRPC connection by connecting to a Buildkit Daemon over a TCP connection.
+pub mod buildkitd;
 /// The Docker Container driver opens a GRPC connection by instantiating a Buildkit container over
 /// the traditional docker socket, and communicating over a docker execution Stdin/Stdout pipe.
 pub mod docker_container;
