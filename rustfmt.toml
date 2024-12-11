@@ -1,1 +1,4 @@
 edition = "2021"
+ignore = [
+    'codegen/*'
+]

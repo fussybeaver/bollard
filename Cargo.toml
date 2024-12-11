@@ -32,6 +32,8 @@ test_aws_lc_rs = ["test_ssl", "aws-lc-rs"]
 test_macos = []
 # Enable tests specifically for buildkit's sshforward functionality
 test_sshforward = []
+# Enable tests specifically for swarm
+test_swarm = []
 # Enable JSON payload in deserialization errors
 json_data_content = []
 # Enable rustls / ssl

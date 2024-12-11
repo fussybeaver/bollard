@@ -273,6 +273,7 @@ pub mod network;
 mod read;
 pub mod secret;
 pub mod service;
+pub mod swarm;
 pub mod system;
 mod uri;
 pub mod volume;
