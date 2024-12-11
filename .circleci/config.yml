@@ -61,6 +61,14 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features time --tests
+  test_swarm:
+    docker:
+      - image: docker:27.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test --features test_swarm test_swarm
   test_race:
     docker:
       - image: docker:27.3
@@ -145,3 +153,4 @@ workflows:
       - test_fmt
       - test_race
       - test_sshforward
+      - test_swarm
