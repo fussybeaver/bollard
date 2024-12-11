@@ -62,7 +62,7 @@ impl Docker {
     /// # Returns
     ///
     ///  - A String wrapped in a
-    ///  Future.
+    ///    Future.
     ///
     /// # Examples
     ///
@@ -87,7 +87,7 @@ impl Docker {
         let url = "/swarm/init";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             None::<String>,
             Docker::serialize_payload(Some(config)),
@@ -121,7 +121,7 @@ impl Docker {
         let url = "/swarm";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::GET),
             None::<String>,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
@@ -161,7 +161,7 @@ impl Docker {
         let url = "/swarm/join";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             None::<String>,
             Docker::serialize_payload(Some(config)),
@@ -192,7 +192,7 @@ impl Docker {
         let url = "/swarm/leave";
 
         let req = self.build_request(
-            &url,
+            url,
             Builder::new().method(Method::POST),
             options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
