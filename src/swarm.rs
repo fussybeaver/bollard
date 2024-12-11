@@ -69,13 +69,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    ///
-    /// use bollard::network::InitSwarmOptions;
+    /// # use bollard::swarm::InitSwarmOptions;
     ///
     /// use std::default::Default;
     ///
     /// let config = InitSwarmOptions {
-    ///     advertiseAddr: "127.0.0.1",
+    ///     advertise_addr: "127.0.0.1",
+    ///     listen_addr: "0.0.0.0:2377"
     /// };
     ///
     /// docker.init_swarm(config);
@@ -114,7 +114,6 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::network::InitSwarmOptions;
     /// docker.inspect_swarm();
     /// ```
     pub async fn inspect_swarm(&self) -> Result<Swarm, Error> {
@@ -147,10 +146,11 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// # use bollard::swarm::JoinSwarmOptions;
     ///
     /// let config = JoinSwarmOptions {
-    ///     advertiseAddr: "127.0.0.1",
-    ///     joinToken: "token",
+    ///     advertise_addr: "127.0.0.1",
+    ///     join_token: "token",
     /// };
     /// docker.join_swarm(config);
     /// ```
@@ -186,7 +186,7 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// docker.leave_swarm();
+    /// docker.leave_swarm(None);
     /// ```
     pub async fn leave_swarm(&self, options: Option<LeaveSwarmOptions>) -> Result<(), Error> {
         let url = "/swarm/leave";
