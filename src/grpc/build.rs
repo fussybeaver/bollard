@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::net::IpAddr;
 use std::path::Path;
+use std::path::PathBuf;
 
 use bytes::Bytes;
 
@@ -41,6 +42,7 @@ pub struct ImageBuildFrontendOptions {
     pub(crate) secrets: HashMap<String, SecretSource>,
     pub(crate) ssh: bool,
     pub(crate) named_contexts: HashMap<String, NamedContext>,
+    pub(crate) dockerfile: Option<PathBuf>,
     //pub(crate) ulimit: Vec<String>,
 }
 
@@ -170,6 +172,13 @@ impl ImageBuildFrontendOptions {
     pub(crate) fn consume(self) -> ImageBuildFrontendOptionsIngest {
         let mut attrs = HashMap::new();
 
+        if let Some(dockerfile) = self.dockerfile {
+            attrs.insert(
+                String::from("filename"),
+                dockerfile.to_string_lossy().to_string(),
+            );
+        }
+
         if self.image_resolve_mode {
             attrs.insert(String::from("image-resolve-mode"), String::from("pull"));
         } else {
@@ -276,6 +285,12 @@ impl ImageBuildFrontendOptionsBuilder {
                 ..Default::default()
             },
         }
+    }
+
+    /// Path within the build context to the `Dockerfile`.
+    pub fn dockerfile(mut self, path: &Path) -> Self {
+        self.inner.dockerfile = Some(path.to_path_buf());
+        self
     }
 
     /// Image to add towards for build cache resolution.
