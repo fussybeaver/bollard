@@ -300,7 +300,7 @@ impl FileSendPacket for FileSendPacketImpl {
                     },
                     Ok(PacketType::PacketReq) => panic!("server should not request"),
                     Ok(PacketType::PacketData) => {
-                        if packet.data.len() == 0 {
+                        if packet.data.is_empty() {
                             // all data for file has been received
                             stats.remove(&packet.id);
                         } else {
@@ -439,11 +439,9 @@ impl AuthProvider {
             host = DOCKER_HUB_CONFIG_FILE_KEY;
         }
 
-        if let Some(creds) = self.auth_config_cache.get(host) {
-            Some(DockerCredentials::to_owned(creds))
-        } else {
-            None
-        }
+        self.auth_config_cache
+            .get(host)
+            .map(DockerCredentials::to_owned)
     }
 
     fn to_token_response(

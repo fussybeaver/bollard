@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 #[cfg(feature = "ssl_providerless")]
 use std::fs;
 use std::future::Future;
@@ -1466,9 +1465,22 @@ impl Docker {
 /// Either a stream or a full response
 pub(crate) type BodyType = http_body_util::Either<
     Full<Bytes>,
-    StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, Infallible>> + Send>>>,
+    StreamBody<Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>>,
 >;
 
-pub(crate) fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
+/// Convenience method to wrap a stream of bytes into frames for a bollard BodyType
+pub fn body_stream(body: impl Stream<Item = Bytes> + Send + 'static) -> BodyType {
     BodyType::Right(StreamBody::new(Box::pin(body.map(|a| Ok(Frame::data(a))))))
+}
+
+/// Convenience method to wrap a stream of failable bytes into frames for a bollard BodyType
+pub fn body_try_stream(
+    body: impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static,
+) -> BodyType {
+    BodyType::Right(StreamBody::new(Box::pin(body.map_ok(Frame::data))))
+}
+
+/// Convenience method to wrap bytes into a bollard BodyType
+pub fn body_full(body: Bytes) -> BodyType {
+    BodyType::Left(Full::new(body))
 }

@@ -9,8 +9,8 @@ use bollard::container::{
 };
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
-use bollard::models::*;
-use bollard::Docker;
+use bollard::{body_full, Docker};
+use bollard::{body_stream, models::*};
 
 use futures_util::future::ready;
 use futures_util::stream::TryStreamExt;
@@ -596,7 +596,7 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
         let payload = futures_util::stream::iter(payload.map(bytes::Bytes::from));
 
         let _ = &docker
-            .upload_to_container_streaming(
+            .upload_to_container(
                 "integration_test_archive_container",
                 Some(UploadToContainerOptions {
                     path: if cfg!(windows) {
@@ -606,7 +606,7 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
                     },
                     ..Default::default()
                 }),
-                payload,
+                body_stream(payload),
             )
             .await?;
     } else {
@@ -621,7 +621,7 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
                     },
                     ..Default::default()
                 }),
-                payload.into(),
+                body_full(payload.into()),
             )
             .await?;
     }

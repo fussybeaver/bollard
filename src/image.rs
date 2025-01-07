@@ -584,8 +584,9 @@ impl Docker {
     /// # Arguments
     ///
     ///  - An optional [Create Image Options](CreateImageOptions) struct.
-    ///  - An optional request body consisting of a tar or tar.gz archive with the root file system
-    ///    for the image. If this argument is used, the value of the `from_src` option must be "-".
+    ///  - An optional request body consisting of a tar or tar.gz archive, or a stream
+    ///    containing the root file system for the image. If this argument is used,
+    ///    the value of the `from_src` option must be "-".
     ///
     /// # Returns
     ///
@@ -618,7 +619,7 @@ impl Docker {
     pub fn create_image<T>(
         &self,
         options: Option<CreateImageOptions<'_, T>>,
-        root_fs: Option<Bytes>,
+        root_fs: Option<BodyType>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
     where
@@ -630,10 +631,7 @@ impl Docker {
             url,
             Builder::new().method(Method::POST),
             options,
-            Ok(BodyType::Left(Full::new(match root_fs {
-                Some(body) => body,
-                None => Bytes::new(),
-            }))),
+            Ok(root_fs.unwrap_or(BodyType::Left(Full::new(Bytes::new())))),
             DockerCredentialsHeader::Auth(credentials),
         );
 
@@ -1123,11 +1121,14 @@ impl Docker {
     ///
     /// # Examples
     ///
+    /// Sending a tarball:
+    ///
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::BuildImageOptions;
     /// use bollard::container::Config;
+    /// use bollard::body_full;
     ///
     /// use std::default::Default;
     /// use std::fs::File;
@@ -1144,13 +1145,43 @@ impl Docker {
     /// let mut contents = Vec::new();
     /// file.read_to_end(&mut contents).unwrap();
     ///
-    /// docker.build_image(options, None, Some(contents.into()));
+    /// docker.build_image(options, None, Some(body_full(contents.into())));
+    /// ```
+    ///
+    /// Sending a stream:
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::BuildImageOptions;
+    /// use bollard::container::Config;
+    /// use bollard::body_stream;
+    ///
+    /// use std::default::Default;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    ///
+    /// let options = BuildImageOptions{
+    ///     dockerfile: "Dockerfile",
+    ///     t: "my-image",
+    ///     rm: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// # let mut file = File::open("tarball.tar.gz").unwrap();
+    /// # let mut contents = Vec::new();
+    /// # file.read_to_end(&mut contents).unwrap();
+    /// # let payload = Box::new(contents).leak();
+    /// # let payload = payload.chunks(32);
+    /// # let stream = futures_util::stream::iter(payload.map(bytes::Bytes::from));
+    ///
+    /// docker.build_image(options, None, Some(body_stream(stream)));
     /// ```
     pub fn build_image<T>(
         &self,
         options: BuildImageOptions<T>,
         credentials: Option<HashMap<String, DockerCredentials>>,
-        tar: Option<Bytes>,
+        tar: Option<BodyType>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
     where
         T: Into<String> + Eq + Hash + Serialize + Clone,
@@ -1182,7 +1213,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
-                    Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
+                    Ok(tar.unwrap()),
                 );
 
                 let session = stream::once(
@@ -1220,7 +1251,7 @@ impl Docker {
                         .method(Method::POST)
                         .header(CONTENT_TYPE, "application/x-tar"),
                     Some(options),
-                    Ok(BodyType::Left(Full::new(tar.unwrap_or_default()))),
+                    Ok(tar.unwrap()),
                     DockerCredentialsHeader::Config(creds),
                 );
 
@@ -1367,6 +1398,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// use bollard::image::ImportImageOptions;
     /// use bollard::errors::Error;
+    /// use bollard::body_full;
     ///
     /// use std::default::Default;
     /// use futures_util::stream::{StreamExt, TryStreamExt};
@@ -1393,7 +1425,7 @@ impl Docker {
     ///             ImportImageOptions {
     ///                 ..Default::default()
     ///             },
-    ///             bytes,
+    ///             body_full(bytes),
     ///             None,
     ///         );
     ///
@@ -1405,7 +1437,7 @@ impl Docker {
     pub fn import_image(
         &self,
         options: ImportImageOptions,
-        root_fs: Bytes,
+        root_fs: BodyType,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
         let req = self.build_request_with_registry_auth(
@@ -1414,7 +1446,7 @@ impl Docker {
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
             Some(options),
-            Ok(BodyType::Left(Full::new(root_fs))),
+            Ok(root_fs),
             DockerCredentialsHeader::Config(credentials),
         );
 
@@ -1625,7 +1657,7 @@ mod tests {
                     ..Default::default()
                 },
                 None,
-                Some(compressed.into()),
+                Some(http_body_util::Either::Left(compressed.into())),
             )
             .try_collect::<Vec<_>>()
             .await;
