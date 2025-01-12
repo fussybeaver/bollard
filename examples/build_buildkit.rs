@@ -8,6 +8,7 @@ use bollard::Docker;
 
 #[cfg(feature = "buildkit")]
 use futures_util::stream::StreamExt;
+use http_body_util::Full;
 
 use std::io::Write;
 
@@ -48,8 +49,11 @@ ENTRYPOINT ls buildkit-bollard.txt
         ..Default::default()
     };
 
-    let mut image_build_stream =
-        docker.build_image(build_image_options, None, Some(compressed.into()));
+    let mut image_build_stream = docker.build_image(
+        build_image_options,
+        None,
+        Some(http_body_util::Either::Left(Full::new(compressed.into()))),
+    );
 
     #[cfg(feature = "buildkit")]
     while let Some(Ok(bollard::models::BuildInfo {

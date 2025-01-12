@@ -6,6 +6,7 @@ use bollard::image::BuildImageOptions;
 use bollard::Docker;
 use futures_util::{stream::StreamExt, TryStreamExt};
 
+use http_body_util::Full;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
@@ -27,7 +28,11 @@ async fn main() {
     let stream = FramedRead::new(archive, BytesCodec::new());
     let bytes = stream.try_concat().await.unwrap();
 
-    let mut image_build_stream = docker.build_image(image_options, None, Some(bytes.freeze()));
+    let mut image_build_stream = docker.build_image(
+        image_options,
+        None,
+        Some(http_body_util::Either::Left(Full::new(bytes.freeze()))),
+    );
 
     while let Some(msg) = image_build_stream.next().await {
         println!("Message: {msg:?}");

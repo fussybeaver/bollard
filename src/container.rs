@@ -18,7 +18,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 
 use super::Docker;
-use crate::docker::{body_stream, BodyType};
+use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 use crate::read::NewlineLogOutputDecoder;
@@ -2126,72 +2126,6 @@ impl Docker {
 
     /// ---
     ///
-    /// # Stream Upload To Container
-    ///
-    /// Stream an upload of a tar archive to be extracted to a path in the filesystem of container
-    /// id.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - unit type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use bollard::Docker;
-    /// use bollard::container::UploadToContainerOptions;
-    /// use futures_util::{StreamExt, TryFutureExt};
-    /// use tokio::fs::File;
-    /// use tokio_util::io::ReaderStream;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() {
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let options = Some(UploadToContainerOptions{
-    ///     path: "/opt",
-    ///     ..Default::default()
-    /// });
-    ///
-    /// let file = File::open("tarball.tar.gz")
-    ///     .map_ok(ReaderStream::new)
-    ///     .try_flatten_stream()
-    ///     .map(|x|x.expect("failed to stream file"));
-    ///
-    /// docker
-    ///     .upload_to_container_streaming("my-container", options, file)
-    ///     .await
-    ///     .expect("upload failed");
-    /// # }
-    /// ```
-    pub async fn upload_to_container_streaming<T>(
-        &self,
-        container_name: &str,
-        options: Option<UploadToContainerOptions<T>>,
-        tar: impl Stream<Item = Bytes> + Send + 'static,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
-        let url = format!("/containers/{container_name}/archive");
-
-        let req = self.build_request(
-            &url,
-            Builder::new()
-                .method(Method::PUT)
-                .header(CONTENT_TYPE, "application/x-tar"),
-            options,
-            Ok(body_stream(tar)),
-        );
-
-        self.process_into_unit(req).await
-    }
-
-    /// ---
-    ///
     /// # Upload To Container
     ///
     /// Upload a tar archive to be extracted to a path in the filesystem of container id.
@@ -2206,9 +2140,12 @@ impl Docker {
     ///
     /// # Examples
     ///
+    /// Uploading a tarball
+    ///
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// use bollard::container::UploadToContainerOptions;
+    /// use bollard::body_full;
     /// use std::fs::File;
     /// use std::io::Read;
     ///
@@ -2225,7 +2162,35 @@ impl Docker {
     /// file.read_to_end(&mut contents).unwrap();
     ///
     /// docker
-    ///     .upload_to_container("my-container", options, contents.into())
+    ///     .upload_to_container("my-container", options, body_full(contents.into()))
+    ///     .await
+    ///     .expect("upload failed");
+    /// # }
+    /// ```
+    /// Uploading a stream
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// use bollard::container::UploadToContainerOptions;
+    /// use bollard::body_try_stream;
+    /// use futures_util::{StreamExt, TryFutureExt};
+    /// use tokio::fs::File;
+    /// use tokio_util::io::ReaderStream;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// let options = Some(UploadToContainerOptions{
+    ///     path: "/opt",
+    ///     ..Default::default()
+    /// });
+    ///
+    /// let file = File::open("tarball.tar.gz")
+    ///     .map_ok(ReaderStream::new)
+    ///     .try_flatten_stream();
+    ///
+    /// docker
+    ///     .upload_to_container("my-container", options, body_try_stream(file))
     ///     .await
     ///     .expect("upload failed");
     /// # }
@@ -2234,7 +2199,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<UploadToContainerOptions<T>>,
-        tar: Bytes,
+        tar: BodyType,
     ) -> Result<(), Error>
     where
         T: Into<String> + Serialize,
@@ -2247,7 +2212,7 @@ impl Docker {
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
             options,
-            Ok(BodyType::Left(Full::new(tar))),
+            Ok(tar),
         );
 
         self.process_into_unit(req).await

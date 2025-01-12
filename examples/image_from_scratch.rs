@@ -4,49 +4,10 @@ use bollard::models::CreateImageInfo;
 /// This implementation streams the archive file piece by piece to the Docker daemon,
 /// but does so inefficiently. For best results, use `tokio::fs` instead of `std::fs`.
 use bollard::{image::CreateImageOptions, Docker};
-use bytes::Bytes;
-use futures_util::stream::{Stream, TryStreamExt};
-use futures_util::task::{Context, Poll};
+use futures_util::stream::TryStreamExt;
 use std::env::args;
-use std::fs::File;
-use std::io::{Read, Result as IOResult};
-use std::pin::Pin;
-
-/*
-  Image file system archives can be very large, so we don't want to load the entire thing
-  into memory in order to send it to Docker. Since `bollard::Docker::create_image` takes
-  a `hyper::Body` struct, which can be created from a `futures_util::stream::Stream`, we will
-  implement `Stream` on our own type `FileStreamer`.
-*/
-const BUFFER_SIZE: usize = 1048576; // 1 MB
-
-struct FileStreamer {
-    file: File,
-    done: bool,
-}
-
-// just an example...
-impl Stream for FileStreamer {
-    type Item = IOResult<Vec<u8>>;
-
-    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context) -> Poll<Option<Self::Item>> {
-        if self.done {
-            return Poll::Ready(None);
-        }
-        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-        // The `std::fs::File.read` method here is blocking. For best results, use a non-blocking implementation
-        match self.file.read(&mut buffer[..]) {
-            Ok(BUFFER_SIZE) => Poll::Ready(Some(Ok(buffer.to_vec()))),
-            // If less than `BUFFER_SIZE` bytes are read from the file, that means the whole file has been read.
-            // The next time this stream is polled, return `None`.
-            Ok(n) => {
-                self.done = true;
-                Poll::Ready(Some(Ok(buffer[0..n].to_vec())))
-            }
-            Err(e) => Poll::Ready(Some(Err(e))),
-        }
-    }
-}
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
@@ -56,7 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         return Ok(());
     }
 
-    let file = File::open(&arguments[1]).expect("Could not find archive.");
+    let file = File::open(&arguments[1])
+        .await
+        .expect("Could not find archive.");
+
+    let stream = ReaderStream::new(file);
 
     let docker = Docker::connect_with_socket_defaults().unwrap();
 
@@ -66,15 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         tag: "1.0.0",  // The tag of this particular image.
         ..Default::default()
     };
-    // Create FileReader struct
-    let reader = FileStreamer { file, done: false };
-    // A `Bytes` can be created from a `Stream<Item = Result<...>>`
-    let v = reader.try_concat().await?;
-    let bytes = Bytes::from(v);
 
     // Finally, call Docker::create_image with the options and the body
     let result: Vec<CreateImageInfo> = docker
-        .create_image(Some(options), Some(bytes), None)
+        .create_image(Some(options), Some(bollard::body_try_stream(stream)), None)
         .try_collect()
         .await?;
     // If all went well, the ID of the new image will be printed

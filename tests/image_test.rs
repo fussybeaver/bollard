@@ -1,6 +1,7 @@
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
+use http_body_util::Full;
 use tokio::runtime::Runtime;
 
 use bollard::container::{
@@ -8,8 +9,8 @@ use bollard::container::{
     WaitContainerOptions,
 };
 use bollard::errors::Error;
-use bollard::image::*;
 use bollard::Docker;
+use bollard::{body_full, image::*};
 
 use std::collections::HashMap;
 use std::default::Default;
@@ -53,7 +54,7 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
     });
 
     docker
-        .create_image(Some(options), Some(req_body), None)
+        .create_image(Some(options), Some(body_full(req_body)), None)
         .collect::<Vec<_>>()
         .await
         .into_iter()
@@ -317,7 +318,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-async fn build_image_test(docker: Docker) -> Result<(), Error> {
+async fn build_image_test(docker: Docker, streaming_upload: bool) -> Result<(), Error> {
     let dockerfile = if cfg!(windows) {
         format!(
             "FROM {}microsoft/nanoserver
@@ -352,20 +353,41 @@ RUN touch bollard.txt
         integration_test_registry_credentials(),
     );
 
-    let _ = &docker
-        .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_image".to_string(),
-                pull: true,
-                rm: true,
-                ..Default::default()
-            },
-            if cfg!(windows) { None } else { Some(creds) },
-            Some(compressed.into()),
-        )
-        .try_collect::<Vec<_>>()
-        .await?;
+    if streaming_upload {
+        let payload = Box::new(compressed).leak();
+        let payload = payload.chunks(32);
+        let payload = futures_util::stream::iter(payload.map(bytes::Bytes::from));
+
+        let _ = &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_image".to_string(),
+                    pull: true,
+                    rm: true,
+                    ..Default::default()
+                },
+                if cfg!(windows) { None } else { Some(creds) },
+                Some(bollard::body_stream(payload)),
+            )
+            .try_collect::<Vec<_>>()
+            .await?;
+    } else {
+        let _ = &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_image".to_string(),
+                    pull: true,
+                    rm: true,
+                    ..Default::default()
+                },
+                if cfg!(windows) { None } else { Some(creds) },
+                Some(http_body_util::Either::Left(Full::new(compressed.into()))),
+            )
+            .try_collect::<Vec<_>>()
+            .await?;
+    }
 
     let _ = &docker
         .create_container(
@@ -425,7 +447,9 @@ RUN touch bollard.txt
 }
 
 #[cfg(feature = "buildkit")]
-async fn build_buildkit_image_test(docker: Docker) -> Result<(), Error> {
+async fn build_buildkit_image_test(docker: Docker, streaming_upload: bool) -> Result<(), Error> {
+    use bollard::body_stream;
+
     let dockerfile = String::from(
         "FROM localhost:5000/alpine as builder1
 RUN touch bollard.txt
@@ -456,23 +480,48 @@ ENTRYPOINT ls buildkit-bollard.txt
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
     let id = "build_buildkit_image_test";
-    let build = &docker
-        .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit")]
-                session: Some(String::from(id)),
-                ..Default::default()
-            },
-            Some(creds_hsh),
-            Some(compressed.into()),
-        )
-        .try_collect::<Vec<bollard::models::BuildInfo>>()
-        .await?;
+
+    let build = if streaming_upload {
+        let payload = Box::new(compressed).leak();
+        let payload = payload.chunks(32);
+        let payload = futures_util::stream::iter(payload.map(bytes::Bytes::from));
+
+        &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_buildkit_image".to_string(),
+                    pull: true,
+                    version: BuilderVersion::BuilderBuildKit,
+                    rm: true,
+                    #[cfg(feature = "buildkit")]
+                    session: Some(String::from(id)),
+                    ..Default::default()
+                },
+                Some(creds_hsh),
+                Some(body_stream(payload)),
+            )
+            .try_collect::<Vec<bollard::models::BuildInfo>>()
+            .await?
+    } else {
+        &docker
+            .build_image(
+                BuildImageOptions {
+                    dockerfile: "Dockerfile".to_string(),
+                    t: "integration_test_build_buildkit_image".to_string(),
+                    pull: true,
+                    version: BuilderVersion::BuilderBuildKit,
+                    rm: true,
+                    #[cfg(feature = "buildkit")]
+                    session: Some(String::from(id)),
+                    ..Default::default()
+                },
+                Some(creds_hsh),
+                Some(http_body_util::Either::Left(Full::new(compressed.into()))),
+            )
+            .try_collect::<Vec<bollard::models::BuildInfo>>()
+            .await?
+    };
 
     assert!(build
         .iter()
@@ -574,7 +623,7 @@ ENTRYPOINT ls buildkit-bollard.txt
                 ..Default::default()
             },
             None,
-            Some(compressed.into()),
+            Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
         .try_collect::<Vec<bollard::models::BuildInfo>>()
         .await;
@@ -1226,7 +1275,7 @@ COPY --from=builder message-2.txt .
                 ..Default::default()
             },
             Some(creds_hsh),
-            Some(compressed.into()),
+            Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
         .try_collect::<Vec<bollard::models::BuildInfo>>()
         .await?;
@@ -1333,7 +1382,7 @@ RUN touch empty.txt
                 ..Default::default()
             },
             Some(creds_hsh),
-            Some(compressed.into()),
+            Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
         .try_collect::<Vec<bollard::models::BuildInfo>>()
         .await?;
@@ -1491,7 +1540,7 @@ RUN apt-get update && \
             ..Default::default()
         },
         None,
-        Some(compressed.into()),
+        Some(http_body_util::Either::Left(Full::new(compressed.into()))),
     );
 
     while let Some(update) = stream.next().await {
@@ -1529,7 +1578,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
             ImportImageOptions {
                 ..Default::default()
             },
-            buf.freeze(),
+            body_full(buf.freeze()),
             Some(creds),
         )
         .try_collect::<Vec<_>>()
@@ -1626,13 +1675,15 @@ fn integration_test_commit_container() {
 
 #[test]
 fn integration_test_build_image() {
-    connect_to_docker_and_run!(build_image_test);
+    connect_to_docker_and_run!(|docker| build_image_test(docker, false));
+    connect_to_docker_and_run!(|docker| build_image_test(docker, true));
 }
 
 #[test]
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_image() {
-    connect_to_docker_and_run!(build_buildkit_image_test);
+    connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, false));
+    connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, true));
 }
 
 #[test]
