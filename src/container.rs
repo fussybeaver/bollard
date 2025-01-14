@@ -1185,7 +1185,7 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub async fn list_containers<'de, T>(
+    pub async fn list_containers<T>(
         &self,
         options: Option<ListContainersOptions<T>>,
     ) -> Result<Vec<ContainerSummary>, Error>

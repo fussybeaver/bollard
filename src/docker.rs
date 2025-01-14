@@ -670,7 +670,7 @@ impl Docker {
     /// use bollard::{API_DEFAULT_VERSION, Docker, BollardRequest};
     /// use futures_util::future::TryFutureExt;
     /// use futures_util::FutureExt;
-
+    ///
     /// let http_connector = hyper_util::client::legacy::connect::HttpConnector::new();
     ///
     /// let mut client_builder = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new());
