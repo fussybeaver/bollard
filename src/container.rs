@@ -1185,7 +1185,7 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub async fn list_containers<'de, T>(
+    pub async fn list_containers<T>(
         &self,
         options: Option<ListContainersOptions<T>>,
     ) -> Result<Vec<ContainerSummary>, Error>
@@ -2122,6 +2122,67 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Stream Upload To Container
+    ///
+    /// Stream an upload of a tar archive to be extracted to a path in the filesystem of container
+    /// id.
+    ///
+    /// # Arguments
+    ///
+    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// use bollard::container::UploadToContainerOptions;
+    /// use futures_util::{StreamExt, TryFutureExt};
+    /// use tokio::fs::File;
+    /// use tokio_util::io::ReaderStream;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// let options = Some(UploadToContainerOptions{
+    ///     path: "/opt",
+    ///     ..Default::default()
+    /// });
+    ///
+    /// let file = File::open("tarball.tar.gz")
+    ///     .map_ok(ReaderStream::new)
+    ///     .try_flatten_stream()
+    ///     .map(|x|x.expect("failed to stream file"));
+    ///
+    /// docker
+    ///     .upload_to_container_streaming("my-container", options, file)
+    ///     .await
+    ///     .expect("upload failed");
+    /// # }
+    /// ```
+    #[inline(always)]
+    #[deprecated(
+        since = "0.19.0",
+        note = "This method is refactored into upload_to_container"
+    )]
+    pub async fn upload_to_container_streaming<T>(
+        &self,
+        container_name: &str,
+        options: Option<UploadToContainerOptions<T>>,
+        tar: impl Stream<Item = Bytes> + Send + 'static,
+    ) -> Result<(), Error>
+    where
+        T: Into<String> + Serialize,
+    {
+        self.upload_to_container(container_name, options, crate::body_stream(tar))
+            .await
     }
 
     /// ---
