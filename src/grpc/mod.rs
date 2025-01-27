@@ -59,7 +59,6 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use log::trace;
-use rand::RngCore;
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
 use ssh::SshAgentPacketDecoder;
@@ -894,7 +893,7 @@ impl Service<tonic::transport::Uri> for GrpcClient {
 // Reference: https://github.com/moby/buildkit/blob/master/identity/randomid.go
 pub(crate) fn new_id() -> String {
     let mut p: [u8; 17] = Default::default();
-    rand::thread_rng().fill_bytes(&mut p);
+    rand::fill(&mut p);
     p[0] |= 0x80; // set high bit to avoid the need for padding
     num::BigInt::from_bytes_be(num::bigint::Sign::Plus, &p[..]).to_str_radix(36)[1..26].to_string()
 }
