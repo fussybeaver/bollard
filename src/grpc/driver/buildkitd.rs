@@ -1,6 +1,5 @@
 use std::pin::Pin;
 
-use bollard_buildkit_proto::health::health_server::HealthServer;
 pub use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 
 use crate::grpc::driver::ImageBuildFrontendOptions;
@@ -9,18 +8,14 @@ use crate::grpc::driver::ImageExporterEnum;
 
 use crate::grpc::registry::ImageRegistryOutput;
 use crate::grpc::DockerCredentials;
-use futures_util::TryStreamExt;
-use log::error;
-use log::trace;
+
 use std::collections::HashMap;
 pub use tonic::transport::Endpoint;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
-use crate::grpc::io::into_async_read::IntoAsyncRead;
-use crate::grpc::io::reader_stream::ReaderStream;
-use crate::grpc::GrpcTransport;
-use crate::grpc::{error::GrpcError, HealthServerImpl};
+use crate::grpc::error::GrpcError;
 
+use super::channel::BuildkitChannel;
 use super::{Driver, DriverInterceptor, DriverTearDownHandler};
 
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
@@ -45,50 +40,9 @@ impl Driver for BuildkitDaemon {
         services: Vec<super::GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
         let channel = self.uri.connect().await?;
-        let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
+        let channel = BuildkitChannel::new(channel);
 
-        let interceptor = DriverInterceptor {
-            session_id: String::from(session_id),
-            metadata_grpc_method: metadata_grpc_method.clone(),
-        };
-
-        let mut control_client = ControlClient::with_interceptor(channel, interceptor);
-
-        let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
-        let streamreader = ReaderStream::new(asyncreader);
-        let stream = control_client.session(streamreader).await?;
-        let stream = stream
-            .into_inner()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
-        let asyncreader = IntoAsyncRead::new(stream);
-        let transport = GrpcTransport {
-            read: Box::pin(asyncreader),
-            write: Box::pin(asyncwriter),
-        };
-
-        tokio::spawn(async {
-            let health = HealthServer::new(HealthServerImpl::new());
-            let mut builder = tonic::transport::Server::builder();
-            let mut router = builder.add_service(health);
-            for service in services {
-                router = service.append(router);
-            }
-            trace!("router: {:#?}", router);
-            if let Err(e) = router
-                .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
-                    _,
-                    tonic::transport::Error,
-                >(
-                    transport
-                )]))
-                .await
-            {
-                error!("Failed to serve grpc connection: {}", e)
-            }
-        });
-
-        Ok(control_client)
+        channel.grpc_handle(session_id, services).await
     }
 
     fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {

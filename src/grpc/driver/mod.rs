@@ -27,6 +27,8 @@ use super::{
 
 /// The Buildkit Daemon driver opens a GRPC connection by connecting to a Buildkit Daemon over a TCP connection.
 pub mod buildkitd;
+/// The Buildkit Channel driver opens a GRPC connection by using an existing [`tonic::transport::Channel`]
+pub mod channel;
 /// The Docker Container driver opens a GRPC connection by instantiating a Buildkit container over
 /// the traditional docker socket, and communicating over a docker execution Stdin/Stdout pipe.
 pub mod docker_container;
