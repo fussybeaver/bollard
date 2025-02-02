@@ -439,13 +439,13 @@ pub enum ImageBuildOutput<T>
 where
     T: Into<String>,
 {
+    /// The tar export type writes all result files as a single tarball on the client.
+    /// On multi-platform builds all results will be put in subdirectories by their platform.
+    /// It takes the destination directory as a first argument.
+    Tar(T),
     /// The local export type writes all result files to a directory on the client.
     /// The new files will be owned by the current user.
     /// On multi-platform builds, all results will be put in subdirectories by their platform.
-    /// It takes the destination directory as a first argument.
-    Tar(T),
-    /// The tar export type writes all result files as a single tarball on the client.
-    /// On multi-platform builds all results will be put in subdirectories by their platform.
     /// It takes the destination directory as a first argument.
     ///
     /// **Notice**: The implementation of the underlying `fsutil` protocol is not complete.
