@@ -125,6 +125,7 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(not(feature = "test_macos"))]
 async fn df_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 

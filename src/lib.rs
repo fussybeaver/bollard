@@ -270,11 +270,13 @@ pub mod errors;
 pub mod exec;
 pub mod image;
 pub mod network;
+pub mod node;
 mod read;
 pub mod secret;
 pub mod service;
 pub mod swarm;
 pub mod system;
+pub mod task;
 mod uri;
 pub mod volume;
 
