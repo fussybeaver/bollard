@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
@@ -241,6 +242,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
             CommitContainerOptions {
                 container: "integration_test_commit_container",
                 repo: "integration_test_commit_container_next",
+                tag: "latest",
                 pause: true,
                 ..Default::default()
             },
@@ -428,7 +430,10 @@ RUN touch bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_image", None)
+        .remove_container(
+            "integration_test_build_image",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -573,7 +578,10 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_image", None)
+        .remove_container(
+            "integration_test_build_buildkit_image",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -753,7 +761,10 @@ COPY --from=builder1 /token /",
     assert_eq!(format!("{value}"), token.to_string());
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_secret", None)
+        .remove_container(
+            "integration_test_build_buildkit_secret",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -923,7 +934,10 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_named_context", None)
+        .remove_container(
+            "integration_test_build_buildkit_named_context",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1038,7 +1052,10 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_ssh", None)
+        .remove_container(
+            "integration_test_build_buildkit_ssh",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1159,7 +1176,10 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_image_inline_driver", None)
+        .remove_container(
+            "integration_test_build_buildkit_image_inline_driver",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1423,6 +1443,8 @@ RUN touch empty.txt
 // uses it. The V1 builder caches in the form of intermediate images instead.
 #[cfg(feature = "buildkit")]
 async fn prune_build_test(docker: Docker) -> Result<(), Error> {
+    use bollard::query_parameters::DataUsageOptions;
+
     let dockerfile = format!(
         "FROM {}alpine
 RUN echo bollard > bollard.txt
@@ -1481,7 +1503,7 @@ RUN echo bollard > bollard.txt
         .await?;
 
     let old_cache_size = &docker
-        .df()
+        .df(None::<DataUsageOptions>)
         .await?
         .build_cache
         .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
@@ -1492,7 +1514,7 @@ RUN echo bollard > bollard.txt
         .await?;
 
     let new_cache_size = &docker
-        .df()
+        .df(None::<DataUsageOptions>)
         .await?
         .build_cache
         .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))

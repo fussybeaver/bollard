@@ -1,4 +1,4 @@
-use bollard::system::Version;
+use bollard::models::SystemVersion;
 #[cfg(unix)]
 use bollard::ClientVersion;
 use bollard::Docker;
@@ -14,7 +14,7 @@ fn test_version_named_pipe() {
         Docker::connect_with_named_pipe_defaults()
             .unwrap()
             .version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "windows")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }
 
@@ -24,7 +24,7 @@ fn test_version_named_pipe() {
 fn test_version_unix() {
     rt_exec!(
         Docker::connect_with_unix_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "linux")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     )
 }
 
@@ -33,7 +33,7 @@ fn test_version_unix() {
 fn test_version_ssl() {
     rt_exec!(
         Docker::connect_with_ssl_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "linux")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     )
 }
 
@@ -43,12 +43,12 @@ fn test_version_http() {
     #[cfg(unix)]
     rt_exec!(
         Docker::connect_with_http_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "linux")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     );
     #[cfg(windows)]
     rt_exec!(
         Docker::connect_with_http_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "windows")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }
 
@@ -83,11 +83,11 @@ fn test_connect_with_defaults() {
     #[cfg(unix)]
     rt_exec!(
         Docker::connect_with_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "linux")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     );
     #[cfg(windows)]
     rt_exec!(
         Docker::connect_with_defaults().unwrap().version(),
-        |version: Version| assert_eq!(version.os.unwrap(), "windows")
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }

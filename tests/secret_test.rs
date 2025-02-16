@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD;

@@ -1,4 +1,5 @@
 //! Service API: manage and inspect docker services within a swarm
+#![allow(deprecated)]
 
 use crate::docker::BodyType;
 pub use crate::models::*;
@@ -40,6 +41,10 @@ use std::{collections::HashMap, hash::Hash};
 /// let options: ListServicesOptions<&str> = Default::default();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListServicesOptions and associated ListServicesOptionsBuilder"
+)]
 pub struct ListServicesOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -56,6 +61,24 @@ where
     pub status: bool,
 }
 
+impl<T> From<ListServicesOptions<T>> for crate::query_parameters::ListServicesOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ListServicesOptions<T>) -> Self {
+        crate::query_parameters::ListServicesOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .status(opts.status)
+            .build()
+    }
+}
+
 /// Parameters used in the [Inspect Service API](Docker::inspect_service())
 ///
 /// ## Examples
@@ -68,10 +91,22 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::InspectServiceOptions and associated InspectServiceOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectServiceOptions {
     /// Fill empty fields with default values.
     pub insert_defaults: bool,
+}
+
+impl From<InspectServiceOptions> for crate::query_parameters::InspectServiceOptions {
+    fn from(opts: InspectServiceOptions) -> Self {
+        crate::query_parameters::InspectServiceOptionsBuilder::default()
+            .insert_defaults(opts.insert_defaults)
+            .build()
+    }
 }
 
 /// Parameters used in the [Update Service API](Docker::update_service())
@@ -87,6 +122,10 @@ pub struct InspectServiceOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::UpdateServiceOptions and associated UpdateServiceOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateServiceOptions {
     /// The version number of the service object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the service before the update.
@@ -97,6 +136,29 @@ pub struct UpdateServiceOptions {
     /// Set to this parameter to true to cause a server-side rollback to the previous service spec. The supplied spec will be ignored in this case.
     #[serde(serialize_with = "serialize_rollback")]
     pub rollback: bool,
+}
+
+impl From<UpdateServiceOptions> for crate::query_parameters::UpdateServiceOptions {
+    fn from(opts: UpdateServiceOptions) -> Self {
+        crate::query_parameters::UpdateServiceOptionsBuilder::default()
+            .version(
+                i32::try_from(opts.version)
+                    .inspect_err(|e| {
+                        log::error!(
+                            "Truncation of u64 into i32 in UpdateServiceOptions: {:?}",
+                            e
+                        )
+                    })
+                    .unwrap_or(opts.version as i32),
+            )
+            .registry_auth_from(if opts.registry_auth_from {
+                "previous-spec"
+            } else {
+                "spec"
+            })
+            .rollback(if opts.rollback { "previous" } else { "" })
+            .build()
+    }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -157,19 +219,16 @@ impl Docker {
     ///
     /// docker.list_services(options);
     /// ```
-    pub async fn list_services<T>(
+    pub async fn list_services(
         &self,
-        options: Option<ListServicesOptions<T>>,
-    ) -> Result<Vec<Service>, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListServicesOptions>>,
+    ) -> Result<Vec<Service>, Error> {
         let url = "/services";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -279,14 +338,14 @@ impl Docker {
     pub async fn inspect_service(
         &self,
         service_name: &str,
-        options: Option<InspectServiceOptions>,
+        options: Option<impl Into<crate::query_parameters::InspectServiceOptions>>,
     ) -> Result<Service, Error> {
         let url = format!("/services/{service_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -392,7 +451,7 @@ impl Docker {
         &self,
         service_name: &str,
         service_spec: ServiceSpec,
-        options: UpdateServiceOptions,
+        options: impl Into<crate::query_parameters::UpdateServiceOptions>,
         credentials: Option<DockerCredentials>,
     ) -> Result<ServiceUpdateResponse, Error> {
         let url = format!("/services/{service_name}/update");
@@ -402,7 +461,7 @@ impl Docker {
             Builder::new()
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
-            Some(options),
+            Some(options.into()),
             Docker::serialize_payload(Some(service_spec)),
             DockerCredentialsHeader::Auth(credentials),
         );

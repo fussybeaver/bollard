@@ -1,4 +1,5 @@
 //! Tasks API: A task is a container running on a swarm. It is the atomic scheduling unit of swarm. Swarm mode must be enabled for these endpoints to work.
+#![allow(deprecated)]
 
 use bollard_stubs::models::Task;
 use bytes::Bytes;
@@ -35,6 +36,10 @@ use http::{request::Builder, Method};
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListTasksOptions and associated ListTasksOptionsBuilder"
+)]
 pub struct ListTasksOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -50,6 +55,23 @@ where
     ///  - `service=<service-name>`: Matches all or part of a service name.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+impl<T> From<ListTasksOptions<T>> for crate::query_parameters::ListTasksOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ListTasksOptions<T>) -> Self {
+        crate::query_parameters::ListTasksOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
 }
 
 impl Docker {
@@ -85,19 +107,16 @@ impl Docker {
     ///
     /// docker.list_tasks(Some(config));
     /// ```
-    pub async fn list_tasks<T>(
+    pub async fn list_tasks(
         &self,
-        options: Option<ListTasksOptions<T>>,
-    ) -> Result<Vec<Task>, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListTasksOptions>>,
+    ) -> Result<Vec<Task>, Error> {
         let url = "/tasks";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

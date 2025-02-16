@@ -2,7 +2,6 @@
 //!
 //! tar cvf dockerfile.tar Dockerfile
 
-use bollard::image::BuildImageOptions;
 use bollard::Docker;
 use futures_util::{stream::StreamExt, TryStreamExt};
 
@@ -16,12 +15,11 @@ use std::env::args;
 async fn main() {
     let docker = Docker::connect_with_socket_defaults().unwrap();
 
-    let image_options = BuildImageOptions {
-        dockerfile: "Dockerfile",
-        t: "rust-test",
-        rm: true,
-        ..Default::default()
-    };
+    let image_options = bollard::query_parameters::BuildImageOptionsBuilder::default()
+        .dockerfile("Dockerfile")
+        .t("rust-test")
+        .rm(true)
+        .build();
 
     let filename = &args().nth(1).expect("needs first argument");
     let archive = File::open(filename).await.expect("could not open file");

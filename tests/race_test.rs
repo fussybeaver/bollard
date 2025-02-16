@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bollard::{image::ListImagesOptions, Docker};
 use once_cell::sync::OnceCell;
 

@@ -1,14 +1,16 @@
 #![type_length_limit = "2097152"]
+#![allow(deprecated)]
 
 use bollard::container::{
     AttachContainerOptions, AttachContainerResults, Config, CreateContainerOptions,
-    DownloadFromContainerOptions, InspectContainerOptions, KillContainerOptions,
-    ListContainersOptions, LogsOptions, PruneContainersOptions, RemoveContainerOptions,
-    RenameContainerOptions, ResizeContainerTtyOptions, RestartContainerOptions, StatsOptions,
-    TopOptions, UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
+    DownloadFromContainerOptions, InspectContainerOptions, KillContainerOptions, LogsOptions,
+    PruneContainersOptions, RemoveContainerOptions, RenameContainerOptions,
+    ResizeContainerTtyOptions, RestartContainerOptions, StatsOptions, TopOptions,
+    UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
 };
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
+use bollard::query_parameters::ListContainersOptionsBuilder;
 use bollard::{body_full, Docker};
 use bollard::{body_stream, models::*};
 
@@ -34,10 +36,7 @@ async fn list_containers_test(docker: Docker) -> Result<(), Error> {
 
     create_container_hello_world(&docker, "integration_test_list_containers").await?;
     let result = &docker
-        .list_containers(Some(ListContainersOptions::<String> {
-            all: true,
-            ..Default::default()
-        }))
+        .list_containers(Some(ListContainersOptionsBuilder::new().all(true).build()))
         .await?;
 
     assert_ne!(0, result.len());
@@ -259,7 +258,10 @@ async fn stats_test(docker: Docker) -> Result<(), Error> {
 
     let value = vec.first();
 
-    assert_eq!(value.unwrap().name, "/integration_test_stats".to_string());
+    assert_eq!(
+        value.unwrap().name,
+        Some("/integration_test_stats".to_string())
+    );
     kill_container(&docker, "integration_test_stats")
         .await
         .unwrap_or(());
@@ -387,6 +389,10 @@ async fn update_container_test(docker: Docker) -> Result<(), Error> {
     let update_options = UpdateContainerOptions::<String> {
         memory: Some(314572800),
         memory_swap: Some(314572800),
+        restart_policy: Some(RestartPolicy {
+            name: Some(RestartPolicyNameEnum::ON_FAILURE),
+            maximum_retry_count: Some(3),
+        }),
         ..Default::default()
     };
 
@@ -510,10 +516,9 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let result = &docker
-        .list_containers(Some(ListContainersOptions::<String> {
-            all: true,
-            ..Default::default()
-        }))
+        .list_containers(Some(
+            ListContainersOptionsBuilder::default().all(true).build(),
+        ))
         .await?;
 
     assert_eq!(
@@ -774,6 +779,8 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
         )
         .await?;
 
+    println!("{:?}", result.host_config);
+
     assert_eq!(
         if cfg!(windows) {
             "C:\\Windows\\Temp"
@@ -846,7 +853,10 @@ async fn export_container_test(docker: Docker) -> Result<(), Error> {
     .await;
 
     docker
-        .remove_container("integration_test_export_container", None)
+        .remove_container(
+            "integration_test_export_container",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     // assert that the file containg the exported archive actually exists

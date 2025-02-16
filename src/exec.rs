@@ -1,5 +1,6 @@
 //! Exec API: Run new commands inside running containers
 
+use bollard_stubs::models::ExecConfig;
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::header::{CONNECTION, UPGRADE};
@@ -50,6 +51,27 @@ where
     pub user: Option<T>,
     /// The working directory for the exec process inside the container.
     pub working_dir: Option<T>,
+}
+
+impl<T> From<CreateExecOptions<T>> for ExecConfig
+where
+    T: Into<String> + serde::ser::Serialize,
+{
+    fn from(opts: CreateExecOptions<T>) -> Self {
+        ExecConfig {
+            attach_stdin: opts.attach_stdin,
+            attach_stdout: opts.attach_stdout,
+            attach_stderr: opts.attach_stderr,
+            detach_keys: opts.detach_keys.map(Into::into),
+            tty: opts.tty,
+            env: opts.env.map(|v| v.into_iter().map(Into::into).collect()),
+            cmd: opts.cmd.map(|v| v.into_iter().map(Into::into).collect()),
+            privileged: opts.privileged,
+            user: opts.user.map(Into::into),
+            working_dir: opts.working_dir.map(Into::into),
+            ..Default::default()
+        }
+    }
 }
 
 /// Result type for the [Create Exec API](Docker::create_exec())
@@ -103,6 +125,15 @@ pub struct ResizeExecOptions {
     pub width: u16,
 }
 
+impl From<ResizeExecOptions> for crate::query_parameters::ResizeExecOptions {
+    fn from(opts: ResizeExecOptions) -> Self {
+        crate::query_parameters::ResizeExecOptionsBuilder::default()
+            .w(opts.width as i32)
+            .h(opts.height as i32)
+            .build()
+    }
+}
+
 impl Docker {
     /// ---
     ///
@@ -138,21 +169,18 @@ impl Docker {
     ///
     /// docker.create_exec("hello-world", config);
     /// ```
-    pub async fn create_exec<T>(
+    pub async fn create_exec(
         &self,
         container_name: &str,
-        config: CreateExecOptions<T>,
-    ) -> Result<CreateExecResults, Error>
-    where
-        T: Into<String> + serde::ser::Serialize,
-    {
+        config: impl Into<ExecConfig>,
+    ) -> Result<CreateExecResults, Error> {
         let url = format!("/containers/{container_name}/exec");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -334,14 +362,14 @@ impl Docker {
     pub async fn resize_exec(
         &self,
         exec_id: &str,
-        options: ResizeExecOptions,
+        options: impl Into<crate::query_parameters::ResizeExecOptions>,
     ) -> Result<(), Error> {
         let url = format!("/exec/{exec_id}/resize");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options),
+            Some(options.into()),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

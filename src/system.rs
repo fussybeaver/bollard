@@ -1,12 +1,12 @@
 //! System API: interface for interacting with the Docker server and/or Registry.
+#![allow(deprecated)]
 
 use bytes::Bytes;
 use futures_core::Stream;
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::Method;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::value::Value;
+use serde_derive::Serialize;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -15,90 +15,6 @@ use super::Docker;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
-
-/// Response of Engine API: GET \"/version\"
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct Version {
-    #[serde(rename = "Platform")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<SystemVersionPlatform>,
-
-    /// Information about system components
-    #[serde(rename = "Components")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub components: Option<Vec<VersionComponents>>,
-
-    /// The version of the daemon
-    #[serde(rename = "Version")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-
-    /// The default (and highest) API version that is supported by the daemon
-    #[serde(rename = "ApiVersion")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_version: Option<String>,
-
-    /// The minimum API version that is supported by the daemon
-    #[serde(rename = "MinAPIVersion")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_api_version: Option<String>,
-
-    /// The Git commit of the source code that was used to build the daemon
-    #[serde(rename = "GitCommit")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_commit: Option<String>,
-
-    /// The version Go used to compile the daemon, and the version of the Go runtime in use.
-    #[serde(rename = "GoVersion")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub go_version: Option<String>,
-
-    /// The operating system that the daemon is running on (\"linux\" or \"windows\")
-    #[serde(rename = "Os")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub os: Option<String>,
-
-    /// The architecture that the daemon is running on
-    #[serde(rename = "Arch")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arch: Option<String>,
-
-    /// The kernel version (`uname -r`) that the daemon is running on.  This field is omitted when empty.
-    #[serde(rename = "KernelVersion")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kernel_version: Option<String>,
-
-    /// Indicates if the daemon is started with experimental features enabled.  This field is omitted when empty / false.
-    #[serde(rename = "Experimental")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg(windows)]
-    pub experimental: Option<bool>,
-    #[cfg(not(windows))]
-    pub experimental: Option<String>,
-
-    /// The date and time that the daemon was compiled.
-    #[serde(rename = "BuildTime")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub build_time: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct VersionComponents {
-    /// Name of the component
-    #[serde(rename = "Name")]
-    pub name: String,
-
-    /// Version of the component
-    #[serde(rename = "Version")]
-    pub version: String,
-
-    /// Key/value pairs of strings with additional information about the component. These values are intended for informational purposes only, and their content is not defined, and not part of the API specification.  These messages can be printed by the client as information to the user.
-    #[serde(rename = "Details")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<HashMap<String, Value>>,
-}
 
 /// Parameters used in the [Events API](Docker::events())
 ///
@@ -118,6 +34,10 @@ pub struct VersionComponents {
 /// # }
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::EventsOptions and associated EventsOptionsBuilder"
+)]
 pub struct EventsOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -163,6 +83,53 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<EventsOptions<T>> for crate::query_parameters::EventsOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: EventsOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::EventsOptionsBuilder::default().filters(
+            &opts
+                .filters
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                .collect(),
+        );
+
+        if let Some(since) = opts.since {
+            builder = builder.since(
+                #[cfg(all(feature = "chrono", not(feature = "time")))]
+                &format!("{}.{}", since.timestamp(), since.timestamp_subsec_nanos()),
+                #[cfg(feature = "time")]
+                &format!(
+                    "{}.{}",
+                    since.unix_timestamp(),
+                    since.unix_timestamp_nanos()
+                ),
+                #[cfg(not(any(feature = "time", feature = "chrono")))]
+                &since,
+            );
+        }
+
+        if let Some(until) = opts.until {
+            builder = builder.until(
+                #[cfg(all(feature = "chrono", not(feature = "time")))]
+                &format!("{}.{}", until.timestamp(), until.timestamp_subsec_nanos()),
+                #[cfg(feature = "time")]
+                &format!(
+                    "{}.{}",
+                    until.unix_timestamp(),
+                    until.unix_timestamp_nanos()
+                ),
+                #[cfg(not(any(feature = "time", feature = "chrono")))]
+                &until,
+            );
+        }
+
+        builder.build()
+    }
+}
+
 impl Docker {
     /// ---
     ///
@@ -182,7 +149,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     /// docker.version();
     /// ```
-    pub async fn version(&self) -> Result<Version, Error> {
+    pub async fn version(&self) -> Result<SystemVersion, Error> {
         let req = self.build_request(
             "/version",
             Builder::new().method(Method::GET),
@@ -274,19 +241,16 @@ impl Docker {
     ///     filters: HashMap::new(),
     /// }));
     /// ```
-    pub fn events<T>(
+    pub fn events(
         &self,
-        options: Option<EventsOptions<T>>,
-    ) -> impl Stream<Item = Result<EventMessage, Error>>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::EventsOptions>>,
+    ) -> impl Stream<Item = Result<EventMessage, Error>> {
         let url = "/events";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -309,16 +273,20 @@ impl Docker {
     ///
     /// ```rust
     /// # use bollard::Docker;
+    /// # use bollard::query_parameters::DataUsageOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// docker.df();
+    /// docker.df(None::<DataUsageOptions>);
     /// ```
-    pub async fn df(&self) -> Result<SystemDataUsageResponse, Error> {
+    pub async fn df(
+        &self,
+        options: Option<crate::query_parameters::DataUsageOptions>,
+    ) -> Result<SystemDataUsageResponse, Error> {
         let url = "/system/df";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            None::<String>,
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

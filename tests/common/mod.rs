@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::stream::TryStreamExt;
@@ -258,7 +259,9 @@ pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Re
         .try_collect::<Vec<_>>()
         .await;
 
-    let _ = &docker.remove_container(container_name, None).await?;
+    let _ = &docker
+        .remove_container(container_name, None::<RemoveContainerOptions>)
+        .await?;
 
     Ok(())
 }

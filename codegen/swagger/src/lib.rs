@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 pub const BASE_PATH: &str = "/v1.48";
 
+pub mod query_parameters;
 pub mod models;
 
 #[cfg(feature = "buildkit")]

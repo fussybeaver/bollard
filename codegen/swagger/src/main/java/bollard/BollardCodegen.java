@@ -3,10 +3,6 @@ package bollard;
 import io.swagger.codegen.*;
 import io.swagger.codegen.languages.RustServerCodegen;
 import io.swagger.models.properties.*;
-import io.swagger.models.parameters.Parameter;
-import io.swagger.models.parameters.SerializableParameter;
-import io.swagger.models.parameters.BodyParameter;
-import io.swagger.util.Json;
 
 import io.swagger.models.*;
 
@@ -23,6 +19,16 @@ public class BollardCodegen extends RustServerCodegen {
     public BollardCodegen() {
         super();
         typeMapping.put("DateTime", "BollardDate");
+        supportingFiles.add(
+                new SupportingFile("query_parameters.mustache", "src", "query_parameters.rs")
+        );
+        CliOption option = new CliOption("queryParameterMappings",
+                "Mapping Swagger to legacy Bollard Query Parameter types, delimited by comma and colon");
+
+        cliOptions.add(option);
+
+        supportsInheritance = false;
+        supportsMixins = true;
     }
 
     // Declare custom additions to inline enums that are behaving differently
@@ -62,6 +68,8 @@ public class BollardCodegen extends RustServerCodegen {
         upperCaseModelFields.add("IdResponse");
     }
 
+    private HashMap<String, String> queryParameterMappings = new HashMap();
+
     @Override
     public void preprocessSwagger(Swagger swagger) {
         Info info = swagger.getInfo();
@@ -69,6 +77,16 @@ public class BollardCodegen extends RustServerCodegen {
         versionComponents.add((String) additionalProperties.get(CodegenConstants.PACKAGE_VERSION));
 
         info.setVersion(StringUtils.join(versionComponents, "."));
+
+        String cliOptionQueryParameterMappings = (String) additionalProperties.get("queryParameterMappings");
+        if (cliOptionQueryParameterMappings != null) {
+            for (String cliOptionline : cliOptionQueryParameterMappings.split("\n")) {
+                String[] cliOptionLineSplit = cliOptionline.split("=");
+                if (cliOptionLineSplit.length == 2) {
+                    queryParameterMappings.put(cliOptionLineSplit[0].trim(), cliOptionLineSplit[1].trim());
+                }
+            }
+        }
 
         super.preprocessSwagger(swagger);
     }
@@ -79,7 +97,7 @@ public class BollardCodegen extends RustServerCodegen {
 
         // This is a "fallback" type, and allows some parts of the Docker API
         // that receive an empty JSON '{}' value.
-        if ("object".equals(type)) {
+        if ("object".equals(type) && "object".equals(p.getType())) {
             type = "HashMap<(), ()>";
         }
 
@@ -121,6 +139,61 @@ public class BollardCodegen extends RustServerCodegen {
                 model.vendorExtensions.put("x-rustgen-upper-case", true);
             }
 
+            // Handle Container Update body
+            if ("Resources".equals(model.classname)) {
+                CodegenModel containerUpdateBody = new CodegenModel();
+                containerUpdateBody.name = "ContainerUpdateBody";
+                containerUpdateBody.classname = "ContainerUpdateBody";
+                containerUpdateBody.vars = new ArrayList<>(model.vars);
+
+                CodegenProperty restartPolicyProp = new CodegenProperty();
+                restartPolicyProp.name = "restart_policy";
+                restartPolicyProp.baseName = "RestartPolicy";
+                restartPolicyProp.datatype = "RestartPolicy";
+                restartPolicyProp.required = false;
+                containerUpdateBody.vars.add(restartPolicyProp);
+
+                Map<String, Object> inner = new HashMap<String, Object>();
+                List<Map<String, Object>> models = new ArrayList<>();
+                Map<String, Object> inside = new HashMap<String, Object>();
+                inside.put("model", containerUpdateBody);
+                models.add(inside);
+                inner.put("models", models);
+                newObjs.put("ContainerUpdateBody", inner);
+            }
+
+            // Handle Container Create body
+            if ("ContainerConfig".equals(model.classname)) {
+                CodegenModel containerCreateBody = new CodegenModel();
+                containerCreateBody.name = "ContainerCreateBody";
+                containerCreateBody.classname = "ContainerCreateBody";
+                containerCreateBody.vars = new ArrayList<>(model.vars);
+                CodegenModel hostConfig = allModels.get("HostConfig");
+
+                CodegenProperty hostConfigProp = new CodegenProperty();
+                hostConfigProp.name = "host_config";
+                hostConfigProp.baseName = "HostConfig";
+                hostConfigProp.datatype = "HostConfig";
+                hostConfigProp.required = false;
+                containerCreateBody.vars.add(hostConfigProp);
+
+                CodegenProperty networkingConfigProp = new CodegenProperty();
+                networkingConfigProp.name = "networking_config";
+                networkingConfigProp.baseName = "NetworkingConfig";
+                networkingConfigProp.datatype = "NetworkingConfig";
+                networkingConfigProp.required = false;
+                containerCreateBody.vars.add(networkingConfigProp);
+
+                Map<String, Object> inner = new HashMap<String, Object>();
+                List<Map<String, Object>> models = new ArrayList<>();
+                Map<String, Object> inside = new HashMap<String, Object>();
+                inside.put("model", containerCreateBody);
+                models.add(inside);
+                inner.put("models", models);
+                newObjs.put("ContainerCreateBody", inner);
+            }
+
+
             // Special case for numeric Enums
             if (model.isEnum && model.dataType != null && (model.dataType.equals("i8") || model.dataType.equals("i16") || model.dataType.equals("i32") || model.dataType.equals("i64"))) {
                 model.vendorExtensions.put("x-rustgen-numeric-enum", true);
@@ -149,6 +222,14 @@ public class BollardCodegen extends RustServerCodegen {
                 if (prop.name.equals("aux") && model.classname.equals("BuildInfo")) {
                     prop.vendorExtensions.put("x-rustgen-grpc-aux", true);
                     model.vendorExtensions.put("x-rustgen-grpc-aux", true);
+                }
+
+                if (prop.name.equals("networks") && model.classname.equals("ContainerStatsResponse")) {
+                    prop.datatype = "ContainerNetworkStats";
+                }
+
+                if ("SystemVersionComponents".equals(model.classname) && "details".equals(prop.name)) {
+                    prop.datatype = "HashMap<String, String>";
                 }
 
                 if (upperCaseModelFields.contains(model.classname)) {
@@ -183,6 +264,17 @@ public class BollardCodegen extends RustServerCodegen {
                 }
             }
         }
+
+        for (Entry<String, Object> entry : objs.entrySet()) {
+            String modelName = toModelName(entry.getKey());
+            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
+            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
+            for (Map<String, Object> mo : models) {
+                CodegenModel cm = (CodegenModel) mo.get("model");
+                allModels.put(modelName, cm);
+            }
+        }
+
 
         return newObjs;
     }
@@ -234,4 +326,111 @@ public class BollardCodegen extends RustServerCodegen {
         }
         return name;
     }
+
+    @Override
+    public Map<String, Object> postProcessOperations(Map<String, Object> objs) {
+        objs = super.postProcessOperations(objs);
+        Map<String, Object> operations = (Map<String, Object>) objs.get(
+                "operations"
+        );
+        if (operations != null) {
+            List<CodegenOperation> ops = (List<
+                    CodegenOperation
+                    >) operations.get("operation");
+            for (final CodegenOperation operation : ops) {
+                if (queryParameterMappings.containsKey(operation.operationIdCamelCase)) {
+                    operation.vendorExtensions.put("x-codegen-query-param-legacy-name", queryParameterMappings.get(operation.operationIdCamelCase));
+                    for (final CodegenParameter param : operation.queryParams) {
+                        if (param.unescapedDescription != null) {
+                            String[] splitLines = param.unescapedDescription.split("\n");
+                            String[] description = new String[splitLines.length];
+
+                            for (int i = 0, splitLinesLength = splitLines.length; i < splitLinesLength; i++) {
+                                String docLine = splitLines[i];
+                                description[i] = "    /// " + docLine;
+                            }
+                            param.unescapedDescription = String.join("\n", description);
+                        }
+                        if (param.isString) {
+                            operation.vendorExtensions.put("x-codegen-query-param-has-string", "true");
+                            //param.vendorExtensions.put("x-codegen-query-param-struct-type", "String");
+                            if (param.defaultValue != null) {
+                                param.defaultValue = "String::from(\"" + param.defaultValue + "\")";
+                            }
+                        }
+
+                        // Special handling for filter parameters
+                        if (param.paramName.equals("filters")) {
+                            param.isMapContainer = true;
+                            param.isString = false;
+                            param.isListContainer = true;
+                            param.dataType = "&HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>";
+                            param.vendorExtensions.put("x-codegen-query-param-struct-type", "HashMap<String, Vec<String>>");
+                            operation.vendorExtensions.put("x-codegen-query-param-has-hashmap", "true");
+                            param.vendorExtensions.put("x-codegen-query-param-serialize-as-json", "true");
+                        }
+                        if (!param.paramName.equals(param.baseName)) {
+                            param.vendorExtensions.put("x-codegen-query-param-rename", param.baseName);
+                        }
+
+                        // Special handling for building images
+                        if (operation.operationId.equals("ImageBuild")) {
+                            if (param.paramName.equals("buildargs") || param.paramName.equals("labels")) {
+                                param.isMapContainer = true;
+                                param.isString = false;
+                                param.isListContainer = false;
+                                param.dataType = "&HashMap<impl Into<String> + Clone, impl Into<String> + Clone>";
+                                param.vendorExtensions.put("x-codegen-query-param-struct-type", "HashMap<String, String>");
+                                param.vendorExtensions.put("x-codegen-query-param-serialize-as-json", "true");
+                            }
+                            if (param.paramName.equals("cachefrom")) {
+                                param.isContainer = true;
+                                param.isString = false;
+                                param.dataType = "&Vec<impl Into<String> + Clone>";
+                                param.vendorExtensions.put("x-codegen-query-param-struct-type", "Vec<String>");
+                                param.vendorExtensions.put("x-codegen-query-param-serialize-as-json", "true");
+                            }
+                            if (param.paramName.equals("outputs")) {
+                                param.vendorExtensions.put("x-codegen-query-param-is-buildkit", "true");
+                                param.dataType = "ImageBuildOutput";
+                                param.isString = false;
+                                param.defaultValue = null;
+                            }
+                            if (param.paramName.equals("version")) {
+                                param.dataType = "BuilderVersion";
+                                param.isString = false;
+                                param.defaultValue = null;
+                                param.required = true;
+                            }
+                        }
+
+                        // Special handling for creating images
+                        if (operation.operationId.equals("ImageCreate")) {
+                            if (param.paramName.equals("changes")) {
+                                param.vendorExtensions.put("x-codegen-query-param-serialize-join-newlines", "true");
+                                param.required = true;
+
+                            }
+                        }
+                    }
+
+                    if (operation.operationId.equals("ImageBuild")) {
+                        CodegenParameter sessionParam = new CodegenParameter();
+                        sessionParam.baseName = "session";
+                        sessionParam.unescapedDescription = "    /// Session ID used to communicate with Docker's internal buildkit engine";
+                        sessionParam.paramName = "session";
+                        sessionParam.dataType = "String";
+                        sessionParam.isString = true;
+                        sessionParam.vendorExtensions = new HashMap<>();
+                        sessionParam.vendorExtensions.put("x-codegen-query-param-is-buildkit", "true");
+                        operation.queryParams.add(sessionParam);
+                    }
+
+                }
+            }
+        }
+
+        return objs;
+    }
+
 }

@@ -1,5 +1,4 @@
 //! Stream stats for all running Docker containers asynchronously
-use bollard::container::{ListContainersOptions, StatsOptions};
 use bollard::Docker;
 
 use futures_util::stream::StreamExt;
@@ -14,11 +13,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut filter = HashMap::new();
         filter.insert(String::from("status"), vec![String::from("running")]);
         let containers = &docker
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                filters: filter,
-                ..Default::default()
-            }))
+            .list_containers(Some(
+                bollard::query_parameters::ListContainersOptionsBuilder::default()
+                    .all(true)
+                    .filters(&filter)
+                    .build(),
+            ))
             .await?;
 
         if containers.is_empty() {
@@ -29,10 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let stream = &mut docker
                     .stats(
                         container_id,
-                        Some(StatsOptions {
-                            stream: false,
-                            ..Default::default()
-                        }),
+                        Some(
+                            bollard::query_parameters::StatsOptionsBuilder::default()
+                                .stream(false)
+                                .build(),
+                        ),
                     )
                     .take(1);
 
