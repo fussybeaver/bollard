@@ -1369,22 +1369,15 @@ impl Docker {
         O: Serialize,
     {
         match credentials {
-            DockerCredentialsHeader::Config(config) => {
-                let value = match config {
-                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
-                    None => "".into(),
-                };
-
+            DockerCredentialsHeader::Config(Some(config)) => {
+                let value = base64_url_encode(&serde_json::to_string(&config)?);
                 builder = builder.header("X-Registry-Config", value)
             }
-            DockerCredentialsHeader::Auth(auth) => {
-                let value = match auth {
-                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
-                    None => "".into(),
-                };
-
+            DockerCredentialsHeader::Auth(Some(config)) => {
+                let value = base64_url_encode(&serde_json::to_string(&config)?);
                 builder = builder.header("X-Registry-Auth", value)
             }
+            _ => {}
         }
 
         self.build_request(path, builder, query, payload)
