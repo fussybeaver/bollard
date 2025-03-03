@@ -101,9 +101,19 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
     let response = docker.create_service(spec, None).await?;
     assert!(response.id.is_some());
 
+    // The maximum amount of time we'll wait for Docker to start the task
+    const MAX_WAIT_DURATION: Duration = Duration::from_secs(10);
+    // The amount of time to sleep between attempts
+    const SLEEP_DURATION: Duration = Duration::from_millis(100);
+
     // Wait for a task to be created
     let mut tasks;
+    let mut attempt = 0;
     loop {
+        if MAX_WAIT_DURATION.saturating_sub(SLEEP_DURATION * attempt) == Duration::ZERO {
+            panic!("the Docker daemon took to long to start a task");
+        }
+
         tasks = docker
             .list_tasks(Some(ListTasksOptions {
                 filters: HashMap::from_iter([("service", vec![SERVICE_NAME])]),
@@ -114,7 +124,8 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
             break;
         }
 
-        sleep(Duration::from_millis(100)).await;
+        sleep(SLEEP_DURATION).await;
+        attempt += 1;
     }
 
     assert_eq!(tasks.len(), 1, "expected one task");
