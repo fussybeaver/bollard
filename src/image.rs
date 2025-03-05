@@ -482,6 +482,44 @@ where
     }
 }
 
+/// Parameters to the [Prune Build API](Docker::prune_build())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::image::PruneBuildOptions;
+///
+/// use std::collections::HashMap;
+///
+/// let mut filters = HashMap::new();
+/// filters.insert("until", vec!["10m"]);
+///
+/// PruneBuildOptions{
+///   filters,
+/// };
+/// ```
+///
+/// ```rust
+/// # use bollard::image::PruneBuildOptions;
+/// # use std::default::Default;
+/// PruneBuildOptions::<String>{
+///   ..Default::default()
+/// };
+/// ```
+///
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct PruneBuildOptions<T>
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    /// Filters to process on the prune list, encoded as JSON. Available filters:
+    ///  - `until=<string>` Prune images created before this timestamp. The `<timestamp>` can be
+    ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
+    ///    computed relative to the daemon machine’s time.
+    #[serde(serialize_with = "crate::docker::serialize_as_json")]
+    pub filters: HashMap<T, Vec<T>>,
+}
+
 /// Builder Version to use
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
 #[repr(u8)]
@@ -1313,6 +1351,57 @@ impl Docker {
         crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
 
         Ok(())
+    }
+
+    /// ---
+    ///
+    /// # Prune Build
+    ///
+    /// Delete contents of the build cache
+    ///
+    /// # Arguments
+    ///
+    /// - An optional [Prune Build Options](PruneBuildOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - a [Prune Build Response](BuildPruneResponse), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::PruneBuildOptions;
+    ///
+    /// use std::collections::HashMap;
+    ///
+    /// let mut filters = HashMap::new();
+    /// filters.insert("until", vec!["10m"]);
+    ///
+    /// let options = Some(PruneBuildOptions {
+    ///   filters
+    /// });
+    ///
+    /// docker.prune_build(options);
+    /// ```
+    pub async fn prune_build<T>(
+        &self,
+        options: Option<PruneBuildOptions<T>>,
+    ) -> Result<BuildPruneResponse, Error>
+    where
+        T: Into<String> + Eq + Hash + Serialize,
+    {
+        let url = "/build/prune";
+
+        let req = self.build_request(
+            url,
+            Builder::new().method(Method::POST),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_value(req).await
     }
 
     /// ---

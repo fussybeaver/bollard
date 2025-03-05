@@ -1419,6 +1419,17 @@ RUN touch empty.txt
     Ok(())
 }
 
+async fn prune_build_test(docker: Docker) -> Result<(), Error> {
+    //create_image_hello_world(&docker).await?;
+    let mut filters = HashMap::new();
+    filters.insert("label", vec!["until=24h"]);
+    let _ = &docker
+        .prune_build(Some(PruneBuildOptions { filters }))
+        .await?;
+
+    Ok(())
+}
+
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -1738,6 +1749,11 @@ fn integration_test_build_buildkit_image_outputs_tar() {
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_image_outputs_local() {
     connect_to_docker_and_run!(build_buildkit_image_outputs_local_test);
+}
+
+#[test]
+fn integration_test_prune_build() {
+    connect_to_docker_and_run!(prune_build_test);
 }
 
 #[test]
