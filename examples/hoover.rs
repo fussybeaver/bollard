@@ -73,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let prune = docker
         .prune_build(Some(PruneBuildOptions {
             filters: prune_filters.clone(),
+            ..Default::default()
         }))
         .await?;
 
