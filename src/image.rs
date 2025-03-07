@@ -496,6 +496,7 @@ where
 ///
 /// PruneBuildOptions{
 ///   filters,
+///   ..Default::default()
 /// };
 /// ```
 ///
@@ -1395,7 +1396,8 @@ impl Docker {
     /// filters.insert("until", vec!["10m"]);
     ///
     /// let options = Some(PruneBuildOptions {
-    ///   filters
+    ///   filters,
+    ///   ..Default::default()
     /// });
     ///
     /// docker.prune_build(options);

@@ -1480,20 +1480,30 @@ RUN echo bollard > bollard.txt
         )
         .await?;
 
+    let old_cache_size = &docker
+        .df()
+        .await?
+        .build_cache
+        .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
+        .unwrap();
+
     let prune_info = docker
         .prune_build(None::<PruneBuildOptions<String>>)
         .await?;
 
-    assert!(matches!(prune_info.space_reclaimed, Some(1..)));
-    assert!(prune_info.caches_deleted.is_some_and(|c| !c.is_empty()));
-
-    // Since there was no filter and all images depending on cached data were removed, only cache
-    // entries with 0 size are left behind
-    assert!(docker
+    let new_cache_size = &docker
         .df()
         .await?
         .build_cache
-        .is_some_and(|data| data.iter().all(|e| matches!(e.size, Some(0)))));
+        .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
+        .unwrap();
+
+    assert!(old_cache_size - new_cache_size > 0);
+    assert_eq!(
+        prune_info.space_reclaimed,
+        Some(old_cache_size - new_cache_size)
+    );
+    assert!(prune_info.caches_deleted.is_some_and(|c| !c.is_empty()));
 
     Ok(())
 }
