@@ -512,10 +512,25 @@ pub struct PruneBuildOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
 {
+    /// Amount of disk space in bytes to keep for cache
+    pub reserved_space: Option<i64>,
+    /// Maximum amount of disk space allowed to keep for cache
+    pub max_used_space: Option<i64>,
+    /// Target amount of free disk space after pruning
+    pub min_free_space: Option<i64>,
+    /// Remove all types of build cache
+    pub all: bool,
     /// Filters to process on the prune list, encoded as JSON. Available filters:
-    ///  - `until=<string>` Prune images created before this timestamp. The `<timestamp>` can be
+    ///  - `until=<string>` remove cache older than this timestamp. The `<timestamp>` can be
     ///    Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`)
     ///    computed relative to the daemon machine’s time.
+    ///  - id=<id>
+    ///  - parent=<id>
+    ///  - type=<string>
+    ///  - description=<string>
+    ///  - inuse
+    ///  - shared
+    ///  - private
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
 }
