@@ -113,7 +113,8 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
         # RUSTSEC-2020-0159 https://github.com/chronotope/chrono/issues/602
-      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071"
+        # RUSTSEC-2024-0436 https://github.com/aws/aws-lc-rs/issues/722
+      - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071 --ignore=RUSTSEC-2024-0436"
   test_fmt:
     docker:
       - image: docker:27.3
