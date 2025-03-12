@@ -1,9 +1,9 @@
-//! Removes old docker containers, images, volumes and networks
+//! Removes old docker containers, images, volumes, networks and intermediate build steps
 
 use bollard::Docker;
 use bollard::{
-    container::PruneContainersOptions, image::PruneImagesOptions, network::PruneNetworksOptions,
-    volume::PruneVolumesOptions,
+    container::PruneContainersOptions, image::PruneBuildOptions, image::PruneImagesOptions,
+    network::PruneNetworksOptions, volume::PruneVolumesOptions,
 };
 use std::collections::HashMap;
 
@@ -65,6 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     let prune = docker
         .prune_networks(Some(PruneNetworksOptions {
             filters: prune_filters.clone(),
+        }))
+        .await?;
+
+    println!("{prune:?}");
+
+    let prune = docker
+        .prune_build(Some(PruneBuildOptions {
+            filters: prune_filters.clone(),
+            ..Default::default()
         }))
         .await?;
 
