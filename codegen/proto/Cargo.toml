@@ -21,7 +21,7 @@ name = "fetch"
 required-features = ["fetch"]
 
 [dependencies]
-tonic = { version = "0.12" }
+tonic = { version = "0.13" }
 prost = { version = "0.13" }
 prost-types = "0.13"
 tonic-build = { version = "0.12", optional = true }
