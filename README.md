@@ -44,8 +44,8 @@ bollard = "*"
 
 ### Version
 
-The [Docker API](https://docs.docker.com/engine/api/v1.46/) used by Bollard is using the latest
-`1.46` documentation schema published by the [moby](https://github.com/moby/moby) project to
+The [Docker API](https://docs.docker.com/engine/api/v1.48/) used by Bollard is using the latest
+`1.48` documentation schema published by the [moby](https://github.com/moby/moby) project to
 generate its serialization interface.
 
 This library also supports [version
@@ -170,7 +170,7 @@ To receive a stream of stats for a running container.
 
 ```rust
 use bollard::Docker;
-use bollard::container::StatsOptions;
+use bollard::query_parameters::StatsOptionsBuilder;
 
 use futures_util::stream::TryStreamExt;
 
@@ -180,16 +180,15 @@ use std::default::Default;
 // let docker = Docker::connect_...;
 
 async move {
-    let stats = &docker.stats("postgres", Some(StatsOptions {
-       stream: true,
-       ..Default::default()
-    })).try_collect::<Vec<_>>().await.unwrap();
+    let stats = &docker.stats("postgres", Some(
+      StatsOptionsBuilder::default().stream(true).build()
+    )).try_collect::<Vec<_>>().await.unwrap();
 
     for stat in stats {
         println!("{} - mem total: {:?} | mem usage: {:?}",
-            stat.name,
-            stat.memory_stats.max_usage,
-            stat.memory_stats.usage);
+            stat.name.as_ref().unwrap(),
+            stat.memory_stats.as_ref().unwrap().max_usage,
+            stat.memory_stats.as_ref().unwrap().usage);
     }
 };
 ```
