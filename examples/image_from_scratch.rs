@@ -3,7 +3,7 @@ use bollard::models::CreateImageInfo;
 /// Run with `cargo run --example image_from_scratch <path to archive>.tar.gz
 /// This implementation streams the archive file piece by piece to the Docker daemon,
 /// but does so inefficiently. For best results, use `tokio::fs` instead of `std::fs`.
-use bollard::{image::CreateImageOptions, Docker};
+use bollard::Docker;
 use futures_util::stream::TryStreamExt;
 use std::env::args;
 use tokio::fs::File;
@@ -25,12 +25,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let docker = Docker::connect_with_socket_defaults().unwrap();
 
-    let options = CreateImageOptions {
-        from_src: "-", // from_src must be "-" when sending the archive in the request body
-        repo: "bollard_image_scratch_example", // The name of the image in the docker daemon.
-        tag: "1.0.0",  // The tag of this particular image.
-        ..Default::default()
-    };
+    let options = bollard::query_parameters::CreateImageOptionsBuilder::default()
+        .from_src("-") // from_src must be "-" when sending the archive in the request body
+        .repo("bollard_image_scratch_example") // The name of the image in the docker daemon.
+        .tag("1.0.0") // The tag of this particular image.
+        .build();
 
     // Finally, call Docker::create_image with the options and the body
     let result: Vec<CreateImageInfo> = docker

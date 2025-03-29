@@ -172,7 +172,7 @@
 //!
 //! ```rust,no_run
 //! use bollard::Docker;
-//! use bollard::container::StatsOptions;
+//! use bollard::query_parameters::StatsOptionsBuilder;
 //!
 //! use futures_util::stream::TryStreamExt;
 //!
@@ -183,16 +183,15 @@
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! async move {
-//!     let stats = &docker.stats("postgres", Some(StatsOptions {
-//!        stream: true,
-//!        ..Default::default()
-//!     })).try_collect::<Vec<_>>().await.unwrap();
+//!     let stats = &docker.stats("postgres", Some(
+//!       StatsOptionsBuilder::default().stream(true).build()
+//!     )).try_collect::<Vec<_>>().await.unwrap();
 //!
 //!     for stat in stats {
 //!         println!("{} - mem total: {:?} | mem usage: {:?}",
-//!             stat.name,
-//!             stat.memory_stats.max_usage,
-//!             stat.memory_stats.usage);
+//!             stat.name.as_ref().unwrap(),
+//!             stat.memory_stats.as_ref().unwrap().max_usage,
+//!             stat.memory_stats.as_ref().unwrap().usage);
 //!     }
 //! };
 //! ```
@@ -288,6 +287,7 @@ pub use crate::docker::{
     API_DEFAULT_VERSION,
 };
 pub use bollard_stubs::models;
+pub use bollard_stubs::query_parameters;
 
 #[cfg(feature = "buildkit")]
 pub use bollard_buildkit_proto::fsutil;

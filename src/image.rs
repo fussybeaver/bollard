@@ -1,4 +1,5 @@
 //! Image API: creating, manipulating and pushing docker images
+#![allow(deprecated)]
 #[cfg(feature = "buildkit")]
 use bollard_buildkit_proto::moby::filesync::packet::file_send_server::FileSendServer as FileSendPacketServer;
 use bytes::Bytes;
@@ -17,7 +18,6 @@ use serde_repr::*;
 
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
-use crate::container::Config;
 use crate::docker::{body_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
@@ -50,6 +50,10 @@ use std::hash::Hash;
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::CreateImageOptions and associated CreateImageOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateImageOptions<'a, T>
 where
@@ -77,6 +81,22 @@ where
         skip_serializing_if = "Vec::is_empty" // if an empty changes parameter is sent, Docker returns a 400 "file with no instructions" error
     )]
     pub changes: Vec<&'a str>,
+}
+
+impl<T> From<CreateImageOptions<'_, T>> for crate::query_parameters::CreateImageOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: CreateImageOptions<'_, T>) -> Self {
+        crate::query_parameters::CreateImageOptionsBuilder::default()
+            .from_image(&opts.from_image.into())
+            .from_src(&opts.from_src.into())
+            .repo(&opts.repo.into())
+            .tag(&opts.tag.into())
+            .platform(&opts.platform.into())
+            .changes(opts.changes.into_iter().map(ToString::to_string).collect())
+            .build()
+    }
 }
 
 /// Parameters to the [List Images
@@ -109,6 +129,10 @@ where
 /// ```
 ///
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListImageOptions and associated ListImageOptionsBuilder"
+)]
 pub struct ListImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -125,6 +149,25 @@ where
     pub filters: HashMap<T, Vec<T>>,
     /// Show digest information as a RepoDigests field on each image.
     pub digests: bool,
+}
+
+impl<T> From<ListImagesOptions<T>> for crate::query_parameters::ListImagesOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: ListImagesOptions<T>) -> Self {
+        crate::query_parameters::ListImagesOptionsBuilder::default()
+            .all(opts.all)
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .digests(opts.digests)
+            .build()
+    }
 }
 
 /// Parameters to the [Prune Images API](Docker::prune_images())
@@ -153,6 +196,10 @@ where
 /// ```
 ///
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PruneImagesOptions and associated PruneImagesOptionsBuilder"
+)]
 pub struct PruneImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -168,6 +215,23 @@ where
     ///    specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+impl<T> From<PruneImagesOptions<T>> for crate::query_parameters::PruneImagesOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: PruneImagesOptions<T>) -> Self {
+        crate::query_parameters::PruneImagesOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
 }
 
 /// Parameters to the [Search Images API](Docker::search_images())
@@ -197,6 +261,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::SearchImagesOptions and associated SearchImagesOptionsBuilder"
+)]
 pub struct SearchImagesOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -213,6 +281,34 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<SearchImagesOptions<T>> for crate::query_parameters::SearchImagesOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: SearchImagesOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::SearchImagesOptionsBuilder::default()
+            .term(&opts.term.into())
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            );
+        if let Some(limit) = opts.limit {
+            builder = builder.limit(
+                i32::try_from(limit)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in SearchImagesOptions: {:?}", e)
+                    })
+                    .unwrap_or(limit as i32),
+            )
+        }
+
+        builder.build()
+    }
+}
+
 /// Parameters to the [Remove Image API](Docker::remove_image())
 ///
 /// ## Examples
@@ -227,11 +323,24 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::RemoveImageOptions and associated RemoveImageOptionsBuilder"
+)]
 pub struct RemoveImageOptions {
     /// Remove the image even if it is being used by stopped containers or has other tags.
     pub force: bool,
     /// Do not delete untagged parent images.
     pub noprune: bool,
+}
+
+impl From<RemoveImageOptions> for crate::query_parameters::RemoveImageOptions {
+    fn from(opts: RemoveImageOptions) -> Self {
+        crate::query_parameters::RemoveImageOptionsBuilder::default()
+            .force(opts.force)
+            .noprune(opts.noprune)
+            .build()
+    }
 }
 
 /// Parameters to the [Tag Image API](Docker::tag_image())
@@ -256,6 +365,10 @@ pub struct RemoveImageOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::TagImageOptions and associated TagImageOptionsBuilder"
+)]
 pub struct TagImageOptions<T>
 where
     T: Into<String> + Serialize,
@@ -264,6 +377,18 @@ where
     pub repo: T,
     /// The name of the new tag.
     pub tag: T,
+}
+
+impl<T> From<TagImageOptions<T>> for crate::query_parameters::TagImageOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: TagImageOptions<T>) -> Self {
+        crate::query_parameters::TagImageOptionsBuilder::default()
+            .repo(&opts.repo.into())
+            .tag(&opts.tag.into())
+            .build()
+    }
 }
 
 /// Parameters to the [Push Image API](Docker::push_image())
@@ -286,12 +411,27 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PushImageOptions and associated PushImageOptionsBuilder"
+)]
 pub struct PushImageOptions<T>
 where
     T: Into<String> + Serialize,
 {
     /// The tag to associate with the image on the registry.
     pub tag: T,
+}
+
+impl<T> From<PushImageOptions<T>> for crate::query_parameters::PushImageOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: PushImageOptions<T>) -> Self {
+        crate::query_parameters::PushImageOptionsBuilder::default()
+            .tag(&opts.tag.into())
+            .build()
+    }
 }
 
 /// Parameters to the [Commit Container API](Docker::commit_container())
@@ -316,6 +456,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::CommitContainerOptions and associated CommitContainerOptionsBuilder"
+)]
 pub struct CommitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -334,6 +478,27 @@ where
     pub pause: bool,
     /// `Dockerfile` instructions to apply while committing
     pub changes: Option<T>,
+}
+
+impl<T> From<CommitContainerOptions<T>> for crate::query_parameters::CommitContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: CommitContainerOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::CommitContainerOptionsBuilder::default()
+            .container(&opts.container.into())
+            .repo(&opts.repo.into())
+            .tag(&opts.tag.into())
+            .comment(&opts.comment.into())
+            .author(&opts.author.into())
+            .pause(opts.pause);
+
+        if let Some(changes) = opts.changes {
+            builder = builder.changes(&changes.into())
+        }
+
+        builder.build()
+    }
 }
 
 /// Parameters to the [Build Image API](Docker::build_image())
@@ -358,6 +523,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::BuildImageOptions and associated BuildImageOptionsBuilder"
+)]
 pub struct BuildImageOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -432,9 +601,131 @@ where
     pub version: BuilderVersion,
 }
 
+impl<T> From<BuildImageOptions<T>> for crate::query_parameters::BuildImageOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: BuildImageOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::BuildImageOptionsBuilder::default()
+            .dockerfile(&opts.dockerfile.into())
+            .t(&opts.t.into())
+            .remote(&opts.remote.into())
+            .q(opts.q)
+            .nocache(opts.nocache)
+            .cachefrom(&opts.cachefrom.into_iter().map(T::into).collect())
+            .pull(&opts.pull.to_string())
+            .rm(opts.rm)
+            .forcerm(opts.forcerm)
+            .cpusetcpus(&opts.cpusetcpus.into())
+            .buildargs(
+                &opts
+                    .buildargs
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            )
+            .squash(opts.squash)
+            .labels(
+                &opts
+                    .labels
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            )
+            .networkmode(&opts.networkmode.into())
+            .platform(&opts.platform.into())
+            .target(&opts.target.into())
+            .version(opts.version.into());
+
+        if let Some(extrahosts) = opts.extrahosts {
+            builder = builder.extrahosts(&extrahosts.into());
+        }
+
+        if let Some(memory) = opts.memory {
+            builder = builder.memory(
+                i32::try_from(memory)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(memory as i32),
+            );
+        }
+
+        if let Some(memswap) = opts.memswap {
+            builder = builder.memswap(
+                i32::try_from(memswap)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(memswap as i32),
+            );
+        }
+
+        if let Some(cpushares) = opts.cpushares {
+            builder = builder.cpushares(
+                i32::try_from(cpushares)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(cpushares as i32),
+            );
+        }
+
+        if let Some(cpuperiod) = opts.cpuperiod {
+            builder = builder.cpuperiod(
+                i32::try_from(cpuperiod)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(cpuperiod as i32),
+            );
+        }
+
+        if let Some(cpuquota) = opts.cpuquota {
+            builder = builder.cpuquota(
+                i32::try_from(cpuquota)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(cpuquota as i32),
+            );
+        }
+
+        if let Some(shmsize) = opts.shmsize {
+            builder = builder.shmsize(
+                i32::try_from(shmsize)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                    })
+                    .unwrap_or(shmsize as i32),
+            );
+        }
+
+        #[cfg(feature = "buildkit")]
+        let builder = if let Some(outputs) = opts.outputs {
+            builder.outputs(outputs.into())
+        } else {
+            builder
+        };
+
+        #[cfg(feature = "buildkit")]
+        let builder = if let Some(session) = opts.session {
+            builder.session(&session)
+        } else {
+            builder
+        };
+
+        builder.build()
+    }
+}
+
 #[cfg(feature = "buildkit")]
 /// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
 #[derive(Debug, Clone, PartialEq)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the bollard_stubs::query_parameters::ImageBuildOutput"
+)]
 pub enum ImageBuildOutput<T>
 where
     T: Into<String>,
@@ -454,6 +745,23 @@ where
 }
 
 #[cfg(feature = "buildkit")]
+impl<T> From<ImageBuildOutput<T>> for crate::query_parameters::ImageBuildOutput
+where
+    T: Into<String>,
+{
+    fn from(output: ImageBuildOutput<T>) -> Self {
+        match output {
+            ImageBuildOutput::Tar(path) => {
+                crate::query_parameters::ImageBuildOutput::Tar(path.into())
+            }
+            ImageBuildOutput::Local(path) => {
+                crate::query_parameters::ImageBuildOutput::Local(path.into())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "buildkit")]
 impl<T> Serialize for ImageBuildOutput<T>
 where
     T: Into<String>,
@@ -465,19 +773,6 @@ where
         match self {
             ImageBuildOutput::Tar(_) => serializer.serialize_str(r#"[{"type": "tar"}]"#),
             ImageBuildOutput::Local(_) => serializer.serialize_str(r#"[{"type": "local"}]"#),
-        }
-    }
-}
-
-#[cfg(feature = "buildkit")]
-impl<T> ImageBuildOutput<T>
-where
-    T: Into<String>,
-{
-    fn into_string(self) -> ImageBuildOutput<String> {
-        match self {
-            ImageBuildOutput::Tar(path) => ImageBuildOutput::Tar(path.into()),
-            ImageBuildOutput::Local(path) => ImageBuildOutput::Local(path.into()),
         }
     }
 }
@@ -509,6 +804,10 @@ where
 /// ```
 ///
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PruneBuildOptions and associated PruneBuildOptionsBuilder"
+)]
 pub struct PruneBuildOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -536,16 +835,48 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<PruneBuildOptions<T>> for crate::query_parameters::PruneBuildOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: PruneBuildOptions<T>) -> Self {
+        crate::query_parameters::PruneBuildOptionsBuilder::default()
+            .all(opts.all)
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
+}
+
 /// Builder Version to use
-#[derive(Clone, Copy, Debug, PartialEq, Serialize_repr)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize_repr)]
 #[repr(u8)]
-#[derive(Default)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the bollard_stubs::query_parameters::BuilderVersion"
+)]
 pub enum BuilderVersion {
     /// BuilderV1 is the first generation builder in docker daemon
     #[default]
     BuilderV1 = 1,
     /// BuilderBuildKit is builder based on moby/buildkit project
     BuilderBuildKit = 2,
+}
+
+impl From<BuilderVersion> for crate::query_parameters::BuilderVersion {
+    fn from(opts: BuilderVersion) -> Self {
+        match opts {
+            BuilderVersion::BuilderV1 => crate::query_parameters::BuilderVersion::BuilderV1,
+            BuilderVersion::BuilderBuildKit => {
+                crate::query_parameters::BuilderVersion::BuilderBuildKit
+            }
+        }
+    }
 }
 
 enum ImageBuildBuildkitEither {
@@ -568,9 +899,21 @@ enum ImageBuildBuildkitEither {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ImportImageOptions and associated ImportImageOptionsBuilder"
+)]
 pub struct ImportImageOptions {
     /// Suppress progress details during load.
     pub quiet: bool,
+}
+
+impl From<ImportImageOptions> for crate::query_parameters::ImportImageOptions {
+    fn from(opts: ImportImageOptions) -> Self {
+        crate::query_parameters::ImportImageOptionsBuilder::default()
+            .quiet(opts.quiet)
+            .build()
+    }
 }
 
 impl Docker {
@@ -610,19 +953,16 @@ impl Docker {
     ///
     /// docker.list_images(options);
     /// ```
-    pub async fn list_images<T>(
+    pub async fn list_images(
         &self,
-        options: Option<ListImagesOptions<T>>,
-    ) -> Result<Vec<ImageSummary>, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListImagesOptions>>,
+    ) -> Result<Vec<ImageSummary>, Error> {
         let url = "/images/json";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -670,21 +1010,18 @@ impl Docker {
     ///
     ///  - Import from tarball
     ///
-    pub fn create_image<T>(
+    pub fn create_image(
         &self,
-        options: Option<CreateImageOptions<'_, T>>,
+        options: Option<impl Into<crate::query_parameters::CreateImageOptions>>,
         root_fs: Option<BodyType>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = Result<CreateImageInfo, Error>>
-    where
-        T: Into<String> + Serialize + std::fmt::Debug + Clone,
-    {
+    ) -> impl Stream<Item = Result<CreateImageInfo, Error>> {
         let url = "/images/create";
 
         let req = self.build_request_with_registry_auth(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(root_fs.unwrap_or(BodyType::Left(Full::new(Bytes::new())))),
             DockerCredentialsHeader::Auth(credentials),
         );
@@ -808,19 +1145,16 @@ impl Docker {
     ///
     /// docker.prune_images(options);
     /// ```
-    pub async fn prune_images<T>(
+    pub async fn prune_images(
         &self,
-        options: Option<PruneImagesOptions<T>>,
-    ) -> Result<ImagePruneResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::PruneImagesOptions>>,
+    ) -> Result<ImagePruneResponse, Error> {
         let url = "/images/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -899,19 +1233,16 @@ impl Docker {
     ///
     /// docker.search_images(search_options);
     /// ```
-    pub async fn search_images<T>(
+    pub async fn search_images(
         &self,
-        options: SearchImagesOptions<T>,
-    ) -> Result<Vec<ImageSearchResponseItem>, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: impl Into<crate::query_parameters::SearchImagesOptions>,
+    ) -> Result<Vec<ImageSearchResponseItem>, Error> {
         let url = "/images/search";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Some(options),
+            Some(options.into()),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -953,7 +1284,7 @@ impl Docker {
     pub async fn remove_image(
         &self,
         image_name: &str,
-        options: Option<RemoveImageOptions>,
+        options: Option<impl Into<crate::query_parameters::RemoveImageOptions>>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
         let url = format!("/images/{image_name}");
@@ -961,7 +1292,7 @@ impl Docker {
         let req = self.build_request_with_registry_auth(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
             DockerCredentialsHeader::Auth(credentials),
         );
@@ -999,20 +1330,17 @@ impl Docker {
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
-    pub async fn tag_image<T>(
+    pub async fn tag_image(
         &self,
         image_name: &str,
-        options: Option<TagImageOptions<T>>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::TagImageOptions>>,
+    ) -> Result<(), Error> {
         let url = format!("/images/{image_name}/tag");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1058,15 +1386,12 @@ impl Docker {
     ///
     /// docker.push_image("hello-world", push_options, credentials);
     /// ```
-    pub fn push_image<T>(
+    pub fn push_image(
         &self,
         image_name: &str,
-        options: Option<PushImageOptions<T>>,
+        options: Option<impl Into<crate::query_parameters::PushImageOptions>>,
         credentials: Option<DockerCredentials>,
-    ) -> impl Stream<Item = Result<PushImageInfo, Error>>
-    where
-        T: Into<String> + Serialize,
-    {
+    ) -> impl Stream<Item = Result<PushImageInfo, Error>> {
         let url = format!("/images/{image_name}/push");
 
         let req = self.build_request_with_registry_auth(
@@ -1074,7 +1399,7 @@ impl Docker {
             Builder::new()
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
             DockerCredentialsHeader::Auth(Some(credentials.unwrap_or_default())),
         );
@@ -1128,22 +1453,18 @@ impl Docker {
     ///
     /// docker.commit_container(options, config);
     /// ```
-    pub async fn commit_container<T, Z>(
+    pub async fn commit_container(
         &self,
-        options: CommitContainerOptions<T>,
-        config: Config<Z>,
-    ) -> Result<Commit, Error>
-    where
-        T: Into<String> + Serialize,
-        Z: Into<String> + Eq + Hash + Serialize,
-    {
+        options: impl Into<crate::query_parameters::CommitContainerOptions>,
+        config: impl Into<crate::models::ContainerConfig>,
+    ) -> Result<Commit, Error> {
         let url = "/commit";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Some(options),
-            Docker::serialize_payload(Some(config)),
+            Some(options.into()),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -1231,19 +1552,19 @@ impl Docker {
     ///
     /// docker.build_image(options, None, Some(body_stream(stream)));
     /// ```
-    pub fn build_image<T>(
+    pub fn build_image(
         &self,
-        options: BuildImageOptions<T>,
+        options: impl Into<crate::query_parameters::BuildImageOptions>,
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<BodyType>,
-    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_
-    where
-        T: Into<String> + Eq + Hash + Serialize + Clone,
-    {
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_ {
         let url = "/build";
+        let options = options.into();
 
         match (
-            if cfg!(feature = "buildkit") && options.version == BuilderVersion::BuilderBuildKit {
+            if cfg!(feature = "buildkit")
+                && options.version == crate::query_parameters::BuilderVersion::BuilderBuildKit
+            {
                 ImageBuildBuildkitEither::Left(credentials)
             } else {
                 ImageBuildBuildkitEither::Right(credentials)
@@ -1253,13 +1574,13 @@ impl Docker {
             #[cfg(feature = "buildkit")]
             (
                 ImageBuildBuildkitEither::Left(creds),
-                BuildImageOptions {
-                    session: Some(ref sess),
+                crate::query_parameters::BuildImageOptions {
+                    session: Some(sess),
                     ..
                 },
             ) => {
                 let session_id = String::clone(sess);
-                let outputs = options.outputs.clone().map(ImageBuildOutput::into_string);
+                let outputs = options.outputs.clone();
 
                 let req = self.build_request(
                     url,
@@ -1288,12 +1609,13 @@ impl Docker {
                     .boxed()
             }
             #[cfg(feature = "buildkit")]
-            (ImageBuildBuildkitEither::Left(_), BuildImageOptions { session: None, .. }) => {
-                stream::once(futures_util::future::err(
-                    Error::MissingSessionBuildkitError {},
-                ))
-                .boxed()
-            }
+            (
+                ImageBuildBuildkitEither::Left(_),
+                crate::query_parameters::BuildImageOptions { session: None, .. },
+            ) => stream::once(futures_util::future::err(
+                Error::MissingSessionBuildkitError {},
+            ))
+            .boxed(),
             #[cfg(not(feature = "buildkit"))]
             (ImageBuildBuildkitEither::Left(_), _) => unimplemented!(
                 "a buildkit enabled build without the 'buildkit' feature should not be possible"
@@ -1329,7 +1651,7 @@ impl Docker {
         &self,
         id: String,
         credentials: Option<HashMap<String, DockerCredentials>>,
-        outputs: Option<ImageBuildOutput<String>>,
+        outputs: Option<crate::query_parameters::ImageBuildOutput>,
     ) -> Result<(), crate::grpc::error::GrpcError> {
         let driver = crate::grpc::driver::moby::Moby::new(self);
 
@@ -1344,7 +1666,7 @@ impl Docker {
             bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer::new(auth_provider);
 
         let mut services = match outputs {
-            Some(ImageBuildOutput::Tar(path)) => {
+            Some(crate::query_parameters::ImageBuildOutput::Tar(path)) => {
                 let filesend_impl =
                     crate::grpc::FileSendImpl::new(std::path::PathBuf::from(path).as_path());
                 let filesend =
@@ -1353,7 +1675,7 @@ impl Docker {
                     );
                 vec![crate::grpc::GrpcServer::FileSend(filesend)]
             }
-            Some(ImageBuildOutput::Local(path)) => {
+            Some(crate::query_parameters::ImageBuildOutput::Local(path)) => {
                 let filesendpacket_impl =
                     crate::grpc::FileSendPacketImpl::new(std::path::PathBuf::from(path).as_path());
                 let filesendpacket = FileSendPacketServer::new(filesendpacket_impl);
@@ -1402,19 +1724,16 @@ impl Docker {
     ///
     /// docker.prune_build(options);
     /// ```
-    pub async fn prune_build<T>(
+    pub async fn prune_build(
         &self,
-        options: Option<PruneBuildOptions<T>>,
-    ) -> Result<BuildPruneResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::PruneBuildOptions>>,
+    ) -> Result<BuildPruneResponse, Error> {
         let url = "/build/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1542,7 +1861,7 @@ impl Docker {
     /// ```
     pub fn import_image(
         &self,
-        options: ImportImageOptions,
+        options: impl Into<crate::query_parameters::ImportImageOptions>,
         root_fs: BodyType,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
@@ -1551,7 +1870,7 @@ impl Docker {
             Builder::new()
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
-            Some(options),
+            Some(options.into()),
             Ok(root_fs),
             DockerCredentialsHeader::Config(credentials),
         );
@@ -1627,7 +1946,7 @@ impl Docker {
     /// ```
     pub fn import_image_stream(
         &self,
-        options: ImportImageOptions,
+        options: impl Into<crate::query_parameters::ImportImageOptions>,
         root_fs: impl Stream<Item = Bytes> + Send + 'static,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
@@ -1636,7 +1955,7 @@ impl Docker {
             Builder::new()
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
-            Some(options),
+            Some(options.into()),
             Ok(body_stream(root_fs)),
             DockerCredentialsHeader::Config(credentials),
         );

@@ -1,4 +1,5 @@
 //! Node API: Nodes are instances of the Engine participating in a swarm. Swarm mode must be enabled for these endpoints to work.
+#![allow(deprecated)]
 
 use bollard_stubs::models::{Node, NodeSpec};
 use bytes::Bytes;
@@ -35,6 +36,10 @@ use http::{request::Builder, Method};
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListNodesOptions and associated ListNodesOptionsBuilder"
+)]
 pub struct ListNodesOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -52,6 +57,23 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<ListNodesOptions<T>> for crate::query_parameters::ListNodesOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ListNodesOptions<T>) -> Self {
+        crate::query_parameters::ListNodesOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
+}
+
 /// Parameters used in the [Delete Node API](Docker::delete_node())
 ///
 /// ## Examples
@@ -67,9 +89,21 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::DeleteNodeOptions and associated DeleteNodeOptionsBuilder"
+)]
 pub struct DeleteNodeOptions {
     /// Force remove a node from the swarm.
     pub force: bool,
+}
+
+impl From<DeleteNodeOptions> for crate::query_parameters::DeleteNodeOptions {
+    fn from(opts: DeleteNodeOptions) -> Self {
+        crate::query_parameters::DeleteNodeOptionsBuilder::default()
+            .force(opts.force)
+            .build()
+    }
 }
 
 /// Configuration for the [Update Node API](Docker::update_node())
@@ -86,10 +120,22 @@ pub struct DeleteNodeOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::UpdateNodeOptions and associated UpdateNodeOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateNodeOptions {
     /// The version number of the node object being updated. This is required to avoid conflicting writes.
     pub version: u64,
+}
+
+impl From<UpdateNodeOptions> for crate::query_parameters::UpdateNodeOptions {
+    fn from(opts: UpdateNodeOptions) -> Self {
+        crate::query_parameters::UpdateNodeOptionsBuilder::default()
+            .version(opts.version as i64)
+            .build()
+    }
 }
 
 impl Docker {
@@ -125,19 +171,16 @@ impl Docker {
     ///
     /// docker.list_nodes(Some(config));
     /// ```
-    pub async fn list_nodes<T>(
+    pub async fn list_nodes(
         &self,
-        options: Option<ListNodesOptions<T>>,
-    ) -> Result<Vec<Node>, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListNodesOptions>>,
+    ) -> Result<Vec<Node>, Error> {
         let url = "/nodes";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -210,14 +253,14 @@ impl Docker {
     pub async fn delete_node(
         &self,
         node_name: &str,
-        options: Option<DeleteNodeOptions>,
+        options: Option<impl Into<DeleteNodeOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/nodes/{node_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -266,14 +309,14 @@ impl Docker {
         &self,
         node_id: &str,
         spec: NodeSpec,
-        options: UpdateNodeOptions,
+        options: impl Into<UpdateNodeOptions>,
     ) -> Result<(), Error> {
         let url = format!("/nodes/{node_id}/update");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options),
+            Some(options.into()),
             Docker::serialize_payload(Some(spec)),
         );
 

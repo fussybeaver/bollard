@@ -1,4 +1,5 @@
 #![type_length_limit = "2097152"]
+#![allow(deprecated)]
 
 use std::task::Poll;
 

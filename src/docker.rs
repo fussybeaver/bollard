@@ -1257,7 +1257,7 @@ impl Docker {
         );
 
         let res = self
-            .process_into_value::<crate::system::Version>(req)
+            .process_into_value::<crate::models::SystemVersion>(req)
             .await?;
 
         let server_version: ClientVersion = if let Some(api_version) = res.api_version {

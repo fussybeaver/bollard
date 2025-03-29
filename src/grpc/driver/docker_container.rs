@@ -9,7 +9,8 @@ use std::{
 
 use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
-    ExecInspectResponse, HostConfig, Mount, MountTypeEnum, SystemInfoCgroupDriverEnum,
+    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountTypeEnum,
+    SystemInfoCgroupDriverEnum,
 };
 use bytes::BytesMut;
 use futures_core::Future;
@@ -26,14 +27,12 @@ use tower_service::Service;
 
 use crate::{
     auth::DockerCredentials,
-    container::{Config, CreateContainerOptions},
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     grpc::{
         build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
         error::GrpcError,
     },
     grpc::{io::GrpcFramedTransport, registry::ImageRegistryOutput, GrpcServer},
-    image::CreateImageOptions,
     Docker,
 };
 
@@ -163,7 +162,10 @@ impl DockerContainerBuilder {
         }) = self
             .inner
             .docker
-            .inspect_container(&self.inner.name, None)
+            .inspect_container(
+                &self.inner.name,
+                None::<bollard_stubs::query_parameters::InspectContainerOptions>,
+            )
             .await
         {
             self.inner.create().await?
@@ -280,10 +282,10 @@ impl DockerContainer {
 
         // TODO: registry auth
 
-        let create_image_options = CreateImageOptions {
-            from_image: String::from(image_name),
-            ..Default::default()
-        };
+        let create_image_options =
+            bollard_stubs::query_parameters::CreateImageOptionsBuilder::default()
+                .from_image(image_name)
+                .build();
 
         self.docker
             .create_image(Some(create_image_options), None, None)
@@ -292,10 +294,10 @@ impl DockerContainer {
 
         debug!("creating container {}", &self.name);
 
-        let container_options = CreateContainerOptions {
-            name: String::from(&self.name),
-            ..Default::default()
-        };
+        let container_options =
+            bollard_stubs::query_parameters::CreateContainerOptionsBuilder::default()
+                .name(&self.name)
+                .build();
 
         let info = self.docker.info().await?;
         let cgroup_parent = match &info.cgroup_driver {
@@ -338,7 +340,7 @@ impl DockerContainer {
             ..Default::default()
         };
 
-        let container_config = Config {
+        let container_config = ContainerCreateBody {
             image: Some(String::from(image_name)),
             env: Some(Vec::clone(&self.env)),
             host_config: Some(host_config),
@@ -359,7 +361,10 @@ impl DockerContainer {
 
     async fn start(&self) -> Result<(), GrpcError> {
         self.docker
-            .start_container::<String>(&self.name, None)
+            .start_container(
+                &self.name,
+                None::<crate::query_parameters::StartContainerOptions>,
+            )
             .await?;
 
         Ok(())
@@ -430,7 +435,7 @@ impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
             self.docker
                 .kill_container(
                     &self.name,
-                    None::<crate::container::KillContainerOptions<String>>,
+                    None::<bollard_stubs::query_parameters::KillContainerOptions>,
                 )
                 .map_err(GrpcError::from)
                 .await

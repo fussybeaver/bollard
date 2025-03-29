@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 extern crate bollard;
 extern crate hyper;
 extern crate tokio;
@@ -151,7 +152,9 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         "integration_test_prune_volumes_2"
     );
 
-    let results = &docker.list_volumes::<String>(None).await?;
+    let results = &docker
+        .list_volumes(None::<bollard::query_parameters::ListVolumesOptions>)
+        .await?;
 
     assert_ne!(0, results.volumes.as_ref().unwrap().len());
 

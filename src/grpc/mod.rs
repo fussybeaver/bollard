@@ -42,7 +42,7 @@ use std::task::{Context, Poll};
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
 use bollard_buildkit_proto::fsutil::types::Packet;
-// use bollard_buildkit_proto::health::{HealthListRequest, HealthListResponse};
+use bollard_buildkit_proto::health::{HealthListRequest, HealthListResponse};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
 use bollard_buildkit_proto::moby::filesync::packet::file_send_server::{
@@ -190,12 +190,12 @@ impl Health for HealthServerImpl {
         }
     }
 
-    // async fn list(
-    //     &self,
-    //     _: tonic::Request<HealthListRequest>,
-    // ) -> Result<tonic::Response<HealthListResponse>, tonic::Status> {
-    //     unimplemented!()
-    // }
+    async fn list(
+        &self,
+        _: tonic::Request<HealthListRequest>,
+    ) -> Result<tonic::Response<HealthListResponse>, tonic::Status> {
+        unimplemented!()
+    }
 
     #[allow(clippy::diverging_sub_expression)]
     async fn watch(
