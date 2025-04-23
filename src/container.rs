@@ -1605,7 +1605,7 @@ impl Docker {
     pub async fn stop_container(
         &self,
         container_name: &str,
-        options: Option<impl Into<StopContainerOptions>>,
+        options: Option<impl Into<crate::query_parameters::StopContainerOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/stop");
 
