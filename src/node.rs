@@ -253,7 +253,7 @@ impl Docker {
     pub async fn delete_node(
         &self,
         node_name: &str,
-        options: Option<impl Into<DeleteNodeOptions>>,
+        options: Option<impl Into<crate::query_parameters::DeleteNodeOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/nodes/{node_name}");
 
@@ -309,7 +309,7 @@ impl Docker {
         &self,
         node_id: &str,
         spec: NodeSpec,
-        options: impl Into<UpdateNodeOptions>,
+        options: impl Into<crate::query_parameters::UpdateNodeOptions>,
     ) -> Result<(), Error> {
         let url = format!("/nodes/{node_id}/update");
 
