@@ -239,10 +239,7 @@ impl AsyncRead for StreamReader {
                         return Poll::Pending;
                     }
                     Poll::Ready(Some(Err(e))) => {
-                        return Poll::Ready(Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            e.to_string(),
-                        )));
+                        return Poll::Ready(Err(io::Error::other(e.to_string())));
                     }
                 },
             }

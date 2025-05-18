@@ -79,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
         // pipe stdin into the docker attach stream input
         spawn(async move {
+            #[allow(clippy::unbuffered_bytes)]
             let mut stdin = async_stdin().bytes();
             loop {
                 if let Some(Ok(byte)) = stdin.next() {
