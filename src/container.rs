@@ -1868,7 +1868,7 @@ impl Docker {
     pub async fn restart_container(
         &self,
         container_name: &str,
-        options: Option<impl Into<RestartContainerOptions>>,
+        options: Option<impl Into<crate::query_parameters::RestartContainerOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/restart");
 
