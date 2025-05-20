@@ -1436,7 +1436,7 @@ pub struct ContainerMemoryStats {
     /// All the stats exported via memory.stat. when using cgroups v2.  This field is Linux-specific and omitted for Windows containers. 
     #[serde(rename = "stats")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stats: Option<HashMap<String, i32>>,
+    pub stats: Option<HashMap<String, u64>>,
 
     /// Number of times memory usage hits limits.  This field is Linux-specific and only supported on cgroups v1. It is omitted when using cgroups v2 and for Windows containers. 
     #[serde(rename = "failcnt")]
