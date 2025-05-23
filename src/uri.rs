@@ -74,6 +74,8 @@ impl<'a> Uri<'a> {
             ClientType::Unix => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
             #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => hex::encode(socket.as_ref().to_string_lossy().as_bytes()),
+            #[cfg(feature = "ssh")]
+            ClientType::Ssh => socket.as_ref().to_string_lossy().into_owned(),
             ClientType::Custom { .. } => socket.as_ref().to_string_lossy().into_owned(),
         }
     }
@@ -88,6 +90,8 @@ impl<'a> Uri<'a> {
             ClientType::Unix => "unix",
             #[cfg(all(feature = "pipe", windows))]
             ClientType::NamedPipe => "net.pipe",
+            #[cfg(feature = "ssh")]
+            ClientType::Ssh => "ssh",
             ClientType::Custom { scheme } => scheme.as_str(),
         }
     }
