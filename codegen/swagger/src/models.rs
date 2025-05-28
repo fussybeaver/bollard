@@ -1122,7 +1122,7 @@ pub struct ContainerCpuUsage {
     /// Total CPU time (in nanoseconds) consumed per core (Linux).  This field is Linux-specific when using cgroups v1. It is omitted when using cgroups v2 and Windows containers. 
     #[serde(rename = "percpu_usage")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub percpu_usage: Option<Vec<i32>>,
+    pub percpu_usage: Option<Vec<u64>>,
 
     /// Time (in nanoseconds) spent by tasks of the cgroup in kernel mode (Linux), or time spent (in 100's of nanoseconds) by all container processes in kernel mode (Windows).  Not populated for Windows containers using Hyper-V isolation. 
     #[serde(rename = "usage_in_kernelmode")]
@@ -1436,7 +1436,7 @@ pub struct ContainerMemoryStats {
     /// All the stats exported via memory.stat. when using cgroups v2.  This field is Linux-specific and omitted for Windows containers. 
     #[serde(rename = "stats")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stats: Option<HashMap<String, i32>>,
+    pub stats: Option<HashMap<String, u64>>,
 
     /// Number of times memory usage hits limits.  This field is Linux-specific and only supported on cgroups v1. It is omitted when using cgroups v2 and for Windows containers. 
     #[serde(rename = "failcnt")]
@@ -2863,7 +2863,7 @@ pub struct ExecConfig {
     /// Initial console size, as an `[height, width]` array.
     #[serde(rename = "ConsoleSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub console_size: Option<Vec<i32>>,
+    pub console_size: Option<Vec<usize>>,
 
     /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`. 
     #[serde(rename = "DetachKeys")]
@@ -2966,7 +2966,7 @@ pub struct ExecStartConfig {
     /// Initial console size, as an `[height, width]` array.
     #[serde(rename = "ConsoleSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub console_size: Option<Vec<i32>>,
+    pub console_size: Option<Vec<usize>>,
 
 }
 
@@ -3398,7 +3398,7 @@ pub struct HostConfig {
     /// Initial console size, as an `[height, width]` array. 
     #[serde(rename = "ConsoleSize")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub console_size: Option<Vec<i32>>,
+    pub console_size: Option<Vec<usize>>,
 
     /// Arbitrary non-identifying metadata attached to container and provided to the runtime when the container is started. 
     #[serde(rename = "Annotations")]
