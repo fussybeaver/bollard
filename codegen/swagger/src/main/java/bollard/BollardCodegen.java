@@ -283,6 +283,11 @@ public class BollardCodegen extends RustServerCodegen {
     public void postProcessModelProperty(CodegenModel model, CodegenProperty property) {
         super.postProcessModelProperty(model, property);
 
+        if (property.items != null) {
+            // Recursively handle arrays and objects (Vec and HashMap)
+            postProcessModelProperty(model, property.items);
+        }
+
         if (property.datatype.equals("isize")) {
             // needed for windows
             property.datatype = "i64";
