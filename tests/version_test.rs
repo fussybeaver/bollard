@@ -52,6 +52,15 @@ fn test_version_http() {
     )
 }
 
+#[cfg(feature = "test_ssh")]
+#[test]
+fn test_version_ssh() {
+    rt_exec!(
+        Docker::connect_with_ssh_defaults().unwrap().version(),
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn test_downversioning() {

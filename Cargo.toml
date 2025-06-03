@@ -24,6 +24,8 @@ default = ["http", "pipe"]
 buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags"]
 # Enable tests specifically for the http connector
 test_http = []
+# Enable tests specifically for the ssh connector
+test_ssh = ["ssh"]
 # Enable tests specifically for rustls
 test_ssl = ["dep:webpki-roots", "ssl_providerless"]
 test_ring = ["test_ssl", "ssl"]
