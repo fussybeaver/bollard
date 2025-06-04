@@ -273,6 +273,8 @@ pub mod node;
 mod read;
 pub mod secret;
 pub mod service;
+#[cfg(feature = "ssh")]
+mod ssh;
 pub mod swarm;
 pub mod system;
 pub mod task;
