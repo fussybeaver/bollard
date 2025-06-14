@@ -23,7 +23,7 @@ required-features = ["fetch"]
 [dependencies]
 tonic = { version = "0.13" }
 prost = { version = "0.13" }
-prost-types = "0.13"
+prost-types = "0.14"
 tonic-build = { version = "0.13", optional = true }
 ureq = { version = "2.9.7", features = ["tls"], optional = true, default-features = false }
 
