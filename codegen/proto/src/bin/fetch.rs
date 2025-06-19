@@ -140,12 +140,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Cannot retrieve dirname for resource");
         let abs_resource_dir = Path::join(&target_dir, resource_dir);
         std::fs::create_dir_all(abs_resource_dir).expect("Cannot create resource directory");
-        let response = ureq::get(resource.source)
+        let mut response = ureq::get(resource.source)
             .call()
             .expect("Cannot fetch resource URL");
         let abs_resource_file = Path::join(&target_dir, resource.destination);
         let mut src = response
-            .into_string()
+            .body_mut()
+            .read_to_string()
             .expect("Cannot create UTF8 string from HTTP response");
         for replacement in resource.replacements {
             src.find(replacement.0).expect(
