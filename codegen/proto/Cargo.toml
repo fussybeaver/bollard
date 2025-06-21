@@ -1,7 +1,7 @@
 [package]
 name = "bollard-buildkit-proto"
 description = "Protobuf definitions to interact with buildkit using Bollard"
-version = "0.6.1"
+version = "0.6.2"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 repository = "https://github.com/fussybeaver/bollard"
@@ -25,5 +25,5 @@ tonic = { version = "0.13" }
 prost = { version = "0.13" }
 prost-types = "0.13"
 tonic-build = { version = "0.13", optional = true }
-ureq = { version = "2.9.7", features = ["tls"], optional = true, default-features = false }
+ureq = { version = "3.0.12", features = ["rustls-no-provider"], optional = true, default-features = false }
 
