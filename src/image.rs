@@ -1971,6 +1971,160 @@ impl Docker {
             }
         })
     }
+
+    /// ---
+    ///
+    /// # Load Image
+    ///
+    /// Load a tarball image into the Docker daemon. This is the correct implementation
+    /// that uses "application/x-tar" as the Content-Type header, matching the Docker API
+    /// specification.
+    ///
+    /// # Arguments
+    ///  - [Import Image Options](ImportImageOptions) struct.
+    ///  - Tarball as `BodyType`
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::ImportImageOptions;
+    /// use bollard::errors::Error;
+    /// use std::default::Default;
+    /// use futures_util::stream::StreamExt;
+    ///
+    /// let options = ImportImageOptions{
+    ///     ..Default::default()
+    /// };
+    ///
+    /// async move {
+    ///     let tarball_bytes = std::fs::read("image.tar").unwrap();
+    ///     
+    ///     let mut stream = docker
+    ///         .load_image(
+    ///             options,
+    ///             bollard::body_full(tarball_bytes),
+    ///             None,
+    ///         );
+    ///
+    ///     while let Some(response) = stream.next().await {
+    ///         // Process response
+    ///     }
+    /// };
+    /// ```
+    pub fn load_image(
+        &self,
+        options: impl Into<crate::query_parameters::ImportImageOptions>,
+        root_fs: BodyType,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> {
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/x-tar"),
+            Some(options.into()),
+            Ok(root_fs),
+            DockerCredentialsHeader::Config(credentials),
+        );
+
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
+    }
+
+    /// ---
+    ///
+    /// # Load Image (stream)
+    ///
+    /// Load a tarball image into the Docker daemon from a stream. This is the correct 
+    /// implementation that uses "application/x-tar" as the Content-Type header, matching 
+    /// the Docker API specification.
+    ///
+    /// # Arguments
+    ///  - [Import Image Options](ImportImageOptions) struct.
+    ///  - Stream producing `Bytes` of the tarball
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::image::ImportImageOptions;
+    /// use bollard::errors::Error;
+    /// use std::default::Default;
+    /// use futures_util::stream::{StreamExt, TryStreamExt};
+    /// use tokio::fs::File;
+    /// use tokio_util::codec;
+    ///
+    /// let options = ImportImageOptions{
+    ///     ..Default::default()
+    /// };
+    ///
+    /// async move {
+    ///     let file = File::open("image.tar").await.unwrap();
+    ///
+    ///     let byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
+    ///         r.unwrap().freeze()
+    ///     });
+    ///
+    ///     let mut stream = docker
+    ///         .load_image_stream(
+    ///             ImportImageOptions {
+    ///                 ..Default::default()
+    ///             },
+    ///             byte_stream,
+    ///             None,
+    ///         );
+    ///
+    ///     while let Some(response) = stream.next().await {
+    ///         // Process response
+    ///     }
+    /// };
+    /// ```
+    pub fn load_image_stream(
+        &self,
+        options: impl Into<crate::query_parameters::ImportImageOptions>,
+        root_fs: impl Stream<Item = Bytes> + Send + 'static,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> {
+        let req = self.build_request_with_registry_auth(
+            "/images/load",
+            Builder::new()
+                .method(Method::POST)
+                .header(CONTENT_TYPE, "application/x-tar"),
+            Some(options.into()),
+            Ok(body_stream(root_fs)),
+            DockerCredentialsHeader::Config(credentials),
+        );
+
+        self.process_into_stream(req).boxed().map(|res| {
+            if let Ok(BuildInfo {
+                error: Some(error), ..
+            }) = res
+            {
+                Err(Error::DockerStreamError { error })
+            } else {
+                res
+            }
+        })
+    }
 }
 
 #[cfg(not(windows))]
