@@ -3896,7 +3896,107 @@ impl Default for ListTasksOptions
 }
 
 
+/// Builder for the `VolumeCreate` API query parameter.
+///
+/// Create a new volume.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::CreateVolumeOptionsBuilder;
+///
+/// let params = CreateVolumeOptionsBuilder::new()
+/// //  .name(/* ... */)
+/// //  .driver(/* ... */)
+/// //  .driver_opts(/* ... */)
+/// //  .labels(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct CreateVolumeOptionsBuilder {
+    inner: CreateVolumeOptions,
+}
 
+impl CreateVolumeOptionsBuilder {
+    /// Construct a builder of query parameters for CreateVolumeOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The new volume's name. If not specified, Docker generates a name.
+    pub fn name(mut self, name: &str) -> Self {
+        self.inner.name = Some(name.into());
+        self
+    }
+    
+    /// Name of the volume driver to use.
+    pub fn driver(mut self, driver: &str) -> Self {
+        self.inner.driver = Some(driver.into());
+        self
+    }
+    
+    /// A mapping of driver options and values. These options are passed directly to the driver and are driver specific.
+    pub fn driver_opts(mut self, driver_opts: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>) -> Self {
+        let mut inner_driver_opts = HashMap::new();
+        for (key, value) in driver_opts {
+            inner_driver_opts.insert(
+                Into::<String>::into(key.clone()),
+                Into::<String>::into(value.clone()),
+            );
+        }
+        self.inner.driver_opts = Some(inner_driver_opts);
+        self
+    }
+
+    /// User-defined key/value metadata.
+    pub fn labels(mut self, labels: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>) -> Self {
+        let mut inner_labels = HashMap::new();
+        for (key, value) in labels {
+            inner_labels.insert(
+                Into::<String>::into(key.clone()),
+                Into::<String>::into(value.clone()),
+            );
+        }
+        self.inner.labels = Some(inner_labels);
+        self
+    }
+
+    /// Consume this builder and use the `CreateVolumeOptions` as parameter to the
+    /// `VolumeCreate` API
+    pub fn build(self) -> CreateVolumeOptions {
+        self.inner
+    }
+
+}
+
+/// Internal struct used in the `VolumeCreate` API
+/// 
+/// Use a [CreateVolumeOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CreateVolumeOptions {
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "driverOpts")]
+    pub driver_opts: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<HashMap<String, String>>,
+
+}
+
+impl Default for CreateVolumeOptions {
+    fn default() -> Self {
+        Self {
+            name: None,
+            driver: None,
+            driver_opts: None,
+            labels: None,
+        }
+    }
+}
 
 // Filtered out: TaskLogs
 // Get task logs
