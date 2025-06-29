@@ -1869,7 +1869,7 @@ impl Docker {
             "/images/load",
             Builder::new()
                 .method(Method::POST)
-                .header(CONTENT_TYPE, "application/json"),
+                .header(CONTENT_TYPE, "application/x-tar"),
             Some(options.into()),
             Ok(root_fs),
             DockerCredentialsHeader::Config(credentials),
