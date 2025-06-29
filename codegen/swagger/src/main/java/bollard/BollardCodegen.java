@@ -225,7 +225,7 @@ public class BollardCodegen extends RustServerCodegen {
                 }
 
                 if (prop.name.equals("networks") && model.classname.equals("ContainerStatsResponse")) {
-                    prop.datatype = "ContainerNetworkStats";
+                    prop.datatype = "HashMap<String, ContainerNetworkStats>";
                 }
 
                 if ("SystemVersionComponents".equals(model.classname) && "details".equals(prop.name)) {
@@ -241,6 +241,7 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.vendorExtensions.put("x-rustgen-is-datetime", true);
                     prop.datatype = "BollardDate";
                 }
+
                 if (prop.isEnum) {
                     if (enumToString.contains(model.classname)) {
                         prop.isEnum = false;
@@ -358,7 +359,6 @@ public class BollardCodegen extends RustServerCodegen {
                         }
                         if (param.isString) {
                             operation.vendorExtensions.put("x-codegen-query-param-has-string", "true");
-                            //param.vendorExtensions.put("x-codegen-query-param-struct-type", "String");
                             if (param.defaultValue != null) {
                                 param.defaultValue = "String::from(\"" + param.defaultValue + "\")";
                             }
@@ -380,6 +380,7 @@ public class BollardCodegen extends RustServerCodegen {
 
                         // Special handling for building images
                         if (operation.operationId.equals("ImageBuild")) {
+                            // `buildargs` and `labels` are passed to the Docker server as JSON map
                             if (param.paramName.equals("buildargs") || param.paramName.equals("labels")) {
                                 param.isMapContainer = true;
                                 param.isString = false;
@@ -388,6 +389,7 @@ public class BollardCodegen extends RustServerCodegen {
                                 param.vendorExtensions.put("x-codegen-query-param-struct-type", "HashMap<String, String>");
                                 param.vendorExtensions.put("x-codegen-query-param-serialize-as-json", "true");
                             }
+                            // `cachfrom` is passed to the Docker server as a JSON array
                             if (param.paramName.equals("cachefrom")) {
                                 param.isContainer = true;
                                 param.isString = false;
@@ -395,12 +397,14 @@ public class BollardCodegen extends RustServerCodegen {
                                 param.vendorExtensions.put("x-codegen-query-param-struct-type", "Vec<String>");
                                 param.vendorExtensions.put("x-codegen-query-param-serialize-as-json", "true");
                             }
+                            // buildkit specific argument
                             if (param.paramName.equals("outputs")) {
                                 param.vendorExtensions.put("x-codegen-query-param-is-buildkit", "true");
                                 param.dataType = "ImageBuildOutput";
                                 param.isString = false;
                                 param.defaultValue = null;
                             }
+                            // Also toggles buildkit behaviour
                             if (param.paramName.equals("version")) {
                                 param.dataType = "BuilderVersion";
                                 param.isString = false;
@@ -419,6 +423,7 @@ public class BollardCodegen extends RustServerCodegen {
                         }
                     }
 
+                    // Add buildkit specific 'session' argument, to pass the session ID to the docker engine for subsquent GRPC dialogue
                     if (operation.operationId.equals("ImageBuild")) {
                         CodegenParameter sessionParam = new CodegenParameter();
                         sessionParam.baseName = "session";
