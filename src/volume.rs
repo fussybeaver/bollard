@@ -343,7 +343,7 @@ impl Docker {
     pub async fn remove_volume(
         &self,
         volume_name: &str,
-        options: Option<impl Into<RemoveVolumeOptions>>,
+        options: Option<impl Into<crate::query_parameters::RemoveVolumeOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/volumes/{volume_name}");
 
