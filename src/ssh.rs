@@ -4,14 +4,14 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 #[derive(Clone)]
 pub(crate) struct SshConnector;
 
 pub(crate) struct SshStream {
     _child: openssh::Child<Arc<openssh::Session>>,
-    stdin: TokioIo<openssh::ChildStdin>,
+    stdin: Option<TokioIo<openssh::ChildStdin>>,
     stdout: TokioIo<openssh::ChildStdout>,
 }
 
@@ -53,7 +53,7 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                 .await?;
 
             Ok(SshStream {
-                stdin: TokioIo::new(child.stdin().take().unwrap()),
+                stdin: Some(TokioIo::new(child.stdin().take().unwrap())),
                 stdout: TokioIo::new(child.stdout().take().unwrap()),
                 _child: child,
             })
@@ -63,8 +63,12 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
 }
 
 impl SshStream {
-    fn stdin(self: Pin<&mut Self>) -> Pin<&mut TokioIo<openssh::ChildStdin>> {
-        Pin::new(&mut self.get_mut().stdin)
+    fn stdin(self: Pin<&mut Self>) -> io::Result<Pin<&mut TokioIo<openssh::ChildStdin>>> {
+        self.get_mut()
+            .stdin
+            .as_mut()
+            .map(Pin::new)
+            .ok_or_else(|| io::ErrorKind::BrokenPipe.into())
     }
 
     fn stdout(self: Pin<&mut Self>) -> Pin<&mut TokioIo<openssh::ChildStdout>> {
@@ -88,7 +92,7 @@ impl hyper::rt::Write for SshStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        self.stdin().poll_write(cx, buf)
+        self.stdin()?.poll_write(cx, buf)
     }
 
     fn poll_write_vectored(
@@ -96,15 +100,20 @@ impl hyper::rt::Write for SshStream {
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        self.stdin().poll_write_vectored(cx, bufs)
+        self.stdin()?.poll_write_vectored(cx, bufs)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.stdin().poll_flush(cx)
+        self.stdin()?.poll_flush(cx)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.stdin().poll_shutdown(cx)
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // currently, poll_shutdown does nothing.
+        // https://github.com/tokio-rs/tokio/blob/b3a14483bf5efa1b5cf75af27f6ef0770f4c5689/tokio/src/process/unix/mod.rs#L314-L316
+        ready!(self.as_mut().stdin()?.poll_shutdown(cx))?;
+        // drop stdin to shutdown the input half.
+        drop(self.get_mut().stdin.take());
+        Poll::Ready(Ok(()))
     }
 }
 
