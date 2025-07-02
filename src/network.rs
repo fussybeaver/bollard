@@ -21,7 +21,7 @@ use crate::models::*;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[deprecated(
     since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::CreateNetworkOptions and associated CreateNetworkOptionsBuilder"
+    note = "use the OpenAPI generated bollard::models::NetworkCreateRequest"
 )]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>

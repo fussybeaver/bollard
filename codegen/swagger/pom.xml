@@ -10,7 +10,7 @@
     <properties>
       <maven.compiler.source>8</maven.compiler.source>
       <maven.compiler.target>8</maven.compiler.target>
-      <swagger-codegen.version>2.4.44</swagger-codegen.version>
+      <swagger-codegen.version>2.4.45</swagger-codegen.version>
     </properties>
 
     <build>
@@ -33,7 +33,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.48.2-rc.28.0.4</packageVersion>
+                  <packageVersion>1.48.3-rc.28.0.4</packageVersion>
                 </configOptions>
               </configuration>
             </execution>
