@@ -57,7 +57,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[deprecated(
     since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::CreateVolumeOptions and associated CreateVolumeOptionsBuilder"
+    note = "use the OpenAPI generated bollard::models::VolumeCreateOptions"
 )]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
