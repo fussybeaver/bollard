@@ -10,7 +10,7 @@
     <properties>
       <maven.compiler.source>8</maven.compiler.source>
       <maven.compiler.target>8</maven.compiler.target>
-      <swagger-codegen.version>2.4.45</swagger-codegen.version>
+      <swagger-codegen.version>2.4.46</swagger-codegen.version>
     </properties>
 
     <build>
