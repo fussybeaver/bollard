@@ -299,7 +299,7 @@ where
             builder = builder.limit(
                 i32::try_from(limit)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in SearchImagesOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in SearchImagesOptions: {e:?}")
                     })
                     .unwrap_or(limit as i32),
             )
@@ -645,7 +645,7 @@ where
             builder = builder.memory(
                 i32::try_from(memory)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(memory as i32),
             );
@@ -655,7 +655,7 @@ where
             builder = builder.memswap(
                 i32::try_from(memswap)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(memswap as i32),
             );
@@ -665,7 +665,7 @@ where
             builder = builder.cpushares(
                 i32::try_from(cpushares)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(cpushares as i32),
             );
@@ -675,7 +675,7 @@ where
             builder = builder.cpuperiod(
                 i32::try_from(cpuperiod)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(cpuperiod as i32),
             );
@@ -685,7 +685,7 @@ where
             builder = builder.cpuquota(
                 i32::try_from(cpuquota)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(cpuquota as i32),
             );
@@ -695,7 +695,7 @@ where
             builder = builder.shmsize(
                 i32::try_from(shmsize)
                     .inspect_err(|e| {
-                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {:?}", e)
+                        log::error!("Truncation of u64 into i32 in BuildImageOptions: {e:?}")
                     })
                     .unwrap_or(shmsize as i32),
             );
