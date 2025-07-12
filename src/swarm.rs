@@ -21,7 +21,7 @@ use crate::models::*;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[deprecated(
     since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::InitSwarmOptions and associated InitSwarmOptionsBuilder"
+    note = "use the OpenAPI generated bollard::models::SwarmInitRequest"
 )]
 #[serde(rename_all = "PascalCase")]
 pub struct InitSwarmOptions<T>
@@ -51,7 +51,7 @@ where
 #[derive(Debug, Clone, Default, Serialize)]
 #[deprecated(
     since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::JoinSwarmOptions and associated JoinSwarmOptionsBuilder"
+    note = "use the OpenAPI generated bollard::models::SwarmJoinRequest"
 )]
 pub struct JoinSwarmOptions<T>
 where
