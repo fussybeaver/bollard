@@ -75,13 +75,13 @@ pub enum Error {
     #[error("Timeout error")]
     RequestTimeoutError,
     /// Error emitted mid-stream as part of a successful docker operation
-    #[error("Docker stream error")]
+    #[error("Docker stream error: {error}")]
     DockerStreamError {
         /// error string emitted by the Stream
         error: String,
     },
     /// Error emitted as part of a container wait response
-    #[error("Docker container wait error")]
+    #[error("Docker container wait error: {error}")]
     DockerContainerWaitError {
         /// error string returned from container wait call
         error: String,
@@ -165,7 +165,7 @@ pub enum Error {
         err: http::uri::InvalidUriParts,
     },
     /// Error that is never emitted
-    #[cfg(feature = "http")]
+    #[cfg(any(feature = "http", feature = "ssh"))]
     #[error("Error in the hyper legacy client: {}", err)]
     HyperLegacyError {
         /// The original error emitted.

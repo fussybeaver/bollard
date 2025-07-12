@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 extern crate bollard;
 extern crate hyper;
 extern crate tokio;

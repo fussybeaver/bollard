@@ -1,11 +1,8 @@
 //! This example will run a interactive command inside the container using `docker exec`,
 //! passing trough input and output into the tty running inside the container
 
-use bollard::container::{Config, RemoveContainerOptions};
 use bollard::Docker;
 
-use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
-use bollard::image::CreateImageOptions;
 use futures_util::{StreamExt, TryStreamExt};
 use std::io::{stdout, Read, Write};
 use std::time::Duration;
@@ -28,50 +25,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: IMAGE,
-                ..Default::default()
-            }),
+            Some(
+                bollard::query_parameters::CreateImageOptionsBuilder::default()
+                    .from_image(IMAGE)
+                    .build(),
+            ),
             None,
             None,
         )
         .try_collect::<Vec<_>>()
         .await?;
 
-    let alpine_config = Config {
-        image: Some(IMAGE),
+    let alpine_config = bollard::models::ContainerCreateBody {
+        image: Some(String::from(IMAGE)),
         tty: Some(true),
         ..Default::default()
     };
 
     let id = docker
-        .create_container::<&str, &str>(None, alpine_config)
+        .create_container(
+            None::<bollard::query_parameters::CreateContainerOptions>,
+            alpine_config,
+        )
         .await?
         .id;
-    docker.start_container::<String>(&id, None).await?;
+    docker
+        .start_container(
+            &id,
+            None::<bollard::query_parameters::StartContainerOptions>,
+        )
+        .await?;
 
     let exec = docker
         .create_exec(
             &id,
-            CreateExecOptions {
+            bollard::models::ExecConfig {
                 attach_stdout: Some(true),
                 attach_stderr: Some(true),
                 attach_stdin: Some(true),
                 tty: Some(true),
-                cmd: Some(vec!["sh"]),
+                cmd: Some(vec![String::from("sh")]),
                 ..Default::default()
             },
         )
         .await?
         .id;
     #[cfg(not(windows))]
-    if let StartExecResults::Attached {
+    if let bollard::exec::StartExecResults::Attached {
         mut output,
         mut input,
     } = docker.start_exec(&exec, None).await?
     {
         // pipe stdin into the docker exec stream input
         spawn(async move {
+            #[allow(clippy::unbuffered_bytes)]
             let mut stdin = async_stdin().bytes();
             loop {
                 if let Some(Ok(byte)) = stdin.next() {
@@ -85,10 +92,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
         docker
             .resize_exec(
                 &exec,
-                ResizeExecOptions {
-                    height: tty_size.1,
-                    width: tty_size.0,
-                },
+                bollard::query_parameters::ResizeExecOptionsBuilder::default()
+                    .h(tty_size.1 as i32)
+                    .w(tty_size.0 as i32)
+                    .build(),
             )
             .await?;
 
@@ -106,10 +113,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     docker
         .remove_container(
             &id,
-            Some(RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }),
+            Some(
+                bollard::query_parameters::RemoveContainerOptionsBuilder::default()
+                    .force(true)
+                    .build(),
+            ),
         )
         .await?;
 

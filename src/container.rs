@@ -1,4 +1,5 @@
 //! Container API: run docker containers and manage their lifecycle
+#![allow(deprecated)]
 
 use futures_core::Stream;
 use futures_util::{StreamExt, TryStreamExt};
@@ -51,6 +52,10 @@ use crate::read::NewlineLogOutputDecoder;
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListContainersOptions and associated ListContainersOptionsBuilder"
+)]
 pub struct ListContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -81,6 +86,39 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<ListContainersOptions<T>> for crate::query_parameters::ListContainersOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: ListContainersOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::ListContainersOptionsBuilder::default()
+            .all(opts.all)
+            .size(opts.size)
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            );
+
+        if let Some(limit) = opts.limit {
+            builder = builder.limit(
+                i32::try_from(limit)
+                    .inspect_err(|e| {
+                        log::error!(
+                            "Truncation of isize into i32 in ListContainersOptions: {:?}",
+                            e
+                        )
+                    })
+                    .unwrap_or(limit as i32),
+            );
+        }
+
+        builder.build()
+    }
+}
+
 /// Parameters used in the [Create Container API](Docker::create_container())
 ///
 /// ## Examples
@@ -94,6 +132,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::CreateContainerOptions and associated CreateContainerOptionsBuilder"
+)]
 pub struct CreateContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -107,6 +149,22 @@ where
     pub platform: Option<T>,
 }
 
+impl<T> From<CreateContainerOptions<T>> for crate::query_parameters::CreateContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: CreateContainerOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::CreateContainerOptionsBuilder::default()
+            .name(&opts.name.into());
+
+        if let Some(platform) = opts.platform {
+            builder = builder.platform(&platform.into());
+        }
+
+        builder.build()
+    }
+}
+
 /// This container's networking configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -115,8 +173,30 @@ pub struct NetworkingConfig<T: Into<String> + Hash + Eq> {
     pub endpoints_config: HashMap<T, EndpointSettings>,
 }
 
+impl<T> From<NetworkingConfig<T>> for crate::models::NetworkingConfig
+where
+    T: Into<String> + Hash + Eq,
+{
+    fn from(config: NetworkingConfig<T>) -> Self {
+        crate::models::NetworkingConfig {
+            endpoints_config: Some(
+                config
+                    .endpoints_config
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 /// Container to create.
+/// Note: the swagger codegen is unable to generate this type due to lacking support for `AllOf`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::models::ContainerCreateBody or bollard_stubs::models::ContainerConfig as appropriate"
+)]
 pub struct Config<T>
 where
     T: Into<String> + Eq + Hash,
@@ -258,6 +338,106 @@ where
     pub networking_config: Option<NetworkingConfig<T>>,
 }
 
+impl<T> From<Config<T>> for ContainerCreateBody
+where
+    T: Into<String> + Eq + Hash + std::fmt::Debug,
+{
+    fn from(config: Config<T>) -> Self {
+        let mut body = ContainerCreateBody {
+            hostname: config.hostname.map(Into::into),
+            domainname: config.domainname.map(Into::into),
+            user: config.user.map(Into::into),
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            exposed_ports: config
+                .exposed_ports
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            env: config.env.map(|v| v.into_iter().map(Into::into).collect()),
+            cmd: config.cmd.map(|v| v.into_iter().map(Into::into).collect()),
+            healthcheck: config.healthcheck,
+            args_escaped: config.args_escaped,
+            image: config.image.map(Into::into),
+            volumes: config
+                .volumes
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            working_dir: config.working_dir.map(Into::into),
+            entrypoint: config
+                .entrypoint
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            network_disabled: config.network_disabled,
+            mac_address: config.mac_address.map(Into::into),
+            on_build: config
+                .on_build
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            labels: config
+                .labels
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v.into())).collect()),
+            stop_signal: config.stop_signal.map(Into::into),
+            stop_timeout: config.stop_timeout,
+            shell: config
+                .shell
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            ..Default::default()
+        };
+
+        body.host_config = config.host_config;
+        body.networking_config = config.networking_config.map(Into::into);
+
+        body
+    }
+}
+
+impl<T> From<Config<T>> for ContainerConfig
+where
+    T: Into<String> + Eq + Hash + std::fmt::Debug,
+{
+    fn from(config: Config<T>) -> Self {
+        ContainerConfig {
+            hostname: config.hostname.map(Into::into),
+            domainname: config.domainname.map(Into::into),
+            user: config.user.map(Into::into),
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            exposed_ports: config
+                .exposed_ports
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            env: config.env.map(|v| v.into_iter().map(Into::into).collect()),
+            cmd: config.cmd.map(|v| v.into_iter().map(Into::into).collect()),
+            healthcheck: config.healthcheck,
+            args_escaped: config.args_escaped,
+            image: config.image.map(Into::into),
+            volumes: config
+                .volumes
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            working_dir: config.working_dir.map(Into::into),
+            entrypoint: config
+                .entrypoint
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            network_disabled: config.network_disabled,
+            mac_address: config.mac_address.map(Into::into),
+            on_build: config
+                .on_build
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            labels: config
+                .labels
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v.into())).collect()),
+            stop_signal: config.stop_signal.map(Into::into),
+            stop_timeout: config.stop_timeout,
+            shell: config
+                .shell
+                .map(|v| v.into_iter().map(Into::into).collect()),
+        }
+    }
+}
+
 impl From<ContainerConfig> for Config<String> {
     fn from(container: ContainerConfig) -> Self {
         Config {
@@ -302,9 +482,28 @@ impl From<ContainerConfig> for Config<String> {
 ///     t: 30,
 /// };
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::StopContainerOptions and associated StopContainerOptionsBuilder"
+)]
 pub struct StopContainerOptions {
     /// Number of seconds to wait before killing the container
     pub t: i64,
+}
+
+impl From<StopContainerOptions> for crate::query_parameters::StopContainerOptions {
+    fn from(opts: StopContainerOptions) -> Self {
+        crate::query_parameters::StopContainerOptionsBuilder::default()
+            .t(i32::try_from(opts.t)
+                .inspect_err(|e| {
+                    log::error!(
+                        "Truncation of i64 into i32 in StopContainerOptions: {:?}",
+                        e
+                    )
+                })
+                .unwrap_or(opts.t as i32))
+            .build()
+    }
 }
 
 /// Parameters used in the [Start Container API](Docker::start_container())
@@ -319,6 +518,10 @@ pub struct StopContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::StartContainerOptions and associated StartContainerOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct StartContainerOptions<T>
 where
@@ -327,6 +530,17 @@ where
     /// Override the key sequence for detaching a container. Format is a single character `[a-Z]` or
     /// `ctrl-<value>` where `<value>` is one of: `a-z`, `@`, `^`, `[`, `,` or `_`.
     pub detach_keys: T,
+}
+
+impl<T> From<StartContainerOptions<T>> for crate::query_parameters::StartContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: StartContainerOptions<T>) -> Self {
+        crate::query_parameters::StartContainerOptionsBuilder::default()
+            .detach_keys(&opts.detach_keys.into())
+            .build()
+    }
 }
 
 /// Parameters used in the [Remove Container API](Docker::remove_container())
@@ -344,6 +558,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::RemoveContainerOptions and associated RemoveContainerOptionsBuilder"
+)]
 pub struct RemoveContainerOptions {
     /// Remove the volumes associated with the container.
     pub v: bool,
@@ -351,6 +569,16 @@ pub struct RemoveContainerOptions {
     pub force: bool,
     /// Remove the specified link associated with the container.
     pub link: bool,
+}
+
+impl From<RemoveContainerOptions> for crate::query_parameters::RemoveContainerOptions {
+    fn from(opts: RemoveContainerOptions) -> Self {
+        crate::query_parameters::RemoveContainerOptionsBuilder::default()
+            .v(opts.v)
+            .force(opts.force)
+            .link(opts.link)
+            .build()
+    }
 }
 
 /// Parameters used in the [Wait Container API](Docker::wait_container())
@@ -365,6 +593,10 @@ pub struct RemoveContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::WaitContainerOptions and associated WaitContainerOptionsBuilder"
+)]
 pub struct WaitContainerOptions<T>
 where
     T: Into<String> + Serialize,
@@ -372,6 +604,17 @@ where
     /// Wait until a container state reaches the given condition, either 'not-running' (default),
     /// 'next-exit', or 'removed'.
     pub condition: T,
+}
+
+impl<T> From<WaitContainerOptions<T>> for crate::query_parameters::WaitContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: WaitContainerOptions<T>) -> Self {
+        crate::query_parameters::WaitContainerOptionsBuilder::default()
+            .condition(&opts.condition.into())
+            .build()
+    }
 }
 
 /// Results type for the [Attach Container API](Docker::attach_container())
@@ -405,6 +648,10 @@ impl fmt::Debug for AttachContainerResults {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::AttachContainerOptions and associated AttachContainerOptionsBuilder"
+)]
 pub struct AttachContainerOptions<T>
 where
     T: Into<String> + Serialize + Default,
@@ -427,6 +674,34 @@ where
     pub detach_keys: Option<T>,
 }
 
+impl<T> From<AttachContainerOptions<T>> for crate::query_parameters::AttachContainerOptions
+where
+    T: Into<String> + Serialize + Default,
+{
+    fn from(opts: AttachContainerOptions<T>) -> Self {
+        let mut builder = crate::query_parameters::AttachContainerOptionsBuilder::default();
+        if let Some(stdin) = opts.stdin {
+            builder = builder.stdin(stdin);
+        }
+        if let Some(stdout) = opts.stdout {
+            builder = builder.stdout(stdout);
+        }
+        if let Some(stderr) = opts.stderr {
+            builder = builder.stderr(stderr);
+        }
+        if let Some(stream) = opts.stream {
+            builder = builder.stream(stream);
+        }
+        if let Some(logs) = opts.logs {
+            builder = builder.logs(logs);
+        }
+        if let Some(detach_keys) = opts.detach_keys {
+            builder = builder.detach_keys(&detach_keys.into());
+        }
+        builder.build()
+    }
+}
+
 /// Parameters used in the [Resize Container Tty API](Docker::resize_container_tty())
 ///
 /// ## Examples
@@ -440,6 +715,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ResizeContainerTTYOptions and associated ResizeContainerTTYOptionsBuilder"
+)]
 pub struct ResizeContainerTtyOptions {
     /// Width of the TTY session in characters
     #[serde(rename = "w")]
@@ -447,6 +726,15 @@ pub struct ResizeContainerTtyOptions {
     /// Height of the TTY session in characters
     #[serde(rename = "h")]
     pub height: u16,
+}
+
+impl From<ResizeContainerTtyOptions> for crate::query_parameters::ResizeContainerTTYOptions {
+    fn from(opts: ResizeContainerTtyOptions) -> Self {
+        crate::query_parameters::ResizeContainerTTYOptionsBuilder::default()
+            .w(opts.width as i32)
+            .h(opts.height as i32)
+            .build()
+    }
 }
 
 /// Parameters used in the [Restart Container API](Docker::restart_container())
@@ -461,9 +749,28 @@ pub struct ResizeContainerTtyOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::RestartContainerOptions and associated RestartContainerOptionsBuilder"
+)]
 pub struct RestartContainerOptions {
     /// Number of seconds to wait before killing the container.
     pub t: isize,
+}
+
+impl From<RestartContainerOptions> for crate::query_parameters::RestartContainerOptions {
+    fn from(opts: RestartContainerOptions) -> Self {
+        crate::query_parameters::RestartContainerOptionsBuilder::default()
+            .t(i32::try_from(opts.t)
+                .inspect_err(|e| {
+                    log::error!(
+                        "Truncation of isize into i32 in RestartContainerOptions : {:?}",
+                        e
+                    )
+                })
+                .unwrap_or(opts.t as i32))
+            .build()
+    }
 }
 
 /// Parameters used in the [Inspect Container API](Docker::inspect_container())
@@ -478,9 +785,21 @@ pub struct RestartContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::InspectContainerOptions and associated InspectContainerOptionsBuilder"
+)]
 pub struct InspectContainerOptions {
     /// Return the size of container as fields `SizeRw` and `SizeRootFs`
     pub size: bool,
+}
+
+impl From<InspectContainerOptions> for crate::query_parameters::InspectContainerOptions {
+    fn from(opts: InspectContainerOptions) -> Self {
+        crate::query_parameters::InspectContainerOptionsBuilder::default()
+            .size(opts.size)
+            .build()
+    }
 }
 
 /// Parameters used in the [Top Processes API](Docker::top_processes())
@@ -495,12 +814,27 @@ pub struct InspectContainerOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::TopContainerOptions and associated TopContainerOptionsBuilder"
+)]
 pub struct TopOptions<T>
 where
     T: Into<String> + Serialize,
 {
     /// The arguments to pass to `ps`. For example, `aux`
     pub ps_args: T,
+}
+
+impl<T> From<TopOptions<T>> for crate::query_parameters::TopOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: TopOptions<T>) -> Self {
+        crate::query_parameters::TopOptionsBuilder::default()
+            .ps_args(&opts.ps_args.into())
+            .build()
+    }
 }
 
 fn is_zero(val: &i64) -> bool {
@@ -522,6 +856,10 @@ fn is_zero(val: &i64) -> bool {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::LogsOptions and associated LogsOptionsBuilder"
+)]
 pub struct LogsOptions<T>
 where
     T: Into<String> + Serialize,
@@ -543,6 +881,35 @@ where
     /// Only return this number of log lines from the end of the logs. Specify as an integer or all
     /// to output `all` log lines.
     pub tail: T,
+}
+
+impl<T> From<LogsOptions<T>> for crate::query_parameters::LogsOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: LogsOptions<T>) -> Self {
+        crate::query_parameters::LogsOptionsBuilder::default()
+            .follow(opts.follow)
+            .stdout(opts.stdout)
+            .stderr(opts.stderr)
+            .since(
+                i32::try_from(opts.since)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of i64 into i32 in LogsOptions : {:?}", e)
+                    })
+                    .unwrap_or(opts.since as i32),
+            )
+            .until(
+                i32::try_from(opts.until)
+                    .inspect_err(|e| {
+                        log::error!("Truncation of i64 into i32 in LogsOptions : {:?}", e)
+                    })
+                    .unwrap_or(opts.until as i32),
+            )
+            .timestamps(opts.timestamps)
+            .tail(&opts.tail.into())
+            .build()
+    }
 }
 
 /// Result type for the [Logs API](Docker::logs())
@@ -603,6 +970,10 @@ impl LogOutput {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::StatsOptions and associated StatsOptionsBuilder"
+)]
 pub struct StatsOptions {
     /// Stream the output. If false, the stats will be output once and then it will disconnect.
     pub stream: bool,
@@ -611,241 +982,13 @@ pub struct StatsOptions {
     pub one_shot: bool,
 }
 
-/// Granular memory statistics for the container.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-#[serde(untagged)]
-pub enum MemoryStatsStats {
-    V1(MemoryStatsStatsV1),
-    V2(MemoryStatsStatsV2),
-}
-
-/// Granular memory statistics for the container, v1 cgroups.
-///
-/// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1436).
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-#[serde(deny_unknown_fields)]
-pub struct MemoryStatsStatsV1 {
-    pub cache: u64,
-    pub dirty: u64,
-    pub mapped_file: u64,
-    pub total_inactive_file: u64,
-    pub pgpgout: u64,
-    pub rss: u64,
-    pub total_mapped_file: u64,
-    pub writeback: u64,
-    pub unevictable: u64,
-    pub pgpgin: u64,
-    pub total_unevictable: u64,
-    pub pgmajfault: u64,
-    pub total_rss: u64,
-    pub total_rss_huge: u64,
-    pub total_writeback: u64,
-    pub total_inactive_anon: u64,
-    pub rss_huge: u64,
-    pub hierarchical_memory_limit: u64,
-    pub total_pgfault: u64,
-    pub total_active_file: u64,
-    pub active_anon: u64,
-    pub total_active_anon: u64,
-    pub total_pgpgout: u64,
-    pub total_cache: u64,
-    pub total_dirty: u64,
-    pub inactive_anon: u64,
-    pub active_file: u64,
-    pub pgfault: u64,
-    pub inactive_file: u64,
-    pub total_pgmajfault: u64,
-    pub total_pgpgin: u64,
-    pub hierarchical_memsw_limit: Option<u64>, // only on OSX
-    pub shmem: Option<u64>,                    // only on linux kernel > 4.15.0-1106
-    pub total_shmem: Option<u64>,              // only on linux kernel > 4.15.0-1106
-}
-
-/// Granular memory statistics for the container, v2 cgroups.
-///
-/// Exposed in the docker library [here](https://github.com/moby/moby/blob/40d9e2aff130b42ba0f83d5238b9b53184c8ab3b/daemon/daemon_unix.go#L1542).
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-#[serde(deny_unknown_fields)]
-pub struct MemoryStatsStatsV2 {
-    pub anon: u64,
-    pub file: u64,
-    pub kernel_stack: u64,
-    pub slab: u64,
-    pub sock: u64,
-    pub shmem: u64,
-    pub file_mapped: u64,
-    pub file_dirty: u64,
-    pub file_writeback: u64,
-    pub anon_thp: u64,
-    pub inactive_anon: u64,
-    pub active_anon: u64,
-    pub inactive_file: u64,
-    pub active_file: u64,
-    pub unevictable: u64,
-    pub slab_reclaimable: u64,
-    pub slab_unreclaimable: u64,
-    pub pgfault: u64,
-    pub pgmajfault: u64,
-    pub workingset_refault: u64,
-    pub workingset_activate: u64,
-    pub workingset_nodereclaim: u64,
-    pub pgrefill: u64,
-    pub pgscan: u64,
-    pub pgsteal: u64,
-    pub pgactivate: u64,
-    pub pgdeactivate: u64,
-    pub pglazyfree: u64,
-    pub pglazyfreed: u64,
-    pub thp_fault_alloc: u64,
-    pub thp_collapse_alloc: u64,
-}
-
-/// General memory statistics for the container.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct MemoryStats {
-    pub stats: Option<MemoryStatsStats>,
-    pub max_usage: Option<u64>,
-    pub usage: Option<u64>,
-    pub failcnt: Option<u64>,
-    pub limit: Option<u64>,
-    pub commit: Option<u64>,
-    pub commit_peak: Option<u64>,
-    pub commitbytes: Option<u64>,
-    pub commitpeakbytes: Option<u64>,
-    pub privateworkingset: Option<u64>,
-}
-
-/// Process ID statistics for the container.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct PidsStats {
-    pub current: Option<u64>,
-    pub limit: Option<u64>,
-}
-
-/// I/O statistics for the container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct BlkioStats {
-    pub io_service_bytes_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_serviced_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_queue_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_service_time_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_wait_time_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_merged_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub io_time_recursive: Option<Vec<BlkioStatsEntry>>,
-    pub sectors_recursive: Option<Vec<BlkioStatsEntry>>,
-}
-
-/// File I/O statistics for the container.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct StorageStats {
-    pub read_count_normalized: Option<u64>,
-    pub read_size_bytes: Option<u64>,
-    pub write_count_normalized: Option<u64>,
-    pub write_size_bytes: Option<u64>,
-}
-
-fn empty_string() -> String {
-    "".to_string()
-}
-
-/// Statistics for the container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct Stats {
-    #[cfg(feature = "time")]
-    #[serde(
-        deserialize_with = "crate::docker::deserialize_rfc3339",
-        serialize_with = "crate::docker::serialize_rfc3339"
-    )]
-    pub read: time::OffsetDateTime,
-    #[cfg(feature = "time")]
-    #[serde(
-        deserialize_with = "crate::docker::deserialize_rfc3339",
-        serialize_with = "crate::docker::serialize_rfc3339"
-    )]
-    pub preread: time::OffsetDateTime,
-    #[cfg(all(feature = "chrono", not(feature = "time")))]
-    pub read: chrono::DateTime<chrono::Utc>,
-    #[cfg(all(feature = "chrono", not(feature = "time")))]
-    pub preread: chrono::DateTime<chrono::Utc>,
-    #[cfg(not(any(feature = "chrono", feature = "time")))]
-    pub read: String,
-    #[cfg(not(any(feature = "chrono", feature = "time")))]
-    pub preread: String,
-    pub num_procs: u32,
-    pub pids_stats: PidsStats,
-    pub network: Option<NetworkStats>,
-    pub networks: Option<HashMap<String, NetworkStats>>,
-    pub memory_stats: MemoryStats,
-    pub blkio_stats: BlkioStats,
-    pub cpu_stats: CPUStats,
-    pub precpu_stats: CPUStats,
-    pub storage_stats: StorageStats,
-    #[serde(default = "empty_string")]
-    pub name: String,
-
-    // Podman incorrectly capitalises the "id" field. See https://github.com/containers/podman/issues/17869
-    #[serde(alias = "Id", default = "empty_string")]
-    pub id: String,
-}
-
-/// Network statistics for the container.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct NetworkStats {
-    pub rx_dropped: u64,
-    pub rx_bytes: u64,
-    pub rx_errors: u64,
-    pub tx_packets: u64,
-    pub tx_dropped: u64,
-    pub rx_packets: u64,
-    pub tx_errors: u64,
-    pub tx_bytes: u64,
-}
-
-/// CPU usage statistics for the container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct CPUUsage {
-    pub percpu_usage: Option<Vec<u64>>,
-    pub usage_in_usermode: u64,
-    pub total_usage: u64,
-    pub usage_in_kernelmode: u64,
-}
-
-/// CPU throttling statistics.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct ThrottlingData {
-    pub periods: u64,
-    pub throttled_periods: u64,
-    pub throttled_time: u64,
-}
-
-/// General CPU statistics for the container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct CPUStats {
-    pub cpu_usage: CPUUsage,
-    pub system_cpu_usage: Option<u64>,
-    pub online_cpus: Option<u64>,
-    pub throttling_data: ThrottlingData,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct BlkioStatsEntry {
-    pub major: u64,
-    pub minor: u64,
-    pub op: String,
-    pub value: u64,
+impl From<StatsOptions> for crate::query_parameters::StatsOptions {
+    fn from(opts: StatsOptions) -> Self {
+        crate::query_parameters::StatsOptionsBuilder::default()
+            .stream(opts.stream)
+            .one_shot(opts.one_shot)
+            .build()
+    }
 }
 
 /// Parameters used in the [Kill Container API](Docker::kill_container())
@@ -860,12 +1003,27 @@ pub struct BlkioStatsEntry {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::KillContainerOptions and associated KillContainerOptionsBuilder"
+)]
 pub struct KillContainerOptions<T>
 where
     T: Into<String> + Serialize,
 {
     /// Signal to send to the container as an integer or string (e.g. `SIGINT`)
     pub signal: T,
+}
+
+impl<T> From<KillContainerOptions<T>> for crate::query_parameters::KillContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: KillContainerOptions<T>) -> Self {
+        crate::query_parameters::KillContainerOptionsBuilder::default()
+            .signal(&opts.signal.into())
+            .build()
+    }
 }
 
 /// Configuration for the [Update Container API](Docker::update_container())
@@ -883,6 +1041,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::UpdateContainerOptions and associated UpdateContainerOptionsBuilder"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct UpdateContainerOptions<T>
 where
@@ -1050,6 +1212,54 @@ where
     pub restart_policy: Option<RestartPolicy>,
 }
 
+impl<T> From<UpdateContainerOptions<T>> for ContainerUpdateBody
+where
+    T: Into<String> + Eq + Hash,
+{
+    fn from(opts: UpdateContainerOptions<T>) -> Self {
+        let mut container_update = ContainerUpdateBody {
+            cpu_shares: opts.cpu_shares.map(|x| x as i64),
+            memory: opts.memory,
+            cgroup_parent: opts.cgroup_parent.map(T::into),
+            blkio_weight: opts.blkio_weight,
+            blkio_weight_device: opts.blkio_weight_device,
+            blkio_device_read_bps: opts.blkio_device_read_bps,
+            blkio_device_write_bps: opts.blkio_device_write_bps,
+            blkio_device_read_iops: opts.blkio_device_read_i_ops,
+            blkio_device_write_iops: opts.blkio_device_write_i_ops,
+            cpu_period: opts.cpu_period,
+            cpu_quota: opts.cpu_quota,
+            cpu_realtime_period: opts.cpu_realtime_period,
+            cpu_realtime_runtime: opts.cpu_realtime_runtime,
+            cpuset_cpus: opts.cpuset_cpus.map(T::into),
+            cpuset_mems: opts.cpuset_mems.map(T::into),
+            devices: opts.devices,
+            device_cgroup_rules: opts
+                .device_cgroup_rules
+                .map(|v| v.into_iter().map(T::into).collect()),
+            device_requests: opts.device_requests,
+            kernel_memory_tcp: opts.kernel_memory_tcp,
+            memory_reservation: opts.memory_reservation,
+            memory_swap: opts.memory_swap,
+            memory_swappiness: opts.memory_swappiness,
+            nano_cpus: opts.nano_cpus,
+            oom_kill_disable: opts.oom_kill_disable,
+            init: opts.init,
+            pids_limit: opts.pids_limit,
+            ulimits: opts.ulimits,
+            cpu_count: opts.cpu_count,
+            cpu_percent: opts.cpu_percent,
+            io_maximum_iops: opts.io_maximum_iops,
+            io_maximum_bandwidth: opts.io_maximum_bandwidth,
+            ..Default::default()
+        };
+
+        container_update.restart_policy = opts.restart_policy;
+
+        container_update
+    }
+}
+
 /// Parameters used in the [Rename Container API](Docker::rename_container())
 ///
 /// ## Examples
@@ -1062,12 +1272,27 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::RenameContainerOptions and associated RenameContainerOptionsBuilder"
+)]
 pub struct RenameContainerOptions<T>
 where
     T: Into<String> + Serialize,
 {
     /// New name for the container.
     pub name: T,
+}
+
+impl<T> From<RenameContainerOptions<T>> for crate::query_parameters::RenameContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: RenameContainerOptions<T>) -> Self {
+        crate::query_parameters::RenameContainerOptionsBuilder::default()
+            .name(&opts.name.into())
+            .build()
+    }
 }
 
 /// Parameters used in the [Prune Containers API](Docker::prune_containers())
@@ -1087,6 +1312,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PruneContainerOptions and associated PruneContainerOptionsBuilder"
+)]
 pub struct PruneContainersOptions<T>
 where
     T: Into<String> + Eq + Hash + Serialize,
@@ -1098,6 +1327,23 @@ where
     ///  - label (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune containers with (or without, in case `label!=...` is used) the specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+impl<T> From<PruneContainersOptions<T>> for crate::query_parameters::PruneContainersOptions
+where
+    T: Into<String> + Eq + Hash + Serialize,
+{
+    fn from(opts: PruneContainersOptions<T>) -> Self {
+        crate::query_parameters::PruneContainersOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
 }
 
 /// Parameters used in the [Upload To Container
@@ -1116,6 +1362,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::UploadToContainerOptions and associated UploadToContainerOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadToContainerOptions<T>
 where
@@ -1126,6 +1376,18 @@ where
     /// If “1”, “true”, or “True” then it will be an error if unpacking the given content would
     /// cause an existing directory to be replaced with a non-directory and vice versa.
     pub no_overwrite_dir_non_dir: T,
+}
+
+impl<T> From<UploadToContainerOptions<T>> for crate::query_parameters::UploadToContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: UploadToContainerOptions<T>) -> Self {
+        crate::query_parameters::UploadToContainerOptionsBuilder::default()
+            .path(&opts.path.into())
+            .no_overwrite_dir_non_dir(&opts.no_overwrite_dir_non_dir.into())
+            .build()
+    }
 }
 
 /// Parameters used in the [Download From Container
@@ -1141,12 +1403,28 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::DownloadFromContainerOptions and associated DownloadFromContainerOptionsBuilder"
+)]
 pub struct DownloadFromContainerOptions<T>
 where
     T: Into<String> + Serialize,
 {
     /// Resource in the container’s filesystem to archive.
     pub path: T,
+}
+
+impl<T> From<DownloadFromContainerOptions<T>>
+    for crate::query_parameters::DownloadFromContainerOptions
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: DownloadFromContainerOptions<T>) -> Self {
+        crate::query_parameters::DownloadFromContainerOptionsBuilder::default()
+            .path(&opts.path.into())
+            .build()
+    }
 }
 
 impl Docker {
@@ -1185,19 +1463,16 @@ impl Docker {
     ///
     /// docker.list_containers(options);
     /// ```
-    pub async fn list_containers<T>(
+    pub async fn list_containers(
         &self,
-        options: Option<ListContainersOptions<T>>,
-    ) -> Result<Vec<ContainerSummary>, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListContainersOptions>>,
+    ) -> Result<Vec<ContainerSummary>, Error> {
         let url = "/containers/json";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1241,21 +1516,17 @@ impl Docker {
     ///
     /// docker.create_container(options, config);
     /// ```
-    pub async fn create_container<T, Z>(
+    pub async fn create_container(
         &self,
-        options: Option<CreateContainerOptions<T>>,
-        config: Config<Z>,
-    ) -> Result<ContainerCreateResponse, Error>
-    where
-        T: Into<String> + Serialize,
-        Z: Into<String> + Hash + Eq + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::CreateContainerOptions>>,
+        config: impl Into<ContainerCreateBody>,
+    ) -> Result<ContainerCreateResponse, Error> {
         let url = "/containers/create";
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
-            Docker::serialize_payload(Some(config)),
+            options.map(Into::into),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -1286,20 +1557,17 @@ impl Docker {
     ///
     /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
     /// ```
-    pub async fn start_container<T>(
+    pub async fn start_container(
         &self,
         container_name: &str,
-        options: Option<StartContainerOptions<T>>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::StartContainerOptions>>,
+    ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/start");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1337,14 +1605,14 @@ impl Docker {
     pub async fn stop_container(
         &self,
         container_name: &str,
-        options: Option<StopContainerOptions>,
+        options: Option<impl Into<crate::query_parameters::StopContainerOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/stop");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1386,14 +1654,14 @@ impl Docker {
     pub async fn remove_container(
         &self,
         container_name: &str,
-        options: Option<RemoveContainerOptions>,
+        options: Option<impl Into<crate::query_parameters::RemoveContainerOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1431,20 +1699,17 @@ impl Docker {
     ///
     /// docker.wait_container("hello-world", options);
     /// ```
-    pub fn wait_container<T>(
+    pub fn wait_container(
         &self,
         container_name: &str,
-        options: Option<WaitContainerOptions<T>>,
-    ) -> impl Stream<Item = Result<ContainerWaitResponse, Error>>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::WaitContainerOptions>>,
+    ) -> impl Stream<Item = Result<ContainerWaitResponse, Error>> {
         let url = format!("/containers/{container_name}/wait");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1502,14 +1767,11 @@ impl Docker {
     ///
     /// docker.attach_container("hello-world", options);
     /// ```
-    pub async fn attach_container<T>(
+    pub async fn attach_container(
         &self,
         container_name: &str,
-        options: Option<AttachContainerOptions<T>>,
-    ) -> Result<AttachContainerResults, Error>
-    where
-        T: Into<String> + Serialize + Default,
-    {
+        options: Option<impl Into<crate::query_parameters::AttachContainerOptions>>,
+    ) -> Result<AttachContainerResults, Error> {
         let url = format!("/containers/{container_name}/attach");
 
         let req = self.build_request(
@@ -1518,7 +1780,7 @@ impl Docker {
                 .method(Method::POST)
                 .header(CONNECTION, "Upgrade")
                 .header(UPGRADE, "tcp"),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1560,14 +1822,14 @@ impl Docker {
     pub async fn resize_container_tty(
         &self,
         container_name: &str,
-        options: ResizeContainerTtyOptions,
+        options: impl Into<crate::query_parameters::ResizeContainerTTYOptions>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/resize");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options),
+            Some(options.into()),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1606,14 +1868,14 @@ impl Docker {
     pub async fn restart_container(
         &self,
         container_name: &str,
-        options: Option<RestartContainerOptions>,
+        options: Option<impl Into<crate::query_parameters::RestartContainerOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/restart");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1651,14 +1913,14 @@ impl Docker {
     pub async fn inspect_container(
         &self,
         container_name: &str,
-        options: Option<InspectContainerOptions>,
+        options: Option<impl Into<crate::query_parameters::InspectContainerOptions>>,
     ) -> Result<ContainerInspectResponse, Error> {
         let url = format!("/containers/{container_name}/json");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1693,20 +1955,17 @@ impl Docker {
     ///
     /// docker.top_processes("fussybeaver/uhttpd", options);
     /// ```
-    pub async fn top_processes<T>(
+    pub async fn top_processes(
         &self,
         container_name: &str,
-        options: Option<TopOptions<T>>,
-    ) -> Result<ContainerTopResponse, Error>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::TopOptions>>,
+    ) -> Result<ContainerTopResponse, Error> {
         let url = format!("/containers/{container_name}/top");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1746,20 +2005,17 @@ impl Docker {
     ///
     /// docker.logs("hello-world", options);
     /// ```
-    pub fn logs<T>(
+    pub fn logs(
         &self,
         container_name: &str,
-        options: Option<LogsOptions<T>>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::LogsOptions>>,
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
         let url = format!("/containers/{container_name}/logs");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1839,14 +2095,14 @@ impl Docker {
     pub fn stats(
         &self,
         container_name: &str,
-        options: Option<StatsOptions>,
-    ) -> impl Stream<Item = Result<Stats, Error>> {
+        options: Option<impl Into<crate::query_parameters::StatsOptions>>,
+    ) -> impl Stream<Item = Result<ContainerStatsResponse, Error>> {
         let url = format!("/containers/{container_name}/stats");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1882,20 +2138,17 @@ impl Docker {
     ///
     /// docker.kill_container("postgres", options);
     /// ```
-    pub async fn kill_container<T>(
+    pub async fn kill_container(
         &self,
         container_name: &str,
-        options: Option<KillContainerOptions<T>>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::KillContainerOptions>>,
+    ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/kill");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -1934,21 +2187,18 @@ impl Docker {
     ///
     /// docker.update_container("postgres", config);
     /// ```
-    pub async fn update_container<T>(
+    pub async fn update_container(
         &self,
         container_name: &str,
-        config: UpdateContainerOptions<T>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        config: impl Into<ContainerUpdateBody>,
+    ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/update");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_unit(req).await
@@ -1983,20 +2233,17 @@ impl Docker {
     ///
     /// docker.rename_container("hello-world", required);
     /// ```
-    pub async fn rename_container<T>(
+    pub async fn rename_container(
         &self,
         container_name: &str,
-        options: RenameContainerOptions<T>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: impl Into<crate::query_parameters::RenameContainerOptions>,
+    ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/rename");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options),
+            Some(options.into()),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -2105,19 +2352,16 @@ impl Docker {
     ///
     /// docker.prune_containers(options);
     /// ```
-    pub async fn prune_containers<T>(
+    pub async fn prune_containers(
         &self,
-        options: Option<PruneContainersOptions<T>>,
-    ) -> Result<ContainerPruneResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::PruneContainersOptions>>,
+    ) -> Result<ContainerPruneResponse, Error> {
         let url = "/containers/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -2172,17 +2416,18 @@ impl Docker {
         since = "0.19.0",
         note = "This method is refactored into upload_to_container"
     )]
-    pub async fn upload_to_container_streaming<T>(
+    pub async fn upload_to_container_streaming(
         &self,
         container_name: &str,
-        options: Option<UploadToContainerOptions<T>>,
+        options: Option<impl Into<crate::query_parameters::UploadToContainerOptions>>,
         tar: impl Stream<Item = Bytes> + Send + 'static,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
-        self.upload_to_container(container_name, options, crate::body_stream(tar))
-            .await
+    ) -> Result<(), Error> {
+        self.upload_to_container(
+            container_name,
+            options.map(Into::into),
+            crate::body_stream(tar),
+        )
+        .await
     }
 
     /// ---
@@ -2256,15 +2501,12 @@ impl Docker {
     ///     .expect("upload failed");
     /// # }
     /// ```
-    pub async fn upload_to_container<T>(
+    pub async fn upload_to_container(
         &self,
         container_name: &str,
-        options: Option<UploadToContainerOptions<T>>,
+        options: Option<impl Into<crate::query_parameters::UploadToContainerOptions>>,
         tar: BodyType,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Serialize,
-    {
+    ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
@@ -2272,7 +2514,7 @@ impl Docker {
             Builder::new()
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
-            options,
+            options.map(Into::into),
             Ok(tar),
         );
 
@@ -2307,20 +2549,17 @@ impl Docker {
     ///
     /// docker.download_from_container("my-container", options);
     /// ```
-    pub fn download_from_container<T>(
+    pub fn download_from_container(
         &self,
         container_name: &str,
-        options: Option<DownloadFromContainerOptions<T>>,
-    ) -> impl Stream<Item = Result<Bytes, Error>>
-    where
-        T: Into<String> + Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::DownloadFromContainerOptions>>,
+    ) -> impl Stream<Item = Result<Bytes, Error>> {
         let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

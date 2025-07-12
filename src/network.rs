@@ -1,4 +1,5 @@
 //! Network API: Networks are user-defined networks that containers can be attached to.
+#![allow(deprecated)]
 
 use bytes::Bytes;
 use http::request::Builder;
@@ -18,6 +19,10 @@ use crate::models::*;
 
 /// Network configuration used in the [Create Network API](Docker::create_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::models::NetworkCreateRequest"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNetworkOptions<T>
 where
@@ -51,6 +56,36 @@ where
     pub labels: HashMap<T, T>,
 }
 
+impl<T> From<CreateNetworkOptions<T>> for NetworkCreateRequest
+where
+    T: Into<String> + Eq + Hash,
+{
+    fn from(opts: CreateNetworkOptions<T>) -> Self {
+        NetworkCreateRequest {
+            name: opts.name.into(),
+            driver: Some(opts.driver.into()),
+            internal: Some(opts.internal),
+            attachable: Some(opts.attachable),
+            ingress: Some(opts.ingress),
+            ipam: Some(opts.ipam),
+            enable_ipv6: Some(opts.enable_ipv6),
+            options: Some(
+                opts.options
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            ),
+            labels: Some(
+                opts.labels
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+}
+
 /// Parameters used in the [Inspect Network API](super::Docker::inspect_network())
 ///
 /// ## Examples
@@ -72,6 +107,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::InspectNetworkOptions and associated InspectNetworkOptionsBuilder"
+)]
 pub struct InspectNetworkOptions<T>
 where
     T: Into<String> + serde::ser::Serialize,
@@ -80,6 +119,18 @@ where
     pub verbose: bool,
     /// Filter the network by scope (swarm, global, or local)
     pub scope: T,
+}
+
+impl<T> From<InspectNetworkOptions<T>> for crate::query_parameters::InspectNetworkOptions
+where
+    T: Into<String> + serde::ser::Serialize,
+{
+    fn from(opts: InspectNetworkOptions<T>) -> Self {
+        crate::query_parameters::InspectNetworkOptionsBuilder::default()
+            .verbose(opts.verbose)
+            .scope(&opts.scope.into())
+            .build()
+    }
 }
 
 /// Parameters used in the [List Networks API](super::Docker::list_networks())
@@ -108,6 +159,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListNetworksOptions and associated ListNetworksOptionsBuilder"
+)]
 pub struct ListNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -123,8 +178,29 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<ListNetworksOptions<T>> for crate::query_parameters::ListNetworksOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ListNetworksOptions<T>) -> Self {
+        crate::query_parameters::ListNetworksOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
+}
+
 /// Network configuration used in the [Connect Network API](Docker::connect_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ConnectNetworkOptions and associated ConnectNetworkOptionsBuilder"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
 where
@@ -136,8 +212,24 @@ where
     pub endpoint_config: EndpointSettings,
 }
 
+impl<T> From<ConnectNetworkOptions<T>> for NetworkConnectRequest
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ConnectNetworkOptions<T>) -> Self {
+        NetworkConnectRequest {
+            container: Some(opts.container.into()),
+            endpoint_config: Some(opts.endpoint_config),
+        }
+    }
+}
+
 /// Network configuration used in the [Disconnect Network API](Docker::disconnect_network())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::DisconnectNetworkOptions and associated DisconnectNetworkOptionsBuilder"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct DisconnectNetworkOptions<T>
 where
@@ -147,6 +239,18 @@ where
     pub container: T,
     /// Force the container to disconnect from the network.
     pub force: bool,
+}
+
+impl<T> From<DisconnectNetworkOptions<T>> for NetworkDisconnectRequest
+where
+    T: Into<String> + serde::ser::Serialize,
+{
+    fn from(opts: DisconnectNetworkOptions<T>) -> Self {
+        NetworkDisconnectRequest {
+            container: Some(opts.container.into()),
+            force: Some(opts.force),
+        }
+    }
 }
 
 /// Parameters used in the [Prune Networks API](Docker::prune_networks())
@@ -175,6 +279,10 @@ where
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PruneNetworksOptions and associated PruneNetworksOptionsBuilder"
+)]
 pub struct PruneNetworksOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -187,6 +295,23 @@ where
     ///    Prune networks with (or without, in case `label!=...` is used) the specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+impl<T> From<PruneNetworksOptions<T>> for crate::query_parameters::PruneNetworksOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: PruneNetworksOptions<T>) -> Self {
+        crate::query_parameters::PruneNetworksOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
 }
 
 impl Docker {
@@ -222,20 +347,17 @@ impl Docker {
     ///
     /// docker.create_network(config);
     /// ```
-    pub async fn create_network<T>(
+    pub async fn create_network(
         &self,
-        config: CreateNetworkOptions<T>,
-    ) -> Result<NetworkCreateResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        config: impl Into<NetworkCreateRequest>,
+    ) -> Result<NetworkCreateResponse, Error> {
         let url = "/networks/create";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -304,20 +426,17 @@ impl Docker {
     ///
     /// docker.inspect_network("my_network_name", Some(config));
     /// ```
-    pub async fn inspect_network<T>(
+    pub async fn inspect_network(
         &self,
         network_name: &str,
-        options: Option<InspectNetworkOptions<T>>,
-    ) -> Result<Network, Error>
-    where
-        T: Into<String> + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::InspectNetworkOptions>>,
+    ) -> Result<Network, Error> {
         let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -356,19 +475,16 @@ impl Docker {
     ///
     /// docker.list_networks(Some(config));
     /// ```
-    pub async fn list_networks<T>(
+    pub async fn list_networks(
         &self,
-        options: Option<ListNetworksOptions<T>>,
-    ) -> Result<Vec<Network>, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListNetworksOptions>>,
+    ) -> Result<Vec<Network>, Error> {
         let url = "/networks";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -412,21 +528,18 @@ impl Docker {
     ///
     /// docker.connect_network("my_network_name", config);
     /// ```
-    pub async fn connect_network<T>(
+    pub async fn connect_network(
         &self,
         network_name: &str,
-        config: ConnectNetworkOptions<T>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        config: impl Into<NetworkConnectRequest>,
+    ) -> Result<(), Error> {
         let url = format!("/networks/{network_name}/connect");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_unit(req).await
@@ -461,21 +574,18 @@ impl Docker {
     ///
     /// docker.disconnect_network("my_network_name", config);
     /// ```
-    pub async fn disconnect_network<T>(
+    pub async fn disconnect_network(
         &self,
         network_name: &str,
-        config: DisconnectNetworkOptions<T>,
-    ) -> Result<(), Error>
-    where
-        T: Into<String> + serde::ser::Serialize,
-    {
+        config: impl Into<NetworkDisconnectRequest>,
+    ) -> Result<(), Error> {
         let url = format!("/networks/{network_name}/disconnect");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_unit(req).await
@@ -514,19 +624,16 @@ impl Docker {
     ///
     /// docker.prune_networks(Some(options));
     /// ```
-    pub async fn prune_networks<T>(
+    pub async fn prune_networks(
         &self,
-        options: Option<PruneNetworksOptions<T>>,
-    ) -> Result<NetworkPruneResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::PruneNetworksOptions>>,
+    ) -> Result<NetworkPruneResponse, Error> {
         let url = "/networks/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

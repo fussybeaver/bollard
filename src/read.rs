@@ -116,7 +116,7 @@ impl<T> JsonLineDecoder<T> {
 fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<Option<T>, Error> {
     debug!(
         "Decoding JSON line from stream: {}",
-        String::from_utf8_lossy(slice).to_string()
+        String::from_utf8_lossy(slice)
     );
 
     match serde_json::from_slice(slice) {
@@ -239,10 +239,7 @@ impl AsyncRead for StreamReader {
                         return Poll::Pending;
                     }
                     Poll::Ready(Some(Err(e))) => {
-                        return Poll::Ready(Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            e.to_string(),
-                        )));
+                        return Poll::Ready(Err(io::Error::other(e.to_string())));
                     }
                 },
             }

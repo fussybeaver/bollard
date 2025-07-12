@@ -1,4 +1,5 @@
 //! Swarm API: Docker swarm is a container orchestration tool, meaning that it allows the user to manage multiple containers deployed across multiple host machines.
+#![allow(deprecated)]
 use crate::docker::BodyType;
 
 use hyper::Method;
@@ -18,6 +19,10 @@ use crate::models::*;
 
 /// Swam configuration used in the [Init Swarm API](Docker::init_swarm())
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::models::SwarmInitRequest"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct InitSwarmOptions<T>
 where
@@ -29,8 +34,25 @@ where
     pub advertise_addr: T,
 }
 
+impl<T> From<InitSwarmOptions<T>> for SwarmInitRequest
+where
+    T: Into<String> + Eq + Hash,
+{
+    fn from(opts: InitSwarmOptions<T>) -> Self {
+        SwarmInitRequest {
+            listen_addr: Some(opts.listen_addr.into()),
+            advertise_addr: Some(opts.advertise_addr.into()),
+            ..Default::default()
+        }
+    }
+}
+
 /// Swam configuration used in the [Join Swarm API](Docker::join_swarm())
 #[derive(Debug, Clone, Default, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::models::SwarmJoinRequest"
+)]
 pub struct JoinSwarmOptions<T>
 where
     T: Into<String> + Serialize,
@@ -41,11 +63,36 @@ where
     pub join_token: T,
 }
 
+impl<T> From<JoinSwarmOptions<T>> for SwarmJoinRequest
+where
+    T: Into<String> + Serialize,
+{
+    fn from(opts: JoinSwarmOptions<T>) -> Self {
+        SwarmJoinRequest {
+            advertise_addr: Some(opts.advertise_addr.into()),
+            join_token: Some(opts.join_token.into()),
+            ..Default::default()
+        }
+    }
+}
+
 /// Swam configuration used in the [Leave Swarm API](Docker::leave_swarm())
 #[derive(Debug, Copy, Clone, Default, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::LeaveSwarmOptions and associated LeaveSwarmOptionsBuilder"
+)]
 pub struct LeaveSwarmOptions {
     /// Force to leave to swarm.
     pub force: bool,
+}
+
+impl From<LeaveSwarmOptions> for crate::query_parameters::LeaveSwarmOptions {
+    fn from(opts: LeaveSwarmOptions) -> Self {
+        crate::query_parameters::LeaveSwarmOptionsBuilder::default()
+            .force(opts.force)
+            .build()
+    }
 }
 
 impl Docker {
@@ -80,17 +127,14 @@ impl Docker {
     ///
     /// docker.init_swarm(config);
     /// ```
-    pub async fn init_swarm<T>(&self, config: InitSwarmOptions<T>) -> Result<String, Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+    pub async fn init_swarm(&self, config: impl Into<SwarmInitRequest>) -> Result<String, Error> {
         let url = "/swarm/init";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -154,17 +198,14 @@ impl Docker {
     /// };
     /// docker.join_swarm(config);
     /// ```
-    pub async fn join_swarm<T>(&self, config: JoinSwarmOptions<T>) -> Result<(), Error>
-    where
-        T: Into<String> + Eq + Hash + Serialize,
-    {
+    pub async fn join_swarm(&self, config: impl Into<SwarmJoinRequest>) -> Result<(), Error> {
         let url = "/swarm/join";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_unit(req).await
@@ -184,17 +225,21 @@ impl Docker {
     ///
     /// ```rust
     /// # use bollard::Docker;
+    /// # use bollard::query_parameters::LeaveSwarmOptions;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// docker.leave_swarm(None);
+    /// docker.leave_swarm(None::<LeaveSwarmOptions>);
     /// ```
-    pub async fn leave_swarm(&self, options: Option<LeaveSwarmOptions>) -> Result<(), Error> {
+    pub async fn leave_swarm(
+        &self,
+        options: Option<impl Into<crate::query_parameters::LeaveSwarmOptions>>,
+    ) -> Result<(), Error> {
         let url = "/swarm/leave";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

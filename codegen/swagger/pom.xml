@@ -10,7 +10,7 @@
     <properties>
       <maven.compiler.source>8</maven.compiler.source>
       <maven.compiler.target>8</maven.compiler.target>
-      <swagger-codegen.version>2.4.44</swagger-codegen.version>
+      <swagger-codegen.version>2.4.45</swagger-codegen.version>
     </properties>
 
     <build>
@@ -25,7 +25,7 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <inputSpec>https://raw.githubusercontent.com/moby/moby/v27.3.1/docs/api/v1.47.yaml</inputSpec>
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/v28.0.4/docs/api/v1.48.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.basedir}</output>
                 <generateApis>true</generateApis>
@@ -33,7 +33,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.47.1-rc.27.3.1</packageVersion>
+                  <packageVersion>1.48.3-rc.28.0.4</packageVersion>
                 </configOptions>
               </configuration>
             </execution>

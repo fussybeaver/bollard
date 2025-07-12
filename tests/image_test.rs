@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
@@ -241,6 +242,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
             CommitContainerOptions {
                 container: "integration_test_commit_container",
                 repo: "integration_test_commit_container_next",
+                tag: "latest",
                 pause: true,
                 ..Default::default()
             },
@@ -428,7 +430,10 @@ RUN touch bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_image", None)
+        .remove_container(
+            "integration_test_build_image",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -573,7 +578,10 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_image", None)
+        .remove_container(
+            "integration_test_build_buildkit_image",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -753,7 +761,10 @@ COPY --from=builder1 /token /",
     assert_eq!(format!("{value}"), token.to_string());
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_secret", None)
+        .remove_container(
+            "integration_test_build_buildkit_secret",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -923,7 +934,10 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_named_context", None)
+        .remove_container(
+            "integration_test_build_buildkit_named_context",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1038,7 +1052,10 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_ssh", None)
+        .remove_container(
+            "integration_test_build_buildkit_ssh",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1159,7 +1176,10 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container("integration_test_build_buildkit_image_inline_driver", None)
+        .remove_container(
+            "integration_test_build_buildkit_image_inline_driver",
+            None::<RemoveContainerOptions>,
+        )
         .await?;
 
     let _ = &docker
@@ -1415,6 +1435,97 @@ RUN touch empty.txt
         std::fs::read_to_string(dest_path.join("empty.txt")).unwrap(),
         String::from("")
     );
+
+    Ok(())
+}
+
+// Although prune_build can be run without BuildKit enabled, only the BuildKit builder actually
+// uses it. The V1 builder caches in the form of intermediate images instead.
+#[cfg(feature = "buildkit")]
+async fn prune_build_test(docker: Docker) -> Result<(), Error> {
+    use bollard::query_parameters::DataUsageOptions;
+
+    let dockerfile = format!(
+        "FROM {}alpine
+RUN echo bollard > bollard.txt
+",
+        registry_http_addr()
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000".to_string(), credentials);
+
+    let id = "prune_build_test";
+
+    let _ = &docker
+        .build_image(
+            BuildImageOptions {
+                dockerfile: "Dockerfile".to_string(),
+                t: "integration_test_prune_build".to_string(),
+                pull: true,
+                version: BuilderVersion::BuilderBuildKit,
+                rm: true,
+                #[cfg(feature = "buildkit")]
+                session: Some(String::from(id)),
+                ..Default::default()
+            },
+            Some(creds_hsh),
+            Some(http_body_util::Either::Left(Full::new(compressed.into()))),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await?;
+
+    // Remove the image before running prune_build since the bytes of bollard.txt are stored in
+    // the build cache and shared with the image
+    let _ = &docker
+        .remove_image(
+            "integration_test_prune_build",
+            None::<RemoveImageOptions>,
+            None,
+        )
+        .await?;
+
+    let old_cache_size = &docker
+        .df(None::<DataUsageOptions>)
+        .await?
+        .build_cache
+        .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
+        .unwrap();
+
+    let prune_info = docker
+        .prune_build(None::<PruneBuildOptions<String>>)
+        .await?;
+
+    let new_cache_size = &docker
+        .df(None::<DataUsageOptions>)
+        .await?
+        .build_cache
+        .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
+        .unwrap();
+
+    assert!(old_cache_size - new_cache_size > 0);
+    assert_eq!(
+        prune_info.space_reclaimed,
+        Some(old_cache_size - new_cache_size)
+    );
+    assert!(prune_info.caches_deleted.is_some_and(|c| !c.is_empty()));
 
     Ok(())
 }
@@ -1738,6 +1849,12 @@ fn integration_test_build_buildkit_image_outputs_tar() {
 #[cfg(feature = "buildkit")]
 fn integration_test_build_buildkit_image_outputs_local() {
     connect_to_docker_and_run!(build_buildkit_image_outputs_local_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit")]
+fn integration_test_prune_build() {
+    connect_to_docker_and_run!(prune_build_test);
 }
 
 #[test]

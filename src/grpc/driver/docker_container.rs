@@ -7,11 +7,10 @@ use std::{
     time::Duration,
 };
 
-use bollard_buildkit_proto::{
-    health::health_server::HealthServer, moby::buildkit::v1::control_client::ControlClient,
-};
+use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
-    ExecInspectResponse, HostConfig, Mount, MountTypeEnum, SystemInfoCgroupDriverEnum,
+    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountTypeEnum,
+    SystemInfoCgroupDriverEnum,
 };
 use bytes::BytesMut;
 use futures_core::Future;
@@ -21,32 +20,23 @@ use http::{
     request::Builder,
     Method,
 };
-use log::{debug, error, info, trace};
+use log::{debug, info};
 use tonic::transport::Endpoint;
 use tonic::{codegen::InterceptedService, transport::Channel};
 use tower_service::Service;
 
 use crate::{
     auth::DockerCredentials,
-    container::{Config, CreateContainerOptions},
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     grpc::{
         build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
         error::GrpcError,
     },
-    grpc::{
-        io::{
-            into_async_read::IntoAsyncRead, reader_stream::ReaderStream, GrpcFramedTransport,
-            GrpcTransport,
-        },
-        registry::ImageRegistryOutput,
-        GrpcServer, HealthServerImpl,
-    },
-    image::CreateImageOptions,
+    grpc::{io::GrpcFramedTransport, registry::ImageRegistryOutput, GrpcServer},
     Docker,
 };
 
-use super::{DriverInterceptor, ImageExporterEnum};
+use super::{channel::BuildkitChannel, DriverInterceptor, ImageExporterEnum};
 
 /// The default `Buildkit` image to use for the [`DockerContainer] driver.
 pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
@@ -172,7 +162,10 @@ impl DockerContainerBuilder {
         }) = self
             .inner
             .docker
-            .inspect_container(&self.inner.name, None)
+            .inspect_container(
+                &self.inner.name,
+                None::<bollard_stubs::query_parameters::InspectContainerOptions>,
+            )
             .await
         {
             self.inner.create().await?
@@ -254,50 +247,9 @@ impl super::Driver for DockerContainer {
             .connect_with_connector(self)
             .await?;
 
-        let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
+        let channel = BuildkitChannel::new(channel);
 
-        let interceptor = DriverInterceptor {
-            session_id: String::from(session_id),
-            metadata_grpc_method,
-        };
-
-        let mut control_client = ControlClient::with_interceptor(channel, interceptor);
-
-        let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
-        let streamreader = ReaderStream::new(asyncreader);
-        let stream = control_client.session(streamreader).await?;
-        let stream = stream
-            .into_inner()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
-        let asyncreader = IntoAsyncRead::new(stream);
-        let transport = GrpcTransport {
-            read: Box::pin(asyncreader),
-            write: Box::pin(asyncwriter),
-        };
-
-        tokio::spawn(async {
-            let health = HealthServer::new(HealthServerImpl::new());
-            let mut builder = tonic::transport::Server::builder();
-            let mut router = builder.add_service(health);
-            for service in services {
-                router = service.append(router);
-            }
-            trace!("router: {:#?}", router);
-            if let Err(e) = router
-                .serve_with_incoming(futures_util::stream::iter(vec![Ok::<
-                    _,
-                    tonic::transport::Error,
-                >(
-                    transport
-                )]))
-                .await
-            {
-                error!("Failed to serve grpc connection: {}", e)
-            }
-        });
-
-        Ok(control_client)
+        channel.grpc_handle(session_id, services).await
     }
 
     fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
@@ -312,7 +264,7 @@ impl super::Driver for DockerContainer {
     }
 }
 
-impl<'a> DockerContainer {
+impl DockerContainer {
     /// Identifies the docker container name that runs `Buildkit`. This should be unique if you
     /// intend to run multiple instances building in parallel on the same host.
     pub fn name(&self) -> &str {
@@ -330,10 +282,10 @@ impl<'a> DockerContainer {
 
         // TODO: registry auth
 
-        let create_image_options = CreateImageOptions {
-            from_image: String::from(image_name),
-            ..Default::default()
-        };
+        let create_image_options =
+            bollard_stubs::query_parameters::CreateImageOptionsBuilder::default()
+                .from_image(image_name)
+                .build();
 
         self.docker
             .create_image(Some(create_image_options), None, None)
@@ -342,10 +294,10 @@ impl<'a> DockerContainer {
 
         debug!("creating container {}", &self.name);
 
-        let container_options = CreateContainerOptions {
-            name: String::from(&self.name),
-            ..Default::default()
-        };
+        let container_options =
+            bollard_stubs::query_parameters::CreateContainerOptionsBuilder::default()
+                .name(&self.name)
+                .build();
 
         let info = self.docker.info().await?;
         let cgroup_parent = match &info.cgroup_driver {
@@ -388,7 +340,7 @@ impl<'a> DockerContainer {
             ..Default::default()
         };
 
-        let container_config = Config {
+        let container_config = ContainerCreateBody {
             image: Some(String::from(image_name)),
             env: Some(Vec::clone(&self.env)),
             host_config: Some(host_config),
@@ -409,7 +361,10 @@ impl<'a> DockerContainer {
 
     async fn start(&self) -> Result<(), GrpcError> {
         self.docker
-            .start_container::<String>(&self.name, None)
+            .start_container(
+                &self.name,
+                None::<crate::query_parameters::StartContainerOptions>,
+            )
             .await?;
 
         Ok(())
@@ -480,7 +435,7 @@ impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
             self.docker
                 .kill_container(
                     &self.name,
-                    None::<crate::container::KillContainerOptions<String>>,
+                    None::<bollard_stubs::query_parameters::KillContainerOptions>,
                 )
                 .map_err(GrpcError::from)
                 .await

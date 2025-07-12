@@ -27,10 +27,9 @@ use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
 #[cfg(feature = "ssl_providerless")]
 use hyper_rustls::HttpsConnector;
 #[cfg(any(feature = "http", test))]
-use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
-    rt::TokioExecutor,
-};
+use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(any(feature = "http", feature = "ssh", test))]
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
 use log::{debug, trace};
@@ -68,6 +67,10 @@ pub const DEFAULT_NAMED_PIPE: &str = "npipe:////./pipe/docker_engine";
 #[cfg(feature = "http")]
 pub const DEFAULT_TCP_ADDRESS: &str = "tcp://localhost:2375";
 
+/// The default `DOCKER_SSH_ADDRESS` address that we will try to connect to.
+#[cfg(feature = "ssh")]
+pub const DEFAULT_SSH_ADDRESS: &str = "ssh://localhost";
+
 /// The default `DOCKER_HOST` address that we will try to connect to.
 #[cfg(unix)]
 pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
@@ -77,13 +80,13 @@ pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
 pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_NAMED_PIPE;
 
 /// Default timeout for all requests is 2 minutes.
-#[cfg(feature = "http")]
+#[cfg(any(feature = "http", feature = "ssh"))]
 const DEFAULT_TIMEOUT: u64 = 120;
 
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 47,
+    minor_version: 48,
 };
 
 #[derive(Debug, Clone)]
@@ -96,6 +99,8 @@ pub(crate) enum ClientType {
     SSL,
     #[cfg(all(feature = "pipe", windows))]
     NamedPipe,
+    #[cfg(feature = "ssh")]
+    Ssh,
     Custom {
         scheme: String,
     },
@@ -146,6 +151,10 @@ pub(crate) enum Transport {
     NamedPipe {
         client: Client<NamedPipeConnector, BodyType>,
     },
+    #[cfg(feature = "ssh")]
+    Ssh {
+        client: Client<crate::ssh::SshConnector, BodyType>,
+    },
     #[cfg(test)]
     Mock {
         client: Client<yup_hyper_mock::HostToReplyConnector, BodyType>,
@@ -166,6 +175,8 @@ impl fmt::Debug for Transport {
             Transport::Unix { .. } => write!(f, "Unix"),
             #[cfg(all(feature = "pipe", windows))]
             Transport::NamedPipe { .. } => write!(f, "NamedPipe"),
+            #[cfg(feature = "ssh")]
+            Transport::Ssh { .. } => write!(f, "SSH"),
             #[cfg(test)]
             Transport::Mock { .. } => write!(f, "Mock"),
             Transport::Custom { .. } => write!(f, "Custom"),
@@ -316,6 +327,7 @@ where
 ///  - [`Docker::connect_with_ssl_defaults`](Docker::connect_with_ssl_defaults())
 ///  - [`Docker::connect_with_unix_defaults`](Docker::connect_with_unix_defaults())
 ///  - [`Docker::connect_with_local_defaults`](Docker::connect_with_local_defaults())
+///  - [`Docker::connect_with_ssh_defaults`](Docker::connect_with_ssh_defaults())
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
@@ -874,6 +886,10 @@ impl Docker {
             }
             #[cfg(feature = "ssl_providerless")]
             h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
+            #[cfg(feature = "ssh")]
+            h if h.starts_with("ssh://") => {
+                Docker::connect_with_ssh(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
             }),
@@ -1033,6 +1049,83 @@ impl Docker {
         let docker = Docker {
             transport: Arc::new(transport),
             client_type: ClientType::NamedPipe,
+            client_addr,
+            client_timeout: timeout,
+            version: Arc::new((
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            )),
+        };
+
+        Ok(docker)
+    }
+}
+
+#[cfg(feature = "ssh")]
+/// A Docker implementation typed to connect to an SSH connection.
+impl Docker {
+    /// Connect using SSH using defaults that are signalled by environment variables.
+    ///
+    /// # Defaults
+    ///
+    ///  - The connection url is sourced from the `DOCKER_HOST` environment variable, and defaults
+    ///    to `ssh://localhost`.
+    ///  - The number of threads used for the HTTP connection pool defaults to 1.
+    ///  - The request timeout defaults to 2 minutes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_ssh_defaults().unwrap();
+    /// connection.ping()
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_ssh_defaults() -> Result<Docker, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_SSH_ADDRESS.to_string());
+        Docker::connect_with_ssh(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+    }
+
+    /// Connect using SSH.
+    ///
+    /// # Arguments
+    ///
+    ///  - `addr`: connection url including scheme and port.
+    ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
+    ///  - `client_version`: the client version to communicate with the server.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_ssh(
+    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION)
+    ///                    .unwrap();
+    /// connection.ping()
+    ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_ssh(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+    ) -> Result<Docker, Error> {
+        let client_addr = addr.replacen("ssh://", "", 1);
+
+        let ssh_connector = crate::ssh::SshConnector;
+
+        let client_builder = Client::builder(TokioExecutor::new());
+
+        let client = client_builder.build(ssh_connector);
+        let transport = Transport::Ssh { client };
+        let docker = Docker {
+            transport: Arc::new(transport),
+            client_type: ClientType::Ssh,
             client_addr,
             client_timeout: timeout,
             version: Arc::new((
@@ -1257,7 +1350,7 @@ impl Docker {
         );
 
         let res = self
-            .process_into_value::<crate::system::Version>(req)
+            .process_into_value::<crate::models::SystemVersion>(req)
             .await?;
 
         let server_version: ClientVersion = if let Some(api_version) = res.api_version {
@@ -1369,22 +1462,15 @@ impl Docker {
         O: Serialize,
     {
         match credentials {
-            DockerCredentialsHeader::Config(config) => {
-                let value = match config {
-                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
-                    None => "".into(),
-                };
-
+            DockerCredentialsHeader::Config(Some(config)) => {
+                let value = base64_url_encode(&serde_json::to_string(&config)?);
                 builder = builder.header("X-Registry-Config", value)
             }
-            DockerCredentialsHeader::Auth(auth) => {
-                let value = match auth {
-                    Some(config) => base64_url_encode(&serde_json::to_string(&config)?),
-                    None => "".into(),
-                };
-
+            DockerCredentialsHeader::Auth(Some(config)) => {
+                let value = base64_url_encode(&serde_json::to_string(&config)?);
                 builder = builder.header("X-Registry-Auth", value)
             }
+            _ => {}
         }
 
         self.build_request(path, builder, query, payload)
@@ -1405,6 +1491,8 @@ impl Docker {
             Transport::Unix { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(all(feature = "pipe", windows))]
             Transport::NamedPipe { ref client } => client.request(req).map_err(Error::from).boxed(),
+            #[cfg(feature = "ssh")]
+            Transport::Ssh { ref client } => client.request(req).map_err(Error::from).boxed(),
             #[cfg(test)]
             Transport::Mock { ref client } => client.request(req).map_err(Error::from).boxed(),
             Transport::Custom { ref transport } => transport.request(req).boxed(),

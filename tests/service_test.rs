@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bollard::errors::Error;
 use bollard::{service::*, Docker};
 

@@ -1,7 +1,6 @@
 //! Builds a container with a bunch of extra options for testing
 #![allow(unused_variables, unused_mut)]
 
-use bollard::image::{BuildImageOptions, BuilderVersion};
 #[cfg(feature = "buildkit")]
 use bollard::models::BuildInfoAux;
 use bollard::Docker;
@@ -39,18 +38,17 @@ ENTRYPOINT ls buildkit-bollard.txt
     let compressed = c.finish().unwrap();
 
     let id = "bollard-build-buildkit-example";
-    let build_image_options = BuildImageOptions {
-        t: id,
-        dockerfile: "Dockerfile",
-        version: BuilderVersion::BuilderBuildKit,
-        pull: true,
-        #[cfg(feature = "buildkit")]
-        session: Some(String::from(id)),
-        ..Default::default()
-    };
+    let build_image_options = bollard::query_parameters::BuildImageOptionsBuilder::default()
+        .t(id)
+        .dockerfile("Dockerfile")
+        .version(bollard::query_parameters::BuilderVersion::BuilderBuildKit)
+        .pull("true");
+
+    #[cfg(feature = "buildkit")]
+    let build_image_options = build_image_options.session(id);
 
     let mut image_build_stream = docker.build_image(
-        build_image_options,
+        build_image_options.build(),
         None,
         Some(http_body_util::Either::Left(Full::new(compressed.into()))),
     );

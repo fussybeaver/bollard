@@ -1,4 +1,5 @@
 //! Volume API: Create and manage persistent storage that can be attached to containers.
+#![allow(deprecated)]
 
 use bytes::Bytes;
 use http::request::Builder;
@@ -17,6 +18,10 @@ use crate::models::*;
 
 /// Parameters used in the [List Volume API](Docker::list_volumes())
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::ListVolumesOptions and associated ListVolumesOptionsBuilder"
+)]
 pub struct ListVolumesOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -30,9 +35,30 @@ where
     pub filters: HashMap<T, Vec<T>>,
 }
 
+impl<T> From<ListVolumesOptions<T>> for crate::query_parameters::ListVolumesOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: ListVolumesOptions<T>) -> Self {
+        crate::query_parameters::ListVolumesOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
+}
+
 /// Volume configuration used in the [Create Volume
 /// API](Docker::create_volume())
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::models::VolumeCreateOptions"
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateVolumeOptions<T>
 where
@@ -49,12 +75,49 @@ where
     pub labels: HashMap<T, T>,
 }
 
+impl<T> From<CreateVolumeOptions<T>> for VolumeCreateOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: CreateVolumeOptions<T>) -> Self {
+        VolumeCreateOptions {
+            name: Some(opts.name.into()),
+            driver: Some(opts.driver.into()),
+            driver_opts: Some(
+                opts.driver_opts
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            ),
+            labels: Some(
+                opts.labels
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+}
+
 /// Parameters used in the [Remove Volume API](super::Docker::remove_volume())
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::RemoveVolumeOptions and associated RemoveVolumeOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveVolumeOptions {
     /// Force the removal of the volume.
     pub force: bool,
+}
+
+impl From<RemoveVolumeOptions> for crate::query_parameters::RemoveVolumeOptions {
+    fn from(opts: RemoveVolumeOptions) -> Self {
+        crate::query_parameters::RemoveVolumeOptionsBuilder::default()
+            .force(opts.force)
+            .build()
+    }
 }
 
 /// Parameters used in the [Prune Volumes API](Docker::prune_volumes())
@@ -83,6 +146,10 @@ pub struct RemoveVolumeOptions {
 /// };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::PruneVolumesOptions and associated PruneVolumesOptionsBuilder"
+)]
 pub struct PruneVolumesOptions<T>
 where
     T: Into<String> + Eq + Hash + serde::ser::Serialize,
@@ -93,6 +160,23 @@ where
     ///    specified labels.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+impl<T> From<PruneVolumesOptions<T>> for crate::query_parameters::PruneVolumesOptions
+where
+    T: Into<String> + Eq + Hash + serde::ser::Serialize,
+{
+    fn from(opts: PruneVolumesOptions<T>) -> Self {
+        crate::query_parameters::PruneVolumesOptionsBuilder::default()
+            .filters(
+                &opts
+                    .filters
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
+                    .collect(),
+            )
+            .build()
+    }
 }
 
 impl Docker {
@@ -128,19 +212,16 @@ impl Docker {
     ///
     /// docker.list_volumes(Some(options));
     /// ```
-    pub async fn list_volumes<T>(
+    pub async fn list_volumes(
         &self,
-        options: Option<ListVolumesOptions<T>>,
-    ) -> Result<VolumeListResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::ListVolumesOptions>>,
+    ) -> Result<VolumeListResponse, Error> {
         let url = "/volumes";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -179,17 +260,17 @@ impl Docker {
     ///
     /// docker.create_volume(config);
     /// ```
-    pub async fn create_volume<T>(&self, config: CreateVolumeOptions<T>) -> Result<Volume, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+    pub async fn create_volume(
+        &self,
+        config: impl Into<VolumeCreateOptions>,
+    ) -> Result<Volume, Error> {
         let url = "/volumes/create";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -262,14 +343,14 @@ impl Docker {
     pub async fn remove_volume(
         &self,
         volume_name: &str,
-        options: Option<RemoveVolumeOptions>,
+        options: Option<impl Into<crate::query_parameters::RemoveVolumeOptions>>,
     ) -> Result<(), Error> {
         let url = format!("/volumes/{volume_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -309,19 +390,16 @@ impl Docker {
     ///
     /// docker.prune_volumes(Some(options));
     /// ```
-    pub async fn prune_volumes<T>(
+    pub async fn prune_volumes(
         &self,
-        options: Option<PruneVolumesOptions<T>>,
-    ) -> Result<VolumePruneResponse, Error>
-    where
-        T: Into<String> + Eq + Hash + serde::ser::Serialize,
-    {
+        options: Option<impl Into<crate::query_parameters::PruneVolumesOptions>>,
+    ) -> Result<VolumePruneResponse, Error> {
         let url = "/volumes/prune";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            options,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

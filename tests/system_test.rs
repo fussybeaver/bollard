@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
 use bollard::image::*;
@@ -125,10 +126,13 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(not(feature = "test_macos"))]
 async fn df_test(docker: Docker) -> Result<(), Error> {
+    use bollard::query_parameters::DataUsageOptions;
+
     create_image_hello_world(&docker).await?;
 
-    let result = &docker.df().await?;
+    let result = &docker.df(None::<DataUsageOptions>).await?;
 
     let c = result
         .images
