@@ -144,10 +144,7 @@ impl From<UpdateServiceOptions> for crate::query_parameters::UpdateServiceOption
             .version(
                 i32::try_from(opts.version)
                     .inspect_err(|e| {
-                        log::error!(
-                            "Truncation of u64 into i32 in UpdateServiceOptions: {:?}",
-                            e
-                        )
+                        log::error!("Truncation of u64 into i32 in UpdateServiceOptions: {e:?}")
                     })
                     .unwrap_or(opts.version as i32),
             )

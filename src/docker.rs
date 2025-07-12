@@ -1384,7 +1384,7 @@ impl Docker {
         let timeout = self.client_timeout;
 
         match request.as_ref().map(|b| b.body()) {
-            Ok(http_body_util::Either::Left(bytes)) => trace!("request: {:?}", bytes),
+            Ok(http_body_util::Either::Left(bytes)) => trace!("request: {bytes:?}"),
             Ok(http_body_util::Either::Right(_)) => trace!("request: (stream)"),
             Err(e) => trace!("request: Err({e:?}"),
         };

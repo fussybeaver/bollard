@@ -106,10 +106,7 @@ where
             builder = builder.limit(
                 i32::try_from(limit)
                     .inspect_err(|e| {
-                        log::error!(
-                            "Truncation of isize into i32 in ListContainersOptions: {:?}",
-                            e
-                        )
+                        log::error!("Truncation of isize into i32 in ListContainersOptions: {e:?}")
                     })
                     .unwrap_or(limit as i32),
             );
@@ -496,10 +493,7 @@ impl From<StopContainerOptions> for crate::query_parameters::StopContainerOption
         crate::query_parameters::StopContainerOptionsBuilder::default()
             .t(i32::try_from(opts.t)
                 .inspect_err(|e| {
-                    log::error!(
-                        "Truncation of i64 into i32 in StopContainerOptions: {:?}",
-                        e
-                    )
+                    log::error!("Truncation of i64 into i32 in StopContainerOptions: {e:?}")
                 })
                 .unwrap_or(opts.t as i32))
             .build()
@@ -763,10 +757,7 @@ impl From<RestartContainerOptions> for crate::query_parameters::RestartContainer
         crate::query_parameters::RestartContainerOptionsBuilder::default()
             .t(i32::try_from(opts.t)
                 .inspect_err(|e| {
-                    log::error!(
-                        "Truncation of isize into i32 in RestartContainerOptions : {:?}",
-                        e
-                    )
+                    log::error!("Truncation of isize into i32 in RestartContainerOptions : {e:?}")
                 })
                 .unwrap_or(opts.t as i32))
             .build()
@@ -895,14 +886,14 @@ where
             .since(
                 i32::try_from(opts.since)
                     .inspect_err(|e| {
-                        log::error!("Truncation of i64 into i32 in LogsOptions : {:?}", e)
+                        log::error!("Truncation of i64 into i32 in LogsOptions : {e:?}")
                     })
                     .unwrap_or(opts.since as i32),
             )
             .until(
                 i32::try_from(opts.until)
                     .inspect_err(|e| {
-                        log::error!("Truncation of i64 into i32 in LogsOptions : {:?}", e)
+                        log::error!("Truncation of i64 into i32 in LogsOptions : {e:?}")
                     })
                     .unwrap_or(opts.until as i32),
             )
