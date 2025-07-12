@@ -1,7 +1,7 @@
 [package]
 name = "bollard"
 description = "An asynchronous Docker daemon API"
-version = "0.19.1"
+version = "0.19.2"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
@@ -52,7 +52,7 @@ ssh = ["hyper-util", "openssh", "tower-service"]
 [dependencies]
 base64 = "0.22"
 bollard-stubs = { version = "=1.48.3-rc.28.0.4", default-features = false }
-bollard-buildkit-proto = { version = "0.6.1", optional = true }
+bollard-buildkit-proto = { version = "0.6.2", optional = true }
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
 futures-core = "0.3"
