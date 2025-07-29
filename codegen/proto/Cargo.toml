@@ -24,6 +24,6 @@ required-features = ["fetch"]
 tonic = { version = "0.13" }
 prost = { version = "0.14" }
 prost-types = "0.14"
-tonic-build = { version = "0.13", optional = true }
+tonic-build = { version = "0.14", optional = true }
 ureq = { version = "3.0.12", features = ["rustls-no-provider"], optional = true, default-features = false }
 
