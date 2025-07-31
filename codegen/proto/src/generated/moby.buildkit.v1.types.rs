@@ -17,7 +17,7 @@ pub struct WorkerRecord {
     #[prost(message, repeated, tag = "6")]
     pub cdi_devices: ::prost::alloc::vec::Vec<CdiDevice>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GcPolicy {
     #[prost(bool, tag = "1")]
     pub all: bool,
@@ -33,7 +33,7 @@ pub struct GcPolicy {
     #[prost(int64, tag = "6")]
     pub min_free_space: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BuildkitVersion {
     #[prost(string, tag = "1")]
     pub package: ::prost::alloc::string::String,

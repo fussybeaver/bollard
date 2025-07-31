@@ -9,7 +9,7 @@ pub struct GetSecretRequest {
         ::prost::alloc::string::String,
     >,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetSecretResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
@@ -120,7 +120,7 @@ pub mod secrets_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/moby.buildkit.secrets.v1.Secrets/GetSecret",
             );
@@ -258,7 +258,7 @@ pub mod secrets_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetSecretSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

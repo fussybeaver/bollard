@@ -32,7 +32,7 @@ pub struct Selector {
     pub constraints: ::prost::alloc::vec::Vec<AttrConstraint>,
 }
 /// AttrConstraint defines a constraint on a source attribute
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttrConstraint {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
