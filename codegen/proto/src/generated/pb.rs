@@ -32,7 +32,7 @@ pub mod op {
     }
 }
 /// Platform is github.com/opencontainers/image-spec/specs-go/v1.Platform
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Platform {
     #[prost(string, tag = "1")]
     pub architecture: ::prost::alloc::string::String,
@@ -47,7 +47,7 @@ pub struct Platform {
     pub os_features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Input represents an input edge for an Op.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Input {
     /// digest of the marshaled input Op
     #[prost(string, tag = "1")]
@@ -100,14 +100,14 @@ pub struct Meta {
     #[prost(int32, repeated, tag = "12")]
     pub valid_exit_codes: ::prost::alloc::vec::Vec<i32>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HostIp {
     #[prost(string, tag = "1")]
     pub host: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub ip: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Ulimit {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
@@ -117,7 +117,7 @@ pub struct Ulimit {
     pub hard: i64,
 }
 /// SecretEnv is an environment variable that is backed by a secret.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SecretEnv {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
@@ -127,7 +127,7 @@ pub struct SecretEnv {
     pub optional: bool,
 }
 /// CDIDevice specifies a CDI device information.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CdiDevice {
     /// Fully qualified CDI device name (e.g., vendor.com/gpu=gpudevice1)
     /// <https://github.com/cncf-tags/container-device-interface/blob/main/SPEC.md>
@@ -138,7 +138,7 @@ pub struct CdiDevice {
     pub optional: bool,
 }
 /// Mount specifies how to mount an input Op as a filesystem.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Mount {
     #[prost(int64, tag = "1")]
     pub input: i64,
@@ -166,14 +166,14 @@ pub struct Mount {
     pub content_cache: i32,
 }
 /// TmpfsOpt defines options describing tpmfs mounts
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TmpfsOpt {
     /// Specify an upper limit on the size of the filesystem.
     #[prost(int64, tag = "1")]
     pub size: i64,
 }
 /// CacheOpt defines options specific to cache mounts
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CacheOpt {
     /// ID is an optional namespace for the mount
     #[prost(string, tag = "1")]
@@ -183,7 +183,7 @@ pub struct CacheOpt {
     pub sharing: i32,
 }
 /// SecretOpt defines options describing secret mounts
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SecretOpt {
     /// ID of secret. Used for quering the value.
     #[prost(string, tag = "1")]
@@ -203,7 +203,7 @@ pub struct SecretOpt {
     pub optional: bool,
 }
 /// SSHOpt defines options describing ssh mounts
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SshOpt {
     /// ID of exposed ssh rule. Used for quering the value.
     #[prost(string, tag = "1")]
@@ -254,7 +254,7 @@ pub struct BuildOp {
     >,
 }
 /// BuildInput is used for BuildOp.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BuildInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
@@ -318,7 +318,7 @@ pub struct Location {
     pub ranges: ::prost::alloc::vec::Vec<Range>,
 }
 /// Range is an area in the source file
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Range {
     #[prost(message, optional, tag = "1")]
     pub start: ::core::option::Option<Position>,
@@ -326,19 +326,19 @@ pub struct Range {
     pub end: ::core::option::Option<Position>,
 }
 /// Position is single location in a source file
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Position {
     #[prost(int32, tag = "1")]
     pub line: i32,
     #[prost(int32, tag = "2")]
     pub character: i32,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExportCache {
     #[prost(bool, tag = "1")]
     pub value: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProgressGroup {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
@@ -347,7 +347,7 @@ pub struct ProgressGroup {
     #[prost(bool, tag = "3")]
     pub weak: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProxyEnv {
     #[prost(string, tag = "1")]
     pub http_proxy: ::prost::alloc::string::String,
@@ -361,7 +361,7 @@ pub struct ProxyEnv {
     pub all_proxy: ::prost::alloc::string::String,
 }
 /// WorkerConstraints defines conditions for the worker
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WorkerConstraints {
     /// containerd-style filter
     #[prost(string, repeated, tag = "1")]
@@ -389,7 +389,7 @@ pub struct FileOp {
     #[prost(message, repeated, tag = "2")]
     pub actions: ::prost::alloc::vec::Vec<FileAction>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileAction {
     /// changes to this structure must be represented in json.go.
     ///
@@ -406,7 +406,7 @@ pub struct FileAction {
 }
 /// Nested message and enum types in `FileAction`.
 pub mod file_action {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Action {
         /// FileActionCopy copies files from secondaryInput on top of input
         #[prost(message, tag = "4")]
@@ -425,7 +425,7 @@ pub mod file_action {
         Symlink(super::FileActionSymlink),
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionCopy {
     /// src is the source path
     #[prost(string, tag = "1")]
@@ -473,7 +473,7 @@ pub struct FileActionCopy {
     #[prost(string, tag = "15")]
     pub mode_str: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionMkFile {
     /// path for the new file
     #[prost(string, tag = "1")]
@@ -491,7 +491,7 @@ pub struct FileActionMkFile {
     #[prost(int64, tag = "5")]
     pub timestamp: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionSymlink {
     /// destination path for the new file representing the link
     #[prost(string, tag = "1")]
@@ -506,7 +506,7 @@ pub struct FileActionSymlink {
     #[prost(int64, tag = "4")]
     pub timestamp: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionMkDir {
     /// path for the new directory
     #[prost(string, tag = "1")]
@@ -524,7 +524,7 @@ pub struct FileActionMkDir {
     #[prost(int64, tag = "5")]
     pub timestamp: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionRm {
     /// path to remove
     #[prost(string, tag = "1")]
@@ -536,14 +536,14 @@ pub struct FileActionRm {
     #[prost(bool, tag = "3")]
     pub allow_wildcard: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChownOpt {
     #[prost(message, optional, tag = "1")]
     pub user: ::core::option::Option<UserOpt>,
     #[prost(message, optional, tag = "2")]
     pub group: ::core::option::Option<UserOpt>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UserOpt {
     /// changes to this structure must be represented in json.go.
     #[prost(oneof = "user_opt::User", tags = "1, 2")]
@@ -552,7 +552,7 @@ pub struct UserOpt {
 /// Nested message and enum types in `UserOpt`.
 pub mod user_opt {
     /// changes to this structure must be represented in json.go.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum User {
         #[prost(message, tag = "1")]
         ByName(super::NamedUserOpt),
@@ -560,14 +560,14 @@ pub mod user_opt {
         ById(u32),
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct NamedUserOpt {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
     #[prost(int64, tag = "2")]
     pub input: i64,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MergeInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
@@ -577,17 +577,17 @@ pub struct MergeOp {
     #[prost(message, repeated, tag = "1")]
     pub inputs: ::prost::alloc::vec::Vec<MergeInput>,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LowerDiffInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpperDiffInput {
     #[prost(int64, tag = "1")]
     pub input: i64,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DiffOp {
     #[prost(message, optional, tag = "1")]
     pub lower: ::core::option::Option<LowerDiffInput>,

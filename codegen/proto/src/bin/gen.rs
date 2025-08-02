@@ -1,9 +1,9 @@
 use std::fs;
 
-use tonic_build;
+use tonic_prost_build;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir("src/generated")
         .compile_well_known_types(true)
         .compile_protos(
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/generated/moby.filesync.packet.rs",
     )
     .expect("could not move file");
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir("src/generated")
         .compile_well_known_types(true)
         .compile_protos(
