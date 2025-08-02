@@ -819,11 +819,6 @@ pub struct Commit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
-    /// Commit ID of external tool expected by dockerd as set at build time.  **Deprecated**: This field is deprecated and will be omitted in a API v1.49. 
-    #[serde(rename = "Expected")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected: Option<String>,
-
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -2503,7 +2498,7 @@ pub struct EndpointSettings {
     /// This property determines which endpoint will provide the default gateway for a container. The endpoint with the highest priority will be used. If multiple endpoints have the same priority, endpoints are lexicographically sorted based on their network name, and the one that sorts first is picked. 
     #[serde(rename = "GwPriority")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gw_priority: Option<f64>,
+    pub gw_priority: Option<i64>,
 
     /// Unique ID of the network. 
     #[serde(rename = "NetworkID")]
@@ -2979,6 +2974,21 @@ pub struct FilesystemChange {
 
     #[serde(rename = "Kind")]
     pub kind: ChangeType,
+
+}
+
+/// Information about the daemon's firewalling configuration.  This field is currently only used on Linux, and omitted on other platforms. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FirewallInfo {
+    /// The name of the firewall backend driver. 
+    #[serde(rename = "Driver")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver: Option<String>,
+
+    /// Information about the firewall backend, provided as \"label\" / \"value\" pairs.  <p><br /></p>  > **Note**: The information returned in this field, including the > formatting of values and labels, should not be considered stable, > and may change without notice. 
+    #[serde(rename = "Info")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<Vec<Vec<String>>>,
 
 }
 
@@ -3663,12 +3673,12 @@ pub struct IdResponse {
 /// Configuration of the image. These fields are used as defaults when starting a container from the image. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageConfig {
-    /// The hostname to use for the container, as a valid RFC 1123 hostname.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    /// The hostname to use for the container, as a valid RFC 1123 hostname.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "Hostname")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
 
-    /// The domain name to use for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    /// The domain name to use for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "Domainname")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domainname: Option<String>,
@@ -3678,17 +3688,17 @@ pub struct ImageConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
 
-    /// Whether to attach to `stdin`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Whether to attach to `stdin`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "AttachStdin")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stdin: Option<bool>,
 
-    /// Whether to attach to `stdout`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Whether to attach to `stdout`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "AttachStdout")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stdout: Option<bool>,
 
-    /// Whether to attach to `stderr`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Whether to attach to `stderr`.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "AttachStderr")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_stderr: Option<bool>,
@@ -3698,17 +3708,17 @@ pub struct ImageConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
 
-    /// Attach standard streams to a TTY, including `stdin` if it is not closed.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "Tty")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tty: Option<bool>,
 
-    /// Open `stdin`  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Open `stdin`  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "OpenStdin")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_stdin: Option<bool>,
 
-    /// Close `stdin` after one attached client disconnects.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.48. 
+    /// Close `stdin` after one attached client disconnects.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "StdinOnce")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdin_once: Option<bool>,
@@ -3732,7 +3742,7 @@ pub struct ImageConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args_escaped: Option<bool>,
 
-    /// The name (or reference) of the image to use when creating the container, or which was used when the container was created.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.48. 
+    /// The name (or reference) of the image to use when creating the container, or which was used when the container was created.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always empty. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "Image")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
@@ -3752,12 +3762,12 @@ pub struct ImageConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<Vec<String>>,
 
-    /// Disable networking for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    /// Disable networking for the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "NetworkDisabled")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_disabled: Option<bool>,
 
-    /// MAC address of the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    /// MAC address of the container.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "MacAddress")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mac_address: Option<String>,
@@ -3777,7 +3787,7 @@ pub struct ImageConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_signal: Option<String>,
 
-    /// Timeout to stop a container in seconds.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.48. 
+    /// Timeout to stop a container in seconds.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always omitted. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "StopTimeout")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_timeout: Option<i64>,
@@ -6017,16 +6027,6 @@ impl std::default::Default for Reachability {
 /// RegistryServiceConfig stores daemon registry services configuration. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RegistryServiceConfig {
-    /// List of IP ranges to which nondistributable artifacts can be pushed, using the CIDR syntax [RFC 4632](https://tools.ietf.org/html/4632).  <p><br /></p>  > **Deprecated**: Pushing nondistributable artifacts is now always enabled > and this field is always `null`. This field will be removed in a API v1.49. 
-    #[serde(rename = "AllowNondistributableArtifactsCIDRs")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_nondistributable_artifacts_cidrs: Option<Vec<String>>,
-
-    /// List of registry hostnames to which nondistributable artifacts can be pushed, using the format `<hostname>[:<port>]` or `<IP address>[:<port>]`.  <p><br /></p>  > **Deprecated**: Pushing nondistributable artifacts is now always enabled > and this field is always `null`. This field will be removed in a API v1.49. 
-    #[serde(rename = "AllowNondistributableArtifactsHostnames")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_nondistributable_artifacts_hostnames: Option<Vec<String>>,
-
     /// List of IP ranges of insecure registries, using the CIDR syntax ([RFC 4632](https://tools.ietf.org/html/4632)). Insecure registries accept un-encrypted (HTTP) and/or untrusted (HTTPS with certificates from unknown CAs) communication.  By default, local registries (`::1/128` and `127.0.0.0/8`) are configured as insecure. All other registries are secure. Communicating with an insecure registry is not possible if the daemon assumes that registry is secure.  This configuration override this behavior, insecure communication with registries whose resolved IP address is within the subnet described by the CIDR syntax.  Registries can also be marked insecure by hostname. Those registries are listed under `IndexConfigs` and have their `Secure` field set to `false`.  > **Warning**: Using this option can be useful when running a local > registry, but introduces security vulnerabilities. This option > should therefore ONLY be used for testing purposes. For increased > security, users should add their CA to their system's list of trusted > CAs instead of enabling this option. 
     #[serde(rename = "InsecureRegistryCIDRs")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7710,6 +7710,10 @@ pub struct SystemInfo {
     #[serde(rename = "DefaultAddressPools")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_address_pools: Option<Vec<SystemInfoDefaultAddressPools>>,
+
+    #[serde(rename = "FirewallBackend")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub firewall_backend: Option<FirewallInfo>,
 
     /// List of warnings / informational messages about missing features, or issues related to the daemon configuration.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Warnings")]
