@@ -25,7 +25,7 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <inputSpec>https://raw.githubusercontent.com/moby/moby/v28.0.4/docs/api/v1.48.yaml</inputSpec>
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/v28.3.3/docs/api/v1.49.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.basedir}</output>
                 <generateApis>true</generateApis>
@@ -33,7 +33,7 @@
                 <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.48.3-rc.28.0.4</packageVersion>
+                  <packageVersion>1.49.0-rc.28.3.3</packageVersion>
                 </configOptions>
               </configuration>
             </execution>
