@@ -44,8 +44,8 @@
 //!
 //! ## Version
 //!
-//! The [Docker API](https://docs.docker.com/engine/api/v1.48/) used by Bollard is using the latest
-//! `1.48` documentation schema published by the [moby](https://github.com/moby/moby) project to
+//! The [Docker API](https://docs.docker.com/engine/api/v1.49/) used by Bollard is using the latest
+//! `1.49` documentation schema published by the [moby](https://github.com/moby/moby) project to
 //! generate its serialization interface.
 //!
 //! This library also supports [version
