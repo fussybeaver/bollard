@@ -1457,7 +1457,7 @@ impl Docker {
         &self,
         options: impl Into<crate::query_parameters::CommitContainerOptions>,
         config: impl Into<crate::models::ContainerConfig>,
-    ) -> Result<Commit, Error> {
+    ) -> Result<IdResponse, Error> {
         let url = "/commit";
 
         let req = self.build_request(
