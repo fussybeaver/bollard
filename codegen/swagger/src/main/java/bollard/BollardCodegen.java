@@ -65,7 +65,6 @@ public class BollardCodegen extends RustServerCodegen {
     private static ArrayList<String> upperCaseModelFields;
     static {
         upperCaseModelFields = new ArrayList();
-        upperCaseModelFields.add("IdResponse");
     }
 
     private HashMap<String, String> queryParameterMappings = new HashMap();
