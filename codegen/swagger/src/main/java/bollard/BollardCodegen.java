@@ -62,11 +62,6 @@ public class BollardCodegen extends RustServerCodegen {
         enumToString.add("HostConfigLogConfig");
     }
 
-    private static ArrayList<String> upperCaseModelFields;
-    static {
-        upperCaseModelFields = new ArrayList();
-    }
-
     private HashMap<String, String> queryParameterMappings = new HashMap();
 
     @Override
@@ -133,10 +128,6 @@ public class BollardCodegen extends RustServerCodegen {
 
         for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
             CodegenModel model = entry.getValue();
-
-            if (upperCaseModelFields.contains(model.classname)) {
-                model.vendorExtensions.put("x-rustgen-upper-case", true);
-            }
 
             // Handle Container Update body
             if ("Resources".equals(model.classname)) {
@@ -229,10 +220,6 @@ public class BollardCodegen extends RustServerCodegen {
 
                 if ("SystemVersionComponents".equals(model.classname) && "details".equals(prop.name)) {
                     prop.datatype = "HashMap<String, String>";
-                }
-
-                if (upperCaseModelFields.contains(model.classname)) {
-                    prop.vendorExtensions.put("x-rustgen-upper-case", true);
                 }
 
                 if (prop.dataFormat != null && (prop.dataFormat.equals("dateTime") || prop.datatype.equals("BollardDate"))) {
