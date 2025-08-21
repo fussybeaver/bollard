@@ -3662,10 +3662,9 @@ pub struct HostConfigLogConfig {
 
 /// Response to an API call that returns just an Id
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
 pub struct IdResponse {
     /// The id of the newly created object.
-    
+    #[serde(rename = "Id")]
     pub id: String,
 
 }
