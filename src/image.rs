@@ -1284,7 +1284,7 @@ impl Docker {
     pub async fn remove_image(
         &self,
         image_name: &str,
-        options: Option<impl Into<crate::query_parameters::RemoveImageOptions>>,
+        options: Option<crate::query_parameters::RemoveImageOptions>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
         let url = format!("/images/{image_name}");
@@ -1292,7 +1292,7 @@ impl Docker {
         let req = self.build_request_with_registry_auth(
             &url,
             Builder::new().method(Method::DELETE),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
             DockerCredentialsHeader::Auth(credentials),
         );
@@ -1455,16 +1455,16 @@ impl Docker {
     /// ```
     pub async fn commit_container(
         &self,
-        options: impl Into<crate::query_parameters::CommitContainerOptions>,
-        config: impl Into<crate::models::ContainerConfig>,
+        options: crate::query_parameters::CommitContainerOptions,
+        config: crate::models::ContainerConfig,
     ) -> Result<Commit, Error> {
         let url = "/commit";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Some(options.into()),
-            Docker::serialize_payload(Some(config.into())),
+            Some(options),
+            Docker::serialize_payload(Some(config)),
         );
 
         self.process_into_value(req).await

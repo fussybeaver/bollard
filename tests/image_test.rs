@@ -1,14 +1,13 @@
-#![allow(deprecated)]
+use bollard::models::{ContainerConfig, ContainerCreateBody};
+use bollard::query_parameters::{
+    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, RemoveImageOptionsBuilder,
+};
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
 use http_body_util::Full;
 use tokio::runtime::Runtime;
 
-use bollard::container::{
-    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
-    WaitContainerOptions,
-};
 use bollard::errors::Error;
 use bollard::Docker;
 use bollard::{body_full, image::*};
@@ -172,10 +171,7 @@ async fn remove_image_test(docker: Docker) -> Result<(), Error> {
     let result = &docker
         .remove_image(
             &image,
-            Some(RemoveImageOptions {
-                noprune: true,
-                ..Default::default()
-            }),
+            Some(RemoveImageOptionsBuilder::default().noprune(true).build()),
             if cfg!(windows) {
                 None
             } else {
@@ -201,52 +197,46 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     };
 
     let cmd = if cfg!(windows) {
-        Some(vec!["cmd.exe", "/C", "copy", "nul", "bollard.txt"])
+        vec!["cmd.exe", "/C", "copy", "nul", "bollard.txt"]
     } else {
-        Some(vec!["touch", "/bollard.txt"])
+        vec!["touch", "/bollard.txt"]
     };
 
     create_image_hello_world(&docker).await?;
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_commit_container",
-                platform: None,
-            }),
-            Config {
-                cmd,
-                image: Some(&image[..]),
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_commit_container")
+                    .build(),
+            ),
+            ContainerCreateBody {
+                cmd: Some(cmd.into_iter().map(Into::into).collect()),
+                image: Some(image.into()),
                 ..Default::default()
             },
         )
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_commit_container",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_commit_container", None)
         .await?;
 
     let _ = &docker
-        .wait_container(
-            "integration_test_commit_container",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_commit_container", None)
         .try_collect::<Vec<_>>()
         .await?;
 
     let _ = &docker
         .commit_container(
-            CommitContainerOptions {
-                container: "integration_test_commit_container",
-                repo: "integration_test_commit_container_next",
-                tag: "latest",
-                pause: true,
-                ..Default::default()
-            },
-            Config::<String> {
+            CommitContainerOptionsBuilder::default()
+                .container("integration_test_commit_container")
+                .repo("integration_test_commit_container_next")
+                .tag("latest")
+                .pause(true)
+                .build(),
+            ContainerConfig {
                 ..Default::default()
             },
         )
@@ -254,16 +244,22 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_commit_container_next",
-                platform: None,
-            }),
-            Config {
-                image: Some("integration_test_commit_container_next"),
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_commit_container_next")
+                    .build(),
+            ),
+            ContainerCreateBody {
+                image: Some("integration_test_commit_container_next".into()),
                 cmd: if cfg!(windows) {
-                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                    Some(
+                        ["cmd.exe", "/C", "dir", "bollard.txt"]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                    )
                 } else {
-                    Some(vec!["ls", "/bollard.txt"])
+                    Some(["ls", "/bollard.txt"].into_iter().map(Into::into).collect())
                 },
                 ..Default::default()
             },
@@ -271,17 +267,11 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_commit_container_next",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_commit_container_next", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_commit_container_next",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_commit_container_next", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -292,16 +282,13 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container(
-            "integration_test_commit_container_next",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_commit_container_next", None)
         .await?;
 
     let _ = &docker
         .remove_image(
             "integration_test_commit_container_next",
-            None::<RemoveImageOptions>,
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -311,10 +298,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         .await?;
 
     let _ = &docker
-        .remove_container(
-            "integration_test_commit_container",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_commit_container", None)
         .await?;
 
     Ok(())
@@ -393,16 +377,27 @@ RUN touch bollard.txt
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_image",
-                platform: None,
-            }),
-            Config {
-                image: Some("integration_test_build_image"),
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_image")
+                    .build(),
+            ),
+            ContainerCreateBody {
+                image: Some("integration_test_build_image".into()),
                 cmd: if cfg!(windows) {
-                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                    Some(
+                        vec!["cmd.exe", "/C", "dir", "bollard.txt"]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                    )
                 } else {
-                    Some(vec!["ls", "/bollard.txt"])
+                    Some(
+                        vec!["ls", "/bollard.txt"]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                    )
                 },
                 ..Default::default()
             },
@@ -410,17 +405,11 @@ RUN touch bollard.txt
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_image",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_image", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_image",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_image", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -430,16 +419,13 @@ RUN touch bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container(
-            "integration_test_build_image",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_image", None)
         .await?;
 
     let _ = &docker
         .remove_image(
             "integration_test_build_image",
-            None::<RemoveImageOptions>,
+            None,
             if cfg!(windows) {
                 None
             } else {
