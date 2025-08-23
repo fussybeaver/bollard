@@ -217,7 +217,6 @@ public class BollardCodegen extends RustServerCodegen {
                 if (prop.name.equals("networks") && model.classname.equals("ContainerStatsResponse")) {
                     prop.datatype = "HashMap<String, ContainerNetworkStats>";
                 }
-
                 if ("SystemVersionComponents".equals(model.classname) && "details".equals(prop.name)) {
                     prop.datatype = "HashMap<String, String>";
                 }
@@ -405,6 +404,14 @@ public class BollardCodegen extends RustServerCodegen {
                                 param.vendorExtensions.put("x-codegen-query-param-serialize-join-newlines", "true");
                                 param.required = true;
 
+                            }
+                        }
+
+                        // Special handling to cover podman bug with logs
+                        // issue https://github.com/containers/podman/issues/10859
+                        if (operation.operationId.equals("ContainerLogs")) {
+                            if (param.paramName.equals("until")) {
+                                param.vendorExtensions.put("x-codegen-query-param-skip-serialize-if-zero", "true");
                             }
                         }
                     }

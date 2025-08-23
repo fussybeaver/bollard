@@ -1,10 +1,7 @@
 //! Method, error and parameter types for the  endpoint.
-#![allow(
-    clippy::all,
-    deprecated
-)]
+#![allow(clippy::all, deprecated)]
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_repr::Serialize_repr;
 
 use std::collections::HashMap;
@@ -27,11 +24,14 @@ where
     s.serialize_str(&t.join("\n"))
 }
 
+pub(crate) fn is_zero(val: &i32) -> bool {
+    val == &0i32
+}
+
 #[cfg(feature = "buildkit")]
 /// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
 #[derive(Debug, Clone, PartialEq)]
-pub enum ImageBuildOutput
-{
+pub enum ImageBuildOutput {
     /// The local export type writes all result files to a directory on the client.
     /// The new files will be owned by the current user.
     /// On multi-platform builds, all results will be put in subdirectories by their platform.
@@ -47,8 +47,7 @@ pub enum ImageBuildOutput
 }
 
 #[cfg(feature = "buildkit")]
-impl Serialize for ImageBuildOutput
-{
+impl Serialize for ImageBuildOutput {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -71,10 +70,6 @@ pub enum BuilderVersion {
     /// BuilderBuildKit is builder based on moby/buildkit project
     BuilderBuildKit = 2,
 }
-
-
-
-
 
 // Filtered out: ConfigList
 // List configs
@@ -122,16 +117,14 @@ impl DownloadFromContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerArchive` API
-/// 
+///
 /// Use a [DownloadFromContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DownloadFromContainerOptions
-{ 
-    pub path: String, 
+pub struct DownloadFromContainerOptions {
+    pub path: String,
 }
 
-impl Default for DownloadFromContainerOptions
-{
+impl Default for DownloadFromContainerOptions {
     fn default() -> Self {
         Self {
             path: Default::default(),
@@ -177,10 +170,10 @@ impl AttachContainerOptionsBuilder {
     }
 
     /// Replay previous logs from the container.
-    /// 
+    ///
     /// This is useful for attaching to a container that has started and you
     /// want to output everything since the container started.
-    /// 
+    ///
     /// If `stream` is also enabled, once all the previous output has been
     /// returned, it will seamlessly transition into streaming current
     /// output.
@@ -221,23 +214,21 @@ impl AttachContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerAttach` API
-/// 
+///
 /// Use a [AttachContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct AttachContainerOptions
-{ 
+pub struct AttachContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "detachKeys")]
-    pub detach_keys: Option<String>, 
-    pub logs: bool, 
-    pub stream: bool, 
-    pub stdin: bool, 
-    pub stdout: bool, 
-    pub stderr: bool, 
+    pub detach_keys: Option<String>,
+    pub logs: bool,
+    pub stream: bool,
+    pub stdin: bool,
+    pub stdout: bool,
+    pub stderr: bool,
 }
 
-impl Default for AttachContainerOptions
-{
+impl Default for AttachContainerOptions {
     fn default() -> Self {
         Self {
             detach_keys: None,
@@ -283,18 +274,18 @@ impl CreateContainerOptionsBuilder {
     }
 
     /// Platform in the format `os[/arch[/variant]]` used for image lookup.
-    /// 
+    ///
     /// When specified, the daemon checks if the requested image is present
     /// in the local image cache with the given OS and Architecture, and
     /// otherwise returns a `404` status.
-    /// 
+    ///
     /// If the option is not set, the host's native OS and Architecture are
     /// used to look up the image in the image cache. However, if no platform
     /// is passed and the given image does exist in the local image cache,
     /// but its OS or architecture does not match, the container is created
     /// with the available image, and a warning is added to the `Warnings`
     /// field in the response, for example;
-    /// 
+    ///
     ///     WARNING: The requested image's platform (linux/arm64/v8) does not
     ///              match the detected host platform (linux/amd64) and no
     ///              specific platform was requested
@@ -311,18 +302,16 @@ impl CreateContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerCreate` API
-/// 
+///
 /// Use a [CreateContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CreateContainerOptions
-{ 
+pub struct CreateContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>, 
-    pub platform: String, 
+    pub name: Option<String>,
+    pub platform: String,
 }
 
-impl Default for CreateContainerOptions
-{
+impl Default for CreateContainerOptions {
     fn default() -> Self {
         Self {
             name: None,
@@ -383,18 +372,16 @@ impl RemoveContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerDelete` API
-/// 
+///
 /// Use a [RemoveContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RemoveContainerOptions
-{ 
-    pub v: bool, 
-    pub force: bool, 
-    pub link: bool, 
+pub struct RemoveContainerOptions {
+    pub v: bool,
+    pub force: bool,
+    pub link: bool,
 }
 
-impl Default for RemoveContainerOptions
-{
+impl Default for RemoveContainerOptions {
     fn default() -> Self {
         Self {
             v: false,
@@ -442,20 +429,16 @@ impl InspectContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerInspect` API
-/// 
+///
 /// Use a [InspectContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct InspectContainerOptions
-{ 
-    pub size: bool, 
+pub struct InspectContainerOptions {
+    pub size: bool,
 }
 
-impl Default for InspectContainerOptions
-{
+impl Default for InspectContainerOptions {
     fn default() -> Self {
-        Self {
-            size: false,
-        }
+        Self { size: false }
     }
 }
 
@@ -497,16 +480,14 @@ impl KillContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerKill` API
-/// 
+///
 /// Use a [KillContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct KillContainerOptions
-{ 
-    pub signal: String, 
+pub struct KillContainerOptions {
+    pub signal: String,
 }
 
-impl Default for KillContainerOptions
-{
+impl Default for KillContainerOptions {
     fn default() -> Self {
         Self {
             signal: String::from("SIGKILL"),
@@ -563,9 +544,9 @@ impl ListContainersOptionsBuilder {
     /// Filters to process on the container list, encoded as JSON (a
     /// `map[string][]string`). For example, `{"status": ["paused"]}` will
     /// only return paused containers.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `ancestor`=(`<image-name>[:<tag>]`, `<image id>`, or `<image@digest>`)
     /// - `before`=(`<container id>` or `<container name>`)
     /// - `expose`=(`<port>[/<proto>]`|`<startport-endport>/[<proto>]`)
@@ -581,7 +562,10 @@ impl ListContainersOptionsBuilder {
     /// - `since`=(`<container id>` or `<container name>`)
     /// - `status=`(`created`|`restarting`|`running`|`removing`|`paused`|`exited`|`dead`)
     /// - `volume`=(`<volume name>` or `<mount point destination>`)
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -604,22 +588,20 @@ impl ListContainersOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerList` API
-/// 
+///
 /// Use a [ListContainersOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListContainersOptions
-{ 
-    pub all: bool, 
+pub struct ListContainersOptions {
+    pub all: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i32>, 
-    pub size: bool, 
+    pub limit: Option<i32>,
+    pub size: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListContainersOptions
-{
+impl Default for ListContainersOptions {
     fn default() -> Self {
         Self {
             all: false,
@@ -711,22 +693,21 @@ impl LogsOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerLogs` API
-/// 
+///
 /// Use a [LogsOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LogsOptions
-{ 
-    pub follow: bool, 
-    pub stdout: bool, 
-    pub stderr: bool, 
-    pub since: i32, 
-    pub until: i32, 
-    pub timestamps: bool, 
-    pub tail: String, 
+pub struct LogsOptions {
+    pub follow: bool,
+    pub stdout: bool,
+    pub stderr: bool,
+    pub since: i32,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub until: i32,
+    pub timestamps: bool,
+    pub tail: String,
 }
 
-impl Default for LogsOptions
-{
+impl Default for LogsOptions {
     fn default() -> Self {
         Self {
             follow: false,
@@ -765,11 +746,14 @@ impl PruneContainersOptionsBuilder {
     }
 
     /// Filters to process on the prune list, encoded as JSON (a `map[string][]string`).
-    /// 
+    ///
     /// Available filters:
     /// - `until=<timestamp>` Prune containers created before this timestamp. The `<timestamp>` can be Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`) computed relative to the daemon machine’s time.
     /// - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune containers with (or without, in case `label!=...` is used) the specified labels.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -792,22 +776,18 @@ impl PruneContainersOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerPrune` API
-/// 
+///
 /// Use a [PruneContainersOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PruneContainersOptions
-{ 
+pub struct PruneContainersOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for PruneContainersOptions
-{
+impl Default for PruneContainersOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -849,16 +829,14 @@ impl RenameContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerRename` API
-/// 
+///
 /// Use a [RenameContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RenameContainerOptions
-{ 
-    pub name: String, 
+pub struct RenameContainerOptions {
+    pub name: String,
 }
 
-impl Default for RenameContainerOptions
-{
+impl Default for RenameContainerOptions {
     fn default() -> Self {
         Self {
             name: Default::default(),
@@ -911,17 +889,15 @@ impl ResizeContainerTTYOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerResize` API
-/// 
+///
 /// Use a [ResizeContainerTTYOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ResizeContainerTTYOptions
-{ 
-    pub h: i32, 
-    pub w: i32, 
+pub struct ResizeContainerTTYOptions {
+    pub h: i32,
+    pub w: i32,
 }
 
-impl Default for ResizeContainerTTYOptions
-{
+impl Default for ResizeContainerTTYOptions {
     fn default() -> Self {
         Self {
             h: Default::default(),
@@ -975,19 +951,17 @@ impl RestartContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerRestart` API
-/// 
+///
 /// Use a [RestartContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RestartContainerOptions
-{ 
+pub struct RestartContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signal: Option<String>, 
+    pub signal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub t: Option<i32>, 
+    pub t: Option<i32>,
 }
 
-impl Default for RestartContainerOptions
-{
+impl Default for RestartContainerOptions {
     fn default() -> Self {
         Self {
             signal: None,
@@ -1036,22 +1010,18 @@ impl StartContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerStart` API
-/// 
+///
 /// Use a [StartContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StartContainerOptions
-{ 
+pub struct StartContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "detachKeys")]
-    pub detach_keys: Option<String>, 
+    pub detach_keys: Option<String>,
 }
 
-impl Default for StartContainerOptions
-{
+impl Default for StartContainerOptions {
     fn default() -> Self {
-        Self {
-            detach_keys: None,
-        }
+        Self { detach_keys: None }
     }
 }
 
@@ -1102,18 +1072,16 @@ impl StatsOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerStats` API
-/// 
+///
 /// Use a [StatsOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatsOptions
-{ 
-    pub stream: bool, 
+pub struct StatsOptions {
+    pub stream: bool,
     #[serde(rename = "one-shot")]
-    pub one_shot: bool, 
+    pub one_shot: bool,
 }
 
-impl Default for StatsOptions
-{
+impl Default for StatsOptions {
     fn default() -> Self {
         Self {
             stream: true,
@@ -1167,19 +1135,17 @@ impl StopContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerStop` API
-/// 
+///
 /// Use a [StopContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StopContainerOptions
-{ 
+pub struct StopContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signal: Option<String>, 
+    pub signal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub t: Option<i32>, 
+    pub t: Option<i32>,
 }
 
-impl Default for StopContainerOptions
-{
+impl Default for StopContainerOptions {
     fn default() -> Self {
         Self {
             signal: None,
@@ -1226,16 +1192,14 @@ impl TopOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerTop` API
-/// 
+///
 /// Use a [TopOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TopOptions
-{ 
-    pub ps_args: String, 
+pub struct TopOptions {
+    pub ps_args: String,
 }
 
-impl Default for TopOptions
-{
+impl Default for TopOptions {
     fn default() -> Self {
         Self {
             ps_args: String::from("-ef"),
@@ -1268,7 +1232,7 @@ impl WaitContainerOptionsBuilder {
     }
 
     /// Wait until a container state reaches the given condition.
-    /// 
+    ///
     /// Defaults to `not-running` if omitted or empty.
     pub fn condition(mut self, condition: &str) -> Self {
         self.inner.condition = condition.into();
@@ -1283,16 +1247,14 @@ impl WaitContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ContainerWait` API
-/// 
+///
 /// Use a [WaitContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct WaitContainerOptions
-{ 
-    pub condition: String, 
+pub struct WaitContainerOptions {
+    pub condition: String,
 }
 
-impl Default for WaitContainerOptions
-{
+impl Default for WaitContainerOptions {
     fn default() -> Self {
         Self {
             condition: String::from("not-running"),
@@ -1326,7 +1288,7 @@ impl UploadToContainerOptionsBuilder {
         Self::default()
     }
 
-    /// Path to a directory in the container to extract the archive’s contents into. 
+    /// Path to a directory in the container to extract the archive’s contents into.
     pub fn path(mut self, path: &str) -> Self {
         self.inner.path = path.into();
         self
@@ -1355,22 +1317,20 @@ impl UploadToContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `PutContainerArchive` API
-/// 
+///
 /// Use a [UploadToContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct UploadToContainerOptions
-{ 
-    pub path: String, 
+pub struct UploadToContainerOptions {
+    pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "noOverwriteDirNonDir")]
-    pub no_overwrite_dir_non_dir: Option<String>, 
+    pub no_overwrite_dir_non_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "copyUIDGID")]
-    pub copy_uidgid: Option<String>, 
+    pub copy_uidgid: Option<String>,
 }
 
-impl Default for UploadToContainerOptions
-{
+impl Default for UploadToContainerOptions {
     fn default() -> Self {
         Self {
             path: Default::default(),
@@ -1379,9 +1339,6 @@ impl Default for UploadToContainerOptions
         }
     }
 }
-
-
-
 
 // Filtered out: ContainerArchiveInfo
 // Get information about files in a container
@@ -1395,16 +1352,6 @@ impl Default for UploadToContainerOptions
 //   - stdin
 //   - stdout
 //   - stderr
-
-
-
-
-// Filtered out: ImageGet
-// Export an image
-//   - platform
-
-
-
 
 /// Builder for the `ExecResize` API query parameter.
 ///
@@ -1451,17 +1398,15 @@ impl ResizeExecOptionsBuilder {
 }
 
 /// Internal struct used in the `ExecResize` API
-/// 
+///
 /// Use a [ResizeExecOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ResizeExecOptions
-{ 
-    pub h: i32, 
-    pub w: i32, 
+pub struct ResizeExecOptions {
+    pub h: i32,
+    pub w: i32,
 }
 
-impl Default for ResizeExecOptions
-{
+impl Default for ResizeExecOptions {
     fn default() -> Self {
         Self {
             h: Default::default(),
@@ -1469,9 +1414,6 @@ impl Default for ResizeExecOptions
         }
     }
 }
-
-
-
 
 /// Builder for the `BuildPrune` API query parameter.
 ///
@@ -1503,7 +1445,7 @@ impl PruneBuildOptionsBuilder {
     }
 
     /// Amount of disk space in bytes to keep for cache
-    /// 
+    ///
     /// > **Deprecated**: This parameter is deprecated and has been renamed to "reserved-space".
     /// > It is kept for backward compatibility and will be removed in API v1.49.
     pub fn keep_storage(mut self, keep_storage: i64) -> Self {
@@ -1537,9 +1479,9 @@ impl PruneBuildOptionsBuilder {
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the list of build cache objects.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `until=<timestamp>` remove cache older than `<timestamp>`. The `<timestamp>` can be Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`) computed relative to the daemon's local time.
     /// - `id=<id>`
     /// - `parent=<id>`
@@ -1548,7 +1490,10 @@ impl PruneBuildOptionsBuilder {
     /// - `inuse`
     /// - `shared`
     /// - `private`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -1571,32 +1516,30 @@ impl PruneBuildOptionsBuilder {
 }
 
 /// Internal struct used in the `BuildPrune` API
-/// 
+///
 /// Use a [PruneBuildOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PruneBuildOptions
-{ 
+pub struct PruneBuildOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "keep-storage")]
-    pub keep_storage: Option<i64>, 
+    pub keep_storage: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "reserved-space")]
-    pub reserved_space: Option<i64>, 
+    pub reserved_space: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "max-used-space")]
-    pub max_used_space: Option<i64>, 
+    pub max_used_space: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "min-free-space")]
-    pub min_free_space: Option<i64>, 
+    pub min_free_space: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub all: Option<bool>, 
+    pub all: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for PruneBuildOptions
-{
+impl Default for PruneBuildOptions {
     fn default() -> Self {
         Self {
             keep_storage: None,
@@ -1696,10 +1639,12 @@ impl BuildImageOptionsBuilder {
 
     /// JSON array of images used for build cache resolution.
     pub fn cachefrom(mut self, cachefrom: &Vec<impl Into<String> + Clone>) -> Self {
-        self.inner.cachefrom = Some(cachefrom
-            .into_iter()
-            .map(|v| Into::<String>::into(v.clone()))
-            .collect());
+        self.inner.cachefrom = Some(
+            cachefrom
+                .into_iter()
+                .map(|v| Into::<String>::into(v.clone()))
+                .collect(),
+        );
         self
     }
 
@@ -1758,11 +1703,14 @@ impl BuildImageOptionsBuilder {
     }
 
     /// JSON map of string pairs for build-time variables. Users pass these values at build-time. Docker uses the buildargs as the environment context for commands run via the `Dockerfile` RUN instruction, or for variable expansion in other `Dockerfile` instructions. This is not meant for passing secret values.
-    /// 
+    ///
     /// For example, the build arg `FOO=bar` would become `{"FOO":"bar"}` in JSON. This would result in the query parameter `buildargs={"FOO":"bar"}`. Note that `{"FOO":"bar"}` should be URI component encoded.
-    /// 
+    ///
     /// [Read more about the buildargs instruction.](https://docs.docker.com/engine/reference/builder/#arg)
-    pub fn buildargs(mut self, buildargs: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>) -> Self {
+    pub fn buildargs(
+        mut self,
+        buildargs: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>,
+    ) -> Self {
         let mut inner_buildargs = HashMap::new();
         for (key, value) in buildargs {
             inner_buildargs.insert(
@@ -1787,7 +1735,10 @@ impl BuildImageOptionsBuilder {
     }
 
     /// Arbitrary key/value labels to set on the image, as a JSON map of string pairs.
-    pub fn labels(mut self, labels: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>) -> Self {
+    pub fn labels(
+        mut self,
+        labels: &HashMap<impl Into<String> + Clone, impl Into<String> + Clone>,
+    ) -> Self {
         let mut inner_labels = HashMap::new();
         for (key, value) in labels {
             inner_labels.insert(
@@ -1828,7 +1779,7 @@ impl BuildImageOptionsBuilder {
     }
 
     /// Version of the builder backend to use.
-    /// 
+    ///
     /// - `1` is the first generation classic (deprecated) builder in the Docker daemon (default)
     /// - `2` is [BuildKit](https://github.com/moby/buildkit)
     pub fn version(mut self, version: BuilderVersion) -> Self {
@@ -1851,64 +1802,62 @@ impl BuildImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageBuild` API
-/// 
+///
 /// Use a [BuildImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct BuildImageOptions
-{ 
-    pub dockerfile: String, 
+pub struct BuildImageOptions {
+    pub dockerfile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub t: Option<String>, 
+    pub t: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extrahosts: Option<String>, 
+    pub extrahosts: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote: Option<String>, 
-    pub q: bool, 
-    pub nocache: bool, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(serialize_with = "serialize_as_json")]
-    pub cachefrom: Option<Vec<String>>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pull: Option<String>, 
-    pub rm: bool, 
-    pub forcerm: bool, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory: Option<i32>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub memswap: Option<i32>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpushares: Option<i32>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpusetcpus: Option<String>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpuperiod: Option<i32>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpuquota: Option<i32>, 
+    pub remote: Option<String>,
+    pub q: bool,
+    pub nocache: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub buildargs: Option<HashMap<String, String>>, 
+    pub cachefrom: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shmsize: Option<i32>, 
+    pub pull: Option<String>,
+    pub rm: bool,
+    pub forcerm: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub squash: Option<bool>, 
+    pub memory: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memswap: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpushares: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpusetcpus: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuperiod: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuquota: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub labels: Option<HashMap<String, String>>, 
+    pub buildargs: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub networkmode: Option<String>, 
-    pub platform: String, 
-    pub target: String, 
+    pub shmsize: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub squash: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_as_json")]
+    pub labels: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub networkmode: Option<String>,
+    pub platform: String,
+    pub target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(feature = "buildkit")]
-    pub outputs: Option<ImageBuildOutput>, 
-    pub version: BuilderVersion, 
+    pub outputs: Option<ImageBuildOutput>,
+    pub version: BuilderVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(feature = "buildkit")]
-    pub session: Option<String>, 
+    pub session: Option<String>,
 }
 
-impl Default for BuildImageOptions
-{
+impl Default for BuildImageOptions {
     fn default() -> Self {
         Self {
             dockerfile: String::from("Dockerfile"),
@@ -2023,28 +1972,26 @@ impl CommitContainerOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageCommit` API
-/// 
+///
 /// Use a [CommitContainerOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CommitContainerOptions
-{ 
+pub struct CommitContainerOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub container: Option<String>, 
+    pub container: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>, 
+    pub repo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>, 
+    pub tag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>, 
+    pub comment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub author: Option<String>, 
-    pub pause: bool, 
+    pub author: Option<String>,
+    pub pause: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub changes: Option<String>, 
+    pub changes: Option<String>,
 }
 
-impl Default for CommitContainerOptions
-{
+impl Default for CommitContainerOptions {
     fn default() -> Self {
         Self {
             container: None,
@@ -2089,7 +2036,7 @@ impl CreateImageOptionsBuilder {
     }
 
     /// Name of the image to pull. If the name includes a tag or digest, specific behavior applies:
-    /// 
+    ///
     /// - If only `fromImage` includes a tag, that tag is used.
     /// - If both `fromImage` and `tag` are provided, `tag` takes precedence.
     /// - If `fromImage` includes a digest, the image is pulled by digest, and `tag` is ignored.
@@ -2126,7 +2073,7 @@ impl CreateImageOptionsBuilder {
     /// Apply `Dockerfile` instructions to the image that is created,
     /// for example: `changes=ENV DEBUG=true`.
     /// Note that `ENV DEBUG=true` should be URI component encoded.
-    /// 
+    ///
     /// Supported `Dockerfile` instructions:
     /// `CMD`|`ENTRYPOINT`|`ENV`|`EXPOSE`|`ONBUILD`|`USER`|`VOLUME`|`WORKDIR`
     pub fn changes(mut self, changes: Vec<String>) -> Self {
@@ -2138,7 +2085,7 @@ impl CreateImageOptionsBuilder {
     }
 
     /// Platform in the format os[/arch[/variant]].
-    /// 
+    ///
     /// When used in combination with the `fromImage` option, the daemon checks
     /// if the given image is present in the local image cache with the given
     /// OS and Architecture, and otherwise attempts to pull the image. If the
@@ -2147,7 +2094,7 @@ impl CreateImageOptionsBuilder {
     /// attempts to pull the image with the host's native OS and Architecture.
     /// If the given image does exists in the local image cache, but its OS or
     /// architecture does not match, a warning is produced.
-    /// 
+    ///
     /// When used with the `fromSrc` option to import an image from an archive,
     /// this option sets the platform information for the imported image. If
     /// the option is not set, the host's native OS and Architecture are used
@@ -2165,30 +2112,31 @@ impl CreateImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageCreate` API
-/// 
+///
 /// Use a [CreateImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CreateImageOptions
-{ 
+pub struct CreateImageOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "fromImage")]
-    pub from_image: Option<String>, 
+    pub from_image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "fromSrc")]
-    pub from_src: Option<String>, 
+    pub from_src: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>, 
+    pub repo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>, 
+    pub tag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>, 
-    #[serde(serialize_with = "serialize_join_newlines", skip_serializing_if = "Vec::is_empty")]
-    pub changes: Vec<String>, 
-    pub platform: String, 
+    pub message: Option<String>,
+    #[serde(
+        serialize_with = "serialize_join_newlines",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub changes: Vec<String>,
+    pub platform: String,
 }
 
-impl Default for CreateImageOptions
-{
+impl Default for CreateImageOptions {
     fn default() -> Self {
         Self {
             from_image: None,
@@ -2247,17 +2195,15 @@ impl RemoveImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageDelete` API
-/// 
+///
 /// Use a [RemoveImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RemoveImageOptions
-{ 
-    pub force: bool, 
-    pub noprune: bool, 
+pub struct RemoveImageOptions {
+    pub force: bool,
+    pub noprune: bool,
 }
 
-impl Default for RemoveImageOptions
-{
+impl Default for RemoveImageOptions {
     fn default() -> Self {
         Self {
             force: false,
@@ -2302,16 +2248,19 @@ impl ListImagesOptionsBuilder {
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the images list.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `before`=(`<image-name>[:<tag>]`,  `<image id>` or `<image@digest>`)
     /// - `dangling=true`
     /// - `label=key` or `label="key=value"` of an image label
     /// - `reference`=(`<image-name>[:<tag>]`)
     /// - `since`=(`<image-name>[:<tag>]`,  `<image id>` or `<image@digest>`)
     /// - `until=<timestamp>`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -2352,23 +2301,21 @@ impl ListImagesOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageList` API
-/// 
+///
 /// Use a [ListImagesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListImagesOptions
-{ 
-    pub all: bool, 
+pub struct ListImagesOptions {
+    pub all: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
     #[serde(rename = "shared-size")]
-    pub shared_size: bool, 
-    pub digests: bool, 
-    pub manifests: bool, 
+    pub shared_size: bool,
+    pub digests: bool,
+    pub manifests: bool,
 }
 
-impl Default for ListImagesOptions
-{
+impl Default for ListImagesOptions {
     fn default() -> Self {
         Self {
             all: false,
@@ -2415,7 +2362,7 @@ impl ImportImageOptionsBuilder {
     /// to select a platform-specific image to be load if the image is
     /// multi-platform.
     /// If not provided, the full multi-platform image will be loaded.
-    /// 
+    ///
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
     pub fn platform(mut self, platform: &str) -> Self {
         self.inner.platform = Some(platform.into());
@@ -2430,18 +2377,16 @@ impl ImportImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageLoad` API
-/// 
+///
 /// Use a [ImportImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ImportImageOptions
-{ 
-    pub quiet: bool, 
+pub struct ImportImageOptions {
+    pub quiet: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>, 
+    pub platform: Option<String>,
 }
 
-impl Default for ImportImageOptions
-{
+impl Default for ImportImageOptions {
     fn default() -> Self {
         Self {
             quiet: false,
@@ -2475,13 +2420,16 @@ impl PruneImagesOptionsBuilder {
     }
 
     /// Filters to process on the prune list, encoded as JSON (a `map[string][]string`). Available filters:
-    /// 
+    ///
     /// - `dangling=<boolean>` When set to `true` (or `1`), prune only
     ///    unused *and* untagged images. When set to `false`
     ///    (or `0`), all unused images are pruned.
     /// - `until=<string>` Prune images created before this timestamp. The `<timestamp>` can be Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`) computed relative to the daemon machine’s time.
     /// - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune images with (or without, in case `label!=...` is used) the specified labels.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -2504,22 +2452,18 @@ impl PruneImagesOptionsBuilder {
 }
 
 /// Internal struct used in the `ImagePrune` API
-/// 
+///
 /// Use a [PruneImagesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PruneImagesOptions
-{ 
+pub struct PruneImagesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for PruneImagesOptions
-{
+impl Default for PruneImagesOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -2558,12 +2502,12 @@ impl PushImageOptionsBuilder {
 
     /// JSON-encoded OCI platform to select the platform-variant to push.
     /// If not provided, all available variants will attempt to be pushed.
-    /// 
+    ///
     /// If the daemon provides a multi-platform image store, this selects
     /// the platform-variant to push to the registry. If the image is
     /// a single-platform image, or if the multi-platform image does not
     /// provide a variant matching the given platform, an error is returned.
-    /// 
+    ///
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
     pub fn platform(mut self, platform: &str) -> Self {
         self.inner.platform = Some(platform.into());
@@ -2578,19 +2522,17 @@ impl PushImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImagePush` API
-/// 
+///
 /// Use a [PushImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PushImageOptions
-{ 
+pub struct PushImageOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>, 
+    pub tag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>, 
+    pub platform: Option<String>,
 }
 
-impl Default for PushImageOptions
-{
+impl Default for PushImageOptions {
     fn default() -> Self {
         Self {
             tag: None,
@@ -2638,10 +2580,13 @@ impl SearchImagesOptionsBuilder {
     }
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to process on the images list. Available filters:
-    /// 
+    ///
     /// - `is-official=(true|false)`
     /// - `stars=<number>` Matches images that has at least 'number' stars.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -2664,21 +2609,19 @@ impl SearchImagesOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageSearch` API
-/// 
+///
 /// Use a [SearchImagesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct SearchImagesOptions
-{ 
-    pub term: String, 
+pub struct SearchImagesOptions {
+    pub term: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i32>, 
+    pub limit: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for SearchImagesOptions
-{
+impl Default for SearchImagesOptions {
     fn default() -> Self {
         Self {
             term: Default::default(),
@@ -2733,19 +2676,17 @@ impl TagImageOptionsBuilder {
 }
 
 /// Internal struct used in the `ImageTag` API
-/// 
+///
 /// Use a [TagImageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TagImageOptions
-{ 
+pub struct TagImageOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>, 
+    pub repo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>, 
+    pub tag: Option<String>,
 }
 
-impl Default for TagImageOptions
-{
+impl Default for TagImageOptions {
     fn default() -> Self {
         Self {
             repo: None,
@@ -2754,12 +2695,14 @@ impl Default for TagImageOptions
     }
 }
 
-
-
+// Filtered out: ImageGet
+// Export an image
+//   - platform
 
 // Filtered out: ImageGetAll
 // Export several images
 //   - names
+//   - platform
 
 // Filtered out: ImageHistory
 // Get the history of an image
@@ -2814,18 +2757,16 @@ impl InspectNetworkOptionsBuilder {
 }
 
 /// Internal struct used in the `NetworkInspect` API
-/// 
+///
 /// Use a [InspectNetworkOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct InspectNetworkOptions
-{ 
-    pub verbose: bool, 
+pub struct InspectNetworkOptions {
+    pub verbose: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>, 
+    pub scope: Option<String>,
 }
 
-impl Default for InspectNetworkOptions
-{
+impl Default for InspectNetworkOptions {
     fn default() -> Self {
         Self {
             verbose: false,
@@ -2860,9 +2801,9 @@ impl ListNetworksOptionsBuilder {
 
     /// JSON encoded value of the filters (a `map[string][]string`) to process
     /// on the networks list.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `dangling=<boolean>` When set to `true` (or `1`), returns all
     ///    networks that are not in use by a container. When set to `false`
     ///    (or `0`), only networks that are in use by one or more
@@ -2873,7 +2814,10 @@ impl ListNetworksOptionsBuilder {
     /// - `name=<network-name>` Matches all or part of a network name.
     /// - `scope=["swarm"|"global"|"local"]` Filters networks by scope (`swarm`, `global`, or `local`).
     /// - `type=["custom"|"builtin"]` Filters networks by type. The `custom` keyword returns all user-defined networks.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -2896,22 +2840,18 @@ impl ListNetworksOptionsBuilder {
 }
 
 /// Internal struct used in the `NetworkList` API
-/// 
+///
 /// Use a [ListNetworksOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListNetworksOptions
-{ 
+pub struct ListNetworksOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListNetworksOptions
-{
+impl Default for ListNetworksOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -2940,11 +2880,14 @@ impl PruneNetworksOptionsBuilder {
     }
 
     /// Filters to process on the prune list, encoded as JSON (a `map[string][]string`).
-    /// 
+    ///
     /// Available filters:
     /// - `until=<timestamp>` Prune networks created before this timestamp. The `<timestamp>` can be Unix timestamps, date formatted timestamps, or Go duration strings (e.g. `10m`, `1h30m`) computed relative to the daemon machine’s time.
     /// - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune networks with (or without, in case `label!=...` is used) the specified labels.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -2967,27 +2910,20 @@ impl PruneNetworksOptionsBuilder {
 }
 
 /// Internal struct used in the `NetworkPrune` API
-/// 
+///
 /// Use a [PruneNetworksOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PruneNetworksOptions
-{ 
+pub struct PruneNetworksOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for PruneNetworksOptions
-{
+impl Default for PruneNetworksOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
-
-
-
 
 /// Builder for the `NodeDelete` API query parameter.
 ///
@@ -3027,20 +2963,16 @@ impl DeleteNodeOptionsBuilder {
 }
 
 /// Internal struct used in the `NodeDelete` API
-/// 
+///
 /// Use a [DeleteNodeOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DeleteNodeOptions
-{ 
-    pub force: bool, 
+pub struct DeleteNodeOptions {
+    pub force: bool,
 }
 
-impl Default for DeleteNodeOptions
-{
+impl Default for DeleteNodeOptions {
     fn default() -> Self {
-        Self {
-            force: false,
-        }
+        Self { force: false }
     }
 }
 
@@ -3069,7 +3001,7 @@ impl ListNodesOptionsBuilder {
     }
 
     /// Filters to process on the nodes list, encoded as JSON (a `map[string][]string`).
-    /// 
+    ///
     /// Available filters:
     /// - `id=<node id>`
     /// - `label=<engine label>`
@@ -3077,7 +3009,10 @@ impl ListNodesOptionsBuilder {
     /// - `name=<node name>`
     /// - `node.label=<node label>`
     /// - `role=`(`manager`|`worker`)`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -3100,22 +3035,18 @@ impl ListNodesOptionsBuilder {
 }
 
 /// Internal struct used in the `NodeList` API
-/// 
+///
 /// Use a [ListNodesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListNodesOptions
-{ 
+pub struct ListNodesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListNodesOptions
-{
+impl Default for ListNodesOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -3158,28 +3089,20 @@ impl UpdateNodeOptionsBuilder {
 }
 
 /// Internal struct used in the `NodeUpdate` API
-/// 
+///
 /// Use a [UpdateNodeOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct UpdateNodeOptions
-{ 
-    pub version: i64, 
+pub struct UpdateNodeOptions {
+    pub version: i64,
 }
 
-impl Default for UpdateNodeOptions
-{
+impl Default for UpdateNodeOptions {
     fn default() -> Self {
         Self {
             version: Default::default(),
         }
     }
 }
-
-
-
-
-
-
 
 // Filtered out: GetPluginPrivileges
 // Get plugin privileges
@@ -3240,14 +3163,17 @@ impl ListSecretsOptionsBuilder {
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the secrets list.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `id=<secret id>`
     /// - `label=<key> or label=<key>=value`
     /// - `name=<secret name>`
     /// - `names=<secret name>`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -3270,22 +3196,18 @@ impl ListSecretsOptionsBuilder {
 }
 
 /// Internal struct used in the `SecretList` API
-/// 
+///
 /// Use a [ListSecretsOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListSecretsOptions
-{ 
+pub struct ListSecretsOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListSecretsOptions
-{
+impl Default for ListSecretsOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -3328,25 +3250,20 @@ impl UpdateSecretOptionsBuilder {
 }
 
 /// Internal struct used in the `SecretUpdate` API
-/// 
+///
 /// Use a [UpdateSecretOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct UpdateSecretOptions
-{ 
-    pub version: i64, 
+pub struct UpdateSecretOptions {
+    pub version: i64,
 }
 
-impl Default for UpdateSecretOptions
-{
+impl Default for UpdateSecretOptions {
     fn default() -> Self {
         Self {
             version: Default::default(),
         }
     }
 }
-
-
-
 
 /// Builder for the `ServiceInspect` API query parameter.
 ///
@@ -3386,17 +3303,15 @@ impl InspectServiceOptionsBuilder {
 }
 
 /// Internal struct used in the `ServiceInspect` API
-/// 
+///
 /// Use a [InspectServiceOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct InspectServiceOptions
-{ 
+pub struct InspectServiceOptions {
     #[serde(rename = "insertDefaults")]
-    pub insert_defaults: bool, 
+    pub insert_defaults: bool,
 }
 
-impl Default for InspectServiceOptions
-{
+impl Default for InspectServiceOptions {
     fn default() -> Self {
         Self {
             insert_defaults: false,
@@ -3431,14 +3346,17 @@ impl ListServicesOptionsBuilder {
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the services list.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `id=<service id>`
     /// - `label=<service label>`
     /// - `mode=["replicated"|"global"]`
     /// - `name=<service name>`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -3467,20 +3385,18 @@ impl ListServicesOptionsBuilder {
 }
 
 /// Internal struct used in the `ServiceList` API
-/// 
+///
 /// Use a [ListServicesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListServicesOptions
-{ 
+pub struct ListServicesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<bool>, 
+    pub status: Option<bool>,
 }
 
-impl Default for ListServicesOptions
-{
+impl Default for ListServicesOptions {
     fn default() -> Self {
         Self {
             filters: None,
@@ -3548,20 +3464,18 @@ impl UpdateServiceOptionsBuilder {
 }
 
 /// Internal struct used in the `ServiceUpdate` API
-/// 
+///
 /// Use a [UpdateServiceOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct UpdateServiceOptions
-{ 
-    pub version: i32, 
+pub struct UpdateServiceOptions {
+    pub version: i32,
     #[serde(rename = "registryAuthFrom")]
-    pub registry_auth_from: String, 
+    pub registry_auth_from: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rollback: Option<String>, 
+    pub rollback: Option<String>,
 }
 
-impl Default for UpdateServiceOptions
-{
+impl Default for UpdateServiceOptions {
     fn default() -> Self {
         Self {
             version: Default::default(),
@@ -3570,9 +3484,6 @@ impl Default for UpdateServiceOptions
         }
     }
 }
-
-
-
 
 // Filtered out: ServiceLogs
 // Get service logs
@@ -3583,9 +3494,6 @@ impl Default for UpdateServiceOptions
 //   - since
 //   - timestamps
 //   - tail
-
-
-
 
 /// Builder for the `SwarmLeave` API query parameter.
 ///
@@ -3626,25 +3534,18 @@ impl LeaveSwarmOptionsBuilder {
 }
 
 /// Internal struct used in the `SwarmLeave` API
-/// 
+///
 /// Use a [LeaveSwarmOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LeaveSwarmOptions
-{ 
-    pub force: bool, 
+pub struct LeaveSwarmOptions {
+    pub force: bool,
 }
 
-impl Default for LeaveSwarmOptions
-{
+impl Default for LeaveSwarmOptions {
     fn default() -> Self {
-        Self {
-            force: false,
-        }
+        Self { force: false }
     }
 }
-
-
-
 
 // Filtered out: SwarmUpdate
 // Update a swarm
@@ -3679,10 +3580,12 @@ impl DataUsageOptionsBuilder {
 
     /// Object types, for which to compute and return data.
     pub fn _type(mut self, _type: Vec<String>) -> Self {
-        self.inner._type = Some(_type
-            .into_iter()
-            .map(|v| Into::<String>::into(v.clone()))
-            .collect());
+        self.inner._type = Some(
+            _type
+                .into_iter()
+                .map(|v| Into::<String>::into(v.clone()))
+                .collect(),
+        );
         self
     }
 
@@ -3694,22 +3597,18 @@ impl DataUsageOptionsBuilder {
 }
 
 /// Internal struct used in the `SystemDataUsage` API
-/// 
+///
 /// Use a [DataUsageOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DataUsageOptions
-{ 
+pub struct DataUsageOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
-    pub _type: Option<Vec<String>>, 
+    pub _type: Option<Vec<String>>,
 }
 
-impl Default for DataUsageOptions
-{
+impl Default for DataUsageOptions {
     fn default() -> Self {
-        Self {
-            _type: None,
-        }
+        Self { _type: None }
     }
 }
 
@@ -3752,7 +3651,7 @@ impl EventsOptionsBuilder {
     }
 
     /// A JSON encoded value of filters (a `map[string][]string`) to process on the event list. Available filters:
-    /// 
+    ///
     /// - `config=<string>` config name or ID
     /// - `container=<string>` container name or ID
     /// - `daemon=<string>` daemon name or ID
@@ -3767,7 +3666,10 @@ impl EventsOptionsBuilder {
     /// - `service=<string>` service name or ID
     /// - `type=<string>` object to filter by, one of `container`, `image`, `volume`, `network`, `daemon`, `plugin`, `node`, `service`, `secret` or `config`
     /// - `volume=<string>` volume name
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -3790,22 +3692,20 @@ impl EventsOptionsBuilder {
 }
 
 /// Internal struct used in the `SystemEvents` API
-/// 
+///
 /// Use a [EventsOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct EventsOptions
-{ 
+pub struct EventsOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub since: Option<String>, 
+    pub since: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub until: Option<String>, 
+    pub until: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for EventsOptions
-{
+impl Default for EventsOptions {
     fn default() -> Self {
         Self {
             since: None,
@@ -3814,9 +3714,6 @@ impl Default for EventsOptions
         }
     }
 }
-
-
-
 
 /// Builder for the `TaskList` API query parameter.
 ///
@@ -3844,16 +3741,19 @@ impl ListTasksOptionsBuilder {
 
     /// A JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the tasks list.
-    /// 
+    ///
     /// Available filters:
-    /// 
+    ///
     /// - `desired-state=(running | shutdown | accepted)`
     /// - `id=<task id>`
     /// - `label=key` or `label="key=value"`
     /// - `name=<task name>`
     /// - `node=<node id or name>`
     /// - `service=<service name>`
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -3876,27 +3776,20 @@ impl ListTasksOptionsBuilder {
 }
 
 /// Internal struct used in the `TaskList` API
-/// 
+///
 /// Use a [ListTasksOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListTasksOptions
-{ 
+pub struct ListTasksOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListTasksOptions
-{
+impl Default for ListTasksOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
-
-
-
 
 // Filtered out: TaskLogs
 // Get task logs
@@ -3946,20 +3839,16 @@ impl RemoveVolumeOptionsBuilder {
 }
 
 /// Internal struct used in the `VolumeDelete` API
-/// 
+///
 /// Use a [RemoveVolumeOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RemoveVolumeOptions
-{ 
-    pub force: bool, 
+pub struct RemoveVolumeOptions {
+    pub force: bool,
 }
 
-impl Default for RemoveVolumeOptions
-{
+impl Default for RemoveVolumeOptions {
     fn default() -> Self {
-        Self {
-            force: false,
-        }
+        Self { force: false }
     }
 }
 
@@ -3989,7 +3878,7 @@ impl ListVolumesOptionsBuilder {
 
     /// JSON encoded value of the filters (a `map[string][]string`) to
     /// process on the volumes list. Available filters:
-    /// 
+    ///
     /// - `dangling=<boolean>` When set to `true` (or `1`), returns all
     ///    volumes that are not in use by a container. When set to `false`
     ///    (or `0`), only volumes that are in use by one or more
@@ -3998,7 +3887,10 @@ impl ListVolumesOptionsBuilder {
     /// - `label=<key>` or `label=<key>:<value>` Matches volumes based on
     ///    the presence of a `label` alone or a `label` and a value.
     /// - `name=<volume-name>` Matches all or part of a volume name.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -4021,22 +3913,18 @@ impl ListVolumesOptionsBuilder {
 }
 
 /// Internal struct used in the `VolumeList` API
-/// 
+///
 /// Use a [ListVolumesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ListVolumesOptions
-{ 
+pub struct ListVolumesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for ListVolumesOptions
-{
+impl Default for ListVolumesOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
@@ -4065,11 +3953,14 @@ impl PruneVolumesOptionsBuilder {
     }
 
     /// Filters to process on the prune list, encoded as JSON (a `map[string][]string`).
-    /// 
+    ///
     /// Available filters:
     /// - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or `label!=<key>=<value>`) Prune volumes with (or without, in case `label!=...` is used) the specified labels.
     /// - `all` (`all=true`) - Consider all (local) volumes for pruning and not just anonymous volumes.
-    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+    pub fn filters(
+        mut self,
+        filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>,
+    ) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
             inner_filters.insert(
@@ -4092,29 +3983,21 @@ impl PruneVolumesOptionsBuilder {
 }
 
 /// Internal struct used in the `VolumePrune` API
-/// 
+///
 /// Use a [PruneVolumesOptionsBuilder] to instantiate this struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PruneVolumesOptions
-{ 
+pub struct PruneVolumesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
-    pub filters: Option<HashMap<String, Vec<String>>>, 
+    pub filters: Option<HashMap<String, Vec<String>>>,
 }
 
-impl Default for PruneVolumesOptions
-{
+impl Default for PruneVolumesOptions {
     fn default() -> Self {
-        Self {
-            filters: None,
-        }
+        Self { filters: None }
     }
 }
 
-
-
-
 // Filtered out: VolumeUpdate
-// \"Update a volume. Valid only for Swarm cluster volumes\" 
+// \"Update a volume. Valid only for Swarm cluster volumes\"
 //   - version
-

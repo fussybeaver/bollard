@@ -27,6 +27,10 @@ where
     s.serialize_str(&t.join("\n"))
 }
 
+pub(crate) fn is_zero(val: &i32) -> bool {
+    val == &0i32
+}
+
 #[cfg(feature = "buildkit")]
 /// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
 #[derive(Debug, Clone, PartialEq)]
@@ -147,7 +151,8 @@ pub struct {{{.}}}
     {{/defaultValue}}{{/required}}{{#vendorExtensions.x-codegen-query-param-rename}}#[serde(rename = "{{{.}}}")]
     {{/vendorExtensions.x-codegen-query-param-rename}}{{#vendorExtensions.x-codegen-query-param-serialize-as-json}}#[serde(serialize_with = "serialize_as_json")]
     {{/vendorExtensions.x-codegen-query-param-serialize-as-json}}{{#vendorExtensions.x-codegen-query-param-serialize-join-newlines}}#[serde(serialize_with = "serialize_join_newlines", skip_serializing_if = "Vec::is_empty")]
-    {{/vendorExtensions.x-codegen-query-param-serialize-join-newlines}}{{#vendorExtensions.x-codegen-query-param-is-buildkit}}#[cfg(feature = "buildkit")]
+    {{/vendorExtensions.x-codegen-query-param-serialize-join-newlines}}{{#vendorExtensions.x-codegen-query-param-skip-serialize-if-zero}}#[serde(skip_serializing_if = "is_zero")]
+    {{/vendorExtensions.x-codegen-query-param-skip-serialize-if-zero}}{{#vendorExtensions.x-codegen-query-param-is-buildkit}}#[cfg(feature = "buildkit")]
     {{/vendorExtensions.x-codegen-query-param-is-buildkit}}pub {{paramName}}: {{^required}}{{^defaultValue}}Option<{{/defaultValue}}{{/required}}{{#vendorExtensions.x-codegen-query-param-struct-type}}{{{.}}}{{/vendorExtensions.x-codegen-query-param-struct-type}}{{^vendorExtensions.x-codegen-query-param-struct-type}}{{{dataType}}}{{/vendorExtensions.x-codegen-query-param-struct-type}}{{^required}}{{^defaultValue}}>{{/defaultValue}}{{/required}}, {{/queryParams}}
 }
 
