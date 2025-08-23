@@ -30,10 +30,60 @@
                 <output>${project.basedir}</output>
                 <generateApis>true</generateApis>
                 <templateDirectory>${project.basedir}/src/main/resources/bollard</templateDirectory>
-                <supportingFilesToGenerate>models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
+                <supportingFilesToGenerate>query_parameters.rs,models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
                   <packageVersion>1.49.0-rc.28.3.3</packageVersion>
+                  <queryParameterMappings>
+                      ContainerList=ListContainersOptions
+                      ContainerArchive=DownloadFromContainerOptions
+                      ContainerAttach=AttachContainerOptions
+                      ContainerCreate=CreateContainerOptions
+                      ContainerDelete=RemoveContainerOptions
+                      ContainerInspect=InspectContainerOptions
+                      ContainerKill=KillContainerOptions
+                      ContainerLogs=LogsOptions
+                      ContainerPrune=PruneContainersOptions
+                      ContainerRename=RenameContainerOptions
+                      ContainerResize=ResizeContainerTTYOptions
+                      ContainerRestart=RestartContainerOptions
+                      ContainerStart=StartContainerOptions
+                      ContainerStats=StatsOptions
+                      ContainerStop=StopContainerOptions
+                      ContainerTop=TopOptions
+                      ContainerWait=WaitContainerOptions
+                      PutContainerArchive=UploadToContainerOptions
+                      ExecResize=ResizeExecOptions
+                      ImageBuild=BuildImageOptions
+                      BuildPrune=PruneBuildOptions
+                      ImageCommit=CommitContainerOptions
+                      ImageCreate=CreateImageOptions
+                      ImageDelete=RemoveImageOptions
+                      ImageList=ListImagesOptions
+                      ImageLoad=ImportImageOptions
+                      ImagePrune=PruneImagesOptions
+                      ImagePush=PushImageOptions
+                      ImageSearch=SearchImagesOptions
+                      ImageTag=TagImageOptions
+                      NetworkInspect=InspectNetworkOptions
+                      NetworkList=ListNetworksOptions
+                      NetworkPrune=PruneNetworksOptions
+                      NodeList=ListNodesOptions
+                      NodeDelete=DeleteNodeOptions
+                      NodeUpdate=UpdateNodeOptions
+                      SecretList=ListSecretsOptions
+                      SecretUpdate=UpdateSecretOptions
+                      ServiceInspect=InspectServiceOptions
+                      ServiceList=ListServicesOptions
+                      ServiceUpdate=UpdateServiceOptions
+                      SwarmLeave=LeaveSwarmOptions
+                      SystemDataUsage=DataUsageOptions
+                      SystemEvents=EventsOptions
+                      TaskList=ListTasksOptions
+                      VolumeDelete=RemoveVolumeOptions
+                      VolumeList=ListVolumesOptions
+                      VolumePrune=PruneVolumesOptions
+                  </queryParameterMappings>
                 </configOptions>
               </configuration>
             </execution>
