@@ -66,25 +66,16 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
     });
 
     let _ = &docker
-        .kill_container(
-            "integration_test_start_exec_test",
-            None::<KillContainerOptions<String>>,
-        )
+        .kill_container("integration_test_start_exec_test", None)
         .await?;
 
     let _ = &docker
-        .wait_container(
-            "integration_test_start_exec_test",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_start_exec_test", None)
         .try_collect::<Vec<_>>()
         .await;
 
     let _ = &docker
-        .remove_container(
-            "integration_test_start_exec_test",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_start_exec_test", None)
         .await?;
 
     Ok(())
@@ -137,25 +128,16 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
     );
 
     let _ = &docker
-        .kill_container(
-            "integration_test_inspect_exec_test",
-            None::<KillContainerOptions<String>>,
-        )
+        .kill_container("integration_test_inspect_exec_test", None)
         .await?;
 
     let _ = &docker
-        .wait_container(
-            "integration_test_inspect_exec_test",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_inspect_exec_test", None)
         .try_collect::<Vec<_>>()
         .await;
 
     let _ = &docker
-        .remove_container(
-            "integration_test_inspect_exec_test",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_inspect_exec_test", None)
         .await?;
 
     Ok(())
@@ -212,25 +194,16 @@ async fn start_exec_output_capacity_test_short(docker: Docker) -> Result<(), Err
     }
 
     let _ = &docker
-        .kill_container(
-            "start_exec_output_capacity_test_short",
-            None::<KillContainerOptions<String>>,
-        )
+        .kill_container("start_exec_output_capacity_test_short", None)
         .await?;
 
     let _ = &docker
-        .wait_container(
-            "start_exec_output_capacity_test_short",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("start_exec_output_capacity_test_short", None)
         .try_collect::<Vec<_>>()
         .await;
 
     let _ = &docker
-        .remove_container(
-            "start_exec_output_capacity_test_short",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("start_exec_output_capacity_test_short", None)
         .await?;
 
     Ok(())
@@ -293,25 +266,16 @@ async fn start_exec_output_capacity_test_long(docker: Docker) -> Result<(), Erro
     }
 
     let _ = &docker
-        .kill_container(
-            "start_exec_output_capacity_test_long",
-            None::<KillContainerOptions<String>>,
-        )
+        .kill_container("start_exec_output_capacity_test_long", None)
         .await?;
 
     let _ = &docker
-        .wait_container(
-            "start_exec_output_capacity_test_long",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("start_exec_output_capacity_test_long", None)
         .try_collect::<Vec<_>>()
         .await;
 
     let _ = &docker
-        .remove_container(
-            "start_exec_output_capacity_test_long",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("start_exec_output_capacity_test_long", None)
         .await?;
 
     Ok(())

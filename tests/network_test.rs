@@ -192,17 +192,11 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker.remove_network(id).await?;
 
     let _ = &docker
-        .kill_container(
-            "integration_test_connect_network_test",
-            None::<KillContainerOptions<String>>,
-        )
+        .kill_container("integration_test_connect_network_test", None)
         .await?;
 
     let _ = &docker
-        .remove_container(
-            "integration_test_connect_network_test",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_connect_network_test", None)
         .await?;
 
     Ok(())
