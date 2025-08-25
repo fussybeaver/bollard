@@ -199,7 +199,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[deprecated(
     since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::ConnectNetworkOptions and associated ConnectNetworkOptionsBuilder"
+    note = "use the OpenAPI generated bollard::models::NetworkConnectRequest"
 )]
 #[serde(rename_all = "PascalCase")]
 pub struct ConnectNetworkOptions<T>
