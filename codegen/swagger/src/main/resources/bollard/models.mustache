@@ -142,7 +142,7 @@ impl std::default::Default for {{classname}}{{enumName}} {
     }
 }
 {{/isEnum}}{{^isEnum}}{{^dataType}}{{#arrayModelType}}{{! vec}}
-pub type {{classname}} = {{{arrayModelType}}};
+pub type {{classname}} = Vec<{{{arrayModelType}}}>;
 {{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}// special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type {{classname}} = HashMap<String, Option<Vec<PortBinding>>>;
 {{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, {{^vendorExtensions.x-rustgen-grpc-aux}}Serialize, {{/vendorExtensions.x-rustgen-grpc-aux}}Deserialize)]{{#xmlName}}
