@@ -2994,7 +2994,7 @@ pub struct FirewallInfo {
 
 /// User-defined resources can be either Integer resources (e.g, `SSD=3`) or String resources (e.g, `GPU=UUID1`). 
 
-pub type GenericResources = GenericResourcesInner;
+pub type GenericResources = Vec<GenericResourcesInner>;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GenericResourcesInner {
