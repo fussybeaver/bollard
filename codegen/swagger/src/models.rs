@@ -3665,7 +3665,9 @@ pub struct HostConfigLogConfig {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct IdResponse {
     /// The id of the newly created object.
-    #[serde(rename = "Id")]
+    #[serde(alias = "Id")]
+    #[serde(alias = "ID")]
+    
     pub id: String,
 
 }
