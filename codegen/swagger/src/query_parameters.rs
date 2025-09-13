@@ -1399,13 +1399,6 @@ impl Default for UploadToContainerOptions
 
 
 
-// Filtered out: ImageGet
-// Export an image
-//   - platform
-
-
-
-
 /// Builder for the `ExecResize` API query parameter.
 ///
 /// Resize an exec instance.
@@ -2757,9 +2750,14 @@ impl Default for TagImageOptions
 
 
 
+// Filtered out: ImageGet
+// Export an image
+//   - platform
+
 // Filtered out: ImageGetAll
 // Export several images
 //   - names
+//   - platform
 
 // Filtered out: ImageHistory
 // Get the history of an image

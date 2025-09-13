@@ -124,6 +124,7 @@ pub struct AuthConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 
+    /// Email is an optional value associated with the username.  > **Deprecated**: This field is deprecated since docker 1.11 (API v1.23) and will be removed in a future release. 
     #[serde(rename = "email")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
@@ -8080,7 +8081,7 @@ pub struct TaskSpec {
     /// A counter that triggers an update even if no relevant parameters have been changed. 
     #[serde(rename = "ForceUpdate")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub force_update: Option<i64>,
+    pub force_update: Option<u64>,
 
     /// Runtime is the type of runtime specified for the task executor. 
     #[serde(rename = "Runtime")]
