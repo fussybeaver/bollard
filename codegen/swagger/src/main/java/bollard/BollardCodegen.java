@@ -1,5 +1,6 @@
 package bollard;
 
+import com.google.common.base.CaseFormat;
 import io.swagger.codegen.*;
 import io.swagger.codegen.languages.RustServerCodegen;
 import io.swagger.models.properties.*;
@@ -229,7 +230,10 @@ public class BollardCodegen extends RustServerCodegen {
                 }
 
                 if (upperCaseModelFields.contains(model.classname)) {
-                    prop.vendorExtensions.put("x-rustgen-upper-case", true);
+                    ArrayList<String> aliases = new ArrayList<String>();
+                    aliases.add(CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, prop.baseName));
+                    aliases.add(prop.baseName.toUpperCase());
+                    prop.vendorExtensions.put("x-rustgen-upper-case", aliases);
                 }
 
                 if (prop.dataFormat != null && (prop.dataFormat.equals("dateTime") || prop.datatype.equals("BollardDate"))) {
