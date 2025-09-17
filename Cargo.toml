@@ -46,7 +46,7 @@ webpki = ["ssl", "dep:webpki-roots"]
 chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]
 http = ["hyper-util"]
-pipe = ["hyperlocal", "hyper-named-pipe"]
+pipe = ["hyper-util", "hyperlocal", "hyper-named-pipe"]
 ssh = ["hyper-util", "openssh", "tower-service"]
 
 [dependencies]
