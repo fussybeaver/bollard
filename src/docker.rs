@@ -28,7 +28,7 @@ use hyper::{self, body::Bytes, Method, Request, Response, StatusCode};
 use hyper_rustls::HttpsConnector;
 #[cfg(any(feature = "http", test))]
 use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(any(feature = "http", feature = "ssh", test))]
+#[cfg(any(feature = "http", feature = "ssh", feature = "pipe", test))]
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
@@ -80,7 +80,7 @@ pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
 pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_NAMED_PIPE;
 
 /// Default timeout for all requests is 2 minutes.
-#[cfg(any(feature = "http", feature = "ssh"))]
+#[cfg(any(feature = "http", feature = "ssh", feature = "pipe"))]
 const DEFAULT_TIMEOUT: u64 = 120;
 
 /// Default Client Version to communicate with the server.

@@ -165,7 +165,7 @@ pub enum Error {
         err: http::uri::InvalidUriParts,
     },
     /// Error that is never emitted
-    #[cfg(any(feature = "http", feature = "ssh"))]
+    #[cfg(any(feature = "http", feature = "ssh", feature = "pipe"))]
     #[error("Error in the hyper legacy client: {}", err)]
     HyperLegacyError {
         /// The original error emitted.
