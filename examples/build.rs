@@ -40,7 +40,7 @@ async fn main() {
         .platform("linux/x86_64")
         .target("");
 
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     let build_image_options =
         build_image_options.version(bollard::query_parameters::BuilderVersion::BuilderV1);
 

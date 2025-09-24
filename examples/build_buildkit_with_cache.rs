@@ -1,18 +1,18 @@
 //! Builds a container with a bunch of extra options for testing
 #![allow(unused_variables, unused_mut, unused_imports)]
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use bollard::grpc::registry::ImageRegistryOutput;
 use bollard::Docker;
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry;
 
 use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     {
         let mut docker = Docker::connect_with_socket_defaults().unwrap();
 
