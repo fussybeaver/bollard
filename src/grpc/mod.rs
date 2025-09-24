@@ -1,5 +1,5 @@
 //! GRPC plumbing to interact with Docker's buildkit client
-#![cfg(feature = "buildkit")]
+#![cfg(feature = "buildkit_providerless")]
 #![allow(dead_code)]
 
 /// End-user buildkit build functions

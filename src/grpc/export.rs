@@ -1,4 +1,4 @@
-#![cfg(feature = "buildkit")]
+#![cfg(feature = "buildkit_providerless")]
 
 pub use bollard_buildkit_proto::fsutil;
 pub use bollard_buildkit_proto::health;

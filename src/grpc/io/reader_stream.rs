@@ -1,4 +1,4 @@
-#![cfg(feature = "buildkit")]
+#![cfg(feature = "buildkit_providerless")]
 
 use bollard_buildkit_proto::moby::buildkit::v1::BytesMessage;
 use futures_core::stream::Stream;

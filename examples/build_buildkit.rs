@@ -1,11 +1,11 @@
 //! Builds a container with a bunch of extra options for testing
 #![allow(unused_variables, unused_mut)]
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use bollard::models::BuildInfoAux;
 use bollard::Docker;
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use futures_util::stream::StreamExt;
 use http_body_util::Full;
 
@@ -44,7 +44,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         .version(bollard::query_parameters::BuilderVersion::BuilderBuildKit)
         .pull("true");
 
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     let build_image_options = build_image_options.session(id);
 
     let mut image_build_stream = docker.build_image(
@@ -53,7 +53,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         Some(http_body_util::Either::Left(Full::new(compressed.into()))),
     );
 
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     while let Some(Ok(bollard::models::BuildInfo {
         aux: Some(BuildInfoAux::BuildKit(inner)),
         ..
