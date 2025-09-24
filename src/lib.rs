@@ -291,11 +291,11 @@ pub use crate::docker::{
 pub use bollard_stubs::models;
 pub use bollard_stubs::query_parameters;
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 pub use bollard_buildkit_proto::fsutil;
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 pub use bollard_buildkit_proto::health;
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 pub use bollard_buildkit_proto::moby;

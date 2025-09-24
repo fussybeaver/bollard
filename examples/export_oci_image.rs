@@ -3,7 +3,7 @@
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     {
         use bollard::grpc::driver::docker_container::DockerContainerBuilder;
         use bollard::Docker;

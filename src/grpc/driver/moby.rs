@@ -1,4 +1,4 @@
-#![cfg(feature = "buildkit")]
+#![cfg(feature = "buildkit_providerless")]
 
 use std::collections::HashMap;
 use std::pin::Pin;

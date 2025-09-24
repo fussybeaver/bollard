@@ -451,7 +451,7 @@ RUN touch bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_test(docker: Docker, streaming_upload: bool) -> Result<(), Error> {
     use bollard::body_stream;
 
@@ -499,7 +499,7 @@ ENTRYPOINT ls buildkit-bollard.txt
                     pull: true,
                     version: BuilderVersion::BuilderBuildKit,
                     rm: true,
-                    #[cfg(feature = "buildkit")]
+                    #[cfg(feature = "buildkit_providerless")]
                     session: Some(String::from(id)),
                     ..Default::default()
                 },
@@ -517,7 +517,7 @@ ENTRYPOINT ls buildkit-bollard.txt
                     pull: true,
                     version: BuilderVersion::BuilderBuildKit,
                     rm: true,
-                    #[cfg(feature = "buildkit")]
+                    #[cfg(feature = "buildkit_providerless")]
                     session: Some(String::from(id)),
                     ..Default::default()
                 },
@@ -595,7 +595,7 @@ ENTRYPOINT ls buildkit-bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn buildkit_image_missing_session_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
         "FROM alpine as builder1
@@ -626,7 +626,7 @@ ENTRYPOINT ls buildkit-bollard.txt
                 pull: true,
                 version: BuilderVersion::BuilderBuildKit,
                 rm: true,
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 session: None,
                 ..Default::default()
             },
@@ -643,7 +643,7 @@ ENTRYPOINT ls buildkit-bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_secret_test(docker: Docker) -> Result<(), Error> {
     use bollard::grpc::build::SecretSource;
     use tokio::io::AsyncWriteExt;
@@ -780,7 +780,7 @@ COPY --from=builder1 /token /",
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_custom_dockerfile_path_test(docker: Docker) -> Result<(), Error> {
     use std::path::PathBuf;
 
@@ -840,7 +840,7 @@ RUN touch bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> {
     let base_image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
@@ -1069,7 +1069,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_inline_driver_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
         "FROM localhost:5000/alpine as builder1
@@ -1192,7 +1192,7 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     Ok(())
 }
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_anonymous_auth_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
         "FROM node:alpine as builder1
@@ -1235,7 +1235,7 @@ RUN touch bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_outputs_tar_test(docker: Docker) -> Result<(), Error> {
     use std::io::Read;
 
@@ -1286,9 +1286,9 @@ COPY --from=builder message-2.txt .
                 pull: true,
                 version: BuilderVersion::BuilderBuildKit,
                 rm: true,
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 session: Some(String::from(id)),
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 outputs: Some(ImageBuildOutput::Tar(
                     "/tmp/buildkit-outputs.tar".to_string(),
                 )),
@@ -1344,7 +1344,7 @@ COPY --from=builder message-2.txt .
     Ok(())
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_outputs_local_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
         "FROM localhost:5000/alpine as builder
@@ -1395,9 +1395,9 @@ RUN touch empty.txt
                 pull: true,
                 version: BuilderVersion::BuilderBuildKit,
                 rm: true,
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 session: Some(String::from(id)),
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 outputs: Some(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string())),
                 ..Default::default()
             },
@@ -1441,7 +1441,7 @@ RUN touch empty.txt
 
 // Although prune_build can be run without BuildKit enabled, only the BuildKit builder actually
 // uses it. The V1 builder caches in the form of intermediate images instead.
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 async fn prune_build_test(docker: Docker) -> Result<(), Error> {
     use bollard::query_parameters::DataUsageOptions;
 
@@ -1482,7 +1482,7 @@ RUN echo bollard > bollard.txt
                 pull: true,
                 version: BuilderVersion::BuilderBuildKit,
                 rm: true,
-                #[cfg(feature = "buildkit")]
+                #[cfg(feature = "buildkit_providerless")]
                 session: Some(String::from(id)),
                 ..Default::default()
             },
@@ -1791,32 +1791,32 @@ fn integration_test_build_image() {
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_image() {
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, false));
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, true));
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_buildkit_image_missing_session_test() {
     connect_to_docker_and_run!(buildkit_image_missing_session_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_secret() {
     connect_to_docker_and_run!(build_buildkit_secret_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_custom_dockerfile_path() {
     connect_to_docker_and_run!(build_buildkit_custom_dockerfile_path_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_named_context() {
     connect_to_docker_and_run!(build_buildkit_named_context_test);
 }
@@ -1828,31 +1828,31 @@ fn integration_test_build_buildkit_ssh() {
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_inline_driver() {
     connect_to_docker_and_run!(build_buildkit_image_inline_driver_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_anonymous_auth() {
     connect_to_docker_and_run!(build_buildkit_image_anonymous_auth_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_image_outputs_tar() {
     connect_to_docker_and_run!(build_buildkit_image_outputs_tar_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_image_outputs_local() {
     connect_to_docker_and_run!(build_buildkit_image_outputs_local_test);
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_prune_build() {
     connect_to_docker_and_run!(prune_build_test);
 }

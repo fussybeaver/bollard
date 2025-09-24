@@ -21,7 +21,8 @@ members = [
 [features]
 default = ["http", "pipe"]
 # Enable Buildkit-enabled docker image building
-buildkit = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags"]
+buildkit = ["buildkit_providerless", "ssl"]
+buildkit_providerless = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl_providerless", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for the ssh connector
