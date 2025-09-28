@@ -37,8 +37,8 @@ bollard = "*"
  - `ssl_providerless`: enable SSL support through [Rustls](https://github.com/rustls/rustls) without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html). You are responsible to do so.
  - `chrono`: enable [Chrono](https://github.com/chronotope/chrono) for `DateTime` types.
  - `time`: enable [Time 0.3](https://github.com/time-rs/time) for `DateTime` types.
- - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of
-   [Docker](https://github.com/moby/moby) when building images.
+ - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of [Docker](https://github.com/moby/moby) when building images.
+ - `buildkit_providerless`: enable [Buildkit](https://github.com/moby/buildkit) support without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html).
  - `json_data_content`: Add JSON to errors on serialization failures.
  - `webpki`: Use mozilla's root certificates instead of native root certs provided by the OS.
 
