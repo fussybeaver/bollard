@@ -1,12 +1,12 @@
 //! Image API: creating, manipulating and pushing docker images
 #![allow(deprecated)]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use bollard_buildkit_proto::moby::filesync::packet::file_send_server::FileSendServer as FileSendPacketServer;
 use bytes::Bytes;
 use futures_core::Stream;
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use futures_util::future::{Either, FutureExt};
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use futures_util::stream;
 use futures_util::stream::StreamExt;
 use http::header::CONTENT_TYPE;
@@ -576,7 +576,7 @@ where
     /// RUN instruction, or for variable expansion in other `Dockerfile` instructions.
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub buildargs: HashMap<T, T>,
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     /// Session ID
     pub session: Option<String>,
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
@@ -594,7 +594,7 @@ where
     pub platform: T,
     /// Target build stage
     pub target: T,
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     /// Specify a custom exporter.
     pub outputs: Option<ImageBuildOutput<T>>,
     /// Builder version to use
@@ -701,14 +701,14 @@ where
             );
         }
 
-        #[cfg(feature = "buildkit")]
+        #[cfg(feature = "buildkit_providerless")]
         let builder = if let Some(outputs) = opts.outputs {
             builder.outputs(outputs.into())
         } else {
             builder
         };
 
-        #[cfg(feature = "buildkit")]
+        #[cfg(feature = "buildkit_providerless")]
         let builder = if let Some(session) = opts.session {
             builder.session(&session)
         } else {
@@ -719,7 +719,7 @@ where
     }
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 /// The exporter to use (see [Docker Docs](https://docs.docker.com/reference/cli/docker/buildx/build/#output))
 #[derive(Debug, Clone, PartialEq)]
 #[deprecated(
@@ -744,7 +744,7 @@ where
     Local(T),
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 impl<T> From<ImageBuildOutput<T>> for crate::query_parameters::ImageBuildOutput
 where
     T: Into<String>,
@@ -761,7 +761,7 @@ where
     }
 }
 
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 impl<T> Serialize for ImageBuildOutput<T>
 where
     T: Into<String>,
@@ -1571,7 +1571,7 @@ impl Docker {
             },
             &options,
         ) {
-            #[cfg(feature = "buildkit")]
+            #[cfg(feature = "buildkit_providerless")]
             (
                 ImageBuildBuildkitEither::Left(creds),
                 crate::query_parameters::BuildImageOptions {
@@ -1608,7 +1608,7 @@ impl Docker {
                     })
                     .boxed()
             }
-            #[cfg(feature = "buildkit")]
+            #[cfg(feature = "buildkit_providerless")]
             (
                 ImageBuildBuildkitEither::Left(_),
                 crate::query_parameters::BuildImageOptions { session: None, .. },
@@ -1616,9 +1616,9 @@ impl Docker {
                 Error::MissingSessionBuildkitError {},
             ))
             .boxed(),
-            #[cfg(not(feature = "buildkit"))]
+            #[cfg(not(feature = "buildkit_providerless"))]
             (ImageBuildBuildkitEither::Left(_), _) => unimplemented!(
-                "a buildkit enabled build without the 'buildkit' feature should not be possible"
+                "a buildkit enabled build without the 'buildkit_providerless' feature should not be possible"
             ),
             (ImageBuildBuildkitEither::Right(creds), _) => {
                 let req = self.build_request_with_registry_auth(
@@ -1646,7 +1646,7 @@ impl Docker {
         })
     }
 
-    #[cfg(feature = "buildkit")]
+    #[cfg(feature = "buildkit_providerless")]
     async fn start_session(
         &self,
         id: String,

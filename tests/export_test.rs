@@ -105,7 +105,7 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[test]
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 fn integration_test_export_buildkit_oci() {
     connect_to_docker_and_run!(export_buildkit_oci_test);
 }
