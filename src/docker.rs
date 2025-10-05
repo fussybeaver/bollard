@@ -1105,7 +1105,7 @@ impl Docker {
     /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssh(
-    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION)
+    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION, None)
     ///                    .unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
