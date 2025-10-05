@@ -7,7 +7,21 @@ use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 #[derive(Clone)]
-pub(crate) struct SshConnector;
+pub(crate) struct SshConnector {
+    keypair_path: Option<String>,
+}
+
+impl SshConnector {
+    pub fn new() -> Self {
+        Self { keypair_path: None }
+    }
+
+    pub fn with_keypair(keypair_path: String) -> Self {
+        Self {
+            keypair_path: Some(keypair_path),
+        }
+    }
+}
 
 pub(crate) struct SshStream {
     _child: openssh::Child<Arc<openssh::Session>>,
@@ -26,6 +40,8 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
     }
 
     fn call(&mut self, destination: hyper::Uri) -> Self::Future {
+        let keypair_path = self.keypair_path.clone();
+
         async move {
             let authority = match destination.scheme() {
                 Some(scheme) if scheme == "ssh" => destination.authority().ok_or_else(|| {
@@ -38,7 +54,12 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
             }
             .map_err(openssh::Error::Connect)?;
 
-            let builder = openssh::SessionBuilder::default();
+            let mut builder = openssh::SessionBuilder::default();
+
+            if let Some(key_path) = keypair_path {
+                builder.keyfile(key_path);
+            }
+
             let (builder, destination) = builder.resolve(authority.as_str());
             let tempdir = builder.launch_master(destination).await?;
             let session = Arc::new(openssh::Session::new_process_mux(tempdir));
