@@ -1,14 +1,14 @@
 #![type_length_limit = "2097152"]
 #![allow(deprecated)]
 
-use bollard::container::AttachContainerResults;
+use bollard::container::{AttachContainerResults, Config};
 use bollard::errors::Error;
-use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
 use bollard::query_parameters::{
-    AttachContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    AttachContainerOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
     DownloadFromContainerOptionsBuilder, KillContainerOptionsBuilder, ListContainersOptionsBuilder,
     LogsOptionsBuilder, RenameContainerOptionsBuilder, ResizeContainerTTYOptionsBuilder,
-    StatsOptionsBuilder, TopOptionsBuilder, UploadToContainerOptionsBuilder,
+    StatsOptionsBuilder, TagImageOptionsBuilder, TopOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use bollard::{body_full, Docker};
 use bollard::{body_stream, models::*};
@@ -59,10 +59,11 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -76,17 +77,18 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .tag_image(
             &image,
-            Some(TagImageOptions {
-                repo: format!("{}my-hello-world", registry_http_addr()),
-                ..Default::default()
-            }),
+            Some(
+                TagImageOptionsBuilder::default()
+                    .repo(&format!("{}my-hello-world", registry_http_addr()))
+                    .build(),
+            ),
         )
         .await?;
 
     let _ = &docker
         .push_image(
             format!("{}my-hello-world", registry_http_addr()).as_ref(),
-            None::<PushImageOptions<String>>,
+            None,
             if cfg!(windows) {
                 None
             } else {
@@ -99,10 +101,11 @@ async fn image_push_test(docker: Docker) -> Result<(), Error> {
     let new_image_url = format!("{}my-hello-world", registry_http_addr());
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &new_image_url[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&new_image_url)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -506,10 +509,11 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -522,13 +526,13 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
 
     let _ = &docker
         .create_container(
-            Config {
-                image: Some(&image[..]),
             Some(
                 CreateContainerOptionsBuilder::default()
                     .name("integration_test_archive_container")
                     .build(),
             ),
+            Config {
+                image: Some(&image[..]),
                 ..Default::default()
             },
         )
@@ -685,10 +689,11 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
     };
 
     let _ = &docker.create_image(
-        Some(CreateImageOptions {
-            from_image: &image[..],
-            ..Default::default()
-        }),
+        Some(
+            CreateImageOptionsBuilder::default()
+                .from_image(&image)
+                .build(),
+        ),
         None,
         if cfg!(windows) {
             None
@@ -699,13 +704,13 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .create_container(
-            Config {
-                image: Some(&image[..]),
             Some(
                 CreateContainerOptionsBuilder::default()
                     .name("integration_test_mount_volume_container")
                     .build(),
             ),
+            Config {
+                image: Some(&image[..]),
                 host_config: Some(host_config),
                 ..Default::default()
             },

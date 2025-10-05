@@ -1,8 +1,8 @@
 #![allow(deprecated)]
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
-use bollard::image::*;
 use bollard::models::*;
+use bollard::query_parameters::CreateImageOptionsBuilder;
 use bollard::system::*;
 use bollard::Docker;
 
@@ -33,10 +33,11 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
     let stream = docker.events(None::<EventsOptions<String>>);
 
     let stream2 = docker.create_image(
-        Some(CreateImageOptions {
-            from_image: &image[..],
-            ..Default::default()
-        }),
+        Some(
+            CreateImageOptionsBuilder::default()
+                .from_image(&image)
+                .build(),
+        ),
         None,
         if cfg!(windows) {
             None
@@ -91,10 +92,11 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     }));
 
     let stream2 = docker.create_image(
-        Some(CreateImageOptions {
-            from_image: &image[..],
-            ..Default::default()
-        }),
+        Some(
+            CreateImageOptionsBuilder::default()
+                .from_image(&image)
+                .build(),
+        ),
         None,
         if cfg!(windows) {
             None

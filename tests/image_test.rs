@@ -1,6 +1,9 @@
 use bollard::models::{ContainerConfig, ContainerCreateBody};
 use bollard::query_parameters::{
-    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, RemoveImageOptionsBuilder,
+    BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    CreateImageOptionsBuilder, ImportImageOptionsBuilder, ListImagesOptionsBuilder,
+    PruneImagesOptionsBuilder, RemoveImageOptionsBuilder, SearchImagesOptionsBuilder,
+    TagImageOptionsBuilder,
 };
 use bytes::BufMut;
 use futures_util::future::ready;
@@ -8,9 +11,9 @@ use futures_util::stream::{StreamExt, TryStreamExt};
 use http_body_util::Full;
 use tokio::runtime::Runtime;
 
+use bollard::body_full;
 use bollard::errors::Error;
 use bollard::Docker;
-use bollard::{body_full, image::*};
 
 use std::collections::HashMap;
 use std::default::Default;
@@ -30,11 +33,10 @@ async fn create_image_test(docker: Docker) -> Result<(), Error> {
 async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
     let image = "empty-wasm:latest";
 
-    let options = CreateImageOptions {
-        from_src: "-", // from_src must be "-" when sending the archive in the request body
-        repo: image,
-        ..Default::default()
-    };
+    let options = CreateImageOptionsBuilder::default()
+        .from_src("-")
+        .repo(image)
+        .build();
 
     let req_body = bytes::Bytes::from({
         let mut buffer = Vec::new();
@@ -70,10 +72,11 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
 
 async fn search_images_test(docker: Docker) -> Result<(), Error> {
     let result = &docker
-        .search_images(SearchImagesOptions {
-            term: "hello-world",
-            ..Default::default()
-        })
+        .search_images(
+            SearchImagesOptionsBuilder::default()
+                .term("hello-world")
+                .build(),
+        )
         .await?;
 
     assert!(result
@@ -114,10 +117,7 @@ async fn list_images_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
     let result = &docker
-        .list_images(Some(ListImagesOptions::<String> {
-            all: true,
-            ..Default::default()
-        }))
+        .list_images(Some(ListImagesOptionsBuilder::default().all(true).build()))
         .await?;
 
     assert!(result.iter().any(|api_image| {
@@ -153,7 +153,11 @@ async fn prune_images_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
     let _ = &docker
-        .prune_images(Some(PruneImagesOptions { filters }))
+        .prune_images(Some(
+            PruneImagesOptionsBuilder::default()
+                .filters(&filters)
+                .build(),
+        ))
         .await?;
 
     Ok(())
@@ -213,7 +217,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
             ),
             ContainerCreateBody {
                 cmd: Some(cmd.into_iter().map(Into::into).collect()),
-                image: Some(image.into()),
+                image: Some(image),
                 ..Default::default()
             },
         )
@@ -346,13 +350,12 @@ RUN touch bollard.txt
 
         let _ = &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_image".to_string(),
-                    pull: true,
-                    rm: true,
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_image")
+                    .pull("true")
+                    .rm(true)
+                    .build(),
                 if cfg!(windows) { None } else { Some(creds) },
                 Some(bollard::body_stream(payload)),
             )
@@ -361,13 +364,12 @@ RUN touch bollard.txt
     } else {
         let _ = &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_image".to_string(),
-                    pull: true,
-                    rm: true,
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_image")
+                    .pull("true")
+                    .rm(true)
+                    .build(),
                 if cfg!(windows) { None } else { Some(creds) },
                 Some(http_body_util::Either::Left(Full::new(compressed.into()))),
             )
@@ -1561,10 +1563,12 @@ async fn export_images_test(docker: Docker) -> Result<(), Error> {
     docker
         .tag_image(
             &image,
-            Some(TagImageOptions {
-                repo: repo.as_ref(),
-                tag: "mycopy",
-            }),
+            Some(
+                TagImageOptionsBuilder::default()
+                    .repo(&repo)
+                    .tag("mycopy")
+                    .build(),
+            ),
         )
         .await?;
 
@@ -1629,13 +1633,12 @@ RUN apt-get update && \
     let compressed = c.finish().unwrap();
 
     let mut stream = docker.build_image(
-        BuildImageOptions {
-            dockerfile: "Dockerfile".to_string(),
-            t: "issue_55".to_string(),
-            pull: true,
-            rm: true,
-            ..Default::default()
-        },
+        BuildImageOptionsBuilder::default()
+            .dockerfile("Dockerfile")
+            .t("issue_55")
+            .pull("true")
+            .rm(true)
+            .build(),
         None,
         Some(http_body_util::Either::Left(Full::new(compressed.into()))),
     );
@@ -1672,9 +1675,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
 
     docker
         .import_image(
-            ImportImageOptions {
-                ..Default::default()
-            },
+            ImportImageOptionsBuilder::default().build(),
             body_full(buf.freeze()),
             Some(creds),
         )
@@ -1704,9 +1705,7 @@ async fn import_image_test_stream(docker: Docker) -> Result<(), Error> {
 
     docker
         .import_image_stream(
-            ImportImageOptions {
-                ..Default::default()
-            },
+            ImportImageOptionsBuilder::default().build(),
             res.map(|b| b.unwrap()),
             Some(creds),
         )

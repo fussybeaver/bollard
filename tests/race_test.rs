@@ -1,5 +1,5 @@
 #![allow(deprecated)]
-use bollard::{image::ListImagesOptions, Docker};
+use bollard::{query_parameters::ListImagesOptionsBuilder, Docker};
 use once_cell::sync::OnceCell;
 
 static DOCKER: OnceCell<Docker> = OnceCell::new();
@@ -47,10 +47,7 @@ async fn run_test(count: usize) {
     let docker = get_docker().unwrap();
     for _ in 0..count {
         let _ = &docker
-            .list_images(Some(ListImagesOptions::<String> {
-                all: true,
-                ..Default::default()
-            }))
+            .list_images(Some(ListImagesOptionsBuilder::default().all(true).build()))
             .await
             .unwrap();
     }

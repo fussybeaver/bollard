@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+use bollard::query_parameters::CreateImageOptionsBuilder;
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::stream::TryStreamExt;
@@ -7,7 +8,6 @@ use tokio::runtime::Runtime;
 
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
-use bollard::image::*;
 use bollard::Docker;
 
 #[allow(unused_macros)]
@@ -90,10 +90,11 @@ pub async fn create_container_hello_world(
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -145,10 +146,11 @@ pub async fn create_shell_daemon(
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -208,10 +210,11 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -268,10 +271,11 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<String, Error> 
 
     let result = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None

@@ -213,7 +213,7 @@ where
         };
 
         body.host_config = config.host_config;
-        body.networking_config = config.networking_config.map(Into::into);
+        body.networking_config = config.networking_config;
 
         body
     }
@@ -679,8 +679,8 @@ impl Docker {
     /// ```
     pub async fn create_container(
         &self,
-        config: impl Into<ContainerCreateBody>,
         options: Option<crate::query_parameters::CreateContainerOptions>,
+        config: impl Into<ContainerCreateBody>,
     ) -> Result<ContainerCreateResponse, Error> {
         let url = "/containers/create";
         let req = self.build_request(

@@ -3,7 +3,6 @@ extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
-use bollard::container::*;
 use bollard::errors::Error;
 use bollard::models::*;
 use bollard::network::*;

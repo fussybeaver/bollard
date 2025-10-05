@@ -255,13 +255,6 @@ where
     )
 }
 
-pub(crate) fn serialize_join_newlines<S>(t: &[&str], s: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    s.serialize_str(&t.join("\n"))
-}
-
 #[cfg(feature = "time")]
 pub fn deserialize_rfc3339<'de, D: serde::Deserializer<'de>>(
     d: D,
