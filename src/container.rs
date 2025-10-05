@@ -6,10 +6,14 @@ use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::{body::Bytes, Method};
+use serde::Serialize;
+use serde_derive::Deserialize;
 use tokio::io::AsyncWrite;
 use tokio_util::codec::FramedRead;
 
+use std::collections::HashMap;
 use std::fmt;
+use std::hash::Hash;
 use std::pin::Pin;
 
 use super::Docker;
@@ -17,6 +21,284 @@ use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 use crate::read::NewlineLogOutputDecoder;
+
+/// Container to create.
+/// Note: the swagger codegen is unable to generate this type due to lacking support for `AllOf`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Config<T>
+where
+    T: Into<String> + Eq + Hash,
+{
+    /// The hostname to use for the container, as a valid RFC 1123 hostname.
+    #[serde(rename = "Hostname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<T>,
+
+    /// The domain name to use for the container.
+    #[serde(rename = "Domainname")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domainname: Option<T>,
+
+    /// The user that commands are run as inside the container.
+    #[serde(rename = "User")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<T>,
+
+    /// Whether to attach to `stdin`.
+    #[serde(rename = "AttachStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stdin: Option<bool>,
+
+    /// Whether to attach to `stdout`.
+    #[serde(rename = "AttachStdout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stdout: Option<bool>,
+
+    /// Whether to attach to `stderr`.
+    #[serde(rename = "AttachStderr")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_stderr: Option<bool>,
+
+    /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}`
+    #[serde(rename = "ExposedPorts")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exposed_ports: Option<HashMap<T, HashMap<(), ()>>>,
+
+    /// Attach standard streams to a TTY, including `stdin` if it is not closed.
+    #[serde(rename = "Tty")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<bool>,
+
+    /// Open `stdin`
+    #[serde(rename = "OpenStdin")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_stdin: Option<bool>,
+
+    /// Close `stdin` after one attached client disconnects
+    #[serde(rename = "StdinOnce")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin_once: Option<bool>,
+
+    /// A list of environment variables to set inside the container in the form `[\"VAR=value\", ...]`. A variable without `=` is removed from the environment, rather than to have an empty value.
+    #[serde(rename = "Env")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<T>>,
+
+    /// Command to run specified as a string or an array of strings.
+    #[serde(rename = "Cmd")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<Vec<T>>,
+
+    /// A TEST to perform TO Check that the container is healthy.
+    #[serde(rename = "Healthcheck")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub healthcheck: Option<HealthConfig>,
+
+    /// Command is already escaped (Windows only)
+    #[serde(rename = "ArgsEscaped")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args_escaped: Option<bool>,
+
+    /// The name of the image to use when creating the container
+    #[serde(rename = "Image")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<T>,
+
+    /// An object mapping mount point paths inside the container to empty objects.
+    #[serde(rename = "Volumes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
+
+    /// The working directory for commands to run in.
+    #[serde(rename = "WorkingDir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<T>,
+
+    /// The entry point for the container as a string or an array of strings.  If the array consists of exactly one empty string (`[\"\"]`) then the entry point is reset to system default (i.e., the entry point used by docker when there is no `ENTRYPOINT` instruction in the `Dockerfile`).
+    #[serde(rename = "Entrypoint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Vec<T>>,
+
+    /// Disable networking for the container.
+    #[serde(rename = "NetworkDisabled")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_disabled: Option<bool>,
+
+    /// MAC address of the container.
+    #[serde(rename = "MacAddress")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<T>,
+
+    /// `ONBUILD` metadata that were defined in the image's `Dockerfile`.
+    #[serde(rename = "OnBuild")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_build: Option<Vec<T>>,
+
+    /// User-defined key/value metadata.
+    #[serde(rename = "Labels")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<HashMap<T, T>>,
+
+    /// Signal to stop a container as a string or unsigned integer.
+    #[serde(rename = "StopSignal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_signal: Option<T>,
+
+    /// Timeout to stop a container in seconds.
+    #[serde(rename = "StopTimeout")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_timeout: Option<i64>,
+
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
+    #[serde(rename = "Shell")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<Vec<T>>,
+
+    /// Container configuration that depends on the host we are running on.
+    /// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
+    #[serde(rename = "HostConfig")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_config: Option<HostConfig>,
+
+    /// This container's networking configuration.
+    #[serde(rename = "NetworkingConfig")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub networking_config: Option<NetworkingConfig>,
+}
+
+impl<T> From<Config<T>> for ContainerCreateBody
+where
+    T: Into<String> + Eq + Hash + std::fmt::Debug,
+{
+    fn from(config: Config<T>) -> Self {
+        let mut body = ContainerCreateBody {
+            hostname: config.hostname.map(Into::into),
+            domainname: config.domainname.map(Into::into),
+            user: config.user.map(Into::into),
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            exposed_ports: config
+                .exposed_ports
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            env: config.env.map(|v| v.into_iter().map(Into::into).collect()),
+            cmd: config.cmd.map(|v| v.into_iter().map(Into::into).collect()),
+            healthcheck: config.healthcheck,
+            args_escaped: config.args_escaped,
+            image: config.image.map(Into::into),
+            volumes: config
+                .volumes
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            working_dir: config.working_dir.map(Into::into),
+            entrypoint: config
+                .entrypoint
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            network_disabled: config.network_disabled,
+            mac_address: config.mac_address.map(Into::into),
+            on_build: config
+                .on_build
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            labels: config
+                .labels
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v.into())).collect()),
+            stop_signal: config.stop_signal.map(Into::into),
+            stop_timeout: config.stop_timeout,
+            shell: config
+                .shell
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            ..Default::default()
+        };
+
+        body.host_config = config.host_config;
+        body.networking_config = config.networking_config.map(Into::into);
+
+        body
+    }
+}
+
+impl<T> From<Config<T>> for ContainerConfig
+where
+    T: Into<String> + Eq + Hash + std::fmt::Debug,
+{
+    fn from(config: Config<T>) -> Self {
+        ContainerConfig {
+            hostname: config.hostname.map(Into::into),
+            domainname: config.domainname.map(Into::into),
+            user: config.user.map(Into::into),
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            exposed_ports: config
+                .exposed_ports
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            env: config.env.map(|v| v.into_iter().map(Into::into).collect()),
+            cmd: config.cmd.map(|v| v.into_iter().map(Into::into).collect()),
+            healthcheck: config.healthcheck,
+            args_escaped: config.args_escaped,
+            image: config.image.map(Into::into),
+            volumes: config
+                .volumes
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+            working_dir: config.working_dir.map(Into::into),
+            entrypoint: config
+                .entrypoint
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            network_disabled: config.network_disabled,
+            mac_address: config.mac_address.map(Into::into),
+            on_build: config
+                .on_build
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            labels: config
+                .labels
+                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v.into())).collect()),
+            stop_signal: config.stop_signal.map(Into::into),
+            stop_timeout: config.stop_timeout,
+            shell: config
+                .shell
+                .map(|v| v.into_iter().map(Into::into).collect()),
+        }
+    }
+}
+
+impl From<ContainerConfig> for Config<String> {
+    fn from(container: ContainerConfig) -> Self {
+        Config {
+            hostname: container.hostname,
+            domainname: container.domainname,
+            user: container.user,
+            attach_stdin: container.attach_stdin,
+            attach_stdout: container.attach_stdout,
+            attach_stderr: container.attach_stderr,
+            exposed_ports: container.exposed_ports,
+            tty: container.tty,
+            open_stdin: container.open_stdin,
+            stdin_once: container.stdin_once,
+            env: container.env,
+            cmd: container.cmd,
+            healthcheck: container.healthcheck,
+            args_escaped: container.args_escaped,
+            image: container.image,
+            volumes: container.volumes,
+            working_dir: container.working_dir,
+            entrypoint: container.entrypoint,
+            network_disabled: container.network_disabled,
+            mac_address: container.mac_address,
+            on_build: container.on_build,
+            labels: container.labels,
+            stop_signal: container.stop_signal,
+            stop_timeout: container.stop_timeout,
+            shell: container.shell,
+            host_config: None,
+            networking_config: None,
+        }
+    }
+}
 
 /// Results type for the [Attach Container API](Docker::attach_container())
 pub struct AttachContainerResults {
@@ -77,6 +359,235 @@ impl LogOutput {
     }
 }
 
+/// Configuration for the [Update Container API](Docker::update_container())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::UpdateContainerOptions;
+/// use std::default::Default;
+///
+/// UpdateContainerOptions::<String> {
+///     memory: Some(314572800),
+///     memory_swap: Some(314572800),
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct UpdateContainerOptions<T>
+where
+    T: Into<String> + Eq + Hash,
+{
+    /// An integer value representing this container's relative CPU weight versus other containers.
+    #[serde(rename = "CpuShares")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_shares: Option<isize>,
+
+    /// Memory limit in bytes.
+    #[serde(rename = "Memory")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<i64>,
+
+    /// Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.
+    #[serde(rename = "CgroupParent")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cgroup_parent: Option<T>,
+
+    /// Block IO weight (relative weight).
+    #[serde(rename = "BlkioWeight")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_weight: Option<u16>,
+
+    /// Block IO weight (relative device weight) in the form `[{\"Path\": \"device_path\", \"Weight\": weight}]`.
+    #[serde(rename = "BlkioWeightDevice")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_weight_device: Option<Vec<ResourcesBlkioWeightDevice>>,
+
+    /// Limit read rate (bytes per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceReadBps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_read_bps: Option<Vec<ThrottleDevice>>,
+
+    /// Limit write rate (bytes per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceWriteBps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_write_bps: Option<Vec<ThrottleDevice>>,
+
+    /// Limit read rate (IO per second) from a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceReadIOps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_read_i_ops: Option<Vec<ThrottleDevice>>,
+
+    /// Limit write rate (IO per second) to a device, in the form `[{\"Path\": \"device_path\", \"Rate\": rate}]`.
+    #[serde(rename = "BlkioDeviceWriteIOps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blkio_device_write_i_ops: Option<Vec<ThrottleDevice>>,
+
+    /// The length of a CPU period in microseconds.
+    #[serde(rename = "CpuPeriod")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_period: Option<i64>,
+
+    /// Microseconds of CPU time that the container can get in a CPU period.
+    #[serde(rename = "CpuQuota")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_quota: Option<i64>,
+
+    /// The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    #[serde(rename = "CpuRealtimePeriod")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_realtime_period: Option<i64>,
+
+    /// The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.
+    #[serde(rename = "CpuRealtimeRuntime")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_realtime_runtime: Option<i64>,
+
+    /// CPUs in which to allow execution (e.g., `0-3`, `0,1`)
+    #[serde(rename = "CpusetCpus")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuset_cpus: Option<T>,
+
+    /// Memory nodes (MEMs) in which to allow execution (0-3, 0,1). Only effective on NUMA systems.
+    #[serde(rename = "CpusetMems")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpuset_mems: Option<T>,
+
+    /// A list of devices to add to the container.
+    #[serde(rename = "Devices")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub devices: Option<Vec<DeviceMapping>>,
+
+    /// a list of cgroup rules to apply to the container
+    #[serde(rename = "DeviceCgroupRules")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_cgroup_rules: Option<Vec<T>>,
+
+    /// a list of requests for devices to be sent to device drivers
+    #[serde(rename = "DeviceRequests")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_requests: Option<Vec<DeviceRequest>>,
+
+    /// Hard limit for kernel TCP buffer memory (in bytes).
+    #[serde(rename = "KernelMemoryTCP")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kernel_memory_tcp: Option<i64>,
+
+    /// Memory soft limit in bytes.
+    #[serde(rename = "MemoryReservation")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_reservation: Option<i64>,
+
+    /// Total memory limit (memory + swap). Set as `-1` to enable unlimited swap.
+    #[serde(rename = "MemorySwap")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_swap: Option<i64>,
+
+    /// Tune a container's memory swappiness behavior. Accepts an integer between 0 and 100.
+    #[serde(rename = "MemorySwappiness")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_swappiness: Option<i64>,
+
+    /// CPU quota in units of 10<sup>-9</sup> CPUs.
+    #[serde(rename = "NanoCpus")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nano_cpus: Option<i64>,
+
+    /// Disable OOM Killer for the container.
+    #[serde(rename = "OomKillDisable")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oom_kill_disable: Option<bool>,
+
+    /// Run an init inside the container that forwards signals and reaps processes. This field is omitted if empty, and the default (as configured on the daemon) is used.
+    #[serde(rename = "Init")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub init: Option<bool>,
+
+    /// Tune a container's PIDs limit. Set `0` or `-1` for unlimited, or `null` to not change.
+    #[serde(rename = "PidsLimit")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pids_limit: Option<i64>,
+
+    /// A list of resource limits to set in the container. For example: `{\"Name\": \"nofile\", \"Soft\": 1024, \"Hard\": 2048}`\"
+    #[serde(rename = "Ulimits")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ulimits: Option<Vec<ResourcesUlimits>>,
+
+    /// The number of usable CPUs (Windows only).  On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
+    #[serde(rename = "CpuCount")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_count: Option<i64>,
+
+    /// The usable percentage of the available CPUs (Windows only).  On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.
+    #[serde(rename = "CpuPercent")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<i64>,
+
+    /// Maximum IOps for the container system drive (Windows only)
+    #[serde(rename = "IOMaximumIOps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub io_maximum_iops: Option<i64>,
+
+    /// Maximum IO in bytes per second for the container system drive (Windows only)
+    #[serde(rename = "IOMaximumBandwidth")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub io_maximum_bandwidth: Option<i64>,
+
+    /// The behavior to apply when the container exits. The default is not to restart.
+    ///
+    /// An ever increasing delay (double the previous delay, starting at 100ms) is added before
+    /// each restart to prevent flooding the server.
+    pub restart_policy: Option<RestartPolicy>,
+}
+
+impl<T> From<UpdateContainerOptions<T>> for ContainerUpdateBody
+where
+    T: Into<String> + Eq + Hash,
+{
+    fn from(opts: UpdateContainerOptions<T>) -> Self {
+        let mut container_update = ContainerUpdateBody {
+            cpu_shares: opts.cpu_shares.map(|x| x as i64),
+            memory: opts.memory,
+            cgroup_parent: opts.cgroup_parent.map(T::into),
+            blkio_weight: opts.blkio_weight,
+            blkio_weight_device: opts.blkio_weight_device,
+            blkio_device_read_bps: opts.blkio_device_read_bps,
+            blkio_device_write_bps: opts.blkio_device_write_bps,
+            blkio_device_read_iops: opts.blkio_device_read_i_ops,
+            blkio_device_write_iops: opts.blkio_device_write_i_ops,
+            cpu_period: opts.cpu_period,
+            cpu_quota: opts.cpu_quota,
+            cpu_realtime_period: opts.cpu_realtime_period,
+            cpu_realtime_runtime: opts.cpu_realtime_runtime,
+            cpuset_cpus: opts.cpuset_cpus.map(T::into),
+            cpuset_mems: opts.cpuset_mems.map(T::into),
+            devices: opts.devices,
+            device_cgroup_rules: opts
+                .device_cgroup_rules
+                .map(|v| v.into_iter().map(T::into).collect()),
+            device_requests: opts.device_requests,
+            kernel_memory_tcp: opts.kernel_memory_tcp,
+            memory_reservation: opts.memory_reservation,
+            memory_swap: opts.memory_swap,
+            memory_swappiness: opts.memory_swappiness,
+            nano_cpus: opts.nano_cpus,
+            oom_kill_disable: opts.oom_kill_disable,
+            init: opts.init,
+            pids_limit: opts.pids_limit,
+            ulimits: opts.ulimits,
+            cpu_count: opts.cpu_count,
+            cpu_percent: opts.cpu_percent,
+            io_maximum_iops: opts.io_maximum_iops,
+            io_maximum_bandwidth: opts.io_maximum_bandwidth,
+            ..Default::default()
+        };
+
+        container_update.restart_policy = opts.restart_policy;
+
+        container_update
+    }
+}
 impl Docker {
     /// ---
     ///
@@ -168,15 +679,15 @@ impl Docker {
     /// ```
     pub async fn create_container(
         &self,
+        config: impl Into<ContainerCreateBody>,
         options: Option<crate::query_parameters::CreateContainerOptions>,
-        config: ContainerCreateBody,
     ) -> Result<ContainerCreateResponse, Error> {
         let url = "/containers/create";
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
             options,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_value(req).await
@@ -840,7 +1351,7 @@ impl Docker {
     pub async fn update_container(
         &self,
         container_name: &str,
-        config: ContainerUpdateBody,
+        config: impl Into<ContainerUpdateBody>,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/update");
 
@@ -848,7 +1359,7 @@ impl Docker {
             &url,
             Builder::new().method(Method::POST),
             None::<String>,
-            Docker::serialize_payload(Some(config)),
+            Docker::serialize_payload(Some(config.into())),
         );
 
         self.process_into_unit(req).await

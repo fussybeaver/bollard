@@ -522,13 +522,13 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
 
     let _ = &docker
         .create_container(
+            Config {
+                image: Some(&image[..]),
             Some(
                 CreateContainerOptionsBuilder::default()
                     .name("integration_test_archive_container")
                     .build(),
             ),
-            ContainerCreateBody {
-                image: Some(image.into()),
                 ..Default::default()
             },
         )
@@ -699,13 +699,13 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .create_container(
+            Config {
+                image: Some(&image[..]),
             Some(
                 CreateContainerOptionsBuilder::default()
                     .name("integration_test_mount_volume_container")
                     .build(),
             ),
-            ContainerCreateBody {
-                image: Some(image.as_str().into()),
                 host_config: Some(host_config),
                 ..Default::default()
             },
