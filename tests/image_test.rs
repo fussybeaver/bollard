@@ -1,4 +1,6 @@
 use bollard::models::{ContainerConfig, ContainerCreateBody};
+#[cfg(feature = "buildkit")]
+use bollard::query_parameters::BuilderVersion;
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
     CreateImageOptionsBuilder, ImportImageOptionsBuilder, ListImagesOptionsBuilder,
@@ -481,16 +483,14 @@ ENTRYPOINT ls buildkit-bollard.txt
 
         &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_buildkit_image".to_string(),
-                    pull: true,
-                    version: BuilderVersion::BuilderBuildKit,
-                    rm: true,
-                    #[cfg(feature = "buildkit")]
-                    session: Some(String::from(id)),
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_buildkit_image")
+                    .pull("true")
+                    .version(BuilderVersion::BuilderBuildKit)
+                    .rm(true)
+                    .session(id)
+                    .build(),
                 Some(creds_hsh),
                 Some(body_stream(payload)),
             )
@@ -499,16 +499,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     } else {
         &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_buildkit_image".to_string(),
-                    pull: true,
-                    version: BuilderVersion::BuilderBuildKit,
-                    rm: true,
-                    #[cfg(feature = "buildkit")]
-                    session: Some(String::from(id)),
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_buildkit_image")
+                    .pull("true")
+                    .version(BuilderVersion::BuilderBuildKit)
+                    .rm(true)
+                    .session(id)
+                    .build(),
                 Some(creds_hsh),
                 Some(http_body_util::Either::Left(Full::new(compressed.into()))),
             )
@@ -533,11 +531,12 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_image",
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_buildkit_image")
+                    .build(),
+            ),
+            bollard::container::Config {
                 image: Some("integration_test_build_buildkit_image"),
                 cmd: Some(vec!["ls", "/buildkit-bollard.txt"]),
                 ..Default::default()
@@ -546,17 +545,11 @@ ENTRYPOINT ls buildkit-bollard.txt
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_image",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_buildkit_image", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_image",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_buildkit_image", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -566,18 +559,11 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_image",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_buildkit_image", None)
         .await?;
 
     let _ = &docker
-        .remove_image(
-            "integration_test_build_buildkit_image",
-            None::<RemoveImageOptions>,
-            None,
-        )
+        .remove_image("integration_test_build_buildkit_image", None, None)
         .await?;
 
     Ok(())
@@ -608,16 +594,13 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit")]
-                session: None,
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .build(),
             None,
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -697,11 +680,12 @@ COPY --from=builder1 /token /",
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_secret",
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_buildkit_secret")
+                    .build(),
+            ),
+            bollard::container::Config {
                 image: Some("integration_test_build_buildkit_secret"),
                 cmd: Some(vec!["cat", "/token"]),
                 ..Default::default()
@@ -710,17 +694,11 @@ COPY --from=builder1 /token /",
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_secret",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_buildkit_secret", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_secret",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_buildkit_secret", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -733,13 +711,14 @@ COPY --from=builder1 /token /",
     let vec = &docker
         .logs(
             "integration_test_build_buildkit_secret",
-            Some(bollard::container::LogsOptions {
-                follow: true,
-                stdout: true,
-                stderr: false,
-                tail: "all",
-                ..Default::default()
-            }),
+            Some(
+                bollard::query_parameters::LogsOptionsBuilder::default()
+                    .follow(true)
+                    .stdout(true)
+                    .stderr(false)
+                    .tail("all")
+                    .build(),
+            ),
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -749,18 +728,11 @@ COPY --from=builder1 /token /",
     assert_eq!(format!("{value}"), token.to_string());
 
     let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_secret",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_buildkit_secret", None)
         .await?;
 
     let _ = &docker
-        .remove_image(
-            "integration_test_build_buildkit_secret",
-            None::<RemoveImageOptions>,
-            None,
-        )
+        .remove_image("integration_test_build_buildkit_secret", None, None)
         .await?;
 
     tokio::fs::remove_file(temp_path).await?;
@@ -821,9 +793,7 @@ RUN touch bollard.txt
     .await;
 
     assert!(res.is_ok());
-    let _ = &docker
-        .remove_image(name, None::<RemoveImageOptions>, None)
-        .await?;
+    let _ = &docker.remove_image(name, None, None).await?;
 
     Ok(())
 }
@@ -888,11 +858,12 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_named_context",
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_buildkit_named_context")
+                    .build(),
+            ),
+            bollard::container::Config {
                 image: Some("integration_test_build_buildkit_named_context"),
                 cmd: Some(vec!["cat", "/etc/alpine-release"]),
                 ..Default::default()
@@ -901,17 +872,11 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_named_context",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_buildkit_named_context", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_named_context",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_buildkit_named_context", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -922,18 +887,11 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_named_context",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_buildkit_named_context", None)
         .await?;
 
     let _ = &docker
-        .remove_image(
-            "integration_test_build_buildkit_named_context",
-            None::<RemoveImageOptions>,
-            None,
-        )
+        .remove_image("integration_test_build_buildkit_named_context", None, None)
         .await?;
 
     Ok(())
@@ -1006,11 +964,12 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_ssh",
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_buildkit_ssh")
+                    .build(),
+            ),
+            bollard::container::Config {
                 image: Some("integration_test_build_buildkit_ssh"),
                 cmd: Some(vec!["ls", "/config"]),
                 ..Default::default()
@@ -1019,17 +978,11 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_ssh",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_buildkit_ssh", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_ssh",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_buildkit_ssh", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -1040,18 +993,11 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     assert_eq!(first.status_code, 0);
 
     let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_ssh",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_buildkit_ssh", None)
         .await?;
 
     let _ = &docker
-        .remove_image(
-            "integration_test_build_buildkit_ssh",
-            None::<RemoveImageOptions>,
-            None,
-        )
+        .remove_image("integration_test_build_buildkit_ssh", None, None)
         .await?;
 
     Ok(())
@@ -1131,11 +1077,12 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     let _ = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_image_inline_driver",
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_build_buildkit_image_inline_driver")
+                    .build(),
+            ),
+            bollard::container::Config {
                 image: Some("integration_test_build_buildkit_image_inline_driver"),
                 cmd: Some(vec!["ls", "/buildkit-bollard.txt"]),
                 ..Default::default()
@@ -1144,17 +1091,11 @@ ENTRYPOINT ls buildkit-bollard.txt
         .await?;
 
     let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_image_inline_driver",
-            None::<StartContainerOptions<String>>,
-        )
+        .start_container("integration_test_build_buildkit_image_inline_driver", None)
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_image_inline_driver",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_buildkit_image_inline_driver", None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -1164,16 +1105,13 @@ ENTRYPOINT ls buildkit-bollard.txt
     }
     assert_eq!(first.status_code, 0);
     let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_image_inline_driver",
-            None::<RemoveContainerOptions>,
-        )
+        .remove_container("integration_test_build_buildkit_image_inline_driver", None)
         .await?;
 
     let _ = &docker
         .remove_image(
             "integration_test_build_buildkit_image_inline_driver",
-            None::<RemoveImageOptions>,
+            None,
             None,
         )
         .await?;
@@ -1216,9 +1154,7 @@ RUN touch bollard.txt
             .await;
 
     assert!(res.is_ok());
-    let _ = &docker
-        .remove_image(name, None::<RemoveImageOptions>, None)
-        .await?;
+    let _ = &docker.remove_image(name, None, None).await?;
 
     Ok(())
 }
@@ -1268,20 +1204,17 @@ COPY --from=builder message-2.txt .
     let id = "build_buildkit_image_outputs_tar_test";
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit")]
-                session: Some(String::from(id)),
-                #[cfg(feature = "buildkit")]
-                outputs: Some(ImageBuildOutput::Tar(
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .outputs(bollard_stubs::query_parameters::ImageBuildOutput::Tar(
                     "/tmp/buildkit-outputs.tar".to_string(),
-                )),
-                ..Default::default()
-            },
+                ))
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1377,18 +1310,17 @@ RUN touch empty.txt
     let id = "build_buildkit_image_outputs_local_test";
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit")]
-                session: Some(String::from(id)),
-                #[cfg(feature = "buildkit")]
-                outputs: Some(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string())),
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .outputs(bollard_stubs::query_parameters::ImageBuildOutput::Local(
+                    "/tmp/buildkit-outputs".to_string(),
+                ))
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1464,16 +1396,14 @@ RUN echo bollard > bollard.txt
 
     let _ = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_prune_build".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit")]
-                session: Some(String::from(id)),
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_prune_build")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1483,11 +1413,7 @@ RUN echo bollard > bollard.txt
     // Remove the image before running prune_build since the bytes of bollard.txt are stored in
     // the build cache and shared with the image
     let _ = &docker
-        .remove_image(
-            "integration_test_prune_build",
-            None::<RemoveImageOptions>,
-            None,
-        )
+        .remove_image("integration_test_prune_build", None, None)
         .await?;
 
     let old_cache_size = &docker
@@ -1497,9 +1423,7 @@ RUN echo bollard > bollard.txt
         .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
         .unwrap();
 
-    let prune_info = docker
-        .prune_build(None::<PruneBuildOptions<String>>)
-        .await?;
+    let prune_info = docker.prune_build(None).await?;
 
     let new_cache_size = &docker
         .df(None::<DataUsageOptions>)
