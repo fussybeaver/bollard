@@ -140,7 +140,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Version](Version), wrapped in a Future.
+    ///  - [Version](SystemVersion), wrapped in a Future.
     ///
     /// # Examples
     ///

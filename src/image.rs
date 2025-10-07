@@ -38,18 +38,20 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [List Images Options](ListImagesOptions) struct.
+    ///  - An optional [ListImagesOptions](bollard_stubs::query_parameters::ListImagesOptions)
+    ///    struct constructed from a
+    ///    [ListImagesOptionsBuilder](bollard_stubs::query_parameters::ListImagesOptionsBuilder).
     ///
     /// # Returns
     ///
-    ///  - Vector of [API Images](ImageSummary), wrapped in a Future.
+    ///  - Vector of [APIImages](ImageSummary), wrapped in a Future.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::ListImagesOptions;
+    /// use bollard::query_parameters::ListImagesOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
@@ -57,11 +59,10 @@ impl Docker {
     /// let mut filters = HashMap::new();
     /// filters.insert("dangling", vec!["true"]);
     ///
-    /// let options = Some(ListImagesOptions{
-    ///   all: true,
-    ///   filters,
-    ///   ..Default::default()
-    /// });
+    /// let options = Some(ListImagesOptionsBuilder::default()
+    ///     .all(true)
+    ///     .filters(&filters)
+    ///     .build());
     ///
     /// docker.list_images(options);
     /// ```
@@ -89,14 +90,20 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [Create Image Options](CreateImageOptions) struct.
+    ///  - An optional [CreateImageOptions](bollard_stubs::query_parameters::CreateImageOptions)
+    ///    struct constructed from a
+    ///    [CreateImageOptionsBuilder](bollard_stubs::query_parameters::CreateImageOptionsBuilder).
+    ///
     ///  - An optional request body consisting of a tar or tar.gz archive, or a stream
     ///    containing the root file system for the image. If this argument is used,
     ///    the value of the `from_src` option must be "-".
     ///
+    ///  - An optional [DockerCredentials](DockerCredentials) credentials
+    ///    configuration if the registry is private.
+    ///
     /// # Returns
     ///
-    ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
+    ///  - [CreateImageInfo](CreateImageInfo), wrapped in an asynchronous
     ///    Stream.
     ///
     /// # Examples
@@ -104,14 +111,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::CreateImageOptions;
+    /// use bollard::query_parameters::CreateImageOptionsBuilder;
     ///
     /// use std::default::Default;
     ///
-    /// let options = Some(CreateImageOptions{
-    ///   from_image: "hello-world",
-    ///   ..Default::default()
-    /// });
+    /// let options = Some(CreateImageOptionsBuilder::default()
+    ///     .from_image("hello-world")
+    ///     .build());
     ///
     /// docker.create_image(options, None, None);
     ///
@@ -233,27 +239,29 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    /// - An optional [Prune Images Options](PruneImagesOptions) struct.
+    /// - An optional [PruneImagesOptions](bollard_stubs::query_parameters::PruneImagesOptions)
+    ///   struct constructed from a
+    ///   [PruneImagesOptionsBuilder](bollard_stubs::query_parameters::PruneImagesOptionsBuilder).
     ///
     /// # Returns
     ///
-    ///  - a [Prune Image Response](ImagePruneResponse), wrapped in a Future.
+    ///  - a [ImagePruneResponse](ImagePruneResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::PruneImagesOptions;
+    /// use bollard::query_parameters::PruneImagesOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("until", vec!["10m"]);
     ///
-    /// let options = Some(PruneImagesOptions {
-    ///   filters
-    /// });
+    /// let options = Some(PruneImagesOptionsBuilder::default()
+    ///     .filters(&filters)
+    ///     .build());
     ///
     /// docker.prune_images(options);
     /// ```
@@ -285,7 +293,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [History Response Item](HistoryResponseItem), wrapped in a
+    ///  - Vector of [HistoryResponseItem](HistoryResponseItem), wrapped in a
     ///    Future.
     ///
     /// # Examples
@@ -317,11 +325,13 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Search Image Options](SearchImagesOptions) struct.
+    ///  - [SearchImagesOptions](bollard_stubs::query_parameters::SearchImagesOptions) struct
+    ///    constructed from a
+    ///    [SearchImagesOptionsBuilder](bollard_stubs::query_parameters::SearchImagesOptionsBuilder).
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image Search Response Item](ImageSearchResponseItem) results, wrapped in a
+    ///  - Vector of [ImageSearchResponseItem](ImageSearchResponseItem) results, wrapped in a
     ///    Future.
     ///
     /// # Examples
@@ -329,7 +339,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     ///
-    /// use bollard::image::SearchImagesOptions;
+    /// use bollard::query_parameters::SearchImagesOptionsBuilder;
     /// use std::default::Default;
     /// use std::collections::HashMap;
     ///
@@ -337,11 +347,10 @@ impl Docker {
     /// filters.insert("until", vec!["10m"]);
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let search_options = SearchImagesOptions {
-    ///     term: "hello-world",
-    ///     filters,
-    ///     ..Default::default()
-    /// };
+    /// let search_options = SearchImagesOptionsBuilder::default()
+    ///     .term("hello-world")
+    ///     .filters(&filters)
+    ///     .build();
     ///
     /// docker.search_images(search_options);
     /// ```
@@ -370,11 +379,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - An optional [Remove Image Options](RemoveImageOptions) struct.
+    ///  - An optional [RemoveImageOptions](bollard_stubs::query_parameters::RemoveImageOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - Vector of [Image Delete Response Item](ImageDeleteResponseItem), wrapped in a
+    ///  - Vector of [ImageDeleteResponseItem](ImageDeleteResponseItem), wrapped in a
     ///    Future.
     ///
     /// # Examples
@@ -382,14 +391,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     ///
-    /// use bollard::image::RemoveImageOptions;
+    /// use bollard::query_parameters::RemoveImageOptionsBuilder;
     /// use std::default::Default;
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let remove_options = Some(RemoveImageOptions {
-    ///     force: true,
-    ///     ..Default::default()
-    /// });
+    /// let remove_options = Some(RemoveImageOptionsBuilder::default()
+    ///     .force(true)
+    ///     .build());
     ///
     /// docker.remove_image("hello-world", remove_options, None);
     /// ```
@@ -420,7 +428,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Tag Image Options](TagImageOptions) struct.
+    ///  - Optional [TagImageOptions](bollard_stubs::query_parameters::TagImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -431,14 +439,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     ///
-    /// use bollard::image::TagImageOptions;
+    /// use bollard::query_parameters::TagImageOptionsBuilder;
     /// use std::default::Default;
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let tag_options = Some(TagImageOptions {
-    ///     tag: "v1.0.1",
-    ///     ..Default::default()
-    /// });
+    /// let tag_options = Some(TagImageOptionsBuilder::default()
+    ///     .tag("v1.0.1")
+    ///     .build());
     ///
     /// docker.tag_image("hello-world", tag_options);
     /// ```
@@ -468,8 +475,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Push Image Options](PushImageOptions) struct.
-    ///  - Optional [Docker Credentials](DockerCredentials) struct.
+    ///  - Optional [PushImageOptions](bollard_stubs::query_parameters::PushImageOptions) struct.
+    ///  - Optional [DockerCredentials](DockerCredentials) struct.
     ///
     /// # Returns
     ///
@@ -481,14 +488,14 @@ impl Docker {
     /// # use bollard::Docker;
     ///
     /// use bollard::auth::DockerCredentials;
-    /// use bollard::image::PushImageOptions;
+    /// use bollard::query_parameters::PushImageOptionsBuilder;
     ///
     /// use std::default::Default;
     ///
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let push_options = Some(PushImageOptions {
-    ///     tag: "v1.0.1",
-    /// });
+    /// let push_options = Some(PushImageOptionsBuilder::default()
+    ///     .tag("v1.0.1")
+    ///     .build());
     ///
     /// let credentials = Some(DockerCredentials {
     ///     username: Some("Jack".to_string()),
@@ -536,7 +543,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Commit Container Options](CommitContainerOptions) struct.
+    ///  - [CommitContainerOptions](bollard_stubs::query_parameters::CommitContainerOptions) struct.
     ///  - Container [Config](Config) struct.
     ///
     /// # Returns
@@ -548,18 +555,17 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::CommitContainerOptions;
-    /// use bollard::container::Config;
+    /// use bollard::query_parameters::CommitContainerOptionsBuilder;
+    /// use bollard::models::ContainerConfig;
     ///
     /// use std::default::Default;
     ///
-    /// let options = CommitContainerOptions{
-    ///     container: "my-running-container",
-    ///     pause: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = CommitContainerOptionsBuilder::default()
+    ///     .container("my-running-container")
+    ///     .pause(true)
+    ///     .build();
     ///
-    /// let config = Config::<String> {
+    /// let config = ContainerConfig {
     ///     ..Default::default()
     /// };
     ///
@@ -596,14 +602,14 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Build Image Options](BuildImageOptions) struct.
-    ///  - Optional [Docker Credentials](DockerCredentials) struct.
+    ///  - [BuildImageOptions](bollard_stubs::query_parameters::BuildImageOptions) struct.
+    ///  - Optional [DockerCredentials](DockerCredentials) struct.
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
     ///    gzip, bzip2, xz. Optional [Hyper Body](hyper::body::Body).
     ///
     /// # Returns
     ///
-    ///  - [Create Image Info](CreateImageInfo), wrapped in an asynchronous
+    ///  - [CreateImageInfo](CreateImageInfo), wrapped in an asynchronous
     ///    Stream.
     ///
     /// # Examples
@@ -613,7 +619,7 @@ impl Docker {
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::BuildImageOptions;
+    /// use bollard::query_parameters::BuildImageOptionsBuilder;
     /// use bollard::container::Config;
     /// use bollard::body_full;
     ///
@@ -621,12 +627,11 @@ impl Docker {
     /// use std::fs::File;
     /// use std::io::Read;
     ///
-    /// let options = BuildImageOptions{
-    ///     dockerfile: "Dockerfile",
-    ///     t: "my-image",
-    ///     rm: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = BuildImageOptionsBuilder::default()
+    ///     .dockerfile("Dockerfile")
+    ///     .t("my-image")
+    ///     .rm(true)
+    ///     .build();
     ///
     /// let mut file = File::open("tarball.tar.gz").unwrap();
     /// let mut contents = Vec::new();
@@ -640,7 +645,7 @@ impl Docker {
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::BuildImageOptions;
+    /// use bollard::query_parameters::BuildImageOptionsBuilder;
     /// use bollard::container::Config;
     /// use bollard::body_stream;
     ///
@@ -648,12 +653,11 @@ impl Docker {
     /// use std::fs::File;
     /// use std::io::Read;
     ///
-    /// let options = BuildImageOptions{
-    ///     dockerfile: "Dockerfile",
-    ///     t: "my-image",
-    ///     rm: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = BuildImageOptionsBuilder::default()
+    ///     .dockerfile("Dockerfile")
+    ///     .t("my-image")
+    ///     .rm(true)
+    ///     .build();
     ///
     /// # let mut file = File::open("tarball.tar.gz").unwrap();
     /// # let mut contents = Vec::new();
@@ -810,28 +814,27 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    /// - An optional [Prune Build Options](PruneBuildOptions) struct.
+    /// - An optional [PruneBuildOptions](bollard_stubs::query_parameters::PruneBuildOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - a [Prune Build Response](BuildPruneResponse), wrapped in a Future.
+    ///  - a [BuildPruneResponse](BuildPruneResponse), wrapped in a Future.
     ///
     /// # Examples
     ///
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::PruneBuildOptions;
+    /// use bollard::query_parameters::PruneBuildOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("until", vec!["10m"]);
     ///
-    /// let options = Some(PruneBuildOptions {
-    ///   filters,
-    ///   ..Default::default()
-    /// });
+    /// let options = Some(PruneBuildOptionsBuilder::default()
+    ///     .filters(&filters)
+    ///     .build());
     ///
     /// docker.prune_build(options);
     /// ```
@@ -920,11 +923,11 @@ impl Docker {
     /// endpoint](struct.Docker.html#method.export_image).
     ///
     /// # Arguments
-    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - [ImportImageOptions](bollard_stubs::query_parameters::ImportImageOptions) struct.
     ///
     /// # Returns
     ///
-    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
+    ///  - [BuildInfo](BuildInfo), wrapped in an asynchronous
     ///    Stream.
     ///
     /// # Examples
@@ -932,7 +935,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::ImportImageOptions;
+    /// use bollard::query_parameters::ImportImageOptionsBuilder;
     /// use bollard::errors::Error;
     /// use bollard::body_full;
     ///
@@ -942,9 +945,8 @@ impl Docker {
     /// use tokio::io::AsyncWriteExt;
     /// use tokio_util::codec;
     ///
-    /// let options = ImportImageOptions{
-    ///     ..Default::default()
-    /// };
+    /// let options = ImportImageOptionsBuilder::default()
+    ///     .build();
     ///
     /// async move {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
@@ -958,9 +960,8 @@ impl Docker {
     ///
     ///     let mut stream = docker
     ///         .import_image(
-    ///             ImportImageOptions {
-    ///                 ..Default::default()
-    ///             },
+    ///             ImportImageOptionsBuilder::default()
+    ///                 .build(),
     ///             body_full(bytes),
     ///             None,
     ///         );
@@ -1008,12 +1009,12 @@ impl Docker {
     /// endpoint](struct.Docker.html#method.export_image).
     ///
     /// # Arguments
-    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - [ImportImageOptions](bollard_stubs::query_parameters::ImportImageOptions) struct.
     ///  - Stream producing `Bytes` of the image
     ///
     /// # Returns
     ///
-    ///  - [Build Info](BuildInfo), wrapped in an asynchronous
+    ///  - [BuildInfo](BuildInfo), wrapped in an asynchronous
     ///    Stream.
     ///
     /// # Examples
@@ -1021,7 +1022,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::ImportImageOptions;
+    /// use bollard::query_parameters::ImportImageOptionsBuilder;
     /// use bollard::errors::Error;
     ///
     /// use std::default::Default;
@@ -1030,9 +1031,8 @@ impl Docker {
     /// use tokio::io::AsyncWriteExt;
     /// use tokio_util::codec;
     ///
-    /// let options = ImportImageOptions{
-    ///     ..Default::default()
-    /// };
+    /// let options = ImportImageOptionsBuilder::default()
+    ///     .build();
     ///
     /// async move {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
@@ -1043,9 +1043,8 @@ impl Docker {
     ///
     ///     let mut stream = docker
     ///         .import_image_stream(
-    ///             ImportImageOptions {
-    ///                 ..Default::default()
-    ///             },
+    ///             ImportImageOptionsBuilder::default()
+    ///                 .build(),
     ///             byte_stream,
     ///             None,
     ///         );

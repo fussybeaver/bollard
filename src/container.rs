@@ -597,7 +597,9 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListContainersOptions](ListContainersOptions) struct.
+    ///  - Optional [ListContainersOptions](bollard_stubs::query_parameters::ListContainersOptions)
+    ///    struct constructed from a
+    ///    [ListContainersOptionsBuilder](bollard_stubs::query_parameters::ListContainersOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -608,7 +610,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::ListContainersOptions;
+    /// use bollard::query_parameters::ListContainersOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
@@ -616,24 +618,20 @@ impl Docker {
     /// let mut filters = HashMap::new();
     /// filters.insert("health", vec!["unhealthy"]);
     ///
-    /// let options = Some(ListContainersOptions{
-    ///     all: true,
-    ///     filters,
-    ///     ..Default::default()
-    /// });
+    /// let options = ListContainersOptionsBuilder::default().all(true).filters(&filters).build();
     ///
-    /// docker.list_containers(options);
+    /// docker.list_containers(Some(options));
     /// ```
     pub async fn list_containers(
         &self,
-        options: Option<impl Into<crate::query_parameters::ListContainersOptions>>,
+        options: Option<crate::query_parameters::ListContainersOptions>,
     ) -> Result<Vec<ContainerSummary>, Error> {
         let url = "/containers/json";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -648,7 +646,11 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Create Container Options](CreateContainerOptions) struct.
+    ///  - Optional
+    ///    [CreateContainerOptions](bollard_stubs::query_parameters::CreateContainerOptions) struct
+    ///    constructed from a
+    ///    [CreateContainerOptionsBuilder](bollard_stubs::query_parameters::CreateContainerOptionsBuilder).
+    ///
     ///  - Container [Config](Config) struct.
     ///
     /// # Returns
@@ -660,14 +662,14 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::{CreateContainerOptions, Config};
+    /// use bollard::query_parameters::CreateContainerOptionsBuilder;
+    /// use bollard::container::Config;
     ///
     /// use std::default::Default;
     ///
-    /// let options = Some(CreateContainerOptions{
-    ///     name: "my-new-container",
-    ///     platform: None,
-    /// });
+    /// let options = Some(CreateContainerOptionsBuilder::default()
+    ///     .name("my-new-container")
+    ///     .build());
     ///
     /// let config = Config {
     ///     image: Some("hello-world"),
@@ -703,7 +705,10 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Start Container Options](StartContainerOptions) struct.
+    ///
+    ///  - Optional [StartContainerOptions](bollard_stubs::query_parameters::StartContainerOptions)
+    ///    struct constructed from a
+    ///    [StartContainerOptionsBuilder](bollard_stubs::query_parameters::StartContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -714,9 +719,9 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::StartContainerOptions;
+    /// use bollard::query_parameters::StartContainerOptionsBuilder;
     ///
-    /// docker.start_container("hello-world", None::<StartContainerOptions<String>>);
+    /// docker.start_container("hello-world", None);
     /// ```
     pub async fn start_container(
         &self,
@@ -744,7 +749,10 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stop Container Options](StopContainerOptions) struct.
+    ///
+    /// - Optional [StopContainerOptions](bollard_stubs::query_parameters::StopContainerOptions)
+    ///   struct constructed from a
+    ///   [StopContainerOptionsBuilder](bollard_stubs::query_parameters::StopContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -754,12 +762,10 @@ impl Docker {
     ///
     /// ```rust
     /// # use bollard::Docker;
-    /// use bollard::container::StopContainerOptions;
+    /// use bollard::query_parameters::StopContainerOptionsBuilder;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// let options = Some(StopContainerOptions{
-    ///     t: 30,
-    /// });
+    /// let options = Some(StopContainerOptionsBuilder::default().t(30).build());
     ///
     /// docker.stop_container("hello-world", options);
     /// ```
@@ -789,7 +795,10 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as a string slice.
-    /// - Optional [Remove Container Options](RemoveContainerOptions) struct.
+    /// - Optional
+    ///   [RemoveContainerOptions](bollard_stubs::query_parameters::RemoveContainerOptions) struct
+    ///   constructed from a
+    ///   [RemoveContainerOptionsBuilder](bollard_stubs::query_parameters::RemoveContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -801,14 +810,13 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RemoveContainerOptions;
+    /// use bollard::query_parameters::RemoveContainerOptionsBuilder;
     ///
     /// use std::default::Default;
     ///
-    /// let options = Some(RemoveContainerOptions{
-    ///     force: true,
-    ///     ..Default::default()
-    /// });
+    /// let options = Some(RemoveContainerOptionsBuilder::default()
+    ///     .force(true)
+    ///     .build());
     ///
     /// docker.remove_container("hello-world", options);
     /// ```
@@ -839,7 +847,9 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Wait Container Options](WaitContainerOptions) struct.
+    /// - Optional [WaitContainerOptions](bollard_stubs::query_parameters::WaitContainerOptions)
+    ///   struct constructed from a
+    ///   [WaitContainerOptionsBuilder](bollard_stubs::query_parameters::WaitContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -852,11 +862,11 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::WaitContainerOptions;
+    /// use bollard::query_parameters::WaitContainerOptionsBuilder;
     ///
-    /// let options = Some(WaitContainerOptions{
-    ///     condition: "not-running",
-    /// });
+    /// let options = Some(WaitContainerOptionsBuilder::default()
+    ///     .condition("not-running")
+    ///     .build());
     ///
     /// docker.wait_container("hello-world", options);
     /// ```
@@ -903,7 +913,10 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Attach Container Options](AttachContainerOptions) struct.
+    /// - Optional
+    ///   [AttachContainerOptions](bollard_stubs::query_parameters::AttachContainerOptions) struct
+    ///   constructed from a
+    ///   [AttachContainerOptionsBuilder](bollard_stubs::query_parameters::AttachContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -915,16 +928,16 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::AttachContainerOptions;
+    /// use bollard::query_parameters::AttachContainerOptionsBuilder;
     ///
-    /// let options = Some(AttachContainerOptions::<String>{
-    ///     stdin: Some(true),
-    ///     stdout: Some(true),
-    ///     stderr: Some(true),
-    ///     stream: Some(true),
-    ///     logs: Some(true),
-    ///     detach_keys: Some("ctrl-c".to_string()),
-    /// });
+    /// let options = Some(AttachContainerOptionsBuilder::default()
+    ///     .stdin(true)
+    ///     .stdout(true)
+    ///     .stderr(true)
+    ///     .stream(true)
+    ///     .logs(true)
+    ///     .detach_keys("ctrl-c")
+    ///     .build());
     ///
     /// docker.attach_container("hello-world", options);
     /// ```
@@ -963,7 +976,9 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - [Resize Container Tty Options](ResizeContainerTtyOptions) struct.
+    /// - [ResizeContainerTTYOptions](bollard_stubs::query_parameters::ResizeContainerTTYOptions)
+    ///   struct constructed from a
+    ///   [ResizeContainerTTYOptionsBuilder](bollard_stubs::query_parameters::ResizeContainerTTYOptionsBuilder).
     ///
     /// # Examples
     ///
@@ -971,12 +986,12 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::ResizeContainerTtyOptions;
+    /// use bollard::query_parameters::ResizeContainerTTYOptionsBuilder;
     ///
-    /// let options = ResizeContainerTtyOptions {
-    ///     width: 50,
-    ///     height: 20,
-    /// };
+    /// let options = ResizeContainerTTYOptionsBuilder::default()
+    ///     .w(50)
+    ///     .h(20)
+    ///     .build();
     ///
     /// docker.resize_container_tty("hello-world", options);
     /// ```
@@ -1006,7 +1021,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Restart Container Options](RestartContainerOptions) struct.
+    ///
+    ///  - Optional
+    ///    [RestartContainerOptions](bollard_stubs::query_parameters::RestartContainerOptions) struct
+    ///    constructed from a
+    ///    [RestartContainerOptionsBuilder](bollard_stubs::query_parameters::RestartContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1018,11 +1037,9 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RestartContainerOptions;
+    /// use bollard::query_parameters::RestartContainerOptionsBuilder;
     ///
-    /// let options = Some(RestartContainerOptions{
-    ///     t: 30,
-    /// });
+    /// let options = Some(RestartContainerOptionsBuilder::default().t(30).build());
     ///
     /// docker.restart_container("postgres", options);
     /// ```
@@ -1052,7 +1069,11 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as a string slice.
-    ///  - Optional [Inspect Container Options](InspectContainerOptions) struct.
+    ///  
+    ///  - Optional
+    ///    [InspectContainerOptions](bollard_stubs::query_parameters::InspectContainerOptions) struct
+    ///    constructed from a
+    ///    [InspectContainerOptionsBuilder](bollard_stubs::query_parameters::InspectContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1063,11 +1084,9 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::InspectContainerOptions;
+    /// use bollard::query_parameters::InspectContainerOptionsBuilder;
     ///
-    /// let options = Some(InspectContainerOptions{
-    ///     size: false,
-    /// });
+    /// let options = Some(InspectContainerOptionsBuilder::default().size(false).build());
     ///
     /// docker.inspect_container("hello-world", options);
     /// ```
@@ -1097,7 +1116,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Top Options](TopOptions) struct.
+    ///  - Optional [TopOptions](bollard_stubs::query_parameters::TopOptions) struct constructed
+    ///    from a [TopOptionsBuilder](bollard_stubs::query_parameters::TopOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1108,11 +1128,9 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::TopOptions;
+    /// use bollard::query_parameters::TopOptionsBuilder;
     ///
-    /// let options = Some(TopOptions{
-    ///     ps_args: "aux",
-    /// });
+    /// let options = Some(TopOptionsBuilder::default().ps_args("aux").build());
     ///
     /// docker.top_processes("fussybeaver/uhttpd", options);
     /// ```
@@ -1142,7 +1160,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - Optional [Logs Options](LogsOptions) struct.
+    ///  - Optional [LogsOptions](bollard_stubs::query_parameters::LogsOptions) struct constructed
+    ///    from a [LogsOptionsBuilder](bollard_stubs::query_parameters::LogsOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1155,14 +1174,11 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::LogsOptions;
+    /// use bollard::query_parameters::LogsOptionsBuilder;
     ///
     /// use std::default::Default;
     ///
-    /// let options = Some(LogsOptions::<String>{
-    ///     stdout: true,
-    ///     ..Default::default()
-    /// });
+    /// let options = Some(LogsOptionsBuilder::default().stdout(true).build());
     ///
     /// docker.logs("hello-world", options);
     /// ```
@@ -1231,11 +1247,12 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Stats Options](StatsOptions) struct.
+    /// - Optional [StatsOptions](bollard_stubs::query_parameters::StatsOptions) struct constructed
+    ///   from a [StatsOptionsBuilder](bollard_stubs::query_parameters::StatsOptionsBuilder).
     ///
     /// # Returns
     ///
-    ///  - [Stats](Stats) struct, wrapped in a
+    ///  - [ContainerStatsResponse](bollard_stubs::models::ContainerStatsResponse) struct, wrapped in a
     ///    Stream.
     ///
     /// # Examples
@@ -1244,12 +1261,12 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::StatsOptions;
+    /// use bollard::query_parameters::StatsOptionsBuilder;
     ///
-    /// let options = Some(StatsOptions{
-    ///     stream: false,
-    ///     one_shot: true,
-    /// });
+    /// let options = Some(StatsOptionsBuilder::default()
+    ///     .stream(false)
+    ///     .one_shot(true)
+    ///     .build());
     ///
     /// docker.stats("hello-world", options);
     /// ```
@@ -1279,7 +1296,10 @@ impl Docker {
     /// # Arguments
     ///
     /// - Container name as string slice.
-    /// - Optional [Kill Container Options](KillContainerOptions) struct.
+    ///
+    /// - Optional [KillContainerOptions](bollard_stubs::query_parameters::KillContainerOptions)
+    ///   struct constructed from a
+    ///   [KillContainerOptionsBuilder](bollard_stubs::query_parameters::KillContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1291,11 +1311,9 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::KillContainerOptions;
+    /// use bollard::query_parameters::KillContainerOptionsBuilder;
     ///
-    /// let options = Some(KillContainerOptions{
-    ///     signal: "SIGINT",
-    /// });
+    /// let options = Some(KillContainerOptionsBuilder::default().signal("SIGINT").build());
     ///
     /// docker.kill_container("postgres", options);
     /// ```
@@ -1374,7 +1392,9 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Container name as string slice.
-    ///  - [Rename Container Options](RenameContainerOptions) struct
+    ///  - [RenameContainerOptions](bollard_stubs::query_parameters::RenameContainerOptions) struct
+    ///    constructed from a
+    ///    [RenameContainerOptionsBuilder](bollard_stubs::query_parameters::RenameContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1386,11 +1406,11 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::container::RenameContainerOptions;
+    /// use bollard::query_parameters::RenameContainerOptionsBuilder;
     ///
-    /// let required = RenameContainerOptions {
-    ///     name: "my_new_container_name"
-    /// };
+    /// let required = RenameContainerOptionsBuilder::default()
+    ///     .name("my_new_container_name")
+    ///     .build();
     ///
     /// docker.rename_container("hello-world", required);
     /// ```
@@ -1489,7 +1509,10 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Prune Containers Options](PruneContainersOptions) struct.
+    ///  - Optional
+    ///    [PruneContainersOptions](bollard_stubs::query_parameters::PruneContainersOptions) struct
+    ///    constructed from a
+    ///    [PruneContainersOptionsBuilder](bollard_stubs::query_parameters::PruneContainersOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1500,16 +1523,16 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::PruneContainersOptions;
+    /// use bollard::query_parameters::PruneContainersOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("until", vec!["10m"]);
     ///
-    /// let options = Some(PruneContainersOptions{
-    ///     filters
-    /// });
+    /// let options = Some(PruneContainersOptionsBuilder::default()
+    ///     .filters(&filters)
+    ///     .build());
     ///
     /// docker.prune_containers(options);
     /// ```
@@ -1531,71 +1554,15 @@ impl Docker {
 
     /// ---
     ///
-    /// # Stream Upload To Container
-    ///
-    /// Stream an upload of a tar archive to be extracted to a path in the filesystem of container
-    /// id.
-    ///
-    /// # Arguments
-    ///
-    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
-    ///
-    /// # Returns
-    ///
-    ///  - unit type `()`, wrapped in a Future.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use bollard::Docker;
-    /// use bollard::container::UploadToContainerOptions;
-    /// use futures_util::{StreamExt, TryFutureExt};
-    /// use tokio::fs::File;
-    /// use tokio_util::io::ReaderStream;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() {
-    /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let options = Some(UploadToContainerOptions{
-    ///     path: "/opt",
-    ///     ..Default::default()
-    /// });
-    ///
-    /// let file = File::open("tarball.tar.gz")
-    ///     .map_ok(ReaderStream::new)
-    ///     .try_flatten_stream()
-    ///     .map(|x|x.expect("failed to stream file"));
-    ///
-    /// docker
-    ///     .upload_to_container_streaming("my-container", options, file)
-    ///     .await
-    ///     .expect("upload failed");
-    /// # }
-    /// ```
-    #[inline(always)]
-    #[deprecated(
-        since = "0.19.0",
-        note = "This method is refactored into upload_to_container"
-    )]
-    pub async fn upload_to_container_streaming(
-        &self,
-        container_name: &str,
-        options: Option<crate::query_parameters::UploadToContainerOptions>,
-        tar: impl Stream<Item = Bytes> + Send + 'static,
-    ) -> Result<(), Error> {
-        self.upload_to_container(container_name, options, crate::body_stream(tar))
-            .await
-    }
-
-    /// ---
-    ///
     /// # Upload To Container
     ///
     /// Upload a tar archive to be extracted to a path in the filesystem of container id.
     ///
     /// # Arguments
     ///
-    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
+    ///  - Optional
+    ///    [UploadToContainerOptions](bollard_stubs::query_parameters::UploadToContainerOptions)
+    ///    struct constructed from a [UploadToContainerOptionsBuilder
     ///
     /// # Returns
     ///
@@ -1607,7 +1574,7 @@ impl Docker {
     ///
     /// ```rust,no_run
     /// # use bollard::Docker;
-    /// use bollard::container::UploadToContainerOptions;
+    /// use bollard::query_parameters::UploadToContainerOptionsBuilder;
     /// use bollard::body_full;
     /// use std::fs::File;
     /// use std::io::Read;
@@ -1615,10 +1582,9 @@ impl Docker {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let options = Some(UploadToContainerOptions{
-    ///     path: "/opt",
-    ///     ..Default::default()
-    /// });
+    /// let options = Some(UploadToContainerOptionsBuilder::default()
+    ///     .path("/opt")
+    ///     .build());
     ///
     /// let mut file = File::open("tarball.tar.gz").unwrap();
     /// let mut contents = Vec::new();
@@ -1634,7 +1600,7 @@ impl Docker {
     ///
     /// ```rust,no_run
     /// # use bollard::Docker;
-    /// use bollard::container::UploadToContainerOptions;
+    /// use bollard::query_parameters::UploadToContainerOptionsBuilder;
     /// use bollard::body_try_stream;
     /// use futures_util::{StreamExt, TryFutureExt};
     /// use tokio::fs::File;
@@ -1643,10 +1609,9 @@ impl Docker {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// let options = Some(UploadToContainerOptions{
-    ///     path: "/opt",
-    ///     ..Default::default()
-    /// });
+    /// let options = Some(UploadToContainerOptionsBuilder::default()
+    ///     .path("/opt")
+    ///     .build());
     ///
     /// let file = File::open("tarball.tar.gz")
     ///     .map_ok(ReaderStream::new)
@@ -1661,7 +1626,7 @@ impl Docker {
     pub async fn upload_to_container(
         &self,
         container_name: &str,
-        options: Option<impl Into<crate::query_parameters::UploadToContainerOptions>>,
+        options: Option<crate::query_parameters::UploadToContainerOptions>,
         tar: BodyType,
     ) -> Result<(), Error> {
         let url = format!("/containers/{container_name}/archive");
@@ -1671,7 +1636,7 @@ impl Docker {
             Builder::new()
                 .method(Method::PUT)
                 .header(CONTENT_TYPE, "application/x-tar"),
-            options.map(Into::into),
+            options,
             Ok(tar),
         );
 
@@ -1686,7 +1651,10 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Download From Container Options](DownloadFromContainerOptions) struct.
+    ///  -
+    ///  [DownloadFromContainerOptions](bollard_stubs::query_parameters::DownloadFromContainerOptions)
+    ///  struct constructed from a
+    ///  [DownloadFromContainerOptionsBuilder](bollard_stubs::query_parameters::DownloadFromContainerOptionsBuilder).
     ///
     /// # Returns
     ///
@@ -1698,25 +1666,25 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::DownloadFromContainerOptions;
+    /// use bollard::query_parameters::DownloadFromContainerOptionsBuilder;
     ///
-    /// let options = Some(DownloadFromContainerOptions{
-    ///     path: "/opt",
-    /// });
+    /// let options = Some(DownloadFromContainerOptionsBuilder::default()
+    ///     .path("/opt")
+    ///     .build());
     ///
     /// docker.download_from_container("my-container", options);
     /// ```
     pub fn download_from_container(
         &self,
         container_name: &str,
-        options: Option<impl Into<crate::query_parameters::DownloadFromContainerOptions>>,
+        options: Option<crate::query_parameters::DownloadFromContainerOptions>,
     ) -> impl Stream<Item = Result<Bytes, Error>> {
         let url = format!("/containers/{container_name}/archive");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 

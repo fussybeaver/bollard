@@ -28,7 +28,7 @@ pub struct InitSwarmOptions<T>
 where
     T: Into<String> + Eq + Hash,
 {
-    /// Listen address (format: <ip|interface>[:port])
+    /// Listen address (format: <ip|interface>\[:port])
     pub listen_addr: T,
     /// Externally reachable address advertised to other nodes.
     pub advertise_addr: T,
@@ -150,7 +150,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Swarm](swarm) struct, wrapped in a Future.
+    ///  - [Swarm](Swarm) struct, wrapped in a Future.
     ///
     /// # Examples
     ///
