@@ -888,7 +888,7 @@ impl Docker {
             h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
             #[cfg(feature = "ssh")]
             h if h.starts_with("ssh://") => {
-                Docker::connect_with_ssh(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                Docker::connect_with_ssh(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
             }
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
@@ -1086,7 +1086,7 @@ impl Docker {
     /// ```
     pub fn connect_with_ssh_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_SSH_ADDRESS.to_string());
-        Docker::connect_with_ssh(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+        Docker::connect_with_ssh(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
     }
 
     /// Connect using SSH.
@@ -1105,7 +1105,7 @@ impl Docker {
     /// use futures_util::future::TryFutureExt;
     ///
     /// let connection = Docker::connect_with_ssh(
-    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION)
+    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION, None)
     ///                    .unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -1114,10 +1114,14 @@ impl Docker {
         addr: &str,
         timeout: u64,
         client_version: &ClientVersion,
+        keypair_path: Option<String>,
     ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("ssh://", "", 1);
 
-        let ssh_connector = crate::ssh::SshConnector;
+        let ssh_connector = match keypair_path {
+            Some(path) => crate::ssh::SshConnector::with_keypair(path.to_string()),
+            None => crate::ssh::SshConnector::new(),
+        };
 
         let client_builder = Client::builder(TokioExecutor::new());
 
