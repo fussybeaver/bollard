@@ -242,6 +242,16 @@ public class BollardCodegen extends RustServerCodegen {
                     prop.datatype = "BollardDate";
                 }
 
+                // Catch the moby-specific json-compatible encoding: {"<port>/<tcp|udp|sctp>": {}}`
+                if (prop.datatype.equals("HashMap<String, HashMap<(), ()>>")) {
+                    prop.vendorExtensions.put("x-rustgen-is-hashmap-string-hashmap-empty", "true");
+                    prop.datatype = "Vec<String>";
+                    prop.datatypeWithEnum = "Vec<String>";
+                    prop.isMapContainer = false;
+                    prop.isListContainer = true;
+                    prop.items.datatype = "String";
+                }
+
                 if (prop.isEnum) {
                     if (enumToString.contains(model.classname)) {
                         prop.isEnum = false;

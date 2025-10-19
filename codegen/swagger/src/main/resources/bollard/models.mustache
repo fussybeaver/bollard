@@ -8,7 +8,7 @@
 #[cfg(feature = "buildkit")]
 use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
-use serde::ser::Serializer;
+use serde::ser::{Serializer, SerializeMap};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 
@@ -89,6 +89,38 @@ fn deserialize_buildinfo_aux<'de, D: Deserializer<'de>>(
     Ok(res)
 }
 
+pub fn serialize_hashmap_string_hashmap_empty<S: Serializer>(
+    opt: &Option<Vec<String>>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    if let Some(vec) = opt {
+        let mut map = s.serialize_map(Some(vec.len()))?;
+        for entry in vec {
+            map.serialize_entry(entry, &HashMap::<(), ()>::new())?;
+        }
+        map.end()
+    } else {
+        let mut map = s.serialize_map(Some(0))?;
+        map.end()
+    }
+}
+
+pub fn deserialize_hashmap_string_hashmap_empty<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    match serde::Deserialize::deserialize(d) {
+        Ok::<Option<HashMap<String, HashMap<(), ()>>>, D::Error>(Some(mut hsh)) => {
+            let mut res = vec![];
+            for (key, _) in hsh.drain() {
+                res.push(key);
+            }
+            Ok(Some(res))
+        }
+        Ok(None) => Ok(Some(vec![])),
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg(feature = "buildkit")]
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
@@ -163,7 +195,8 @@ pub struct {{classname}} {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]{{/vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}{{#vendorExtensions.x-rustgen-is-datetime}}
     #[serde(
         default,
         deserialize_with = "deserialize_timestamp",
@@ -171,7 +204,8 @@ pub struct {{classname}} {
     )]{{/vendorExtensions.x-rustgen-is-datetime}}
     pub {{name}}: {{#isEnum}}Option<{{classname}}{{enumName}}>{{/isEnum}}{{^isEnum}}{{#isListContainer}}Vec<{{#items}}{{{datatype}}}{{/items}}>{{/isListContainer}}{{^isListContainer}}{{#isContainer}}HashMap<String, {{#items}}{{{datatype}}}{{/items}}>{{/isContainer}}{{^isContainer}}{{{datatype}}}{{/isContainer}}{{/isListContainer}}{{/isEnum}}{{#vendorExtensions}}{{/vendorExtensions}},
 {{/required}}{{^required}}
-    #[serde(skip_serializing_if = "Option::is_none")]{{#vendorExtensions.x-rustgen-is-datetime}}
+    #[serde(skip_serializing_if = "Option::is_none")]{{#vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]{{/vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}{{#vendorExtensions.x-rustgen-is-datetime}}
     #[serde(
         default,
         deserialize_with = "deserialize_timestamp",
