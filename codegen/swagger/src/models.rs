@@ -8,7 +8,7 @@
 #[cfg(feature = "buildkit")]
 use prost::Message;
 use serde::de::{DeserializeOwned, Deserializer};
-use serde::ser::Serializer;
+use serde::ser::{Serializer, SerializeMap};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 
@@ -87,6 +87,38 @@ fn deserialize_buildinfo_aux<'de, D: Deserializer<'de>>(
     let res = crate::moby::buildkit::v1::StatusResponse::decode(buf)
         .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
     Ok(res)
+}
+
+pub fn serialize_hashmap_string_hashmap_empty<S: Serializer>(
+    opt: &Option<Vec<String>>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    if let Some(vec) = opt {
+        let mut map = s.serialize_map(Some(vec.len()))?;
+        for entry in vec {
+            map.serialize_entry(entry, &HashMap::<(), ()>::new())?;
+        }
+        map.end()
+    } else {
+        let mut map = s.serialize_map(Some(0))?;
+        map.end()
+    }
+}
+
+pub fn deserialize_hashmap_string_hashmap_empty<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    match serde::Deserialize::deserialize(d) {
+        Ok::<Option<HashMap<String, HashMap<(), ()>>>, D::Error>(Some(mut hsh)) => {
+            let mut res = vec![];
+            for (key, _) in hsh.drain() {
+                res.push(key);
+            }
+            Ok(Some(res))
+        }
+        Ok(None) => Ok(Some(vec![])),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(feature = "buildkit")]
@@ -991,7 +1023,8 @@ pub struct ContainerConfig {
     /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}` 
     #[serde(rename = "ExposedPorts")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub exposed_ports: Option<Vec<String>>,
 
     /// Attach standard streams to a TTY, including `stdin` if it is not closed. 
     #[serde(rename = "Tty")]
@@ -1035,7 +1068,8 @@ pub struct ContainerConfig {
     /// An object mapping mount point paths inside the container to empty objects. 
     #[serde(rename = "Volumes")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub volumes: Option<Vec<String>>,
 
     /// The working directory for commands to run in.
     #[serde(rename = "WorkingDir")]
@@ -1167,7 +1201,8 @@ pub struct ContainerCreateBody {
     /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}` 
     #[serde(rename = "ExposedPorts")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub exposed_ports: Option<Vec<String>>,
 
     /// Attach standard streams to a TTY, including `stdin` if it is not closed. 
     #[serde(rename = "Tty")]
@@ -1211,7 +1246,8 @@ pub struct ContainerCreateBody {
     /// An object mapping mount point paths inside the container to empty objects. 
     #[serde(rename = "Volumes")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub volumes: Option<Vec<String>>,
 
     /// The working directory for commands to run in.
     #[serde(rename = "WorkingDir")]
@@ -3708,7 +3744,8 @@ pub struct ImageConfig {
     /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}` 
     #[serde(rename = "ExposedPorts")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exposed_ports: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub exposed_ports: Option<Vec<String>>,
 
     /// Attach standard streams to a TTY, including `stdin` if it is not closed.  <p><br /></p>  > **Deprecated**: this field is not part of the image specification and is > always false. It must not be used, and will be removed in API v1.50. 
     #[serde(rename = "Tty")]
@@ -3752,7 +3789,8 @@ pub struct ImageConfig {
     /// An object mapping mount point paths inside the container to empty objects. 
     #[serde(rename = "Volumes")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub volumes: Option<Vec<String>>,
 
     /// The working directory for commands to run in.
     #[serde(rename = "WorkingDir")]
@@ -8971,7 +9009,8 @@ pub struct Volume {
     /// Low-level details about the volume, provided by the volume driver. Details are returned as a map with key/value pairs: `{\"key\":\"value\",\"key2\":\"value2\"}`.  The `Status` field is optional, and is omitted if the volume driver does not support this feature. 
     #[serde(rename = "Status")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<HashMap<String, HashMap<(), ()>>>,
+    #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]
+    pub status: Option<Vec<String>>,
 
     /// User-defined key/value metadata.
     #[serde(rename = "Labels")]
