@@ -1562,7 +1562,7 @@ impl Docker {
         let options = options.into();
 
         match (
-            if cfg!(feature = "buildkit")
+            if cfg!(feature = "buildkit_providerless")
                 && options.version == crate::query_parameters::BuilderVersion::BuilderBuildKit
             {
                 ImageBuildBuildkitEither::Left(credentials)
