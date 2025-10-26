@@ -767,6 +767,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             Config {
                 image: Some(&image[..]),
                 host_config: Some(host_config),
+                exposed_ports: Some(vec!["8080"]),
                 ..Default::default()
             },
         )
@@ -817,6 +818,19 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             .first()
             .unwrap()
             .host_port
+            .as_ref()
+            .unwrap()
+    );
+
+    println!("{:?}", result.config);
+
+    assert_eq!(
+        vec!["8080"],
+        *result
+            .config
+            .as_ref()
+            .unwrap()
+            .exposed_ports
             .as_ref()
             .unwrap()
     );
