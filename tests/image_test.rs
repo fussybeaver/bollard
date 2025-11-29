@@ -1721,7 +1721,7 @@ async fn import_image_test_stream(docker: Docker) -> Result<(), Error> {
             ImportImageOptions {
                 ..Default::default()
             },
-            res.map(|b| b.unwrap()),
+            res,
             Some(creds),
         )
         .try_collect::<Vec<_>>()

@@ -18,7 +18,7 @@ use serde_repr::*;
 
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
-use crate::docker::{body_stream, BodyType};
+use crate::docker::{body_try_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
@@ -1944,19 +1944,27 @@ impl Docker {
     ///     }
     /// };
     /// ```
-    pub fn import_image_stream(
+    pub fn import_image_stream<S, E>(
         &self,
         options: impl Into<crate::query_parameters::ImportImageOptions>,
-        root_fs: impl Stream<Item = Bytes> + Send + 'static,
+        root_fs: S,
         credentials: Option<HashMap<String, DockerCredentials>>,
-    ) -> impl Stream<Item = Result<BuildInfo, Error>> {
+    ) -> impl Stream<Item = Result<BuildInfo, Error>>
+    where
+        S: Stream<Item = Result<Bytes, E>> + Send + 'static,
+        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
+    {
+        // map error to
+        let stream =
+            root_fs.map(|res| res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+
         let req = self.build_request_with_registry_auth(
             "/images/load",
             Builder::new()
                 .method(Method::POST)
                 .header(CONTENT_TYPE, "application/json"),
             Some(options.into()),
-            Ok(body_stream(root_fs)),
+            Ok(body_try_stream(stream)),
             DockerCredentialsHeader::Config(credentials),
         );
 
