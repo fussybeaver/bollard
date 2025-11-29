@@ -1955,8 +1955,7 @@ impl Docker {
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
     {
         // map error to
-        let stream =
-            root_fs.map(|res| res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+        let stream = root_fs.map(|res| res.map_err(|e| std::io::Error::other(e)));
 
         let req = self.build_request_with_registry_auth(
             "/images/load",
