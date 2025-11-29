@@ -1927,7 +1927,7 @@ impl Docker {
     ///     let mut file = File::open("tarball.tar.gz").await.unwrap();
     ///
     ///     let mut byte_stream = codec::FramedRead::new(file, codec::BytesCodec::new()).map(|r| {
-    ///         r.unwrap().freeze()
+    ///         r.map(|b| b.freeze())
     ///     });
     ///
     ///     let mut stream = docker
@@ -1954,7 +1954,7 @@ impl Docker {
         S: Stream<Item = Result<Bytes, E>> + Send + 'static,
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
     {
-        // map error to
+        // map_err to std::io::Error to use body_try_stream
         let stream = root_fs.map(|res| res.map_err(|e| std::io::Error::other(e)));
 
         let req = self.build_request_with_registry_auth(
