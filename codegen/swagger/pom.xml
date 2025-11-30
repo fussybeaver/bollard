@@ -33,10 +33,11 @@
                 <supportingFilesToGenerate>query_parameters.rs,models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.49.2-rc.28.4.0</packageVersion>
+                  <packageVersion>1.49.3-rc.28.4.0</packageVersion>
                   <queryParameterMappings>
                       ContainerList=ListContainersOptions
                       ContainerArchive=DownloadFromContainerOptions
+                      ContainerArchiveInfo=ContainerArchiveInfoOptions
                       ContainerAttach=AttachContainerOptions
                       ContainerCreate=CreateContainerOptions
                       ContainerDelete=RemoveContainerOptions
