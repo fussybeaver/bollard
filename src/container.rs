@@ -103,9 +103,9 @@ pub struct PathStatResponse {
     #[serde(rename = "mode")]
     pub file_mode: u32,
 
-    /// time
+    /// last modification time
     #[serde(rename = "mtime")]
-    pub modification_time: BollardDate,
+    pub modification_time: Option<String>,
 
     /// link target
     #[serde(rename = "linkTarget")]
