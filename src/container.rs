@@ -1,6 +1,8 @@
 //! Container API: run docker containers and manage their lifecycle
 #![allow(deprecated)]
 
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use futures_core::Stream;
 use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
@@ -84,6 +86,30 @@ where
     ///  - `volume`=(`<volume name>` or `<mount point destination>`)
     #[serde(serialize_with = "crate::docker::serialize_as_json")]
     pub filters: HashMap<T, Vec<T>>,
+}
+
+/// Path Stat Response from HEAD request to container/{id}/archive
+#[derive(Debug, Deserialize)]
+pub struct PathStatResponse {
+    /// Name of the file
+    #[serde(rename = "name")]
+    pub name: String,
+
+    /// File size
+    #[serde(rename = "size")]
+    pub size: i64,
+
+    /// os file Mode
+    #[serde(rename = "mode")]
+    pub file_mode: u32,
+
+    /// last modification time
+    #[serde(rename = "mtime")]
+    pub modification_time: Option<String>,
+
+    /// link target
+    #[serde(rename = "linkTarget")]
+    pub link_target: String,
 }
 
 impl<T> From<ListContainersOptions<T>> for crate::query_parameters::ListContainersOptions
@@ -231,7 +257,7 @@ where
     /// An object mapping ports to an empty object in the form:  `{\"<port>/<tcp|udp|sctp>\": {}}`
     #[serde(rename = "ExposedPorts")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exposed_ports: Option<HashMap<T, HashMap<(), ()>>>,
+    pub exposed_ports: Option<Vec<T>>,
 
     /// Attach standard streams to a TTY, including `stdin` if it is not closed.
     #[serde(rename = "Tty")]
@@ -276,7 +302,7 @@ where
     /// An object mapping mount point paths inside the container to empty objects.
     #[serde(rename = "Volumes")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes: Option<HashMap<T, HashMap<(), ()>>>,
+    pub volumes: Option<Vec<T>>,
 
     /// The working directory for commands to run in.
     #[serde(rename = "WorkingDir")]
@@ -349,7 +375,7 @@ where
             attach_stderr: config.attach_stderr,
             exposed_ports: config
                 .exposed_ports
-                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+                .map(|vec| vec.into_iter().map(Into::into).collect()),
             tty: config.tty,
             open_stdin: config.open_stdin,
             stdin_once: config.stdin_once,
@@ -360,7 +386,7 @@ where
             image: config.image.map(Into::into),
             volumes: config
                 .volumes
-                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+                .map(|vec| vec.into_iter().map(Into::into).collect()),
             working_dir: config.working_dir.map(Into::into),
             entrypoint: config
                 .entrypoint
@@ -402,7 +428,7 @@ where
             attach_stderr: config.attach_stderr,
             exposed_ports: config
                 .exposed_ports
-                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+                .map(|vec| vec.into_iter().map(Into::into).collect()),
             tty: config.tty,
             open_stdin: config.open_stdin,
             stdin_once: config.stdin_once,
@@ -413,7 +439,7 @@ where
             image: config.image.map(Into::into),
             volumes: config
                 .volumes
-                .map(|hsh| hsh.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+                .map(|vec| vec.into_iter().map(Into::into).collect()),
             working_dir: config.working_dir.map(Into::into),
             entrypoint: config
                 .entrypoint
@@ -1916,6 +1942,66 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Get Archive information From Container
+    ///
+    /// Get information on an archive of a resource in the filesystem of container id.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - [ContainerArchiveInfoOptions](ContainerArchiveInfoOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - [PathStatResponse](PathStatResponse), wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard_stubs::query_parameters::ContainerArchiveInfoOptionsBuilder;
+    ///
+    /// let options = ContainerArchiveInfoOptionsBuilder::default().path("/example").build();
+    ///
+    /// docker.get_container_archive_info("my-container", Some(options));
+    /// ```
+    pub async fn get_container_archive_info(
+        &self,
+        container_name: &str,
+        options: Option<impl Into<crate::query_parameters::ContainerArchiveInfoOptions>>,
+    ) -> Result<PathStatResponse, Error> {
+        let url = format!("/containers/{container_name}/archive");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::HEAD),
+            options.map(Into::into),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        let container_path_stat_header = "X-Docker-Container-Path-Stat";
+
+        let response = self.process_request(req).await?;
+
+        // Grab the header from the response
+        let container_path_stat = response
+            .headers()
+            .get(container_path_stat_header)
+            .ok_or(Error::HttpHeaderNotFoundError(
+                container_path_stat_header.to_owned(),
+            ))?
+            .to_str()?;
+
+        let decoded_response = BASE64_STANDARD.decode(container_path_stat)?;
+
+        let path_stat: PathStatResponse = serde_json::from_slice(&decoded_response)?;
+
+        Ok(path_stat)
     }
 
     /// ---

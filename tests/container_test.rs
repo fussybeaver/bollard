@@ -10,7 +10,7 @@ use bollard::container::{
 };
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
-use bollard::query_parameters::ListContainersOptionsBuilder;
+use bollard::query_parameters::{ContainerArchiveInfoOptions, ListContainersOptionsBuilder};
 use bollard::{body_full, Docker};
 use bollard::{body_stream, models::*};
 
@@ -630,6 +630,21 @@ async fn archive_container_test(docker: Docker, streaming_upload: bool) -> Resul
             )
             .await?;
     }
+    let res = docker
+        .get_container_archive_info(
+            "integration_test_archive_container",
+            Some(ContainerArchiveInfoOptions {
+                path: if cfg!(windows) {
+                    "C:\\Windows\\Logs\\"
+                } else {
+                    "/tmp"
+                }
+                .to_owned(),
+            }),
+        )
+        .await?;
+
+    assert_eq!(res.name, if cfg!(windows) { "Logs" } else { "tmp" });
 
     let res = docker.download_from_container(
         "integration_test_archive_container",
@@ -767,6 +782,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             Config {
                 image: Some(&image[..]),
                 host_config: Some(host_config),
+                exposed_ports: Some(vec!["8080"]),
                 ..Default::default()
             },
         )
@@ -817,6 +833,19 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             .first()
             .unwrap()
             .host_port
+            .as_ref()
+            .unwrap()
+    );
+
+    println!("{:?}", result.config);
+
+    assert_eq!(
+        vec!["8080"],
+        *result
+            .config
+            .as_ref()
+            .unwrap()
+            .exposed_ports
             .as_ref()
             .unwrap()
     );

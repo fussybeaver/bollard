@@ -181,4 +181,24 @@ pub enum Error {
     /// Error emitted when the Docker socket file is not found at the expected location.
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
+
+    /// Error emitted when an expected header is not found in the HTTP response.
+    #[error("HTTP header not found: {0}")]
+    HttpHeaderNotFoundError(String),
+
+    /// Error encountered when getting a string slice from a HTTP header
+    #[error("Str from header failed: {}", err)]
+    HttpHeaderToStrError {
+        /// The original error emitted.
+        #[from]
+        err: http::header::ToStrError,
+    },
+
+    /// Error emitted when failing to decode a base64 string
+    #[error("Base64 decode failed: {}", err)]
+    Base64DecodeError {
+        /// The original error emitted.
+        #[from]
+        err: base64::DecodeError,
+    },
 }
