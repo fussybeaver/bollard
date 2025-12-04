@@ -139,6 +139,61 @@ impl Default for DownloadFromContainerOptions
     }
 }
 
+/// Builder for the `ContainerArchiveInfo` API query parameter.
+///
+/// Get information about files in a container.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ContainerArchiveInfoOptionsBuilder;
+///
+/// let params = ContainerArchiveInfoOptionsBuilder::new()
+/// //  .path(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ContainerArchiveInfoOptionsBuilder {
+    inner: ContainerArchiveInfoOptions,
+}
+
+impl ContainerArchiveInfoOptionsBuilder {
+    /// Construct a builder of query parameters for ContainerArchiveInfoOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Resource in the container’s filesystem to archive.
+    pub fn path(mut self, path: &str) -> Self {
+        self.inner.path = path.into();
+        self
+    }
+
+    /// Consume this builder and use the `ContainerArchiveInfoOptions` as parameter to the
+    /// `ContainerArchiveInfo` API
+    pub fn build(self) -> ContainerArchiveInfoOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ContainerArchiveInfo` API
+/// 
+/// Use a [ContainerArchiveInfoOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ContainerArchiveInfoOptions
+{ 
+    pub path: String, 
+}
+
+impl Default for ContainerArchiveInfoOptions
+{
+    fn default() -> Self {
+        Self {
+            path: Default::default(),
+        }
+    }
+}
+
 /// Builder for the `ContainerAttach` API query parameter.
 ///
 /// Attach to a container.
@@ -1382,10 +1437,6 @@ impl Default for UploadToContainerOptions
 
 
 
-
-// Filtered out: ContainerArchiveInfo
-// Get information about files in a container
-//   - path
 
 // Filtered out: ContainerAttachWebsocket
 // Attach to a container via a websocket
