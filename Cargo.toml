@@ -42,7 +42,7 @@ json_data_content = []
 # Enable rustls / ssl
 ssl = ["ssl_providerless", "rustls/ring"]
 aws-lc-rs = ["ssl_providerless", "rustls/aws-lc-rs"]
-ssl_providerless = ["home", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pemfile", "rustls-pki-types", "http"]
+ssl_providerless = ["home", "hyper-rustls", "rustls", "rustls-native-certs", "rustls-pki-types", "http"]
 webpki = ["ssl", "dep:webpki-roots"]
 chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]
@@ -72,7 +72,6 @@ num = { version = "0.4", optional = true }
 rand = { version = "0.9", default-features = false, features = ["thread_rng"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["std"], optional = true}
 rustls-native-certs = { version = "0.8.0", optional = true }
-rustls-pemfile = { version = "2.1", optional = true }
 rustls-pki-types = { version = "1.7", optional = true }
 serde = "1.0"
 serde_derive = "1.0"
