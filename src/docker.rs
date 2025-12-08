@@ -380,19 +380,34 @@ impl DockerClientCertResolver {
     }
 
     fn certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
-        Ok(rustls_pemfile::certs(&mut Self::open_buffered(path)?)
-            .collect::<Result<Vec<CertificateDer<'static>>, io::Error>>()?)
+        use rustls_pki_types::pem::PemObject;
+        rustls_pki_types::CertificateDer::pem_reader_iter(&mut Self::open_buffered(path)?)
+            .filter_map(|res| {
+                if matches!(res, Err(rustls_pki_types::pem::Error::NoItemsFound)) {
+                    None
+                } else {
+                    Some(res)
+                }
+            })
+            .collect::<Result<Vec<CertificateDer<'static>>, rustls_pki_types::pem::Error>>()
+            .map_err(|_| CertPathError {
+                path: path.to_path_buf(),
+            })
     }
 
     fn keys(path: &Path) -> Result<Vec<PrivateKeyDer<'static>>, Error> {
+        use rustls_pki_types::pem::PemObject;
         let mut rdr = Self::open_buffered(path)?;
         let mut keys = vec![];
-        if let Some(key) = rustls_pemfile::private_key(&mut rdr).map_err(|_| CertPathError {
-            path: path.to_path_buf(),
-        })? {
-            keys.push(key);
+        match rustls_pki_types::PrivateKeyDer::from_pem_reader(&mut rdr) {
+            Ok(key) => keys.push(key),
+            Err(rustls_pki_types::pem::Error::NoItemsFound) => {}
+            Err(_e) => {
+                return Err(CertPathError {
+                    path: path.to_path_buf(),
+                })
+            }
         }
-
         Ok(keys)
     }
 
@@ -522,6 +537,7 @@ impl Docker {
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
+        use rustls_pki_types::pem::PemObject;
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1).replacen("https://", "", 1);
 
@@ -550,7 +566,11 @@ impl Docker {
         })?);
 
         root_store.add_parsable_certificates(
-            rustls_pemfile::certs(&mut ca_pem).collect::<Result<Vec<_>, _>>()?,
+            rustls_pki_types::CertificateDer::pem_reader_iter(&mut ca_pem)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| CertParseError {
+                    path: ssl_ca.to_owned(),
+                })?,
         );
 
         let config = rustls::ClientConfig::builder()
