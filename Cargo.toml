@@ -37,6 +37,8 @@ test_macos = []
 test_sshforward = []
 # Enable tests specifically for swarm
 test_swarm = []
+# Enable tests specifically for checkpoints (requires experimental Docker daemon and CRIU)
+test_checkpoint = []
 # Enable JSON payload in deserialization errors
 json_data_content = []
 # Enable rustls / ssl

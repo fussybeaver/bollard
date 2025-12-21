@@ -8,6 +8,10 @@ use bollard::container::{
     ResizeContainerTtyOptions, RestartContainerOptions, StatsOptions, TopOptions,
     UpdateContainerOptions, UploadToContainerOptions, WaitContainerOptions,
 };
+#[cfg(feature = "test_checkpoint")]
+use bollard::container::{
+    CreateCheckpointOptions, DeleteCheckpointOptions, ListCheckpointsOptions,
+};
 use bollard::errors::Error;
 use bollard::image::{CreateImageOptions, PushImageOptions, TagImageOptions};
 use bollard::query_parameters::{ContainerArchiveInfoOptions, ListContainersOptionsBuilder};
@@ -995,4 +999,111 @@ fn integration_test_resize_container_tty() {
 #[cfg(not(windows))]
 fn integration_test_export_container() {
     connect_to_docker_and_run!(export_container_test);
+}
+
+#[cfg(feature = "test_checkpoint")]
+async fn checkpoint_test(docker: Docker) -> Result<(), Error> {
+    let image = format!("{}alpine", registry_http_addr());
+
+    let _ = &docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image: &image[..],
+                ..Default::default()
+            }),
+            None,
+            Some(integration_test_registry_credentials()),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let _ = &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: "integration_test_checkpoint",
+                platform: None,
+            }),
+            Config {
+                image: Some(&image[..]),
+                cmd: Some(vec!["sleep", "300"]),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    docker
+        .start_container(
+            "integration_test_checkpoint",
+            None::<bollard::container::StartContainerOptions<String>>,
+        )
+        .await?;
+
+    let checkpoints = docker
+        .list_checkpoints(
+            "integration_test_checkpoint",
+            None::<ListCheckpointsOptions>,
+        )
+        .await?;
+    assert!(checkpoints.is_empty());
+
+    let create_options = CreateCheckpointOptions {
+        checkpoint_id: String::from("test-checkpoint-1"),
+        checkpoint_dir: None,
+        exit: false,
+    };
+    docker
+        .create_checkpoint("integration_test_checkpoint", create_options)
+        .await?;
+
+    let checkpoints = docker
+        .list_checkpoints(
+            "integration_test_checkpoint",
+            None::<ListCheckpointsOptions>,
+        )
+        .await?;
+    assert_eq!(1, checkpoints.len());
+    assert_eq!("test-checkpoint-1", checkpoints[0].name);
+
+    docker
+        .delete_checkpoint(
+            "integration_test_checkpoint",
+            "test-checkpoint-1",
+            None::<DeleteCheckpointOptions>,
+        )
+        .await?;
+
+    let checkpoints = docker
+        .list_checkpoints(
+            "integration_test_checkpoint",
+            None::<ListCheckpointsOptions>,
+        )
+        .await?;
+    assert!(checkpoints.is_empty());
+
+    docker
+        .kill_container(
+            "integration_test_checkpoint",
+            None::<KillContainerOptions<String>>,
+        )
+        .await
+        .ok();
+
+    docker
+        .remove_container(
+            "integration_test_checkpoint",
+            Some(RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "test_checkpoint")]
+#[cfg(not(windows))]
+fn integration_test_checkpoint() {
+    connect_to_docker_and_run!(checkpoint_test);
 }
