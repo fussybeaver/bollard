@@ -346,7 +346,10 @@ impl std::fmt::Debug for Docker {
             .field("client_addr", &self.client_addr)
             .field("client_timeout", &self.client_timeout)
             .field("version", &self.version)
-            .field("request_modifier", &self.request_modifier.as_ref().map(|_| "<callback>"))
+            .field(
+                "request_modifier",
+                &self.request_modifier.as_ref().map(|_| "<callback>"),
+            )
             .finish()
     }
 }
