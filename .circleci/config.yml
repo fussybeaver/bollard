@@ -98,8 +98,8 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker
-      - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:stable-dind --storage-driver=overlay --experimental
-      - run: docker exec test-docker-daemon sh -c "apk add --no-cache criu"
+      - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:27.3-dind --storage-driver=overlay2 --experimental
+      - run: docker exec test-docker-daemon sh -c "echo 'http://dl-cdn.alpinelinux.org/alpine/edge/testing' >> /etc/apk/repositories && apk add --no-cache criu"
       - run: docker build -t bollard .
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test --features test_checkpoint test_checkpoint
   test_race:
