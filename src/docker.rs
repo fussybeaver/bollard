@@ -315,7 +315,8 @@ where
     }
 }
 
-#[derive(Debug)]
+pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send + Sync>;
+
 /// ---
 ///
 /// # Docker
@@ -334,6 +335,23 @@ pub struct Docker {
     pub(crate) client_addr: String,
     pub(crate) client_timeout: u64,
     pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
+    pub(crate) request_modifier: Option<RequestModifier>,
+}
+
+impl std::fmt::Debug for Docker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Docker")
+            .field("transport", &self.transport)
+            .field("client_type", &self.client_type)
+            .field("client_addr", &self.client_addr)
+            .field("client_timeout", &self.client_timeout)
+            .field("version", &self.version)
+            .field(
+                "request_modifier",
+                &self.request_modifier.as_ref().map(|_| "<callback>"),
+            )
+            .finish()
+    }
 }
 
 impl Clone for Docker {
@@ -344,6 +362,7 @@ impl Clone for Docker {
             client_addr: self.client_addr.clone(),
             client_timeout: self.client_timeout,
             version: self.version.clone(),
+            request_modifier: self.request_modifier.clone(),
         }
     }
 }
@@ -600,6 +619,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -679,6 +699,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -757,6 +778,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -998,6 +1020,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -1075,6 +1098,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -1156,6 +1180,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -1212,6 +1237,7 @@ impl Docker {
                 AtomicUsize::new(client_version.major_version),
                 AtomicUsize::new(client_version.minor_version),
             )),
+            request_modifier: None,
         };
 
         Ok(docker)
@@ -1243,6 +1269,32 @@ impl Docker {
     /// By default, 2 minutes.
     pub fn set_timeout(&mut self, timeout: Duration) {
         self.client_timeout = timeout.as_secs();
+    }
+
+    /// Set a request modifier callback that runs before each request.
+    ///
+    /// This callback can modify the request before it is sent to the Docker Engine API.
+    /// Useful for setting `User-Agent` headers or other request modifications.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    /// use http::header::{HeaderValue, USER_AGENT};
+    ///
+    /// let docker = Docker::connect_with_socket_defaults()
+    ///     .unwrap()
+    ///     .with_request_modifier(|mut req| {
+    ///         req.headers_mut().insert(USER_AGENT, HeaderValue::from_static("my-app/1.0"));
+    ///         req
+    ///     });
+    /// ```
+    pub fn with_request_modifier<F>(mut self, modifier: F) -> Self
+    where
+        F: Fn(BollardRequest) -> BollardRequest + Send + Sync + 'static,
+    {
+        self.request_modifier = Some(Arc::new(modifier));
+        self
     }
 }
 
@@ -1468,10 +1520,19 @@ impl Docker {
         )?;
         let request_uri: hyper::Uri = uri.try_into()?;
         debug!("{}", &request_uri);
-        Ok(builder
+
+        let request = builder
             .uri(request_uri)
             .header(CONTENT_TYPE, "application/json")
-            .body(payload?)?)
+            .body(payload?)?;
+
+        let request = if let Some(modifier) = &self.request_modifier {
+            modifier(request)
+        } else {
+            request
+        };
+
+        Ok(request)
     }
 
     pub(crate) fn build_request_with_registry_auth<O>(
