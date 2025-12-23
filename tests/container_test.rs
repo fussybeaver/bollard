@@ -1003,7 +1003,7 @@ fn integration_test_export_container() {
 
 #[cfg(feature = "test_checkpoint")]
 async fn checkpoint_test(docker: Docker) -> Result<(), Error> {
-    let image = format!("{}alpine", registry_http_addr());
+    let image = format!("{}alpine:latest", registry_http_addr());
 
     let _ = &docker
         .create_image(
