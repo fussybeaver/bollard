@@ -2836,7 +2836,9 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_value(req).await
+        // Docker returns null instead of [] when no checkpoints exist
+        let result: Option<Vec<Checkpoint>> = self.process_into_value(req).await?;
+        Ok(result.unwrap_or_default())
     }
 
     /// ---
