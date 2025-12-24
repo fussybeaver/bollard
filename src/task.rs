@@ -3,11 +3,12 @@
 
 use bollard_stubs::models::Task;
 use bytes::Bytes;
+use futures_core::Stream;
 use http_body_util::Full;
 use serde::Serialize;
 use std::{collections::HashMap, hash::Hash};
 
-use crate::{docker::BodyType, errors::Error, Docker};
+use crate::{container::LogOutput, docker::BodyType, errors::Error, Docker};
 use http::{request::Builder, Method};
 
 /// Parameters used in the [List Tasks API](super::Docker::list_tasks())
@@ -154,5 +155,53 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Get Task Logs
+    ///
+    /// Get `stdout` and `stderr` logs from a task.
+    ///
+    /// # Arguments
+    ///
+    ///  - Task id as a string slice.
+    ///  - Optional [Logs Options](crate::container::LogsOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Stream of [Log Output](LogOutput) results.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::LogsOptions;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let options = Some(LogsOptions::<String>{
+    ///     stdout: true,
+    ///     ..Default::default()
+    /// });
+    ///
+    /// docker.task_logs("my-task-id", options);
+    /// ```
+    pub fn task_logs(
+        &self,
+        task_id: &str,
+        options: Option<impl Into<crate::query_parameters::LogsOptions>>,
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
+        let url = format!("/tasks/{task_id}/logs");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::GET),
+            options.map(Into::into),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_stream_string(req)
     }
 }
