@@ -1,6 +1,7 @@
 //! Service API: manage and inspect docker services within a swarm
 #![allow(deprecated)]
 
+use crate::container::LogOutput;
 use crate::docker::BodyType;
 pub use crate::models::*;
 
@@ -8,6 +9,7 @@ use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::errors::Error;
 use bytes::Bytes;
+use futures_core::Stream;
 use http::header::CONTENT_TYPE;
 use http::request::Builder;
 use http_body_util::Full;
@@ -464,5 +466,53 @@ impl Docker {
         );
 
         self.process_into_value(req).await
+    }
+
+    /// ---
+    ///
+    /// # Get Service Logs
+    ///
+    /// Get `stdout` and `stderr` logs from a service.
+    ///
+    /// # Arguments
+    ///
+    ///  - Service name or id as a string slice.
+    ///  - Optional [Logs Options](crate::container::LogsOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - A Stream of [Log Output](LogOutput) results.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::LogsOptions;
+    ///
+    /// use std::default::Default;
+    ///
+    /// let options = Some(LogsOptions::<String>{
+    ///     stdout: true,
+    ///     ..Default::default()
+    /// });
+    ///
+    /// docker.service_logs("my-service", options);
+    /// ```
+    pub fn service_logs(
+        &self,
+        service_id: &str,
+        options: Option<impl Into<crate::query_parameters::LogsOptions>>,
+    ) -> impl Stream<Item = Result<LogOutput, Error>> {
+        let url = format!("/services/{service_id}/logs");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::GET),
+            options.map(Into::into),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_stream_string(req)
     }
 }

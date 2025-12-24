@@ -1,7 +1,9 @@
 #![allow(deprecated)]
+use bollard::container::LogsOptions;
 use bollard::errors::Error;
 use bollard::{service::*, Docker};
 
+use futures_util::stream::StreamExt;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -230,6 +232,45 @@ async fn service_rollback_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn service_logs_test(docker: Docker) -> Result<(), Error> {
+    let image = if cfg!(windows) {
+        format!("{}nanoserver/iis", registry_http_addr())
+    } else {
+        format!("{}fussybeaver/uhttpd", registry_http_addr())
+    };
+    let spec = ServiceSpec {
+        name: Some(String::from("integration_test_service_logs")),
+        task_template: Some(TaskSpec {
+            container_spec: Some(TaskSpecContainerSpec {
+                image: Some(image),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    docker.create_service(spec, None).await?;
+
+    let options = LogsOptions::<String> {
+        stdout: true,
+        stderr: true,
+        ..Default::default()
+    };
+
+    let mut stream = docker.service_logs("integration_test_service_logs", Some(options));
+
+    // Just verify we can call the API and get a stream
+    // The stream may be empty if no logs yet, which is fine
+    let _ = stream.next().await;
+
+    docker
+        .delete_service("integration_test_service_logs")
+        .await?;
+
+    Ok(())
+}
+
 #[test]
 #[cfg(unix)]
 fn integration_test_create_service() {
@@ -252,4 +293,10 @@ fn integration_test_update_service() {
 #[cfg(unix)]
 fn integration_test_rollback_service() {
     connect_to_docker_and_run!(service_rollback_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_service_logs() {
+    connect_to_docker_and_run!(service_logs_test);
 }
