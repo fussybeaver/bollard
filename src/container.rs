@@ -1444,6 +1444,79 @@ where
     }
 }
 
+/// Parameters used in the [Create Checkpoint API](Docker::create_checkpoint())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::CreateCheckpointOptions;
+///
+/// CreateCheckpointOptions {
+///     checkpoint_id: String::from("my-checkpoint"),
+///     checkpoint_dir: None,
+///     exit: true,
+/// };
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct CreateCheckpointOptions {
+    /// The checkpoint identifier.
+    #[serde(rename = "CheckpointID")]
+    pub checkpoint_id: String,
+    /// Custom checkpoint storage directory.
+    #[serde(rename = "CheckpointDir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_dir: Option<String>,
+    /// Stop the container after creating the checkpoint.
+    #[serde(rename = "Exit")]
+    pub exit: bool,
+}
+
+/// Parameters used in the [List Checkpoints API](Docker::list_checkpoints())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::ListCheckpointsOptions;
+///
+/// ListCheckpointsOptions {
+///     checkpoint_dir: Some(String::from("/custom/checkpoint/dir")),
+/// };
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ListCheckpointsOptions {
+    /// Custom checkpoint storage directory.
+    #[serde(rename = "dir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_dir: Option<String>,
+}
+
+/// Parameters used in the [Delete Checkpoint API](Docker::delete_checkpoint())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::container::DeleteCheckpointOptions;
+///
+/// DeleteCheckpointOptions {
+///     checkpoint_dir: Some(String::from("/custom/checkpoint/dir")),
+/// };
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DeleteCheckpointOptions {
+    /// Custom checkpoint storage directory.
+    #[serde(rename = "dir")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_dir: Option<String>,
+}
+
+/// Checkpoint summary returned by [List Checkpoints API](Docker::list_checkpoints())
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Checkpoint {
+    /// Name of the checkpoint.
+    #[serde(rename = "Name")]
+    pub name: String,
+}
+
 impl Docker {
     /// ---
     ///
@@ -2670,6 +2743,147 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         self.process_into_body(req)
+    }
+
+    /// ---
+    ///
+    /// # Create Checkpoint
+    ///
+    /// Create a checkpoint from a running container.
+    ///
+    /// This is an **experimental feature** that requires:
+    /// - Docker daemon with experimental features enabled
+    /// - CRIU installed on the host (Linux only)
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - [CreateCheckpointOptions](CreateCheckpointOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::CreateCheckpointOptions;
+    ///
+    /// let options = CreateCheckpointOptions {
+    ///     checkpoint_id: String::from("my-checkpoint"),
+    ///     exit: true,
+    ///     ..Default::default()
+    /// };
+    ///
+    /// docker.create_checkpoint("my-container", options);
+    /// ```
+    pub async fn create_checkpoint(
+        &self,
+        container_name: &str,
+        options: CreateCheckpointOptions,
+    ) -> Result<(), Error> {
+        let url = format!("/containers/{container_name}/checkpoints");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::POST),
+            None::<String>,
+            Docker::serialize_payload(Some(options)),
+        );
+
+        self.process_into_unit(req).await
+    }
+
+    /// ---
+    ///
+    /// # List Checkpoints
+    ///
+    /// List checkpoints for a container.
+    ///
+    /// See [create_checkpoint](Docker::create_checkpoint) for experimental feature requirements.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Optional [ListCheckpointsOptions](ListCheckpointsOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - Vector of [Checkpoint](Checkpoint) structs, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::ListCheckpointsOptions;
+    ///
+    /// docker.list_checkpoints("my-container", None::<ListCheckpointsOptions>);
+    /// ```
+    pub async fn list_checkpoints(
+        &self,
+        container_name: &str,
+        options: Option<ListCheckpointsOptions>,
+    ) -> Result<Vec<Checkpoint>, Error> {
+        let url = format!("/containers/{container_name}/checkpoints");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::GET),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        // Docker returns null instead of [] when no checkpoints exist
+        let result: Option<Vec<Checkpoint>> = self.process_into_value(req).await?;
+        Ok(result.unwrap_or_default())
+    }
+
+    /// ---
+    ///
+    /// # Delete Checkpoint
+    ///
+    /// Delete a checkpoint from a container.
+    ///
+    /// See [create_checkpoint](Docker::create_checkpoint) for experimental feature requirements.
+    ///
+    /// # Arguments
+    ///
+    ///  - Container name as a string slice.
+    ///  - Checkpoint ID as a string slice.
+    ///  - Optional [DeleteCheckpointOptions](DeleteCheckpointOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::container::DeleteCheckpointOptions;
+    ///
+    /// docker.delete_checkpoint("my-container", "my-checkpoint", None::<DeleteCheckpointOptions>);
+    /// ```
+    pub async fn delete_checkpoint(
+        &self,
+        container_name: &str,
+        checkpoint_id: &str,
+        options: Option<DeleteCheckpointOptions>,
+    ) -> Result<(), Error> {
+        let url = format!("/containers/{container_name}/checkpoints/{checkpoint_id}");
+
+        let req = self.build_request(
+            &url,
+            Builder::new().method(Method::DELETE),
+            options,
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_unit(req).await
     }
 }
 
