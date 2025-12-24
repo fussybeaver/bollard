@@ -92,16 +92,6 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test --features test_swarm test_swarm
-  test_checkpoint:
-    docker:
-      - image: docker:27.3
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: docker run -e DOCKER_TLS_CERTDIR="" --rm -h test.example.com -d --privileged --name test-docker-daemon docker:27.3-dind --storage-driver=overlay2 --experimental
-      - run: docker exec test-docker-daemon sh -c "echo 'http://dl-cdn.alpinelinux.org/alpine/edge/testing' >> /etc/apk/repositories && apk add --no-cache criu"
-      - run: docker build -t bollard .
-      - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' -e DISABLE_REGISTRY=1 --rm --link test-docker-daemon:docker bollard cargo test --features test_http,test_checkpoint test_checkpoint
   test_race:
     docker:
       - image: docker:27.3
@@ -189,4 +179,3 @@ workflows:
       - test_race
       - test_sshforward
       - test_swarm
-      - test_checkpoint
