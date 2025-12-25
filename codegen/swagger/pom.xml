@@ -72,6 +72,11 @@
                       NodeList=ListNodesOptions
                       NodeDelete=DeleteNodeOptions
                       NodeUpdate=UpdateNodeOptions
+                      GetPluginPrivileges=GetPluginPrivilegesOptions
+                      PluginDelete=RemovePluginOptions
+                      PluginDisable=DisablePluginOptions
+                      PluginEnable=EnablePluginOptions
+                      PluginList=ListPluginsOptions
                       SecretList=ListSecretsOptions
                       SecretUpdate=UpdateSecretOptions
                       ServiceInspect=InspectServiceOptions
