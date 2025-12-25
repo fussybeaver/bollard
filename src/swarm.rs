@@ -108,6 +108,10 @@ impl From<LeaveSwarmOptions> for crate::query_parameters::LeaveSwarmOptions {
 /// };
 /// ```
 #[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[deprecated(
+    since = "0.19.0",
+    note = "use the OpenAPI generated bollard::query_parameters::UpdateSwarmOptions and associated UpdateSwarmOptionsBuilder"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSwarmOptions {
     /// The version number of the swarm object being updated. This is required to avoid conflicting writes.
@@ -118,6 +122,17 @@ pub struct UpdateSwarmOptions {
     pub rotate_manager_token: bool,
     /// Rotate the manager unlock key.
     pub rotate_manager_unlock_key: bool,
+}
+
+impl From<UpdateSwarmOptions> for crate::query_parameters::UpdateSwarmOptions {
+    fn from(opts: UpdateSwarmOptions) -> Self {
+        crate::query_parameters::UpdateSwarmOptionsBuilder::default()
+            .version(opts.version as i64)
+            .rotate_worker_token(opts.rotate_worker_token)
+            .rotate_manager_token(opts.rotate_manager_token)
+            .rotate_manager_unlock_key(opts.rotate_manager_unlock_key)
+            .build()
+    }
 }
 
 impl Docker {
@@ -280,7 +295,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - [SwarmSpec](SwarmSpec) struct.
-    ///  - [UpdateSwarmOptions](UpdateSwarmOptions) struct.
+    ///  - [UpdateSwarmOptions](crate::query_parameters::UpdateSwarmOptions) struct.
     ///
     /// # Returns
     ///
@@ -291,17 +306,16 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::swarm::UpdateSwarmOptions;
+    /// use bollard::query_parameters::UpdateSwarmOptionsBuilder;
     ///
     /// let result = async move {
     ///     let swarm = docker.inspect_swarm().await?;
     ///     let version = swarm.version.unwrap().index.unwrap();
     ///     let spec = swarm.spec.unwrap();
     ///
-    ///     let options = UpdateSwarmOptions {
-    ///         version,
-    ///         ..Default::default()
-    ///     };
+    ///     let options = UpdateSwarmOptionsBuilder::default()
+    ///         .version(version as i64)
+    ///         .build();
     ///
     ///     docker.update_swarm(spec, options).await
     /// };
@@ -309,14 +323,14 @@ impl Docker {
     pub async fn update_swarm(
         &self,
         swarm_spec: SwarmSpec,
-        options: UpdateSwarmOptions,
+        options: impl Into<crate::query_parameters::UpdateSwarmOptions>,
     ) -> Result<(), Error> {
         let url = "/swarm/update";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::POST),
-            Some(options),
+            Some(options.into()),
             Docker::serialize_payload(Some(swarm_spec)),
         );
 

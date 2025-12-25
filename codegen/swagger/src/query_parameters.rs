@@ -3692,15 +3692,94 @@ impl Default for LeaveSwarmOptions
     }
 }
 
+/// Builder for the `SwarmUpdate` API query parameter.
+///
+/// Update a swarm.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::UpdateSwarmOptionsBuilder;
+///
+/// let params = UpdateSwarmOptionsBuilder::new()
+/// //  .version(/* ... */)
+/// //  .rotate_worker_token(/* ... */)
+/// //  .rotate_manager_token(/* ... */)
+/// //  .rotate_manager_unlock_key(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UpdateSwarmOptionsBuilder {
+    inner: UpdateSwarmOptions,
+}
+
+impl UpdateSwarmOptionsBuilder {
+    /// Construct a builder of query parameters for UpdateSwarmOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The version number of the swarm object being updated. This is
+    /// required to avoid conflicting writes.
+    pub fn version(mut self, version: i64) -> Self {
+        self.inner.version = version;
+        self
+    }
+
+    /// Rotate the worker join token.
+    pub fn rotate_worker_token(mut self, rotate_worker_token: bool) -> Self {
+        self.inner.rotate_worker_token = rotate_worker_token;
+        self
+    }
+
+    /// Rotate the manager join token.
+    pub fn rotate_manager_token(mut self, rotate_manager_token: bool) -> Self {
+        self.inner.rotate_manager_token = rotate_manager_token;
+        self
+    }
+
+    /// Rotate the manager unlock key.
+    pub fn rotate_manager_unlock_key(mut self, rotate_manager_unlock_key: bool) -> Self {
+        self.inner.rotate_manager_unlock_key = rotate_manager_unlock_key;
+        self
+    }
+
+    /// Consume this builder and use the `UpdateSwarmOptions` as parameter to the
+    /// `SwarmUpdate` API
+    pub fn build(self) -> UpdateSwarmOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `SwarmUpdate` API
+/// 
+/// Use a [UpdateSwarmOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateSwarmOptions
+{ 
+    pub version: i64, 
+    #[serde(rename = "rotateWorkerToken")]
+    pub rotate_worker_token: bool, 
+    #[serde(rename = "rotateManagerToken")]
+    pub rotate_manager_token: bool, 
+    #[serde(rename = "rotateManagerUnlockKey")]
+    pub rotate_manager_unlock_key: bool, 
+}
+
+impl Default for UpdateSwarmOptions
+{
+    fn default() -> Self {
+        Self {
+            version: Default::default(),
+            rotate_worker_token: false,
+            rotate_manager_token: false,
+            rotate_manager_unlock_key: false,
+        }
+    }
+}
 
 
 
-// Filtered out: SwarmUpdate
-// Update a swarm
-//   - version
-//   - rotate_worker_token
-//   - rotate_manager_token
-//   - rotate_manager_unlock_key
 
 /// Builder for the `SystemDataUsage` API query parameter.
 ///
