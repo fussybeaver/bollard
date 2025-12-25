@@ -3,11 +3,13 @@ extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
+use bollard::container::LogsOptions;
 use bollard::errors::Error;
 use bollard::models::*;
 use bollard::task::ListTasksOptions;
 use bollard::Docker;
 
+use futures_util::stream::StreamExt;
 use tokio::runtime::Runtime;
 use tokio::time::sleep;
 
@@ -140,6 +142,73 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn task_logs_test(docker: Docker) -> Result<(), Error> {
+    const SERVICE_NAME: &str = "integration_test_task_logs";
+
+    let image = if cfg!(windows) {
+        format!("{}nanoserver/iis", registry_http_addr())
+    } else {
+        format!("{}fussybeaver/uhttpd", registry_http_addr())
+    };
+    let spec = ServiceSpec {
+        name: Some(String::from(SERVICE_NAME)),
+        mode: Some(ServiceSpecMode {
+            replicated: Some(ServiceSpecModeReplicated { replicas: Some(1) }),
+            ..Default::default()
+        }),
+        task_template: Some(TaskSpec {
+            container_spec: Some(TaskSpecContainerSpec {
+                image: Some(image),
+                ..Default::default()
+            }),
+            restart_policy: Some(TaskSpecRestartPolicy {
+                condition: Some(TaskSpecRestartPolicyConditionEnum::NONE),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let response = docker.create_service(spec, None).await?;
+    assert!(response.id.is_some());
+
+    // Wait for a task to be created
+    let mut tasks;
+    loop {
+        tasks = docker
+            .list_tasks(Some(ListTasksOptions {
+                filters: HashMap::from_iter([("service", vec![SERVICE_NAME])]),
+            }))
+            .await?;
+
+        if !tasks.is_empty() {
+            break;
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    assert_eq!(tasks.len(), 1, "expected one task");
+
+    let task_id = tasks[0].id.as_deref().expect("task should have id");
+
+    let options = LogsOptions::<String> {
+        stdout: true,
+        stderr: true,
+        ..Default::default()
+    };
+
+    let mut stream = docker.task_logs(task_id, Some(options));
+
+    // Just verify we can call the API and get a stream
+    // The stream may be empty if no logs yet, which is fine
+    let _ = stream.next().await;
+
+    docker.delete_service(SERVICE_NAME).await?;
+    Ok(())
+}
+
 #[test]
 #[cfg(unix)]
 fn integration_test_list_tasks() {
@@ -150,4 +219,10 @@ fn integration_test_list_tasks() {
 #[cfg(unix)]
 fn integration_test_inspect_task() {
     connect_to_docker_and_run!(inspect_task_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_task_logs() {
+    connect_to_docker_and_run!(task_logs_test);
 }
