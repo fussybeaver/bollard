@@ -3227,32 +3227,308 @@ impl Default for UpdateNodeOptions
 
 
 
+/// Builder for the `GetPluginPrivileges` API query parameter.
+///
+/// Get plugin privileges.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::GetPluginPrivilegesOptionsBuilder;
+///
+/// let params = GetPluginPrivilegesOptionsBuilder::new()
+/// //  .remote(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct GetPluginPrivilegesOptionsBuilder {
+    inner: GetPluginPrivilegesOptions,
+}
+
+impl GetPluginPrivilegesOptionsBuilder {
+    /// Construct a builder of query parameters for GetPluginPrivilegesOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The name of the plugin. The `:latest` tag is optional, and is the
+    /// default if omitted.
+    pub fn remote(mut self, remote: &str) -> Self {
+        self.inner.remote = remote.into();
+        self
+    }
+
+    /// Consume this builder and use the `GetPluginPrivilegesOptions` as parameter to the
+    /// `GetPluginPrivileges` API
+    pub fn build(self) -> GetPluginPrivilegesOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `GetPluginPrivileges` API
+/// 
+/// Use a [GetPluginPrivilegesOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GetPluginPrivilegesOptions
+{ 
+    pub remote: String, 
+}
+
+impl Default for GetPluginPrivilegesOptions
+{
+    fn default() -> Self {
+        Self {
+            remote: Default::default(),
+        }
+    }
+}
+
+/// Builder for the `PluginDelete` API query parameter.
+///
+/// Remove a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::RemovePluginOptionsBuilder;
+///
+/// let params = RemovePluginOptionsBuilder::new()
+/// //  .force(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct RemovePluginOptionsBuilder {
+    inner: RemovePluginOptions,
+}
+
+impl RemovePluginOptionsBuilder {
+    /// Construct a builder of query parameters for RemovePluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Disable the plugin before removing. This may result in issues if the
+    /// plugin is in use by a container.
+    pub fn force(mut self, force: bool) -> Self {
+        self.inner.force = force;
+        self
+    }
+
+    /// Consume this builder and use the `RemovePluginOptions` as parameter to the
+    /// `PluginDelete` API
+    pub fn build(self) -> RemovePluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginDelete` API
+/// 
+/// Use a [RemovePluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RemovePluginOptions
+{ 
+    pub force: bool, 
+}
+
+impl Default for RemovePluginOptions
+{
+    fn default() -> Self {
+        Self {
+            force: false,
+        }
+    }
+}
+
+/// Builder for the `PluginDisable` API query parameter.
+///
+/// Disable a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::DisablePluginOptionsBuilder;
+///
+/// let params = DisablePluginOptionsBuilder::new()
+/// //  .force(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DisablePluginOptionsBuilder {
+    inner: DisablePluginOptions,
+}
+
+impl DisablePluginOptionsBuilder {
+    /// Construct a builder of query parameters for DisablePluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Force disable a plugin even if still in use.
+    pub fn force(mut self, force: bool) -> Self {
+        self.inner.force = Some(force);
+        self
+    }
+
+    /// Consume this builder and use the `DisablePluginOptions` as parameter to the
+    /// `PluginDisable` API
+    pub fn build(self) -> DisablePluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginDisable` API
+/// 
+/// Use a [DisablePluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DisablePluginOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub force: Option<bool>, 
+}
+
+impl Default for DisablePluginOptions
+{
+    fn default() -> Self {
+        Self {
+            force: None,
+        }
+    }
+}
+
+/// Builder for the `PluginEnable` API query parameter.
+///
+/// Enable a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::EnablePluginOptionsBuilder;
+///
+/// let params = EnablePluginOptionsBuilder::new()
+/// //  .timeout(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct EnablePluginOptionsBuilder {
+    inner: EnablePluginOptions,
+}
+
+impl EnablePluginOptionsBuilder {
+    /// Construct a builder of query parameters for EnablePluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the HTTP client timeout (in seconds)
+    pub fn timeout(mut self, timeout: i32) -> Self {
+        self.inner.timeout = timeout;
+        self
+    }
+
+    /// Consume this builder and use the `EnablePluginOptions` as parameter to the
+    /// `PluginEnable` API
+    pub fn build(self) -> EnablePluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginEnable` API
+/// 
+/// Use a [EnablePluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EnablePluginOptions
+{ 
+    pub timeout: i32, 
+}
+
+impl Default for EnablePluginOptions
+{
+    fn default() -> Self {
+        Self {
+            timeout: 0,
+        }
+    }
+}
+
+/// Builder for the `PluginList` API query parameter.
+///
+/// List plugins.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ListPluginsOptionsBuilder;
+///
+/// let params = ListPluginsOptionsBuilder::new()
+/// //  .filters(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ListPluginsOptionsBuilder {
+    inner: ListPluginsOptions,
+}
+
+impl ListPluginsOptionsBuilder {
+    /// Construct a builder of query parameters for ListPluginsOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A JSON encoded value of the filters (a `map[string][]string`) to
+    /// process on the plugin list.
+    /// 
+    /// Available filters:
+    /// 
+    /// - `capability=<capability name>`
+    /// - `enable=<true>|<false>`
+    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+        let mut inner_filters = HashMap::new();
+        for (key, value) in filters {
+            inner_filters.insert(
+                Into::<String>::into(key.clone()),
+                value
+                    .into_iter()
+                    .map(|v| Into::<String>::into(v.clone()))
+                    .collect(),
+            );
+        }
+        self.inner.filters = Some(inner_filters);
+        self
+    }
+
+    /// Consume this builder and use the `ListPluginsOptions` as parameter to the
+    /// `PluginList` API
+    pub fn build(self) -> ListPluginsOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginList` API
+/// 
+/// Use a [ListPluginsOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ListPluginsOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_as_json")]
+    pub filters: Option<HashMap<String, Vec<String>>>, 
+}
+
+impl Default for ListPluginsOptions
+{
+    fn default() -> Self {
+        Self {
+            filters: None,
+        }
+    }
+}
 
 
 
-// Filtered out: GetPluginPrivileges
-// Get plugin privileges
-//   - remote
 
 // Filtered out: PluginCreate
 // Create a plugin
 //   - name
-
-// Filtered out: PluginDelete
-// Remove a plugin
-//   - force
-
-// Filtered out: PluginDisable
-// Disable a plugin
-//   - force
-
-// Filtered out: PluginEnable
-// Enable a plugin
-//   - timeout
-
-// Filtered out: PluginList
-// List plugins
-//   - filters
 
 // Filtered out: PluginPull
 // Install a plugin

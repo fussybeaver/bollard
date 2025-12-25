@@ -2,24 +2,25 @@
 pub mod common;
 
 use bollard::errors::Error;
-use bollard::plugin::*;
+use bollard::query_parameters::{GetPluginPrivilegesOptionsBuilder, ListPluginsOptionsBuilder};
 use bollard::Docker;
+use std::collections::HashMap;
 
 async fn list_plugins_test(docker: Docker) -> Result<(), Error> {
     let _plugins = docker
-        .list_plugins(None::<ListPluginsOptions<&str>>)
+        .list_plugins(None::<bollard::query_parameters::ListPluginsOptions>)
         .await?;
     // Just verify the API works and returns without error
     Ok(())
 }
 
 async fn list_plugins_with_filter_test(docker: Docker) -> Result<(), Error> {
-    use std::collections::HashMap;
+    let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+    filters.insert("capability".to_string(), vec!["volumedriver".to_string()]);
 
-    let mut filters = HashMap::new();
-    filters.insert("capability", vec!["volumedriver"]);
-
-    let options = ListPluginsOptions { filters };
+    let options = ListPluginsOptionsBuilder::default()
+        .filters(&filters)
+        .build();
 
     let _plugins = docker.list_plugins(Some(options)).await?;
     // Just verify the API works with filters
@@ -28,9 +29,9 @@ async fn list_plugins_with_filter_test(docker: Docker) -> Result<(), Error> {
 
 async fn get_plugin_privileges_test(docker: Docker) -> Result<(), Error> {
     // Test with a well-known plugin from Docker Hub
-    let options = GetPluginPrivilegesOptions {
-        remote: "vieux/sshfs:latest",
-    };
+    let options = GetPluginPrivilegesOptionsBuilder::default()
+        .remote("vieux/sshfs:latest")
+        .build();
 
     // This may fail if the plugin doesn't exist on Docker Hub or network issues
     // So we accept both success and specific errors
