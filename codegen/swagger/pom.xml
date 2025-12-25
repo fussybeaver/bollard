@@ -78,6 +78,7 @@
                       ServiceList=ListServicesOptions
                       ServiceUpdate=UpdateServiceOptions
                       SwarmLeave=LeaveSwarmOptions
+                      SwarmUpdate=UpdateSwarmOptions
                       SystemDataUsage=DataUsageOptions
                       SystemEvents=EventsOptions
                       TaskList=ListTasksOptions
