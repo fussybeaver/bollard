@@ -6,7 +6,9 @@ use bollard::plugin::*;
 use bollard::Docker;
 
 async fn list_plugins_test(docker: Docker) -> Result<(), Error> {
-    let _plugins = docker.list_plugins(None::<ListPluginsOptions<&str>>).await?;
+    let _plugins = docker
+        .list_plugins(None::<ListPluginsOptions<&str>>)
+        .await?;
     // Just verify the API works and returns without error
     Ok(())
 }
