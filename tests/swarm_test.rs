@@ -26,6 +26,22 @@ async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Erro
             > 0
     );
 
+    // test update swarm - get current version and spec
+    let swarm = docker.inspect_swarm().await?;
+    let version = swarm.version.unwrap().index.unwrap();
+    let spec = swarm.spec.unwrap();
+
+    // update swarm (no changes, just verify API works)
+    let options = UpdateSwarmOptions {
+        version,
+        ..Default::default()
+    };
+    docker.update_swarm(spec, options).await?;
+
+    // verify swarm version incremented after update
+    let updated_swarm = docker.inspect_swarm().await?;
+    assert!(updated_swarm.version.unwrap().index.unwrap() > version);
+
     // leave swarm
     let config = LeaveSwarmOptions { force: true };
     let _ = &docker.leave_swarm(Some(config)).await?;

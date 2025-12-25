@@ -95,6 +95,31 @@ impl From<LeaveSwarmOptions> for crate::query_parameters::LeaveSwarmOptions {
     }
 }
 
+/// Parameters used in the [Update Swarm API](Docker::update_swarm())
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::swarm::UpdateSwarmOptions;
+///
+/// UpdateSwarmOptions {
+///     version: 1234,
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSwarmOptions {
+    /// The version number of the swarm object being updated. This is required to avoid conflicting writes.
+    pub version: u64,
+    /// Rotate the worker join token.
+    pub rotate_worker_token: bool,
+    /// Rotate the manager join token.
+    pub rotate_manager_token: bool,
+    /// Rotate the manager unlock key.
+    pub rotate_manager_unlock_key: bool,
+}
+
 impl Docker {
     /// ---
     ///
@@ -241,6 +266,58 @@ impl Docker {
             Builder::new().method(Method::POST),
             options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_unit(req).await
+    }
+
+    /// ---
+    ///
+    /// # Update a Swarm
+    ///
+    /// Update a swarm's configuration.
+    ///
+    /// # Arguments
+    ///
+    ///  - [SwarmSpec](SwarmSpec) struct.
+    ///  - [UpdateSwarmOptions](UpdateSwarmOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::swarm::UpdateSwarmOptions;
+    ///
+    /// let result = async move {
+    ///     let swarm = docker.inspect_swarm().await?;
+    ///     let version = swarm.version.unwrap().index.unwrap();
+    ///     let spec = swarm.spec.unwrap();
+    ///
+    ///     let options = UpdateSwarmOptions {
+    ///         version,
+    ///         ..Default::default()
+    ///     };
+    ///
+    ///     docker.update_swarm(spec, options).await
+    /// };
+    /// ```
+    pub async fn update_swarm(
+        &self,
+        swarm_spec: SwarmSpec,
+        options: UpdateSwarmOptions,
+    ) -> Result<(), Error> {
+        let url = "/swarm/update";
+
+        let req = self.build_request(
+            url,
+            Builder::new().method(Method::POST),
+            Some(options),
+            Docker::serialize_payload(Some(swarm_spec)),
         );
 
         self.process_into_unit(req).await
