@@ -50,6 +50,7 @@ async fn get_plugin_privileges_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn integration_test_list_plugins() {
     use crate::common::run_runtime;
     use tokio::runtime::Runtime;
@@ -57,6 +58,7 @@ fn integration_test_list_plugins() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn integration_test_list_plugins_with_filter() {
     use crate::common::run_runtime;
     use tokio::runtime::Runtime;
