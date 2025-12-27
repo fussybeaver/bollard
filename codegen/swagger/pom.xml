@@ -33,12 +33,15 @@
                 <supportingFilesToGenerate>query_parameters.rs,models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.49.3-rc.28.4.0</packageVersion>
+                  <packageVersion>1.49.4-rc.28.4.0</packageVersion>
                   <queryParameterMappings>
+                      ConfigList=ListConfigsOptions
+                      ConfigUpdate=UpdateConfigOptions
                       ContainerList=ListContainersOptions
                       ContainerArchive=DownloadFromContainerOptions
                       ContainerArchiveInfo=ContainerArchiveInfoOptions
                       ContainerAttach=AttachContainerOptions
+                      ContainerAttachWebsocket=AttachContainerWebsocketOptions
                       ContainerCreate=CreateContainerOptions
                       ContainerDelete=RemoveContainerOptions
                       ContainerInspect=InspectContainerOptions
@@ -60,6 +63,10 @@
                       ImageCommit=CommitContainerOptions
                       ImageCreate=CreateImageOptions
                       ImageDelete=RemoveImageOptions
+                      ImageGet=ExportImageOptions
+                      ImageGetAll=ExportImagesOptions
+                      ImageHistory=ImageHistoryOptions
+                      ImageInspect=InspectImageOptions
                       ImageList=ListImagesOptions
                       ImageLoad=ImportImageOptions
                       ImagePrune=PruneImagesOptions
@@ -72,16 +79,26 @@
                       NodeList=ListNodesOptions
                       NodeDelete=DeleteNodeOptions
                       NodeUpdate=UpdateNodeOptions
+                      GetPluginPrivileges=GetPluginPrivilegesOptions
+                      PluginDelete=RemovePluginOptions
+                      PluginDisable=DisablePluginOptions
+                      PluginEnable=EnablePluginOptions
+                      PluginCreate=CreatePluginOptions
+                      PluginList=ListPluginsOptions
+                      PluginPull=InstallPluginOptions
+                      PluginUpgrade=UpgradePluginOptions
                       SecretList=ListSecretsOptions
                       SecretUpdate=UpdateSecretOptions
                       ServiceInspect=InspectServiceOptions
                       ServiceList=ListServicesOptions
+                      ServiceLogs=ServiceLogsOptions
                       ServiceUpdate=UpdateServiceOptions
                       SwarmLeave=LeaveSwarmOptions
                       SwarmUpdate=UpdateSwarmOptions
                       SystemDataUsage=DataUsageOptions
                       SystemEvents=EventsOptions
                       TaskList=ListTasksOptions
+                      TaskLogs=TaskLogsOptions
                       VolumeDelete=RemoveVolumeOptions
                       VolumeList=ListVolumesOptions
                       VolumePrune=PruneVolumesOptions
