@@ -73,16 +73,139 @@ pub enum BuilderVersion {
 }
 
 
+/// Builder for the `ConfigList` API query parameter.
+///
+/// List configs.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ListConfigsOptionsBuilder;
+///
+/// let params = ListConfigsOptionsBuilder::new()
+/// //  .filters(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ListConfigsOptionsBuilder {
+    inner: ListConfigsOptions,
+}
+
+impl ListConfigsOptionsBuilder {
+    /// Construct a builder of query parameters for ListConfigsOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A JSON encoded value of the filters (a `map[string][]string`) to
+    /// process on the configs list.
+    /// 
+    /// Available filters:
+    /// 
+    /// - `id=<config id>`
+    /// - `label=<key> or label=<key>=value`
+    /// - `name=<config name>`
+    /// - `names=<config name>`
+    pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
+        let mut inner_filters = HashMap::new();
+        for (key, value) in filters {
+            inner_filters.insert(
+                Into::<String>::into(key.clone()),
+                value
+                    .into_iter()
+                    .map(|v| Into::<String>::into(v.clone()))
+                    .collect(),
+            );
+        }
+        self.inner.filters = Some(inner_filters);
+        self
+    }
+
+    /// Consume this builder and use the `ListConfigsOptions` as parameter to the
+    /// `ConfigList` API
+    pub fn build(self) -> ListConfigsOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ConfigList` API
+/// 
+/// Use a [ListConfigsOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ListConfigsOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_as_json")]
+    pub filters: Option<HashMap<String, Vec<String>>>, 
+}
+
+impl Default for ListConfigsOptions
+{
+    fn default() -> Self {
+        Self {
+            filters: None,
+        }
+    }
+}
+
+/// Builder for the `ConfigUpdate` API query parameter.
+///
+/// Update a Config.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::UpdateConfigOptionsBuilder;
+///
+/// let params = UpdateConfigOptionsBuilder::new()
+/// //  .version(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UpdateConfigOptionsBuilder {
+    inner: UpdateConfigOptions,
+}
+
+impl UpdateConfigOptionsBuilder {
+    /// Construct a builder of query parameters for UpdateConfigOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The version number of the config object being updated. This is
+    /// required to avoid conflicting writes.
+    pub fn version(mut self, version: i64) -> Self {
+        self.inner.version = version;
+        self
+    }
+
+    /// Consume this builder and use the `UpdateConfigOptions` as parameter to the
+    /// `ConfigUpdate` API
+    pub fn build(self) -> UpdateConfigOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ConfigUpdate` API
+/// 
+/// Use a [UpdateConfigOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateConfigOptions
+{ 
+    pub version: i64, 
+}
+
+impl Default for UpdateConfigOptions
+{
+    fn default() -> Self {
+        Self {
+            version: Default::default(),
+        }
+    }
+}
 
 
 
-// Filtered out: ConfigList
-// List configs
-//   - filters
-
-// Filtered out: ConfigUpdate
-// Update a Config
-//   - version
 
 /// Builder for the `ContainerArchive` API query parameter.
 ///
@@ -292,6 +415,110 @@ pub struct AttachContainerOptions
 }
 
 impl Default for AttachContainerOptions
+{
+    fn default() -> Self {
+        Self {
+            detach_keys: None,
+            logs: false,
+            stream: false,
+            stdin: false,
+            stdout: false,
+            stderr: false,
+        }
+    }
+}
+
+/// Builder for the `ContainerAttachWebsocket` API query parameter.
+///
+/// Attach to a container via a websocket.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::AttachContainerWebsocketOptionsBuilder;
+///
+/// let params = AttachContainerWebsocketOptionsBuilder::new()
+/// //  .detach_keys(/* ... */)
+/// //  .logs(/* ... */)
+/// //  .stream(/* ... */)
+/// //  .stdin(/* ... */)
+/// //  .stdout(/* ... */)
+/// //  .stderr(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct AttachContainerWebsocketOptionsBuilder {
+    inner: AttachContainerWebsocketOptions,
+}
+
+impl AttachContainerWebsocketOptionsBuilder {
+    /// Construct a builder of query parameters for AttachContainerWebsocketOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Override the key sequence for detaching a container.Format is a single
+    /// character `[a-Z]` or `ctrl-<value>` where `<value>` is one of: `a-z`,
+    /// `@`, `^`, `[`, `,`, or `_`.
+    pub fn detach_keys(mut self, detach_keys: &str) -> Self {
+        self.inner.detach_keys = Some(detach_keys.into());
+        self
+    }
+
+    /// Return logs
+    pub fn logs(mut self, logs: bool) -> Self {
+        self.inner.logs = logs;
+        self
+    }
+
+    /// Return stream
+    pub fn stream(mut self, stream: bool) -> Self {
+        self.inner.stream = stream;
+        self
+    }
+
+    /// Attach to `stdin`
+    pub fn stdin(mut self, stdin: bool) -> Self {
+        self.inner.stdin = stdin;
+        self
+    }
+
+    /// Attach to `stdout`
+    pub fn stdout(mut self, stdout: bool) -> Self {
+        self.inner.stdout = stdout;
+        self
+    }
+
+    /// Attach to `stderr`
+    pub fn stderr(mut self, stderr: bool) -> Self {
+        self.inner.stderr = stderr;
+        self
+    }
+
+    /// Consume this builder and use the `AttachContainerWebsocketOptions` as parameter to the
+    /// `ContainerAttachWebsocket` API
+    pub fn build(self) -> AttachContainerWebsocketOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ContainerAttachWebsocket` API
+/// 
+/// Use a [AttachContainerWebsocketOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AttachContainerWebsocketOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "detachKeys")]
+    pub detach_keys: Option<String>, 
+    pub logs: bool, 
+    pub stream: bool, 
+    pub stdin: bool, 
+    pub stdout: bool, 
+    pub stderr: bool, 
+}
+
+impl Default for AttachContainerWebsocketOptions
 {
     fn default() -> Self {
         Self {
@@ -1438,15 +1665,6 @@ impl Default for UploadToContainerOptions
 
 
 
-// Filtered out: ContainerAttachWebsocket
-// Attach to a container via a websocket
-//   - detach_keys
-//   - logs
-//   - stream
-//   - stdin
-//   - stdout
-//   - stderr
-
 
 
 
@@ -2310,6 +2528,261 @@ impl Default for RemoveImageOptions
     }
 }
 
+/// Builder for the `ImageGet` API query parameter.
+///
+/// Export an image.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ExportImageOptionsBuilder;
+///
+/// let params = ExportImageOptionsBuilder::new()
+/// //  .platform(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ExportImageOptionsBuilder {
+    inner: ExportImageOptions,
+}
+
+impl ExportImageOptionsBuilder {
+    /// Construct a builder of query parameters for ExportImageOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// JSON encoded OCI platform describing a platform which will be used
+    /// to select a platform-specific image to be saved if the image is
+    /// multi-platform.
+    /// If not provided, the full multi-platform image will be saved.
+    /// 
+    /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    pub fn platform(mut self, platform: &str) -> Self {
+        self.inner.platform = Some(platform.into());
+        self
+    }
+
+    /// Consume this builder and use the `ExportImageOptions` as parameter to the
+    /// `ImageGet` API
+    pub fn build(self) -> ExportImageOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ImageGet` API
+/// 
+/// Use a [ExportImageOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExportImageOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>, 
+}
+
+impl Default for ExportImageOptions
+{
+    fn default() -> Self {
+        Self {
+            platform: None,
+        }
+    }
+}
+
+/// Builder for the `ImageGetAll` API query parameter.
+///
+/// Export several images.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ExportImagesOptionsBuilder;
+///
+/// let params = ExportImagesOptionsBuilder::new()
+/// //  .names(/* ... */)
+/// //  .platform(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ExportImagesOptionsBuilder {
+    inner: ExportImagesOptions,
+}
+
+impl ExportImagesOptionsBuilder {
+    /// Construct a builder of query parameters for ExportImagesOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Image names to filter by
+    pub fn names(mut self, names: Vec<String>) -> Self {
+        self.inner.names = Some(names
+            .into_iter()
+            .map(|v| Into::<String>::into(v.clone()))
+            .collect());
+        self
+    }
+
+    /// JSON encoded OCI platform describing a platform which will be used
+    /// to select a platform-specific image to be saved if the image is
+    /// multi-platform.
+    /// If not provided, the full multi-platform image will be saved.
+    /// 
+    /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    pub fn platform(mut self, platform: &str) -> Self {
+        self.inner.platform = Some(platform.into());
+        self
+    }
+
+    /// Consume this builder and use the `ExportImagesOptions` as parameter to the
+    /// `ImageGetAll` API
+    pub fn build(self) -> ExportImagesOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ImageGetAll` API
+/// 
+/// Use a [ExportImagesOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExportImagesOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub names: Option<Vec<String>>, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>, 
+}
+
+impl Default for ExportImagesOptions
+{
+    fn default() -> Self {
+        Self {
+            names: None,
+            platform: None,
+        }
+    }
+}
+
+/// Builder for the `ImageHistory` API query parameter.
+///
+/// Get the history of an image.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ImageHistoryOptionsBuilder;
+///
+/// let params = ImageHistoryOptionsBuilder::new()
+/// //  .platform(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ImageHistoryOptionsBuilder {
+    inner: ImageHistoryOptions,
+}
+
+impl ImageHistoryOptionsBuilder {
+    /// Construct a builder of query parameters for ImageHistoryOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// JSON-encoded OCI platform to select the platform-variant.
+    /// If omitted, it defaults to any locally available platform,
+    /// prioritizing the daemon's host platform.
+    /// 
+    /// If the daemon provides a multi-platform image store, this selects
+    /// the platform-variant to show the history for. If the image is
+    /// a single-platform image, or if the multi-platform image does not
+    /// provide a variant matching the given platform, an error is returned.
+    /// 
+    /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    pub fn platform(mut self, platform: &str) -> Self {
+        self.inner.platform = Some(platform.into());
+        self
+    }
+
+    /// Consume this builder and use the `ImageHistoryOptions` as parameter to the
+    /// `ImageHistory` API
+    pub fn build(self) -> ImageHistoryOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ImageHistory` API
+/// 
+/// Use a [ImageHistoryOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ImageHistoryOptions
+{ 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>, 
+}
+
+impl Default for ImageHistoryOptions
+{
+    fn default() -> Self {
+        Self {
+            platform: None,
+        }
+    }
+}
+
+/// Builder for the `ImageInspect` API query parameter.
+///
+/// Inspect an image.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::InspectImageOptionsBuilder;
+///
+/// let params = InspectImageOptionsBuilder::new()
+/// //  .manifests(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct InspectImageOptionsBuilder {
+    inner: InspectImageOptions,
+}
+
+impl InspectImageOptionsBuilder {
+    /// Construct a builder of query parameters for InspectImageOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Include Manifests in the image summary.
+    pub fn manifests(mut self, manifests: bool) -> Self {
+        self.inner.manifests = manifests;
+        self
+    }
+
+    /// Consume this builder and use the `InspectImageOptions` as parameter to the
+    /// `ImageInspect` API
+    pub fn build(self) -> InspectImageOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ImageInspect` API
+/// 
+/// Use a [InspectImageOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InspectImageOptions
+{ 
+    pub manifests: bool, 
+}
+
+impl Default for InspectImageOptions
+{
+    fn default() -> Self {
+        Self {
+            manifests: false,
+        }
+    }
+}
+
 /// Builder for the `ImageList` API query parameter.
 ///
 /// List Images.
@@ -2801,23 +3274,6 @@ impl Default for TagImageOptions
 
 
 
-// Filtered out: ImageGet
-// Export an image
-//   - platform
-
-// Filtered out: ImageGetAll
-// Export several images
-//   - names
-//   - platform
-
-// Filtered out: ImageHistory
-// Get the history of an image
-//   - platform
-
-// Filtered out: ImageInspect
-// Inspect an image
-//   - manifests
-
 /// Builder for the `NetworkInspect` API query parameter.
 ///
 /// Inspect a network.
@@ -3283,6 +3739,62 @@ impl Default for GetPluginPrivilegesOptions
     }
 }
 
+/// Builder for the `PluginCreate` API query parameter.
+///
+/// Create a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::CreatePluginOptionsBuilder;
+///
+/// let params = CreatePluginOptionsBuilder::new()
+/// //  .name(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct CreatePluginOptionsBuilder {
+    inner: CreatePluginOptions,
+}
+
+impl CreatePluginOptionsBuilder {
+    /// Construct a builder of query parameters for CreatePluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The name of the plugin. The `:latest` tag is optional, and is the
+    /// default if omitted.
+    pub fn name(mut self, name: &str) -> Self {
+        self.inner.name = name.into();
+        self
+    }
+
+    /// Consume this builder and use the `CreatePluginOptions` as parameter to the
+    /// `PluginCreate` API
+    pub fn build(self) -> CreatePluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginCreate` API
+/// 
+/// Use a [CreatePluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CreatePluginOptions
+{ 
+    pub name: String, 
+}
+
+impl Default for CreatePluginOptions
+{
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+        }
+    }
+}
+
 /// Builder for the `PluginDelete` API query parameter.
 ///
 /// Remove a plugin.
@@ -3523,21 +4035,134 @@ impl Default for ListPluginsOptions
     }
 }
 
+/// Builder for the `PluginPull` API query parameter.
+///
+/// Install a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::InstallPluginOptionsBuilder;
+///
+/// let params = InstallPluginOptionsBuilder::new()
+/// //  .remote(/* ... */)
+/// //  .name(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct InstallPluginOptionsBuilder {
+    inner: InstallPluginOptions,
+}
+
+impl InstallPluginOptionsBuilder {
+    /// Construct a builder of query parameters for InstallPluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Remote reference for plugin to install.
+    /// 
+    /// The `:latest` tag is optional, and is used as the default if omitted.
+    pub fn remote(mut self, remote: &str) -> Self {
+        self.inner.remote = remote.into();
+        self
+    }
+
+    /// Local name for the pulled plugin.
+    /// 
+    /// The `:latest` tag is optional, and is used as the default if omitted.
+    pub fn name(mut self, name: &str) -> Self {
+        self.inner.name = Some(name.into());
+        self
+    }
+
+    /// Consume this builder and use the `InstallPluginOptions` as parameter to the
+    /// `PluginPull` API
+    pub fn build(self) -> InstallPluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginPull` API
+/// 
+/// Use a [InstallPluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InstallPluginOptions
+{ 
+    pub remote: String, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>, 
+}
+
+impl Default for InstallPluginOptions
+{
+    fn default() -> Self {
+        Self {
+            remote: Default::default(),
+            name: None,
+        }
+    }
+}
+
+/// Builder for the `PluginUpgrade` API query parameter.
+///
+/// Upgrade a plugin.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::UpgradePluginOptionsBuilder;
+///
+/// let params = UpgradePluginOptionsBuilder::new()
+/// //  .remote(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UpgradePluginOptionsBuilder {
+    inner: UpgradePluginOptions,
+}
+
+impl UpgradePluginOptionsBuilder {
+    /// Construct a builder of query parameters for UpgradePluginOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Remote reference to upgrade to.
+    /// 
+    /// The `:latest` tag is optional, and is used as the default if omitted.
+    pub fn remote(mut self, remote: &str) -> Self {
+        self.inner.remote = remote.into();
+        self
+    }
+
+    /// Consume this builder and use the `UpgradePluginOptions` as parameter to the
+    /// `PluginUpgrade` API
+    pub fn build(self) -> UpgradePluginOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `PluginUpgrade` API
+/// 
+/// Use a [UpgradePluginOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpgradePluginOptions
+{ 
+    pub remote: String, 
+}
+
+impl Default for UpgradePluginOptions
+{
+    fn default() -> Self {
+        Self {
+            remote: Default::default(),
+        }
+    }
+}
 
 
 
-// Filtered out: PluginCreate
-// Create a plugin
-//   - name
-
-// Filtered out: PluginPull
-// Install a plugin
-//   - remote
-//   - name
-
-// Filtered out: PluginUpgrade
-// Upgrade a plugin
-//   - remote
 
 /// Builder for the `SecretList` API query parameter.
 ///
@@ -3814,6 +4439,116 @@ impl Default for ListServicesOptions
     }
 }
 
+/// Builder for the `ServiceLogs` API query parameter.
+///
+/// Get service logs.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::ServiceLogsOptionsBuilder;
+///
+/// let params = ServiceLogsOptionsBuilder::new()
+/// //  .details(/* ... */)
+/// //  .follow(/* ... */)
+/// //  .stdout(/* ... */)
+/// //  .stderr(/* ... */)
+/// //  .since(/* ... */)
+/// //  .timestamps(/* ... */)
+/// //  .tail(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ServiceLogsOptionsBuilder {
+    inner: ServiceLogsOptions,
+}
+
+impl ServiceLogsOptionsBuilder {
+    /// Construct a builder of query parameters for ServiceLogsOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Show service context and extra details provided to logs.
+    pub fn details(mut self, details: bool) -> Self {
+        self.inner.details = details;
+        self
+    }
+
+    /// Keep connection after returning logs.
+    pub fn follow(mut self, follow: bool) -> Self {
+        self.inner.follow = follow;
+        self
+    }
+
+    /// Return logs from `stdout`
+    pub fn stdout(mut self, stdout: bool) -> Self {
+        self.inner.stdout = stdout;
+        self
+    }
+
+    /// Return logs from `stderr`
+    pub fn stderr(mut self, stderr: bool) -> Self {
+        self.inner.stderr = stderr;
+        self
+    }
+
+    /// Only return logs since this time, as a UNIX timestamp
+    pub fn since(mut self, since: i32) -> Self {
+        self.inner.since = since;
+        self
+    }
+
+    /// Add timestamps to every log line
+    pub fn timestamps(mut self, timestamps: bool) -> Self {
+        self.inner.timestamps = timestamps;
+        self
+    }
+
+    /// Only return this number of log lines from the end of the logs.
+    /// Specify as an integer or `all` to output all log lines.
+    pub fn tail(mut self, tail: &str) -> Self {
+        self.inner.tail = tail.into();
+        self
+    }
+
+    /// Consume this builder and use the `ServiceLogsOptions` as parameter to the
+    /// `ServiceLogs` API
+    pub fn build(self) -> ServiceLogsOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `ServiceLogs` API
+/// 
+/// Use a [ServiceLogsOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ServiceLogsOptions
+{ 
+    pub details: bool, 
+    pub follow: bool, 
+    pub stdout: bool, 
+    pub stderr: bool, 
+    pub since: i32, 
+    pub timestamps: bool, 
+    pub tail: String, 
+}
+
+impl Default for ServiceLogsOptions
+{
+    fn default() -> Self {
+        Self {
+            details: false,
+            follow: false,
+            stdout: false,
+            stderr: false,
+            since: 0,
+            timestamps: false,
+            tail: String::from("all"),
+        }
+    }
+}
+
 /// Builder for the `ServiceUpdate` API query parameter.
 ///
 /// Update a service.
@@ -3899,16 +4634,6 @@ impl Default for UpdateServiceOptions
 
 
 
-// Filtered out: ServiceLogs
-// Get service logs
-//   - details
-//   - follow
-//   - stdout
-//   - stderr
-//   - since
-//   - timestamps
-//   - tail
-
 
 
 
@@ -3968,15 +4693,94 @@ impl Default for LeaveSwarmOptions
     }
 }
 
+/// Builder for the `SwarmUpdate` API query parameter.
+///
+/// Update a swarm.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::UpdateSwarmOptionsBuilder;
+///
+/// let params = UpdateSwarmOptionsBuilder::new()
+/// //  .version(/* ... */)
+/// //  .rotate_worker_token(/* ... */)
+/// //  .rotate_manager_token(/* ... */)
+/// //  .rotate_manager_unlock_key(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UpdateSwarmOptionsBuilder {
+    inner: UpdateSwarmOptions,
+}
+
+impl UpdateSwarmOptionsBuilder {
+    /// Construct a builder of query parameters for UpdateSwarmOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The version number of the swarm object being updated. This is
+    /// required to avoid conflicting writes.
+    pub fn version(mut self, version: i64) -> Self {
+        self.inner.version = version;
+        self
+    }
+
+    /// Rotate the worker join token.
+    pub fn rotate_worker_token(mut self, rotate_worker_token: bool) -> Self {
+        self.inner.rotate_worker_token = rotate_worker_token;
+        self
+    }
+
+    /// Rotate the manager join token.
+    pub fn rotate_manager_token(mut self, rotate_manager_token: bool) -> Self {
+        self.inner.rotate_manager_token = rotate_manager_token;
+        self
+    }
+
+    /// Rotate the manager unlock key.
+    pub fn rotate_manager_unlock_key(mut self, rotate_manager_unlock_key: bool) -> Self {
+        self.inner.rotate_manager_unlock_key = rotate_manager_unlock_key;
+        self
+    }
+
+    /// Consume this builder and use the `UpdateSwarmOptions` as parameter to the
+    /// `SwarmUpdate` API
+    pub fn build(self) -> UpdateSwarmOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `SwarmUpdate` API
+/// 
+/// Use a [UpdateSwarmOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateSwarmOptions
+{ 
+    pub version: i64, 
+    #[serde(rename = "rotateWorkerToken")]
+    pub rotate_worker_token: bool, 
+    #[serde(rename = "rotateManagerToken")]
+    pub rotate_manager_token: bool, 
+    #[serde(rename = "rotateManagerUnlockKey")]
+    pub rotate_manager_unlock_key: bool, 
+}
+
+impl Default for UpdateSwarmOptions
+{
+    fn default() -> Self {
+        Self {
+            version: Default::default(),
+            rotate_worker_token: false,
+            rotate_manager_token: false,
+            rotate_manager_unlock_key: false,
+        }
+    }
+}
 
 
 
-// Filtered out: SwarmUpdate
-// Update a swarm
-//   - version
-//   - rotate_worker_token
-//   - rotate_manager_token
-//   - rotate_manager_unlock_key
 
 /// Builder for the `SystemDataUsage` API query parameter.
 ///
@@ -4220,18 +5024,118 @@ impl Default for ListTasksOptions
     }
 }
 
+/// Builder for the `TaskLogs` API query parameter.
+///
+/// Get task logs.
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard_stubs::query_parameters::TaskLogsOptionsBuilder;
+///
+/// let params = TaskLogsOptionsBuilder::new()
+/// //  .details(/* ... */)
+/// //  .follow(/* ... */)
+/// //  .stdout(/* ... */)
+/// //  .stderr(/* ... */)
+/// //  .since(/* ... */)
+/// //  .timestamps(/* ... */)
+/// //  .tail(/* ... */)
+///     .build();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct TaskLogsOptionsBuilder {
+    inner: TaskLogsOptions,
+}
+
+impl TaskLogsOptionsBuilder {
+    /// Construct a builder of query parameters for TaskLogsOptions using defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Show task context and extra details provided to logs.
+    pub fn details(mut self, details: bool) -> Self {
+        self.inner.details = details;
+        self
+    }
+
+    /// Keep connection after returning logs.
+    pub fn follow(mut self, follow: bool) -> Self {
+        self.inner.follow = follow;
+        self
+    }
+
+    /// Return logs from `stdout`
+    pub fn stdout(mut self, stdout: bool) -> Self {
+        self.inner.stdout = stdout;
+        self
+    }
+
+    /// Return logs from `stderr`
+    pub fn stderr(mut self, stderr: bool) -> Self {
+        self.inner.stderr = stderr;
+        self
+    }
+
+    /// Only return logs since this time, as a UNIX timestamp
+    pub fn since(mut self, since: i32) -> Self {
+        self.inner.since = since;
+        self
+    }
+
+    /// Add timestamps to every log line
+    pub fn timestamps(mut self, timestamps: bool) -> Self {
+        self.inner.timestamps = timestamps;
+        self
+    }
+
+    /// Only return this number of log lines from the end of the logs.
+    /// Specify as an integer or `all` to output all log lines.
+    pub fn tail(mut self, tail: &str) -> Self {
+        self.inner.tail = tail.into();
+        self
+    }
+
+    /// Consume this builder and use the `TaskLogsOptions` as parameter to the
+    /// `TaskLogs` API
+    pub fn build(self) -> TaskLogsOptions {
+        self.inner
+    }
+}
+
+/// Internal struct used in the `TaskLogs` API
+/// 
+/// Use a [TaskLogsOptionsBuilder] to instantiate this struct.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskLogsOptions
+{ 
+    pub details: bool, 
+    pub follow: bool, 
+    pub stdout: bool, 
+    pub stderr: bool, 
+    pub since: i32, 
+    pub timestamps: bool, 
+    pub tail: String, 
+}
+
+impl Default for TaskLogsOptions
+{
+    fn default() -> Self {
+        Self {
+            details: false,
+            follow: false,
+            stdout: false,
+            stderr: false,
+            since: 0,
+            timestamps: false,
+            tail: String::from("all"),
+        }
+    }
+}
 
 
 
-// Filtered out: TaskLogs
-// Get task logs
-//   - details
-//   - follow
-//   - stdout
-//   - stderr
-//   - since
-//   - timestamps
-//   - tail
 
 /// Builder for the `VolumeDelete` API query parameter.
 ///
