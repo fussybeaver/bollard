@@ -60,8 +60,6 @@
                       ExecResize=ResizeExecOptions
                       ImageBuild=BuildImageOptions
                       BuildPrune=PruneBuildOptions
-                      ConfigList=ListConfigsOptions
-                      ConfigUpdate=UpdateConfigOptions
                       ImageCommit=CommitContainerOptions
                       ImageCreate=CreateImageOptions
                       ImageDelete=RemoveImageOptions
