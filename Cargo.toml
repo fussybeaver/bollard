@@ -54,7 +54,7 @@ ssh = ["hyper-util", "openssh", "tower-service"]
 
 [dependencies]
 base64 = "0.22"
-bollard-stubs = { path = "codegen/swagger", default-features = false }
+bollard-stubs = { version = "=1.49.4-rc.28.4.0", default-features = false }
 bollard-buildkit-proto = { version = "0.7.0", optional = true }
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
