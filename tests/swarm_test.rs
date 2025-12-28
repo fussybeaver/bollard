@@ -3,6 +3,7 @@ pub mod common;
 
 #[cfg(feature = "test_swarm")]
 async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Error> {
+    use bollard::query_parameters::UpdateSwarmOptionsBuilder;
     use bollard::swarm::*;
 
     // init swarm
@@ -32,10 +33,9 @@ async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Erro
     let spec = swarm.spec.unwrap();
 
     // update swarm (no changes, just verify API works)
-    let options = UpdateSwarmOptions {
-        version,
-        ..Default::default()
-    };
+    let options = UpdateSwarmOptionsBuilder::default()
+        .version(version as i64)
+        .build();
     docker.update_swarm(spec, options).await?;
 
     // verify swarm version incremented after update
