@@ -1,9 +1,9 @@
-#![allow(deprecated)]
 use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bollard::errors::Error;
+use bollard::query_parameters::{ListConfigsOptionsBuilder, UpdateConfigOptionsBuilder};
 use bollard::{config::*, Docker};
 
 use tokio::runtime::Runtime;
@@ -81,12 +81,17 @@ async fn config_list_test(docker: Docker) -> Result<(), Error> {
     };
     let config_id = docker.create_config(spec).await?.id;
 
-    let mut filters = HashMap::new();
-    filters.insert("label", vec!["config-label=filter-value"]);
+    let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+    filters.insert(
+        "label".to_string(),
+        vec!["config-label=filter-value".to_string()],
+    );
 
-    let options = Some(ListConfigsOptions { filters });
+    let options = ListConfigsOptionsBuilder::default()
+        .filters(&filters)
+        .build();
 
-    let mut configs = docker.list_configs(options).await?;
+    let mut configs = docker.list_configs(Some(options)).await?;
 
     assert_eq!(configs.len(), 1);
     assert_eq!(configs.pop().unwrap().id.unwrap(), config_id);
@@ -114,7 +119,9 @@ async fn config_update_test(docker: Docker) -> Result<(), Error> {
     labels.insert(String::from("config-label"), String::from("label-value"));
     spec.labels = Some(labels.clone());
 
-    let options = UpdateConfigOptions { version };
+    let options = UpdateConfigOptionsBuilder::default()
+        .version(version as i64)
+        .build();
 
     docker
         .update_config("config_update_test", spec, options)

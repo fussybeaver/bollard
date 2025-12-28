@@ -1,5 +1,4 @@
 //! Config API: manage and inspect docker configs within a swarm
-#![allow(deprecated)]
 
 pub use crate::models::*;
 
@@ -9,96 +8,6 @@ use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::Method;
-use serde_derive::Serialize;
-use std::{collections::HashMap, hash::Hash};
-
-/// Parameters used in the [List Config API](super::Docker::list_configs())
-///
-/// ## Examples
-///
-/// ```rust
-/// # use std::collections::HashMap;
-/// # use std::default::Default;
-/// use bollard::config::ListConfigsOptions;
-///
-/// let mut filters = HashMap::new();
-/// filters.insert("name", vec!["my-config-name"]);
-///
-/// ListConfigsOptions{
-///     filters,
-/// };
-/// ```
-///
-/// ```rust
-/// # use bollard::config::ListConfigsOptions;
-/// # use std::default::Default;
-///
-/// let options: ListConfigsOptions<&str> = Default::default();
-/// ```
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::ListConfigsOptions and associated ListConfigsOptionsBuilder"
-)]
-pub struct ListConfigsOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// Filters to process on the config list, encoded as JSON. Available filters:
-    ///  - `id`=`<ID>` a config's ID
-    ///  - `label`=`key` or `label`=`"key=value"` of a config label
-    ///  - `name`=`<name>` a config's name
-    ///  - `names`=`<name>` a multiple config's name comma separated
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, Vec<T>>,
-}
-
-impl<T> From<ListConfigsOptions<T>> for crate::query_parameters::ListConfigsOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: ListConfigsOptions<T>) -> Self {
-        crate::query_parameters::ListConfigsOptionsBuilder::default()
-            .filters(
-                &opts
-                    .filters
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
-                    .collect(),
-            )
-            .build()
-    }
-}
-
-/// Parameters used in the [Update Config API](Docker::update_config())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::config::UpdateConfigOptions;
-///
-/// UpdateConfigOptions{
-///     version: 1234,
-///     ..Default::default()
-/// };
-/// ```
-#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::UpdateConfigOptions and associated UpdateConfigOptionsBuilder"
-)]
-pub struct UpdateConfigOptions {
-    /// The version number of the config object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the config before the update.
-    pub version: u64,
-}
-
-impl From<UpdateConfigOptions> for crate::query_parameters::UpdateConfigOptions {
-    fn from(opts: UpdateConfigOptions) -> Self {
-        crate::query_parameters::UpdateConfigOptionsBuilder::default()
-            .version(opts.version as i64)
-            .build()
-    }
-}
 
 impl Docker {
     /// ---
@@ -109,7 +18,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListConfigsOptions](ListConfigsOptions) struct.
+    ///  - Optional [ListConfigsOptions](crate::query_parameters::ListConfigsOptions) struct.
     ///
     /// # Returns
     ///
@@ -120,7 +29,7 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::config::ListConfigsOptions;
+    /// use bollard::query_parameters::ListConfigsOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     /// use std::default::Default;
@@ -128,23 +37,23 @@ impl Docker {
     /// let mut filters = HashMap::new();
     /// filters.insert("label", vec!["config-label=label-value"]);
     ///
-    /// let options = Some(ListConfigsOptions{
-    ///     filters,
-    ///     ..Default::default()
-    /// });
+    /// let filters: HashMap<String, Vec<String>> = filters.into_iter().map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect())).collect();
+    /// let options = ListConfigsOptionsBuilder::default()
+    ///     .filters(&filters)
+    ///     .build();
     ///
-    /// docker.list_configs(options);
+    /// docker.list_configs(Some(options));
     /// ```
     pub async fn list_configs(
         &self,
-        options: Option<impl Into<crate::query_parameters::ListConfigsOptions>>,
+        options: Option<crate::query_parameters::ListConfigsOptions>,
     ) -> Result<Vec<Config>, Error> {
         let url = "/configs";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -279,7 +188,7 @@ impl Docker {
     ///
     ///  - Config id or name as a string slice.
     ///  - [ConfigSpec](ConfigSpec) struct.
-    ///  - [UpdateConfigOptions](UpdateConfigOptions) struct.
+    ///  - [UpdateConfigOptions](crate::query_parameters::UpdateConfigOptions) struct.
     ///
     /// # Returns
     ///
@@ -291,7 +200,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// use std::collections::HashMap;
-    /// use bollard::config::UpdateConfigOptions;
+    /// use bollard::query_parameters::UpdateConfigOptionsBuilder;
     ///
     /// let result = async move {
     ///     let existing = docker.inspect_config("my-config").await?;
@@ -302,7 +211,9 @@ impl Docker {
     ///     labels.insert(String::from("config-label"), String::from("label-value"));
     ///     spec.labels = Some(labels.clone());
     ///
-    ///     let options = UpdateConfigOptions { version };
+    ///     let options = UpdateConfigOptionsBuilder::default()
+    ///         .version(version as i64)
+    ///         .build();
     ///
     ///     docker.update_config("my-config", spec, options).await
     /// };
@@ -311,14 +222,14 @@ impl Docker {
         &self,
         config_id: &str,
         config_spec: ConfigSpec,
-        options: impl Into<crate::query_parameters::UpdateConfigOptions>,
+        options: crate::query_parameters::UpdateConfigOptions,
     ) -> Result<(), Error> {
         let url = format!("/configs/{config_id}/update");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options.into()),
+            Some(options),
             Docker::serialize_payload(Some(config_spec)),
         );
 
