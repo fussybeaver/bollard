@@ -271,6 +271,7 @@ pub mod exec;
 pub mod image;
 pub mod network;
 pub mod node;
+pub mod plugin;
 mod read;
 pub mod secret;
 pub mod service;
