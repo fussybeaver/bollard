@@ -263,6 +263,7 @@
 
 // declare modules
 pub mod auth;
+pub mod config;
 pub mod container;
 mod docker;
 pub mod errors;
