@@ -1,189 +1,13 @@
 //! Plugin API: manage Docker plugins
 
-#![allow(deprecated)]
-
 use super::Docker;
 use crate::{docker::BodyType, errors::Error};
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::Method;
-use serde_derive::Serialize;
-use std::{collections::HashMap, hash::Hash};
 
 pub use crate::models::*;
-
-/// Parameters used in the [List Plugins API](Docker::list_plugins())
-///
-/// ## Examples
-///
-/// ```rust
-/// # use std::collections::HashMap;
-/// # use std::default::Default;
-/// use bollard::plugin::ListPluginsOptions;
-///
-/// let mut filters = HashMap::new();
-/// filters.insert("capability", vec!["volumedriver"]);
-///
-/// ListPluginsOptions {
-///     filters,
-/// };
-/// ```
-#[deprecated(
-    since = "0.19.0",
-    note = "Use `crate::query_parameters::ListPluginsOptions` instead"
-)]
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct ListPluginsOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// Filters to process on the plugin list.
-    /// Available filters:
-    ///  - `capability=<capability name>`
-    ///  - `enable=<true>|<false>`
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, Vec<T>>,
-}
-
-impl<T> From<ListPluginsOptions<T>> for crate::query_parameters::ListPluginsOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: ListPluginsOptions<T>) -> Self {
-        let filters: HashMap<String, Vec<String>> = opts
-            .filters
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into_iter().map(Into::into).collect()))
-            .collect();
-        crate::query_parameters::ListPluginsOptionsBuilder::default()
-            .filters(&filters)
-            .build()
-    }
-}
-
-/// Parameters used in the [Remove Plugin API](Docker::remove_plugin())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::plugin::RemovePluginOptions;
-///
-/// RemovePluginOptions {
-///     force: true,
-/// };
-/// ```
-#[deprecated(
-    since = "0.19.0",
-    note = "Use `crate::query_parameters::RemovePluginOptions` instead"
-)]
-#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
-pub struct RemovePluginOptions {
-    /// Disable the plugin before removing. This may result in issues if the plugin is in use by a container.
-    pub force: bool,
-}
-
-impl From<RemovePluginOptions> for crate::query_parameters::RemovePluginOptions {
-    fn from(opts: RemovePluginOptions) -> Self {
-        crate::query_parameters::RemovePluginOptionsBuilder::default()
-            .force(opts.force)
-            .build()
-    }
-}
-
-/// Parameters used in the [Enable Plugin API](Docker::enable_plugin())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::plugin::EnablePluginOptions;
-///
-/// EnablePluginOptions {
-///     timeout: 30,
-/// };
-/// ```
-#[deprecated(
-    since = "0.19.0",
-    note = "Use `crate::query_parameters::EnablePluginOptions` instead"
-)]
-#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
-pub struct EnablePluginOptions {
-    /// Set the HTTP client timeout (in seconds).
-    pub timeout: u64,
-}
-
-impl From<EnablePluginOptions> for crate::query_parameters::EnablePluginOptions {
-    fn from(opts: EnablePluginOptions) -> Self {
-        crate::query_parameters::EnablePluginOptionsBuilder::default()
-            .timeout(opts.timeout as i32)
-            .build()
-    }
-}
-
-/// Parameters used in the [Disable Plugin API](Docker::disable_plugin())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::plugin::DisablePluginOptions;
-///
-/// DisablePluginOptions {
-///     force: true,
-/// };
-/// ```
-#[deprecated(
-    since = "0.19.0",
-    note = "Use `crate::query_parameters::DisablePluginOptions` instead"
-)]
-#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
-pub struct DisablePluginOptions {
-    /// Force disable a plugin even if still in use.
-    pub force: bool,
-}
-
-impl From<DisablePluginOptions> for crate::query_parameters::DisablePluginOptions {
-    fn from(opts: DisablePluginOptions) -> Self {
-        crate::query_parameters::DisablePluginOptionsBuilder::default()
-            .force(opts.force)
-            .build()
-    }
-}
-
-/// Parameters used in the [Get Plugin Privileges API](Docker::get_plugin_privileges())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::plugin::GetPluginPrivilegesOptions;
-///
-/// GetPluginPrivilegesOptions {
-///     remote: "vieux/sshfs:latest",
-/// };
-/// ```
-#[deprecated(
-    since = "0.19.0",
-    note = "Use `crate::query_parameters::GetPluginPrivilegesOptions` instead"
-)]
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct GetPluginPrivilegesOptions<T>
-where
-    T: Into<String> + serde::ser::Serialize,
-{
-    /// The name of the plugin. The `:latest` tag is optional, and is the default if omitted.
-    pub remote: T,
-}
-
-impl<T> From<GetPluginPrivilegesOptions<T>> for crate::query_parameters::GetPluginPrivilegesOptions
-where
-    T: Into<String> + serde::ser::Serialize,
-{
-    fn from(opts: GetPluginPrivilegesOptions<T>) -> Self {
-        let remote: String = opts.remote.into();
-        crate::query_parameters::GetPluginPrivilegesOptionsBuilder::default()
-            .remote(&remote)
-            .build()
-    }
-}
 
 impl Docker {
     /// ---
@@ -222,14 +46,14 @@ impl Docker {
     /// ```
     pub async fn list_plugins(
         &self,
-        options: Option<impl Into<crate::query_parameters::ListPluginsOptions>>,
+        options: Option<crate::query_parameters::ListPluginsOptions>,
     ) -> Result<Vec<Plugin>, Error> {
         let url = "/plugins";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -302,14 +126,14 @@ impl Docker {
     pub async fn remove_plugin(
         &self,
         plugin_name: &str,
-        options: Option<impl Into<crate::query_parameters::RemovePluginOptions>>,
+        options: Option<crate::query_parameters::RemovePluginOptions>,
     ) -> Result<Plugin, Error> {
         let url = format!("/plugins/{plugin_name}");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::DELETE),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -347,14 +171,14 @@ impl Docker {
     pub async fn enable_plugin(
         &self,
         plugin_name: &str,
-        options: Option<impl Into<crate::query_parameters::EnablePluginOptions>>,
+        options: Option<crate::query_parameters::EnablePluginOptions>,
     ) -> Result<(), Error> {
         let url = format!("/plugins/{plugin_name}/enable");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -392,14 +216,14 @@ impl Docker {
     pub async fn disable_plugin(
         &self,
         plugin_name: &str,
-        options: Option<impl Into<crate::query_parameters::DisablePluginOptions>>,
+        options: Option<crate::query_parameters::DisablePluginOptions>,
     ) -> Result<(), Error> {
         let url = format!("/plugins/{plugin_name}/disable");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -435,14 +259,14 @@ impl Docker {
     /// ```
     pub async fn get_plugin_privileges(
         &self,
-        options: impl Into<crate::query_parameters::GetPluginPrivilegesOptions>,
+        options: crate::query_parameters::GetPluginPrivilegesOptions,
     ) -> Result<Vec<PluginPrivilege>, Error> {
         let url = "/plugins/privileges";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            Some(options.into()),
+            Some(options),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
