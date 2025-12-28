@@ -3,12 +3,14 @@ pub mod common;
 
 #[cfg(feature = "test_swarm")]
 async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Error> {
-    use bollard::swarm::*;
+    use bollard::models::SwarmInitRequest;
+    use bollard::query_parameters::LeaveSwarmOptionsBuilder;
 
     // init swarm
-    let config = InitSwarmOptions {
-        listen_addr: "0.0.0.0:2377",
-        advertise_addr: "127.0.0.1",
+    let config = SwarmInitRequest {
+        listen_addr: Some("0.0.0.0:2377".to_string()),
+        advertise_addr: Some("127.0.0.1".to_string()),
+        ..Default::default()
     };
     let _ = &docker.init_swarm(config).await?;
 
@@ -27,8 +29,8 @@ async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Erro
     );
 
     // leave swarm
-    let config = LeaveSwarmOptions { force: true };
-    let _ = &docker.leave_swarm(Some(config)).await?;
+    let options = LeaveSwarmOptionsBuilder::default().force(true).build();
+    let _ = &docker.leave_swarm(Some(options)).await?;
     Ok(())
 }
 
