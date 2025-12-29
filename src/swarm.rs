@@ -170,4 +170,55 @@ impl Docker {
 
         self.process_into_unit(req).await
     }
+
+    /// ---
+    ///
+    /// # Update a Swarm
+    ///
+    /// Update a swarm's configuration.
+    ///
+    /// # Arguments
+    ///
+    ///  - [SwarmSpec](SwarmSpec) struct.
+    ///  - [UpdateSwarmOptions](crate::query_parameters::UpdateSwarmOptions) struct.
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::UpdateSwarmOptionsBuilder;
+    ///
+    /// let result = async move {
+    ///     let swarm = docker.inspect_swarm().await?;
+    ///     let version = swarm.version.unwrap().index.unwrap();
+    ///     let spec = swarm.spec.unwrap();
+    ///
+    ///     let options = UpdateSwarmOptionsBuilder::default()
+    ///         .version(version as i64)
+    ///         .build();
+    ///
+    ///     docker.update_swarm(spec, options).await
+    /// };
+    /// ```
+    pub async fn update_swarm(
+        &self,
+        swarm_spec: SwarmSpec,
+        options: crate::query_parameters::UpdateSwarmOptions,
+    ) -> Result<(), Error> {
+        let url = "/swarm/update";
+
+        let req = self.build_request(
+            url,
+            Builder::new().method(Method::POST),
+            Some(options),
+            Docker::serialize_payload(Some(swarm_spec)),
+        );
+
+        self.process_into_unit(req).await
+    }
 }
