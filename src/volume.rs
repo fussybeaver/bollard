@@ -1,5 +1,4 @@
 //! Volume API: Create and manage persistent storage that can be attached to containers.
-#![allow(deprecated)]
 
 use bytes::Bytes;
 use http::request::Builder;
