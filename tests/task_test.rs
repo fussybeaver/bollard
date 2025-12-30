@@ -140,6 +140,7 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)] // LogsOptions from container module
 async fn task_logs_test(docker: Docker) -> Result<(), Error> {
     const SERVICE_NAME: &str = "integration_test_task_logs";
 
