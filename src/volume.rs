@@ -1,183 +1,14 @@
 //! Volume API: Create and manage persistent storage that can be attached to containers.
-#![allow(deprecated)]
 
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::Method;
-use serde_derive::{Deserialize, Serialize};
-
-use std::cmp::Eq;
-use std::collections::HashMap;
-use std::hash::Hash;
 
 use super::Docker;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
-
-/// Parameters used in the [List Volume API](Docker::list_volumes())
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::ListVolumesOptions and associated ListVolumesOptionsBuilder"
-)]
-pub struct ListVolumesOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// JSON encoded value of the filters (a `map[string][]string`) to process on the volumes list. Available filters:
-    ///  - `dangling=<boolean>` When set to `true` (or `1`), returns all volumes that are not in use by a container. When set to `false` (or `0`), only volumes that are in use by one or more containers are returned.
-    ///  - `driver=<volume-driver-name>` Matches volumes based on their driver.
-    ///  - `label=<key>` or `label=<key>:<value>` Matches volumes based on the presence of a `label` alone or a `label` and a value.
-    ///  - `name=<volume-name>` Matches all or part of a volume name.
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, Vec<T>>,
-}
-
-impl<T> From<ListVolumesOptions<T>> for crate::query_parameters::ListVolumesOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: ListVolumesOptions<T>) -> Self {
-        crate::query_parameters::ListVolumesOptionsBuilder::default()
-            .filters(
-                &opts
-                    .filters
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
-                    .collect(),
-            )
-            .build()
-    }
-}
-
-/// Volume configuration used in the [Create Volume
-/// API](Docker::create_volume())
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::models::VolumeCreateOptions"
-)]
-#[serde(rename_all = "PascalCase")]
-pub struct CreateVolumeOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// The new volume's name. If not specified, Docker generates a name.
-    pub name: T,
-    /// Name of the volume driver to use.
-    pub driver: T,
-    /// A mapping of driver options and values. These options are passed directly to the driver and
-    /// are driver specific.
-    pub driver_opts: HashMap<T, T>,
-    /// User-defined key/value metadata.
-    pub labels: HashMap<T, T>,
-}
-
-impl<T> From<CreateVolumeOptions<T>> for VolumeCreateOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: CreateVolumeOptions<T>) -> Self {
-        VolumeCreateOptions {
-            name: Some(opts.name.into()),
-            driver: Some(opts.driver.into()),
-            driver_opts: Some(
-                opts.driver_opts
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-            ),
-            labels: Some(
-                opts.labels
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-            ),
-            ..Default::default()
-        }
-    }
-}
-
-/// Parameters used in the [Remove Volume API](super::Docker::remove_volume())
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::RemoveVolumeOptions and associated RemoveVolumeOptionsBuilder"
-)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoveVolumeOptions {
-    /// Force the removal of the volume.
-    pub force: bool,
-}
-
-impl From<RemoveVolumeOptions> for crate::query_parameters::RemoveVolumeOptions {
-    fn from(opts: RemoveVolumeOptions) -> Self {
-        crate::query_parameters::RemoveVolumeOptionsBuilder::default()
-            .force(opts.force)
-            .build()
-    }
-}
-
-/// Parameters used in the [Prune Volumes API](Docker::prune_volumes())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::volume::PruneVolumesOptions;
-///
-/// use std::collections::HashMap;
-///
-/// let mut filters = HashMap::new();
-/// filters.insert("label!", vec!["maintainer=some_maintainer"]);
-///
-/// PruneVolumesOptions{
-///     filters
-/// };
-/// ```
-///
-/// ```rust
-/// # use bollard::volume::PruneVolumesOptions;
-/// # use std::default::Default;
-///
-/// PruneVolumesOptions::<&str>{
-///     ..Default::default()
-/// };
-/// ```
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::PruneVolumesOptions and associated PruneVolumesOptionsBuilder"
-)]
-pub struct PruneVolumesOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// Filters to process on the prune list, encoded as JSON.
-    ///  - `label` (`label=<key>`, `label=<key>=<value>`, `label!=<key>`, or
-    ///    `label!=<key>=<value>`) Prune volumes with (or without, in case `label!=...` is used) the
-    ///    specified labels.
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, Vec<T>>,
-}
-
-impl<T> From<PruneVolumesOptions<T>> for crate::query_parameters::PruneVolumesOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: PruneVolumesOptions<T>) -> Self {
-        crate::query_parameters::PruneVolumesOptionsBuilder::default()
-            .filters(
-                &opts
-                    .filters
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
-                    .collect(),
-            )
-            .build()
-    }
-}
 
 impl Docker {
     /// ---
@@ -199,16 +30,14 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::volume::ListVolumesOptions;
+    /// use bollard::query_parameters::ListVolumesOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("dangling", vec!("1"));
     ///
-    /// let options = ListVolumesOptions {
-    ///     filters,
-    /// };
+    /// let options = ListVolumesOptionsBuilder::default().filters(&filters).build();
     ///
     /// docker.list_volumes(Some(options));
     /// ```
@@ -236,7 +65,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Create Volume Options](CreateVolumeOptions) struct.
+    ///  - [Volume Create Options](VolumeCreateOptions) struct.
     ///
     /// # Returns
     ///
@@ -249,12 +78,12 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::volume::CreateVolumeOptions;
+    /// use bollard::models::VolumeCreateOptions;
     ///
     /// use std::default::Default;
     ///
-    /// let config = CreateVolumeOptions {
-    ///     name: "certs",
+    /// let config = VolumeCreateOptions {
+    ///     name: Some(String::from("certs")),
     ///     ..Default::default()
     /// };
     ///
@@ -332,11 +161,9 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::volume::RemoveVolumeOptions;
+    /// use bollard::query_parameters::RemoveVolumeOptionsBuilder;
     ///
-    /// let options = RemoveVolumeOptions {
-    ///     force: true,
-    /// };
+    /// let options = RemoveVolumeOptionsBuilder::default().force(true).build();
     ///
     /// docker.remove_volume("my_volume_name", Some(options));
     /// ```
@@ -377,16 +204,14 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::volume::PruneVolumesOptions;
+    /// use bollard::query_parameters::PruneVolumesOptionsBuilder;
     ///
     /// use std::collections::HashMap;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("label", vec!["maintainer=some_maintainer"]);
     ///
-    /// let options = PruneVolumesOptions {
-    ///     filters,
-    /// };
+    /// let options = PruneVolumesOptionsBuilder::default().filters(&filters).build();
     ///
     /// docker.prune_volumes(Some(options));
     /// ```
