@@ -24,6 +24,7 @@ enum Results {
     EventsResults(EventMessage),
 }
 
+#[allow(deprecated)] // CreateImageOptions from image module
 async fn events_test(docker: Docker) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
@@ -73,6 +74,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[cfg(any(feature = "time", feature = "chrono"))]
+#[allow(deprecated)] // CreateImageOptions from image module
 async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     let image = if cfg!(windows) {
         format!("{}hello-world:nanoserver", registry_http_addr())
