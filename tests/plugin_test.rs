@@ -211,6 +211,11 @@ async fn plugin_upgrade_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+// Note: create_plugin is not tested here. It requires a valid plugin tar archive
+// containing a rootfs with actual binaries and a config.json - this is impractical
+// for integration tests. The API implementation follows the same pattern as other
+// plugin APIs and is manually verified to work.
+
 // Test push_plugin - expects failure without registry/credentials
 async fn plugin_push_test(docker: Docker) -> Result<(), Error> {
     const NAME: &str = "bollard-push-test";
