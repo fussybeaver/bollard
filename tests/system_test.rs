@@ -1,10 +1,11 @@
-#![allow(deprecated)]
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
 use bollard::image::*;
 use bollard::models::*;
-use bollard::system::*;
 use bollard::Docker;
+
+#[cfg(any(feature = "time", feature = "chrono"))]
+use bollard::query_parameters::EventsOptionsBuilder;
 
 use futures_util::future;
 use futures_util::stream::select;
@@ -30,7 +31,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let stream = docker.events(None::<EventsOptions<String>>);
+    let stream = docker.events(None::<bollard::query_parameters::EventsOptions>);
 
     let stream2 = docker.create_image(
         Some(CreateImageOptions {
@@ -80,15 +81,19 @@ async fn events_until_forever_test(docker: Docker) -> Result<(), Error> {
     };
 
     #[cfg(feature = "time")]
-    let start_time = time::OffsetDateTime::now_utc();
-    #[cfg(feature = "chrono")]
-    let start_time = chrono::Utc::now();
+    let start_time = {
+        let now = time::OffsetDateTime::now_utc();
+        format!("{}.{}", now.unix_timestamp(), now.unix_timestamp_nanos())
+    };
+    #[cfg(all(feature = "chrono", not(feature = "time")))]
+    let start_time = {
+        let now = chrono::Utc::now();
+        format!("{}.{}", now.timestamp(), now.timestamp_subsec_nanos())
+    };
 
-    let stream = docker.events(Some(EventsOptions::<String> {
-        since: Some(start_time),
-        until: None,
-        ..Default::default()
-    }));
+    let options = EventsOptionsBuilder::default().since(&start_time).build();
+
+    let stream = docker.events(Some(options));
 
     let stream2 = docker.create_image(
         Some(CreateImageOptions {
