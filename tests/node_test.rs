@@ -1,11 +1,10 @@
-#![allow(deprecated)]
 extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
 use bollard::errors::Error;
 use bollard::models::*;
-use bollard::node::{ListNodesOptions, UpdateNodeOptions};
+use bollard::query_parameters::{ListNodesOptionsBuilder, UpdateNodeOptionsBuilder};
 use bollard::Docker;
 
 use tokio::runtime::Runtime;
@@ -17,14 +16,12 @@ pub mod common;
 use crate::common::*;
 
 async fn list_nodes_test(docker: Docker) -> Result<(), Error> {
-    let mut list_nodes_filters = HashMap::new();
-    list_nodes_filters.insert("role", vec!["manager"]);
+    let mut filters = HashMap::new();
+    filters.insert("role", vec!["manager"]);
 
-    let config = ListNodesOptions::<&str> {
-        filters: list_nodes_filters,
-    };
+    let options = ListNodesOptionsBuilder::default().filters(&filters).build();
 
-    let nodes = docker.list_nodes(Some(config)).await?;
+    let nodes = docker.list_nodes(Some(options)).await?;
     assert_eq!(
         nodes.len(),
         1,
@@ -44,14 +41,12 @@ async fn list_nodes_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn inspect_node_test(docker: Docker) -> Result<(), Error> {
-    let mut list_nodes_filters = HashMap::new();
-    list_nodes_filters.insert("role", vec!["manager"]);
+    let mut filters = HashMap::new();
+    filters.insert("role", vec!["manager"]);
 
-    let config = ListNodesOptions::<&str> {
-        filters: list_nodes_filters,
-    };
+    let options = ListNodesOptionsBuilder::default().filters(&filters).build();
 
-    let nodes = docker.list_nodes(Some(config)).await?;
+    let nodes = docker.list_nodes(Some(options)).await?;
     assert_eq!(
         nodes.len(),
         1,
@@ -66,14 +61,12 @@ async fn inspect_node_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn update_node_test(docker: Docker) -> Result<(), Error> {
-    let mut list_nodes_filters = HashMap::new();
-    list_nodes_filters.insert("role", vec!["manager"]);
+    let mut filters = HashMap::new();
+    filters.insert("role", vec!["manager"]);
 
-    let config = ListNodesOptions::<&str> {
-        filters: list_nodes_filters,
-    };
+    let options = ListNodesOptionsBuilder::default().filters(&filters).build();
 
-    let nodes = docker.list_nodes(Some(config)).await?;
+    let nodes = docker.list_nodes(Some(options)).await?;
     assert_eq!(
         nodes.len(),
         1,
@@ -81,6 +74,16 @@ async fn update_node_test(docker: Docker) -> Result<(), Error> {
     );
 
     let id = nodes[0].id.as_deref().expect("node should have id");
+
+    let version = nodes[0]
+        .version
+        .as_ref()
+        .and_then(|v| v.index)
+        .expect("node should have a version");
+
+    let update_options = UpdateNodeOptionsBuilder::default()
+        .version(version as i64)
+        .build();
 
     docker
         .update_node(
@@ -94,13 +97,7 @@ async fn update_node_test(docker: Docker) -> Result<(), Error> {
                 role: Some(NodeSpecRoleEnum::MANAGER),
                 ..Default::default()
             },
-            UpdateNodeOptions {
-                version: nodes[0]
-                    .version
-                    .as_ref()
-                    .and_then(|v| v.index)
-                    .expect("node should have a version"),
-            },
+            update_options,
         )
         .await?;
 
