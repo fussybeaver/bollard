@@ -1,12 +1,10 @@
-#![allow(deprecated)]
 extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
-use bollard::container::*;
 use bollard::errors::Error;
 use bollard::models::*;
-use bollard::network::*;
+use bollard::query_parameters::{InspectNetworkOptionsBuilder, ListNetworksOptionsBuilder};
 use bollard::Docker;
 
 use tokio::runtime::Runtime;
@@ -23,29 +21,30 @@ async fn create_network_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    let create_network_options = CreateNetworkOptions {
-        name: "integration_test_create_network",
-        check_duplicate: true,
-        driver: if cfg!(windows) {
-            "transparent"
+    let create_network_request = NetworkCreateRequest {
+        name: String::from("integration_test_create_network"),
+        driver: Some(if cfg!(windows) {
+            String::from("transparent")
         } else {
-            "bridge"
-        },
-        ipam: Ipam {
+            String::from("bridge")
+        }),
+        ipam: Some(Ipam {
             config: Some(vec![ipam_config]),
             ..Default::default()
-        },
+        }),
         ..Default::default()
     };
 
-    let result = &docker.create_network(create_network_options).await?;
+    let result = &docker.create_network(create_network_request).await?;
+
+    let inspect_options = InspectNetworkOptionsBuilder::default()
+        .verbose(true)
+        .build();
+
     let result = &docker
         .inspect_network(
             <String as AsRef<str>>::as_ref(&result.id),
-            Some(InspectNetworkOptions::<&str> {
-                verbose: true,
-                ..Default::default()
-            }),
+            Some(inspect_options),
         )
         .await?;
 
@@ -73,35 +72,37 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
         ..Default::default()
     };
 
-    let mut create_network_filters = HashMap::new();
-    create_network_filters.insert("maintainer", "bollard-maintainer");
+    let mut create_network_labels = HashMap::new();
+    create_network_labels.insert(
+        String::from("maintainer"),
+        String::from("bollard-maintainer"),
+    );
 
-    let create_network_options = CreateNetworkOptions {
-        name: "integration_test_list_network",
-        check_duplicate: true,
-        driver: if cfg!(windows) {
-            "transparent"
+    let create_network_request = NetworkCreateRequest {
+        name: String::from("integration_test_list_network"),
+        driver: Some(if cfg!(windows) {
+            String::from("transparent")
         } else {
-            "bridge"
-        },
-        ipam: Ipam {
+            String::from("bridge")
+        }),
+        ipam: Some(Ipam {
             config: Some(vec![ipam_config]),
             ..Default::default()
-        },
-        labels: create_network_filters,
+        }),
+        labels: Some(create_network_labels),
         ..Default::default()
     };
 
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("label", vec!["maintainer=bollard-maintainer"]);
 
-    let _ = &docker.create_network(create_network_options).await?;
+    let _ = &docker.create_network(create_network_request).await?;
 
-    let results = &docker
-        .list_networks(Some(ListNetworksOptions {
-            filters: list_networks_filters,
-        }))
-        .await?;
+    let list_options = ListNetworksOptionsBuilder::default()
+        .filters(&list_networks_filters)
+        .build();
+
+    let results = &docker.list_networks(Some(list_options)).await?;
 
     let v = results.first().unwrap();
 
@@ -122,55 +123,53 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)] // KillContainerOptions and RemoveContainerOptions from container module
 async fn connect_network_test(docker: Docker) -> Result<(), Error> {
+    use bollard::container::{KillContainerOptions, RemoveContainerOptions};
+
     let ipam_config = IpamConfig {
         subnet: Some(String::from("10.10.10.0/24")),
         ..Default::default()
     };
 
-    let create_network_options = CreateNetworkOptions {
-        name: "integration_test_connect_network",
-        check_duplicate: true,
-        ipam: Ipam {
+    let create_network_request = NetworkCreateRequest {
+        name: String::from("integration_test_connect_network"),
+        ipam: Some(Ipam {
             config: Some(vec![ipam_config]),
             ..Default::default()
-        },
+        }),
         ..Default::default()
     };
 
-    let connect_network_options = ConnectNetworkOptions {
-        container: "integration_test_connect_network_test",
-        endpoint_config: EndpointSettings {
+    let connect_network_request = NetworkConnectRequest {
+        container: Some(String::from("integration_test_connect_network_test")),
+        endpoint_config: Some(EndpointSettings {
             ipam_config: Some(EndpointIpamConfig {
                 ipv4_address: Some(String::from("10.10.10.101")),
                 ..Default::default()
             }),
             ..Default::default()
-        },
+        }),
     };
 
     create_daemon(&docker, "integration_test_connect_network_test").await?;
 
-    let result = &docker.create_network(create_network_options).await?;
+    let result = &docker.create_network(create_network_request).await?;
 
     let _ = &docker
         .connect_network(
             <String as AsRef<str>>::as_ref(&result.id),
-            connect_network_options,
+            connect_network_request,
         )
         .await?;
 
     let id = <String as AsRef<str>>::as_ref(&result.id);
 
-    let result = &docker
-        .inspect_network(
-            id,
-            Some(InspectNetworkOptions::<&str> {
-                verbose: true,
-                ..Default::default()
-            }),
-        )
-        .await?;
+    let inspect_options = InspectNetworkOptionsBuilder::default()
+        .verbose(true)
+        .build();
+
+    let result = &docker.inspect_network(id, Some(inspect_options)).await?;
 
     assert!(result
         .containers
@@ -179,15 +178,12 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         .iter()
         .any(|(_, container)| container.ipv4_address == Some("10.10.10.101/24".into())));
 
-    let _ = &docker
-        .disconnect_network(
-            id,
-            DisconnectNetworkOptions {
-                container: "integration_test_connect_network_test",
-                force: true,
-            },
-        )
-        .await?;
+    let disconnect_request = NetworkDisconnectRequest {
+        container: Some(String::from("integration_test_connect_network_test")),
+        force: Some(true),
+    };
+
+    let _ = &docker.disconnect_network(id, disconnect_request).await?;
 
     let _ = &docker.remove_network(id).await?;
 
@@ -209,37 +205,34 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn prune_networks_test(docker: Docker) -> Result<(), Error> {
-    let create_network_options = CreateNetworkOptions {
-        name: "integration_test_prune_networks",
-        attachable: true,
-        driver: if cfg!(windows) {
-            "transparent"
+    let create_network_request = NetworkCreateRequest {
+        name: String::from("integration_test_prune_networks"),
+        attachable: Some(true),
+        driver: Some(if cfg!(windows) {
+            String::from("transparent")
         } else {
-            "bridge"
-        },
-        check_duplicate: true,
+            String::from("bridge")
+        }),
         ..Default::default()
     };
 
     let mut list_networks_filters = HashMap::new();
     list_networks_filters.insert("scope", vec!["global"]);
 
-    let _ = &docker.create_network(create_network_options).await?;
+    let _ = &docker.create_network(create_network_request).await?;
 
-    let result = &docker
-        .prune_networks(None::<PruneNetworksOptions<&str>>)
-        .await?;
+    let result = &docker.prune_networks(None).await?;
 
     assert_eq!(
         "integration_test_prune_networks",
         result.networks_deleted.as_ref().unwrap()[0]
     );
 
-    let results = &docker
-        .list_networks(Some(ListNetworksOptions {
-            filters: list_networks_filters,
-        }))
-        .await?;
+    let list_options = ListNetworksOptionsBuilder::default()
+        .filters(&list_networks_filters)
+        .build();
+
+    let results = &docker.list_networks(Some(list_options)).await?;
 
     assert_eq!(0, results.len());
 
