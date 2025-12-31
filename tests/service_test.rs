@@ -1,6 +1,5 @@
-#![allow(deprecated)]
-use bollard::container::LogsOptions;
 use bollard::errors::Error;
+use bollard::query_parameters::UpdateServiceOptionsBuilder;
 use bollard::{service::*, Docker};
 
 use futures_util::stream::StreamExt;
@@ -59,9 +58,7 @@ async fn service_list_test(docker: Docker) -> Result<(), Error> {
 
     docker.create_service(spec, None).await?;
 
-    let mut response = docker
-        .list_services(None::<ListServicesOptions<String>>)
-        .await?;
+    let mut response = docker.list_services(None).await?;
 
     assert_eq!(response.len(), 1);
     assert_eq!(
@@ -97,10 +94,7 @@ async fn service_update_test(docker: Docker) -> Result<(), Error> {
     docker.create_service(spec, None).await?;
 
     let service_name = "integration_test_update_service";
-    let current_version = docker
-        .inspect_service(service_name, None::<InspectServiceOptions>)
-        .await?
-        .version;
+    let current_version = docker.inspect_service(service_name, None).await?.version;
     let service = ServiceSpec {
         name: Some(String::from("integration_test_update_service")),
         task_template: Some(TaskSpec {
@@ -116,19 +110,16 @@ async fn service_update_test(docker: Docker) -> Result<(), Error> {
         }),
         ..Default::default()
     };
-    let options = UpdateServiceOptions {
-        version: current_version.unwrap().index.unwrap(),
-        ..Default::default()
-    };
+    let options = UpdateServiceOptionsBuilder::default()
+        .version(current_version.unwrap().index.unwrap() as i32)
+        .build();
     let credentials = None;
 
     docker
         .update_service(service_name, service, options, credentials)
         .await?;
 
-    let mut response = docker
-        .list_services(None::<ListServicesOptions<String>>)
-        .await?;
+    let mut response = docker.list_services(None).await?;
 
     assert_eq!(
         response
@@ -172,7 +163,7 @@ async fn service_rollback_test(docker: Docker) -> Result<(), Error> {
 
     let service_name = "integration_test_rollback_service";
     let current_version = docker
-        .inspect_service(service_name, None::<InspectServiceOptions>)
+        .inspect_service(service_name, None)
         .await?
         .version
         .unwrap()
@@ -193,37 +184,33 @@ async fn service_rollback_test(docker: Docker) -> Result<(), Error> {
         }),
         ..Default::default()
     };
-    let options = UpdateServiceOptions {
-        version: current_version,
-        ..Default::default()
-    };
+    let options = UpdateServiceOptionsBuilder::default()
+        .version(current_version as i32)
+        .build();
     let credentials = None;
 
     docker
         .update_service(service_name, service.clone(), options, credentials)
         .await?;
     let current_version = docker
-        .inspect_service(service_name, None::<InspectServiceOptions>)
+        .inspect_service(service_name, None)
         .await?
         .version
         .unwrap()
         .index
         .unwrap();
 
-    let options = UpdateServiceOptions {
-        version: current_version,
-        rollback: true,
-        ..Default::default()
-    };
+    let options = UpdateServiceOptionsBuilder::default()
+        .version(current_version as i32)
+        .rollback("previous")
+        .build();
     let credentials = None;
 
     docker
         .update_service(service_name, service.clone(), options, credentials)
         .await?;
 
-    docker
-        .inspect_service(service_name, None::<InspectServiceOptions>)
-        .await?;
+    docker.inspect_service(service_name, None).await?;
 
     docker
         .delete_service("integration_test_rollback_service")
@@ -232,7 +219,10 @@ async fn service_rollback_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)] // LogsOptions from container module
 async fn service_logs_test(docker: Docker) -> Result<(), Error> {
+    use bollard::container::LogsOptions;
+
     let image = if cfg!(windows) {
         format!("{}nanoserver/iis", registry_http_addr())
     } else {
