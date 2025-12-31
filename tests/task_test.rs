@@ -1,12 +1,12 @@
-#![allow(deprecated)]
 extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
+#[allow(deprecated)]
 use bollard::container::LogsOptions;
 use bollard::errors::Error;
 use bollard::models::*;
-use bollard::task::ListTasksOptions;
+use bollard::query_parameters::ListTasksOptionsBuilder;
 use bollard::Docker;
 
 use futures_util::stream::StreamExt;
@@ -54,11 +54,10 @@ async fn list_tasks_test(docker: Docker) -> Result<(), Error> {
     // Wait for a task to be created
     let mut tasks;
     loop {
-        tasks = docker
-            .list_tasks(Some(ListTasksOptions {
-                filters: HashMap::from_iter([("service", vec![SERVICE_NAME])]),
-            }))
-            .await?;
+        let options = ListTasksOptionsBuilder::default()
+            .filters(&HashMap::from_iter([("service", vec![SERVICE_NAME])]))
+            .build();
+        tasks = docker.list_tasks(Some(options)).await?;
 
         if !tasks.is_empty() {
             break;
@@ -117,11 +116,10 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
             panic!("the Docker daemon took to long to start a task");
         }
 
-        tasks = docker
-            .list_tasks(Some(ListTasksOptions {
-                filters: HashMap::from_iter([("service", vec![SERVICE_NAME])]),
-            }))
-            .await?;
+        let options = ListTasksOptionsBuilder::default()
+            .filters(&HashMap::from_iter([("service", vec![SERVICE_NAME])]))
+            .build();
+        tasks = docker.list_tasks(Some(options)).await?;
 
         if !tasks.is_empty() {
             break;
@@ -142,6 +140,7 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)] // LogsOptions from container module
 async fn task_logs_test(docker: Docker) -> Result<(), Error> {
     const SERVICE_NAME: &str = "integration_test_task_logs";
 
@@ -176,11 +175,10 @@ async fn task_logs_test(docker: Docker) -> Result<(), Error> {
     // Wait for a task to be created
     let mut tasks;
     loop {
-        tasks = docker
-            .list_tasks(Some(ListTasksOptions {
-                filters: HashMap::from_iter([("service", vec![SERVICE_NAME])]),
-            }))
-            .await?;
+        let options = ListTasksOptionsBuilder::default()
+            .filters(&HashMap::from_iter([("service", vec![SERVICE_NAME])]))
+            .build();
+        tasks = docker.list_tasks(Some(options)).await?;
 
         if !tasks.is_empty() {
             break;
