@@ -47,7 +47,7 @@ build_script:
   - docker push localhost:5000/hello-world:nanoserver
   - docker push localhost:5000/nanoserver/iis
   - docker push localhost:5000/microsoft/nanoserver
-  - cargo build --features buildkit --verbose
+  - cargo build --features buildkit,chrono --verbose
 
 test_script:
   - ps: Set-Item -path env:RUST_BACKTRACE -value 1
