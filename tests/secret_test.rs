@@ -1,9 +1,9 @@
-#![allow(deprecated)]
 use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bollard::errors::Error;
+use bollard::query_parameters::{ListSecretsOptionsBuilder, UpdateSecretOptionsBuilder};
 use bollard::{secret::*, Docker};
 
 use tokio::runtime::Runtime;
@@ -84,9 +84,11 @@ async fn secret_list_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["secret-label=filter-value"]);
 
-    let options = Some(ListSecretsOptions { filters });
+    let options = ListSecretsOptionsBuilder::default()
+        .filters(&filters)
+        .build();
 
-    let mut secrets = docker.list_secrets(options).await?;
+    let mut secrets = docker.list_secrets(Some(options)).await?;
 
     assert_eq!(secrets.len(), 1);
     assert_eq!(secrets.pop().unwrap().id.unwrap(), secret_id);
@@ -114,7 +116,9 @@ async fn secret_update_test(docker: Docker) -> Result<(), Error> {
     labels.insert(String::from("secret-label"), String::from("label-value"));
     spec.labels = Some(labels.clone());
 
-    let options = UpdateSecretOptions { version };
+    let options = UpdateSecretOptionsBuilder::default()
+        .version(version as i64)
+        .build();
 
     docker
         .update_secret("secret_update_test", spec, options)

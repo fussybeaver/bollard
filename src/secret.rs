@@ -1,5 +1,4 @@
 //! Secret API: manage and inspect docker secrets within a swarm
-#![allow(deprecated)]
 
 pub use crate::models::*;
 
@@ -9,96 +8,6 @@ use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
 use hyper::Method;
-use serde_derive::Serialize;
-use std::{collections::HashMap, hash::Hash};
-
-/// Parameters used in the [List Secret API](super::Docker::list_secrets())
-///
-/// ## Examples
-///
-/// ```rust
-/// # use std::collections::HashMap;
-/// # use std::default::Default;
-/// use bollard::secret::ListSecretsOptions;
-///
-/// let mut filters = HashMap::new();
-/// filters.insert("name", vec!["my-secret-name"]);
-///
-/// ListSecretsOptions{
-///     filters,
-/// };
-/// ```
-///
-/// ```rust
-/// # use bollard::secret::ListSecretsOptions;
-/// # use std::default::Default;
-///
-/// let options: ListSecretsOptions<&str> = Default::default();
-/// ```
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::ListSecretsOptions and associated ListSecretsOptionsBuilder"
-)]
-pub struct ListSecretsOptions<T>
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    /// Filters to process on the secret list, encoded as JSON. Available filters:
-    ///  - `id`=`<ID>` a secret's ID
-    ///  - `label`=`key` or `label`=`"key=value"` of a secret label
-    ///  - `name`=`<name>` a secret's name
-    ///  - `names`=`<name>` a multiple secret's name comma separated
-    #[serde(serialize_with = "crate::docker::serialize_as_json")]
-    pub filters: HashMap<T, Vec<T>>,
-}
-
-impl<T> From<ListSecretsOptions<T>> for crate::query_parameters::ListSecretsOptions
-where
-    T: Into<String> + Eq + Hash + serde::ser::Serialize,
-{
-    fn from(opts: ListSecretsOptions<T>) -> Self {
-        crate::query_parameters::ListSecretsOptionsBuilder::default()
-            .filters(
-                &opts
-                    .filters
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into_iter().map(T::into).collect()))
-                    .collect(),
-            )
-            .build()
-    }
-}
-
-/// Parameters used in the [Update Secret API](Docker::update_secret())
-///
-/// ## Examples
-///
-/// ```rust
-/// use bollard::secret::UpdateSecretOptions;
-///
-/// UpdateSecretOptions{
-///     version: 1234,
-///     ..Default::default()
-/// };
-/// ```
-#[derive(Debug, Copy, Clone, Default, PartialEq, Serialize)]
-#[deprecated(
-    since = "0.19.0",
-    note = "use the OpenAPI generated bollard::query_parameters::UpdateSecretOptions and associated UpdateSecretOptionsBuilder"
-)]
-pub struct UpdateSecretOptions {
-    /// The version number of the secret object being updated. This is required to avoid conflicting writes. This version number should be the value as currently set on the secret before the update.
-    pub version: u64,
-}
-
-impl From<UpdateSecretOptions> for crate::query_parameters::UpdateSecretOptions {
-    fn from(opts: UpdateSecretOptions) -> Self {
-        crate::query_parameters::UpdateSecretOptionsBuilder::default()
-            .version(opts.version as i64)
-            .build()
-    }
-}
 
 impl Docker {
     /// ---
@@ -109,7 +18,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListSecretsOptions](ListSecretsOptions) struct.
+    ///  - Optional [ListSecretsOptions](crate::query_parameters::ListSecretsOptions) struct.
     ///
     /// # Returns
     ///
@@ -120,31 +29,29 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::secret::ListSecretsOptions;
+    /// use bollard::query_parameters::ListSecretsOptionsBuilder;
     ///
     /// use std::collections::HashMap;
-    /// use std::default::Default;
     ///
     /// let mut filters = HashMap::new();
     /// filters.insert("label", vec!["secret-label=label-value"]);
     ///
-    /// let options = Some(ListSecretsOptions{
-    ///     filters,
-    ///     ..Default::default()
-    /// });
+    /// let options = ListSecretsOptionsBuilder::default()
+    ///     .filters(&filters)
+    ///     .build();
     ///
-    /// docker.list_secrets(options);
+    /// docker.list_secrets(Some(options));
     /// ```
     pub async fn list_secrets(
         &self,
-        options: Option<impl Into<crate::query_parameters::ListSecretsOptions>>,
+        options: Option<crate::query_parameters::ListSecretsOptions>,
     ) -> Result<Vec<Secret>, Error> {
         let url = "/secrets";
 
         let req = self.build_request(
             url,
             Builder::new().method(Method::GET),
-            options.map(Into::into),
+            options,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
@@ -280,7 +187,7 @@ impl Docker {
     ///
     ///  - Secret id or name as a string slice.
     ///  - [SecretSpec](SecretSpec) struct.
-    ///  - [UpdateSecretOptions](UpdateSecretOptions) struct.
+    ///  - [UpdateSecretOptions](crate::query_parameters::UpdateSecretOptions) struct.
     ///
     /// # Returns
     ///
@@ -292,7 +199,7 @@ impl Docker {
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
     /// use std::collections::HashMap;
-    /// use bollard::secret::UpdateSecretOptions;
+    /// use bollard::query_parameters::UpdateSecretOptionsBuilder;
     ///
     /// let result = async move {
     ///     let existing = docker.inspect_secret("my-secret").await?;
@@ -303,7 +210,9 @@ impl Docker {
     ///     labels.insert(String::from("secret-label"), String::from("label-value"));
     ///     spec.labels = Some(labels.clone());
     ///
-    ///     let options = UpdateSecretOptions { version };
+    ///     let options = UpdateSecretOptionsBuilder::default()
+    ///         .version(version as i64)
+    ///         .build();
     ///
     ///     docker.update_secret("my-secret", spec, options).await
     /// };
@@ -312,14 +221,14 @@ impl Docker {
         &self,
         secret_id: &str,
         secret_spec: SecretSpec,
-        options: impl Into<crate::query_parameters::UpdateSecretOptions>,
+        options: crate::query_parameters::UpdateSecretOptions,
     ) -> Result<(), Error> {
         let url = format!("/secrets/{secret_id}/update");
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::POST),
-            Some(options.into()),
+            Some(options),
             Docker::serialize_payload(Some(secret_spec)),
         );
 
