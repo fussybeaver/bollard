@@ -22,7 +22,7 @@ members = [
 default = ["http", "pipe"]
 # Enable Buildkit-enabled docker image building
 buildkit = ["buildkit_providerless", "ssl"]
-buildkit_providerless = ["chrono", "num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl_providerless", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags"]
+buildkit_providerless = ["num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl_providerless", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for the ssh connector
@@ -83,7 +83,7 @@ serde_urlencoded = "0.7"
 tokio = { version = "1.47", features = ["time", "net", "io-util"] }
 tonic = { version = "0.14", optional = true, default-features = false, features = ["channel"] }
 thiserror = "2.0"
-time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
+time = { version = "0.3", features = ["formatting", "parsing", "serde", "serde-well-known"], optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
 tower-service = { version = "0.3", optional = true }
