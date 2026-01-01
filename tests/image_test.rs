@@ -5,11 +5,11 @@ use futures_util::stream::{StreamExt, TryStreamExt};
 use http_body_util::Full;
 use tokio::runtime::Runtime;
 
-use bollard::container::{
-    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
-    WaitContainerOptions,
-};
 use bollard::errors::Error;
+use bollard::models::{ContainerConfig, ContainerCreateBody};
+use bollard::query_parameters::{
+    CreateContainerOptions, RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
+};
 use bollard::Docker;
 use bollard::{body_full, image::*};
 
@@ -200,10 +200,20 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
         format!("{}alpine", registry_http_addr())
     };
 
-    let cmd = if cfg!(windows) {
-        Some(vec!["cmd.exe", "/C", "copy", "nul", "bollard.txt"])
+    let cmd: Option<Vec<String>> = if cfg!(windows) {
+        Some(
+            ["cmd.exe", "/C", "copy", "nul", "bollard.txt"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        )
     } else {
-        Some(vec!["touch", "/bollard.txt"])
+        Some(
+            ["touch", "/bollard.txt"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        )
     };
 
     create_image_hello_world(&docker).await?;
@@ -211,12 +221,12 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_commit_container",
-                platform: None,
+                name: Some("integration_test_commit_container".to_string()),
+                ..Default::default()
             }),
-            Config {
-                cmd,
-                image: Some(&image[..]),
+            ContainerCreateBody {
+                cmd: cmd.clone(),
+                image: Some(image.clone()),
                 ..Default::default()
             },
         )
@@ -225,14 +235,14 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .start_container(
             "integration_test_commit_container",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
             "integration_test_commit_container",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -246,7 +256,7 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
                 pause: true,
                 ..Default::default()
             },
-            Config::<String> {
+            ContainerConfig {
                 ..Default::default()
             },
         )
@@ -255,15 +265,25 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_commit_container_next",
-                platform: None,
+                name: Some("integration_test_commit_container_next".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_commit_container_next"),
+            ContainerCreateBody {
+                image: Some("integration_test_commit_container_next".to_string()),
                 cmd: if cfg!(windows) {
-                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                    Some(
+                        ["cmd.exe", "/C", "dir", "bollard.txt"]
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    )
                 } else {
-                    Some(vec!["ls", "/bollard.txt"])
+                    Some(
+                        ["ls", "/bollard.txt"]
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    )
                 },
                 ..Default::default()
             },
@@ -273,14 +293,14 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .start_container(
             "integration_test_commit_container_next",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_commit_container_next",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -394,15 +414,25 @@ RUN touch bollard.txt
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_image",
-                platform: None,
+                name: Some("integration_test_build_image".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_image"),
+            ContainerCreateBody {
+                image: Some("integration_test_build_image".to_string()),
                 cmd: if cfg!(windows) {
-                    Some(vec!["cmd.exe", "/C", "dir", "bollard.txt"])
+                    Some(
+                        ["cmd.exe", "/C", "dir", "bollard.txt"]
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    )
                 } else {
-                    Some(vec!["ls", "/bollard.txt"])
+                    Some(
+                        ["ls", "/bollard.txt"]
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    )
                 },
                 ..Default::default()
             },
@@ -412,15 +442,12 @@ RUN touch bollard.txt
     let _ = &docker
         .start_container(
             "integration_test_build_image",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
-        .wait_container(
-            "integration_test_build_image",
-            None::<WaitContainerOptions<String>>,
-        )
+        .wait_container("integration_test_build_image", None::<WaitContainerOptions>)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -546,12 +573,17 @@ ENTRYPOINT ls buildkit-bollard.txt
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_image",
-                platform: None,
+                name: Some("integration_test_build_buildkit_image".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_buildkit_image"),
-                cmd: Some(vec!["ls", "/buildkit-bollard.txt"]),
+            ContainerCreateBody {
+                image: Some("integration_test_build_buildkit_image".to_string()),
+                cmd: Some(
+                    ["ls", "/buildkit-bollard.txt"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ),
                 ..Default::default()
             },
         )
@@ -560,14 +592,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     let _ = &docker
         .start_container(
             "integration_test_build_buildkit_image",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_build_buildkit_image",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -710,12 +742,12 @@ COPY --from=builder1 /token /",
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_secret",
-                platform: None,
+                name: Some("integration_test_build_buildkit_secret".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_buildkit_secret"),
-                cmd: Some(vec!["cat", "/token"]),
+            ContainerCreateBody {
+                image: Some("integration_test_build_buildkit_secret".to_string()),
+                cmd: Some(["cat", "/token"].iter().map(|s| s.to_string()).collect()),
                 ..Default::default()
             },
         )
@@ -724,14 +756,14 @@ COPY --from=builder1 /token /",
     let _ = &docker
         .start_container(
             "integration_test_build_buildkit_secret",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_build_buildkit_secret",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -745,11 +777,11 @@ COPY --from=builder1 /token /",
     let vec = &docker
         .logs(
             "integration_test_build_buildkit_secret",
-            Some(bollard::container::LogsOptions {
+            Some(bollard::query_parameters::LogsOptions {
                 follow: true,
                 stdout: true,
                 stderr: false,
-                tail: "all",
+                tail: "all".to_string(),
                 ..Default::default()
             }),
         )
@@ -901,12 +933,17 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_named_context",
-                platform: None,
+                name: Some("integration_test_build_buildkit_named_context".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_buildkit_named_context"),
-                cmd: Some(vec!["cat", "/etc/alpine-release"]),
+            ContainerCreateBody {
+                image: Some("integration_test_build_buildkit_named_context".to_string()),
+                cmd: Some(
+                    ["cat", "/etc/alpine-release"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ),
                 ..Default::default()
             },
         )
@@ -915,14 +952,14 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     let _ = &docker
         .start_container(
             "integration_test_build_buildkit_named_context",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_build_buildkit_named_context",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -1019,12 +1056,12 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_ssh",
-                platform: None,
+                name: Some("integration_test_build_buildkit_ssh".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_buildkit_ssh"),
-                cmd: Some(vec!["ls", "/config"]),
+            ContainerCreateBody {
+                image: Some("integration_test_build_buildkit_ssh".to_string()),
+                cmd: Some(["ls", "/config"].iter().map(|s| s.to_string()).collect()),
                 ..Default::default()
             },
         )
@@ -1033,14 +1070,14 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     let _ = &docker
         .start_container(
             "integration_test_build_buildkit_ssh",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_build_buildkit_ssh",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;
@@ -1144,12 +1181,17 @@ ENTRYPOINT ls buildkit-bollard.txt
     let _ = &docker
         .create_container(
             Some(CreateContainerOptions {
-                name: "integration_test_build_buildkit_image_inline_driver",
-                platform: None,
+                name: Some("integration_test_build_buildkit_image_inline_driver".to_string()),
+                ..Default::default()
             }),
-            Config {
-                image: Some("integration_test_build_buildkit_image_inline_driver"),
-                cmd: Some(vec!["ls", "/buildkit-bollard.txt"]),
+            ContainerCreateBody {
+                image: Some("integration_test_build_buildkit_image_inline_driver".to_string()),
+                cmd: Some(
+                    ["ls", "/buildkit-bollard.txt"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ),
                 ..Default::default()
             },
         )
@@ -1158,14 +1200,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     let _ = &docker
         .start_container(
             "integration_test_build_buildkit_image_inline_driver",
-            None::<StartContainerOptions<String>>,
+            None::<StartContainerOptions>,
         )
         .await?;
 
     let vec = &docker
         .wait_container(
             "integration_test_build_buildkit_image_inline_driver",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await?;

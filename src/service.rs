@@ -314,16 +314,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::LogsOptions;
+    /// use bollard::query_parameters::LogsOptionsBuilder;
     ///
-    /// use std::default::Default;
+    /// let options = LogsOptionsBuilder::default()
+    ///     .stdout(true)
+    ///     .build();
     ///
-    /// let options = Some(LogsOptions::<String>{
-    ///     stdout: true,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.service_logs("my-service", options);
+    /// docker.service_logs("my-service", Some(options));
     /// ```
     pub fn service_logs(
         &self,

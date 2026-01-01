@@ -2,11 +2,10 @@ extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
-#[allow(deprecated)]
-use bollard::container::LogsOptions;
 use bollard::errors::Error;
 use bollard::models::*;
 use bollard::query_parameters::ListTasksOptionsBuilder;
+use bollard::query_parameters::LogsOptions;
 use bollard::Docker;
 
 use futures_util::stream::StreamExt;
@@ -140,7 +139,6 @@ async fn inspect_task_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-#[allow(deprecated)] // LogsOptions from container module
 async fn task_logs_test(docker: Docker) -> Result<(), Error> {
     const SERVICE_NAME: &str = "integration_test_task_logs";
 
@@ -191,7 +189,7 @@ async fn task_logs_test(docker: Docker) -> Result<(), Error> {
 
     let task_id = tasks[0].id.as_deref().expect("task should have id");
 
-    let options = LogsOptions::<String> {
+    let options = LogsOptions {
         stdout: true,
         stderr: true,
         ..Default::default()

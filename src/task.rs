@@ -110,16 +110,13 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::container::LogsOptions;
+    /// use bollard::query_parameters::LogsOptionsBuilder;
     ///
-    /// use std::default::Default;
+    /// let options = LogsOptionsBuilder::default()
+    ///     .stdout(true)
+    ///     .build();
     ///
-    /// let options = Some(LogsOptions::<String>{
-    ///     stdout: true,
-    ///     ..Default::default()
-    /// });
-    ///
-    /// docker.task_logs("my-task-id", options);
+    /// docker.task_logs("my-task-id", Some(options));
     /// ```
     pub fn task_logs(
         &self,

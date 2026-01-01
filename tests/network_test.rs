@@ -4,7 +4,10 @@ extern crate tokio;
 
 use bollard::errors::Error;
 use bollard::models::*;
-use bollard::query_parameters::{InspectNetworkOptionsBuilder, ListNetworksOptionsBuilder};
+use bollard::query_parameters::{
+    InspectNetworkOptionsBuilder, KillContainerOptions, ListNetworksOptionsBuilder,
+    RemoveContainerOptions,
+};
 use bollard::Docker;
 
 use tokio::runtime::Runtime;
@@ -123,10 +126,7 @@ async fn list_networks_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-#[allow(deprecated)] // KillContainerOptions and RemoveContainerOptions from container module
 async fn connect_network_test(docker: Docker) -> Result<(), Error> {
-    use bollard::container::{KillContainerOptions, RemoveContainerOptions};
-
     let ipam_config = IpamConfig {
         subnet: Some(String::from("10.10.10.0/24")),
         ..Default::default()
@@ -190,7 +190,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .kill_container(
             "integration_test_connect_network_test",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 
