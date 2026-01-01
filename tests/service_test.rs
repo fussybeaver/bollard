@@ -219,9 +219,8 @@ async fn service_rollback_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
-#[allow(deprecated)] // LogsOptions from container module
 async fn service_logs_test(docker: Docker) -> Result<(), Error> {
-    use bollard::container::LogsOptions;
+    use bollard::query_parameters::LogsOptions;
 
     let image = if cfg!(windows) {
         format!("{}nanoserver/iis", registry_http_addr())
@@ -242,7 +241,7 @@ async fn service_logs_test(docker: Docker) -> Result<(), Error> {
 
     docker.create_service(spec, None).await?;
 
-    let options = LogsOptions::<String> {
+    let options = LogsOptions {
         stdout: true,
         stderr: true,
         ..Default::default()

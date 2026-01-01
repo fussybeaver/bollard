@@ -1436,18 +1436,17 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::CommitContainerOptions;
-    /// use bollard::container::Config;
+    /// use bollard::query_parameters::CommitContainerOptionsBuilder;
+    /// use bollard::models::ContainerConfig;
     ///
     /// use std::default::Default;
     ///
-    /// let options = CommitContainerOptions{
-    ///     container: "my-running-container",
-    ///     pause: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = CommitContainerOptionsBuilder::default()
+    ///     .container("my-running-container")
+    ///     .pause(true)
+    ///     .build();
     ///
-    /// let config = Config::<String> {
+    /// let config = ContainerConfig {
     ///     ..Default::default()
     /// };
     ///
@@ -1501,20 +1500,17 @@ impl Docker {
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::BuildImageOptions;
-    /// use bollard::container::Config;
+    /// use bollard::query_parameters::BuildImageOptionsBuilder;
     /// use bollard::body_full;
     ///
-    /// use std::default::Default;
     /// use std::fs::File;
     /// use std::io::Read;
     ///
-    /// let options = BuildImageOptions{
-    ///     dockerfile: "Dockerfile",
-    ///     t: "my-image",
-    ///     rm: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = BuildImageOptionsBuilder::default()
+    ///     .dockerfile("Dockerfile")
+    ///     .t("my-image")
+    ///     .rm(true)
+    ///     .build();
     ///
     /// let mut file = File::open("tarball.tar.gz").unwrap();
     /// let mut contents = Vec::new();
@@ -1528,20 +1524,17 @@ impl Docker {
     /// ```rust,no_run
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::image::BuildImageOptions;
-    /// use bollard::container::Config;
+    /// use bollard::query_parameters::BuildImageOptionsBuilder;
     /// use bollard::body_stream;
     ///
-    /// use std::default::Default;
     /// use std::fs::File;
     /// use std::io::Read;
     ///
-    /// let options = BuildImageOptions{
-    ///     dockerfile: "Dockerfile",
-    ///     t: "my-image",
-    ///     rm: true,
-    ///     ..Default::default()
-    /// };
+    /// let options = BuildImageOptionsBuilder::default()
+    ///     .dockerfile("Dockerfile")
+    ///     .t("my-image")
+    ///     .rm(true)
+    ///     .build();
     ///
     /// # let mut file = File::open("tarball.tar.gz").unwrap();
     /// # let mut contents = Vec::new();

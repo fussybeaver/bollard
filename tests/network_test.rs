@@ -3,10 +3,10 @@ extern crate bollard;
 extern crate hyper;
 extern crate tokio;
 
-use bollard::container::*;
 use bollard::errors::Error;
 use bollard::models::*;
 use bollard::network::*;
+use bollard::query_parameters::{KillContainerOptions, RemoveContainerOptions};
 use bollard::Docker;
 
 use tokio::runtime::Runtime;
@@ -194,7 +194,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .kill_container(
             "integration_test_connect_network_test",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 

@@ -6,6 +6,9 @@ use std::task::Poll;
 use bollard::container::*;
 use bollard::errors::Error;
 use bollard::exec::*;
+use bollard::query_parameters::{
+    KillContainerOptions, RemoveContainerOptions, WaitContainerOptions,
+};
 use bollard::Docker;
 
 use futures_util::future;
@@ -68,14 +71,14 @@ async fn start_exec_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .kill_container(
             "integration_test_start_exec_test",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
             "integration_test_start_exec_test",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await;
@@ -139,14 +142,14 @@ async fn inspect_exec_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .kill_container(
             "integration_test_inspect_exec_test",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
             "integration_test_inspect_exec_test",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await;
@@ -214,14 +217,14 @@ async fn start_exec_output_capacity_test_short(docker: Docker) -> Result<(), Err
     let _ = &docker
         .kill_container(
             "start_exec_output_capacity_test_short",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
             "start_exec_output_capacity_test_short",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await;
@@ -295,14 +298,14 @@ async fn start_exec_output_capacity_test_long(docker: Docker) -> Result<(), Erro
     let _ = &docker
         .kill_container(
             "start_exec_output_capacity_test_long",
-            None::<KillContainerOptions<String>>,
+            None::<KillContainerOptions>,
         )
         .await?;
 
     let _ = &docker
         .wait_container(
             "start_exec_output_capacity_test_long",
-            None::<WaitContainerOptions<String>>,
+            None::<WaitContainerOptions>,
         )
         .try_collect::<Vec<_>>()
         .await;

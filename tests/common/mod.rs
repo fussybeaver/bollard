@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::stream::TryStreamExt;
@@ -6,9 +7,10 @@ use std::future::Future;
 use tokio::runtime::Runtime;
 
 use bollard::auth::DockerCredentials;
-use bollard::container::*;
 use bollard::errors::Error;
 use bollard::image::*;
+use bollard::models::ContainerCreateBody;
+use bollard::query_parameters::CreateContainerOptionsBuilder;
 use bollard::Docker;
 
 #[allow(unused_macros)]
@@ -107,11 +109,12 @@ pub async fn create_container_hello_world(
 
     let result = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: container_name.to_string(),
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name(container_name)
+                    .build(),
+            ),
+            ContainerCreateBody {
                 cmd,
                 image: Some(image.clone()),
                 ..Default::default()
@@ -121,12 +124,10 @@ pub async fn create_container_hello_world(
 
     assert_ne!(result.id.len(), 0);
 
-    let _ = &docker
-        .start_container(container_name, None::<StartContainerOptions<String>>)
-        .await?;
+    let _ = &docker.start_container(container_name, None).await?;
 
     let wait = &docker
-        .wait_container(container_name, None::<WaitContainerOptions<String>>)
+        .wait_container(container_name, None)
         .try_collect::<Vec<_>>()
         .await?;
 
@@ -163,11 +164,12 @@ pub async fn create_shell_daemon(
 
     let result = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: container_name,
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name(container_name)
+                    .build(),
+            ),
+            ContainerCreateBody {
                 image: Some(image),
                 open_stdin: Some(true),
                 ..Default::default()
@@ -177,9 +179,7 @@ pub async fn create_shell_daemon(
 
     assert_ne!(result.id.len(), 0);
 
-    let _ = &docker
-        .start_container(container_name, None::<StartContainerOptions<String>>)
-        .await?;
+    let _ = &docker.start_container(container_name, None).await?;
 
     Ok(())
 }
@@ -227,11 +227,12 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
     let result = &docker
         .create_container(
-            Some(CreateContainerOptions {
-                name: container_name,
-                platform: None,
-            }),
-            Config {
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name(container_name)
+                    .build(),
+            ),
+            ContainerCreateBody {
                 cmd,
                 image: Some(image),
                 ..Default::default()
@@ -241,27 +242,21 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
     assert_ne!(result.id.len(), 0);
 
-    let _ = &docker
-        .start_container(container_name, None::<StartContainerOptions<String>>)
-        .await?;
+    let _ = &docker.start_container(container_name, None).await?;
 
     Ok(())
 }
 
 #[allow(dead_code)]
 pub async fn kill_container(docker: &Docker, container_name: &'static str) -> Result<(), Error> {
-    let _ = &docker
-        .kill_container(container_name, None::<KillContainerOptions<String>>)
-        .await?;
+    let _ = &docker.kill_container(container_name, None).await?;
 
     let _ = &docker
-        .wait_container(container_name, None::<WaitContainerOptions<String>>)
+        .wait_container(container_name, None)
         .try_collect::<Vec<_>>()
         .await;
 
-    let _ = &docker
-        .remove_container(container_name, None::<RemoveContainerOptions>)
-        .await?;
+    let _ = &docker.remove_container(container_name, None).await?;
 
     Ok(())
 }
