@@ -80,6 +80,39 @@ use tower_service::Service;
 use self::error::GrpcAuthError;
 use self::io::GrpcTransport;
 
+// Datetime handling with cfg guards for time/chrono feature parity
+// BuildKit OAuth requires either 'time' or 'chrono' feature for RFC3339 parsing
+#[cfg(not(any(feature = "time", feature = "chrono")))]
+compile_error!(
+    "BuildKit requires either 'time' or 'chrono' feature to be enabled for OAuth authentication"
+);
+
+#[cfg(feature = "time")]
+type GrpcDateTime = time::OffsetDateTime;
+
+#[cfg(all(feature = "chrono", not(feature = "time")))]
+type GrpcDateTime = chrono::DateTime<chrono::Utc>;
+
+#[cfg(feature = "time")]
+fn grpc_now() -> GrpcDateTime {
+    time::OffsetDateTime::now_utc()
+}
+
+#[cfg(all(feature = "chrono", not(feature = "time")))]
+fn grpc_now() -> GrpcDateTime {
+    chrono::Utc::now()
+}
+
+#[cfg(feature = "time")]
+fn grpc_timestamp(dt: &GrpcDateTime) -> i64 {
+    dt.unix_timestamp()
+}
+
+#[cfg(all(feature = "chrono", not(feature = "time")))]
+fn grpc_timestamp(dt: &GrpcDateTime) -> i64 {
+    dt.timestamp()
+}
+
 const MAX_SECRET_SIZE: u64 = 500 * 1024; // 500KB
 
 #[derive(Debug)]
@@ -421,7 +454,7 @@ struct OAuthTokenResponse {
     access_token: String,
     refresh_token: String,
     expires_in: i64,
-    issued_at: chrono::DateTime<chrono::Utc>,
+    issued_at: GrpcDateTime,
     scope: String,
 }
 
@@ -454,7 +487,7 @@ impl AuthProvider {
     fn to_token_response(
         &self,
         token: &str,
-        issued_at: chrono::DateTime<chrono::Utc>,
+        issued_at: GrpcDateTime,
         expires: TokenExpiry,
     ) -> FetchTokenResponse {
         let expires = match expires {
@@ -465,7 +498,7 @@ impl AuthProvider {
         FetchTokenResponse {
             token: String::from(token),
             expires_in: expires,
-            issued_at: issued_at.timestamp(),
+            issued_at: grpc_timestamp(&issued_at),
         }
     }
 
@@ -618,7 +651,7 @@ impl Auth for AuthProvider {
         if let Some(token) = self.registry_token.as_ref() {
             Ok(Response::new(self.to_token_response(
                 token,
-                chrono::Utc::now(),
+                grpc_now(),
                 TokenExpiry::DEFAULT,
             )))
         } else {
