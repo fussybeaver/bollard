@@ -57,9 +57,7 @@ impl super::Driver for BuildkitChannel {
         let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
         let streamreader = ReaderStream::new(asyncreader);
         let stream = control_client.session(streamreader).await?;
-        let stream = stream
-            .into_inner()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        let stream = stream.into_inner().map_err(std::io::Error::other);
 
         let asyncreader = IntoAsyncRead::new(stream);
         let transport = GrpcTransport {
