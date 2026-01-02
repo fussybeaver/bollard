@@ -1,5 +1,4 @@
-#![allow(deprecated)]
-use bollard::{image::ListImagesOptions, Docker};
+use bollard::{query_parameters::ListImagesOptionsBuilder, Docker};
 use once_cell::sync::OnceCell;
 
 static DOCKER: OnceCell<Docker> = OnceCell::new();
@@ -8,7 +7,7 @@ fn get_docker() -> Result<&'static Docker, bollard::errors::Error> {
     DOCKER.get_or_try_init(Docker::connect_with_unix_defaults)
 }
 
-#[cfg(feature = "test_http")]
+#[cfg(all(feature = "test_http", not(feature = "test_ssl")))]
 fn get_docker() -> Result<&'static Docker, bollard::errors::Error> {
     DOCKER.get_or_try_init(Docker::connect_with_http_defaults)
 }
@@ -47,10 +46,7 @@ async fn run_test(count: usize) {
     let docker = get_docker().unwrap();
     for _ in 0..count {
         let _ = &docker
-            .list_images(Some(ListImagesOptions::<String> {
-                all: true,
-                ..Default::default()
-            }))
+            .list_images(Some(ListImagesOptionsBuilder::default().all(true).build()))
             .await
             .unwrap();
     }

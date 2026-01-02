@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::stream::TryStreamExt;
@@ -8,9 +6,8 @@ use tokio::runtime::Runtime;
 
 use bollard::auth::DockerCredentials;
 use bollard::errors::Error;
-use bollard::image::*;
 use bollard::models::ContainerCreateBody;
-use bollard::query_parameters::CreateContainerOptionsBuilder;
+use bollard::query_parameters::{CreateContainerOptionsBuilder, CreateImageOptionsBuilder};
 use bollard::Docker;
 
 #[allow(unused_macros)]
@@ -28,7 +25,7 @@ macro_rules! connect_to_docker_and_run {
         let rt = Runtime::new().unwrap();
         #[cfg(all(unix, not(feature = "test_http"), not(feature = "test_ssl")))]
         let fut = $exec(Docker::connect_with_unix_defaults().unwrap());
-        #[cfg(feature = "test_http")]
+        #[cfg(all(feature = "test_http", not(feature = "test_ssl")))]
         let fut = $exec(Docker::connect_with_http_defaults().unwrap());
         #[cfg(feature = "test_ssl")]
         let fut = $exec(Docker::connect_with_ssl_defaults().unwrap());
@@ -93,10 +90,11 @@ pub async fn create_container_hello_world(
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -148,10 +146,11 @@ pub async fn create_shell_daemon(
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -211,10 +210,11 @@ pub async fn create_daemon(docker: &Docker, container_name: &'static str) -> Res
 
     let _ = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None
@@ -271,10 +271,11 @@ pub async fn create_image_hello_world(docker: &Docker) -> Result<String, Error> 
 
     let result = &docker
         .create_image(
-            Some(CreateImageOptions {
-                from_image: &image[..],
-                ..Default::default()
-            }),
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
             None,
             if cfg!(windows) {
                 None

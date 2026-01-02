@@ -6,7 +6,6 @@ async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Erro
     use bollard::models::SwarmInitRequest;
     use bollard::query_parameters::LeaveSwarmOptionsBuilder;
     use bollard::query_parameters::UpdateSwarmOptionsBuilder;
-    use bollard::swarm::*;
 
     // init swarm
     let config = SwarmInitRequest {
@@ -18,17 +17,14 @@ async fn swarm_test(docker: bollard::Docker) -> Result<(), bollard::errors::Erro
 
     // inspect swarm
     let inspection_result = &docker.inspect_swarm().await?;
-    assert!(
-        inspection_result
-            .join_tokens
-            .as_ref()
-            .unwrap()
-            .worker
-            .as_ref()
-            .unwrap()
-            .len()
-            > 0
-    );
+    assert!(!inspection_result
+        .join_tokens
+        .as_ref()
+        .unwrap()
+        .worker
+        .as_ref()
+        .unwrap()
+        .is_empty());
 
     // test update swarm - get current version and spec
     let swarm = docker.inspect_swarm().await?;

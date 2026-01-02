@@ -144,21 +144,19 @@
 //!
 //! ```rust,no_run
 //! use bollard::Docker;
-//! use bollard::image::ListImagesOptions;
+//! use bollard::query_parameters::ListImagesOptionsBuilder;
 //!
 //! use futures_util::future::FutureExt;
-//!
-//! use std::default::Default;
 //!
 //! // Use a connection function described above
 //! // let docker = Docker::connect_...;
 //! # let docker = Docker::connect_with_local_defaults().unwrap();
 //!
 //! async move {
-//!     let images = &docker.list_images(Some(ListImagesOptions::<String> {
-//!         all: true,
-//!         ..Default::default()
-//!     })).await.unwrap();
+//!     let options = ListImagesOptionsBuilder::default()
+//!         .all(true)
+//!         .build();
+//!     let images = &docker.list_images(Some(options)).await.unwrap();
 //!
 //!     for image in images {
 //!         println!("-> {:?}", image);

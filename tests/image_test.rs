@@ -1,17 +1,22 @@
-#![allow(deprecated)]
 use bytes::BufMut;
 use futures_util::future::ready;
 use futures_util::stream::{StreamExt, TryStreamExt};
 use http_body_util::Full;
 use tokio::runtime::Runtime;
 
+use bollard::body_full;
 use bollard::errors::Error;
 use bollard::models::{ContainerConfig, ContainerCreateBody};
 use bollard::query_parameters::{
-    CreateContainerOptions, RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
+    BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptions,
+    CreateImageOptionsBuilder, ImportImageOptionsBuilder, ListImagesOptionsBuilder,
+    PruneImagesOptionsBuilder, RemoveContainerOptions, RemoveImageOptions,
+    RemoveImageOptionsBuilder, SearchImagesOptionsBuilder, StartContainerOptions,
+    TagImageOptionsBuilder, WaitContainerOptions,
 };
+#[cfg(feature = "buildkit")]
+use bollard::query_parameters::{BuilderVersion, ImageBuildOutput, PruneBuildOptions};
 use bollard::Docker;
-use bollard::{body_full, image::*};
 
 use std::collections::HashMap;
 use std::default::Default;
@@ -31,11 +36,10 @@ async fn create_image_test(docker: Docker) -> Result<(), Error> {
 async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
     let image = "empty-wasm:latest";
 
-    let options = CreateImageOptions {
-        from_src: "-", // from_src must be "-" when sending the archive in the request body
-        repo: image,
-        ..Default::default()
-    };
+    let options = CreateImageOptionsBuilder::default()
+        .from_src("-") // from_src must be "-" when sending the archive in the request body
+        .repo(image)
+        .build();
 
     let req_body = bytes::Bytes::from({
         let mut buffer = Vec::new();
@@ -71,10 +75,11 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
 
 async fn search_images_test(docker: Docker) -> Result<(), Error> {
     let result = &docker
-        .search_images(SearchImagesOptions {
-            term: "hello-world",
-            ..Default::default()
-        })
+        .search_images(
+            SearchImagesOptionsBuilder::default()
+                .term("hello-world")
+                .build(),
+        )
         .await?;
 
     assert!(result
@@ -115,10 +120,7 @@ async fn list_images_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
     let result = &docker
-        .list_images(Some(ListImagesOptions::<String> {
-            all: true,
-            ..Default::default()
-        }))
+        .list_images(Some(ListImagesOptionsBuilder::default().all(true).build()))
         .await?;
 
     assert!(result.iter().any(|api_image| {
@@ -154,7 +156,11 @@ async fn prune_images_test(docker: Docker) -> Result<(), Error> {
     let mut filters = HashMap::new();
     filters.insert("label", vec!["maintainer=some_maintainer"]);
     let _ = &docker
-        .prune_images(Some(PruneImagesOptions { filters }))
+        .prune_images(Some(
+            PruneImagesOptionsBuilder::default()
+                .filters(&filters)
+                .build(),
+        ))
         .await?;
 
     Ok(())
@@ -172,10 +178,7 @@ async fn remove_image_test(docker: Docker) -> Result<(), Error> {
     let result = &docker
         .remove_image(
             &image,
-            Some(RemoveImageOptions {
-                noprune: true,
-                ..Default::default()
-            }),
+            Some(RemoveImageOptionsBuilder::default().noprune(true).build()),
             if cfg!(windows) {
                 None
             } else {
@@ -249,13 +252,12 @@ async fn commit_container_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .commit_container(
-            CommitContainerOptions {
-                container: "integration_test_commit_container",
-                repo: "integration_test_commit_container_next",
-                tag: "latest",
-                pause: true,
-                ..Default::default()
-            },
+            CommitContainerOptionsBuilder::default()
+                .container("integration_test_commit_container")
+                .repo("integration_test_commit_container_next")
+                .tag("latest")
+                .pause(true)
+                .build(),
             ContainerConfig {
                 ..Default::default()
             },
@@ -382,13 +384,12 @@ RUN touch bollard.txt
 
         let _ = &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_image".to_string(),
-                    pull: true,
-                    rm: true,
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_image")
+                    .pull("true")
+                    .rm(true)
+                    .build(),
                 if cfg!(windows) { None } else { Some(creds) },
                 Some(bollard::body_stream(payload)),
             )
@@ -397,13 +398,12 @@ RUN touch bollard.txt
     } else {
         let _ = &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_image".to_string(),
-                    pull: true,
-                    rm: true,
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_image")
+                    .pull("true")
+                    .rm(true)
+                    .build(),
                 if cfg!(windows) { None } else { Some(creds) },
                 Some(http_body_util::Either::Left(Full::new(compressed.into()))),
             )
@@ -520,16 +520,14 @@ ENTRYPOINT ls buildkit-bollard.txt
 
         &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_buildkit_image".to_string(),
-                    pull: true,
-                    version: BuilderVersion::BuilderBuildKit,
-                    rm: true,
-                    #[cfg(feature = "buildkit_providerless")]
-                    session: Some(String::from(id)),
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_buildkit_image")
+                    .pull("true")
+                    .version(BuilderVersion::BuilderBuildKit)
+                    .rm(true)
+                    .session(id)
+                    .build(),
                 Some(creds_hsh),
                 Some(body_stream(payload)),
             )
@@ -538,16 +536,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     } else {
         &docker
             .build_image(
-                BuildImageOptions {
-                    dockerfile: "Dockerfile".to_string(),
-                    t: "integration_test_build_buildkit_image".to_string(),
-                    pull: true,
-                    version: BuilderVersion::BuilderBuildKit,
-                    rm: true,
-                    #[cfg(feature = "buildkit_providerless")]
-                    session: Some(String::from(id)),
-                    ..Default::default()
-                },
+                BuildImageOptionsBuilder::default()
+                    .dockerfile("Dockerfile")
+                    .t("integration_test_build_buildkit_image")
+                    .pull("true")
+                    .version(BuilderVersion::BuilderBuildKit)
+                    .rm(true)
+                    .session(id)
+                    .build(),
                 Some(creds_hsh),
                 Some(http_body_util::Either::Left(Full::new(compressed.into()))),
             )
@@ -652,16 +648,13 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit_providerless")]
-                session: None,
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .build(),
             None,
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1322,20 +1315,17 @@ COPY --from=builder message-2.txt .
     let id = "build_buildkit_image_outputs_tar_test";
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit_providerless")]
-                session: Some(String::from(id)),
-                #[cfg(feature = "buildkit_providerless")]
-                outputs: Some(ImageBuildOutput::Tar(
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .outputs(ImageBuildOutput::Tar(
                     "/tmp/buildkit-outputs.tar".to_string(),
-                )),
-                ..Default::default()
-            },
+                ))
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1431,18 +1421,15 @@ RUN touch empty.txt
     let id = "build_buildkit_image_outputs_local_test";
     let build = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_build_buildkit_image".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit_providerless")]
-                session: Some(String::from(id)),
-                #[cfg(feature = "buildkit_providerless")]
-                outputs: Some(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string())),
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_build_buildkit_image")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .outputs(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string()))
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1518,16 +1505,14 @@ RUN echo bollard > bollard.txt
 
     let _ = &docker
         .build_image(
-            BuildImageOptions {
-                dockerfile: "Dockerfile".to_string(),
-                t: "integration_test_prune_build".to_string(),
-                pull: true,
-                version: BuilderVersion::BuilderBuildKit,
-                rm: true,
-                #[cfg(feature = "buildkit_providerless")]
-                session: Some(String::from(id)),
-                ..Default::default()
-            },
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_prune_build")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session(id)
+                .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
         )
@@ -1551,9 +1536,7 @@ RUN echo bollard > bollard.txt
         .map(|data| data.iter().fold(0, |acc, e| acc + e.size.unwrap()))
         .unwrap();
 
-    let prune_info = docker
-        .prune_build(None::<PruneBuildOptions<String>>)
-        .await?;
+    let prune_info = docker.prune_build(None::<PruneBuildOptions>).await?;
 
     let new_cache_size = &docker
         .df(None::<DataUsageOptions>)
@@ -1617,10 +1600,12 @@ async fn export_images_test(docker: Docker) -> Result<(), Error> {
     docker
         .tag_image(
             &image,
-            Some(TagImageOptions {
-                repo: repo.as_ref(),
-                tag: "mycopy",
-            }),
+            Some(
+                TagImageOptionsBuilder::default()
+                    .repo(repo.as_ref())
+                    .tag("mycopy")
+                    .build(),
+            ),
         )
         .await?;
 
@@ -1685,13 +1670,12 @@ RUN apt-get update && \
     let compressed = c.finish().unwrap();
 
     let mut stream = docker.build_image(
-        BuildImageOptions {
-            dockerfile: "Dockerfile".to_string(),
-            t: "issue_55".to_string(),
-            pull: true,
-            rm: true,
-            ..Default::default()
-        },
+        BuildImageOptionsBuilder::default()
+            .dockerfile("Dockerfile")
+            .t("issue_55")
+            .pull("true")
+            .rm(true)
+            .build(),
         None,
         Some(http_body_util::Either::Left(Full::new(compressed.into()))),
     );
@@ -1728,9 +1712,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
 
     docker
         .import_image(
-            ImportImageOptions {
-                ..Default::default()
-            },
+            ImportImageOptionsBuilder::default().build(),
             body_full(buf.freeze()),
             Some(creds),
         )
@@ -1760,9 +1742,7 @@ async fn import_image_test_stream(docker: Docker) -> Result<(), Error> {
 
     docker
         .import_image_stream(
-            ImportImageOptions {
-                ..Default::default()
-            },
+            ImportImageOptionsBuilder::default().build(),
             res,
             Some(creds),
         )
