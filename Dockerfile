@@ -1,4 +1,4 @@
-FROM rust:1.90.0-slim
+FROM rust:1.92.0-slim
 
 # for `ssh` feature
 RUN apt-get update && apt-get install --yes openssh-client
