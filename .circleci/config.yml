@@ -67,7 +67,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit --tests
+      - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
   test_chrono:
     docker:
       - image: docker:27.3
@@ -159,7 +159,7 @@ jobs:
           docker run --rm -v ssh-agent:/.ssh-agent -d --name ssh-agent nuodb/ssh-agent
           docker run --rm -v auth:/auth --link git:git -v ssh-agent:/.ssh-agent --entrypoint=bash ubuntu -c "apt-get update && apt-get install -y openssh-client && ssh-keygen -t ecdsa -N \"\" -C \"test@example.com\" -f id_ecdsa && cat id_ecdsa.pub > /auth/authorized_keys && SSH_AUTH_SOCK=/.ssh-agent/socket ssh-add id_ecdsa && mkdir -p -m 0600 ~/.ssh && ssh-keyscan -t ecdsa -p 22 git >> ~/.ssh/known_hosts && SSH_AUTH_SOCK=/.ssh-agent/socket ssh -A -v -i id_ecdsa git@git -p 22 \"git-init --bare /srv/git/config.git\""
       - run: docker build -t bollard .
-      - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,test_sshforward --verbose integration_test_build_buildkit_ssh 
+      - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,chrono,test_sshforward --verbose integration_test_build_buildkit_ssh 
 workflows:
   version: 2
   test-image:
