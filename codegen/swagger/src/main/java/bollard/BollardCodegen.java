@@ -304,6 +304,12 @@ public class BollardCodegen extends RustServerCodegen {
             property.datatype = "i64";
         }
 
+        // Handle unknown/generic object types (e.g., from x-go-type extensions)
+        // that swagger-codegen generates as "Object"
+        if (property.datatype.equals("Object")) {
+            property.datatype = "serde_json::Value";
+        }
+
         if (property.dataFormat != null) {
             switch (property.dataFormat) {
                 case "uint64":
