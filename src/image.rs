@@ -135,7 +135,12 @@ impl Docker {
 
         self.process_into_stream(req).boxed().map(|res| {
             if let Ok(CreateImageInfo {
-                error: Some(error), ..
+                error_detail:
+                    Some(ErrorDetail {
+                        message: Some(error),
+                        ..
+                    }),
+                ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })
@@ -502,7 +507,12 @@ impl Docker {
 
         self.process_into_stream(req).boxed().map(|res| {
             if let Ok(PushImageInfo {
-                error: Some(error), ..
+                error_detail:
+                    Some(ErrorDetail {
+                        message: Some(error),
+                        ..
+                    }),
+                ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })
@@ -723,7 +733,7 @@ impl Docker {
         }
         .map(|res| {
             if let Ok(BuildInfo {
-                error: Some(error), ..
+                error_detail: Some(ErrorDetail { message: Some(error), .. }), ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })
@@ -959,7 +969,12 @@ impl Docker {
 
         self.process_into_stream(req).boxed().map(|res| {
             if let Ok(BuildInfo {
-                error: Some(error), ..
+                error_detail:
+                    Some(ErrorDetail {
+                        message: Some(error),
+                        ..
+                    }),
+                ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })
@@ -1047,7 +1062,12 @@ impl Docker {
 
         self.process_into_stream(req).boxed().map(|res| {
             if let Ok(BuildInfo {
-                error: Some(error), ..
+                error_detail:
+                    Some(ErrorDetail {
+                        message: Some(error),
+                        ..
+                    }),
+                ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })

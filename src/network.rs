@@ -101,7 +101,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - A [Models](Network) struct, wrapped in a
+    ///  - A [NetworkInspect](NetworkInspect) struct, wrapped in a
     ///    Future.
     ///
     /// # Examples
@@ -122,7 +122,7 @@ impl Docker {
         &self,
         network_name: &str,
         options: Option<crate::query_parameters::InspectNetworkOptions>,
-    ) -> Result<Network, Error> {
+    ) -> Result<NetworkInspect, Error> {
         let url = format!("/networks/{network_name}");
 
         let req = self.build_request(
@@ -203,7 +203,7 @@ impl Docker {
     /// use bollard::models::{NetworkConnectRequest, EndpointSettings, EndpointIpamConfig};
     ///
     /// let config = NetworkConnectRequest {
-    ///     container: Some(String::from("3613f73ba0e4")),
+    ///     container: String::from("3613f73ba0e4"),
     ///     endpoint_config: Some(EndpointSettings {
     ///         ipam_config: Some(EndpointIpamConfig {
     ///             ipv4_address: Some(String::from("172.24.56.89")),
@@ -254,7 +254,7 @@ impl Docker {
     /// use bollard::models::NetworkDisconnectRequest;
     ///
     /// let config = NetworkDisconnectRequest {
-    ///     container: Some(String::from("3613f73ba0e4")),
+    ///     container: String::from("3613f73ba0e4"),
     ///     force: Some(true),
     /// };
     ///

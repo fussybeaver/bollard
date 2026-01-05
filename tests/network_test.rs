@@ -142,7 +142,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
     };
 
     let connect_network_request = NetworkConnectRequest {
-        container: Some(String::from("integration_test_connect_network_test")),
+        container: String::from("integration_test_connect_network_test"),
         endpoint_config: Some(EndpointSettings {
             ipam_config: Some(EndpointIpamConfig {
                 ipv4_address: Some(String::from("10.10.10.101")),
@@ -179,7 +179,7 @@ async fn connect_network_test(docker: Docker) -> Result<(), Error> {
         .any(|(_, container)| container.ipv4_address == Some("10.10.10.101/24".into())));
 
     let disconnect_request = NetworkDisconnectRequest {
-        container: Some(String::from("integration_test_connect_network_test")),
+        container: String::from("integration_test_connect_network_test"),
         force: Some(true),
     };
 
