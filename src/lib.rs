@@ -288,7 +288,60 @@ pub use crate::docker::{
     body_full, body_stream, body_try_stream, BollardRequest, ClientVersion, Docker,
     API_DEFAULT_VERSION,
 };
+
+/// Re-exported request body and response types from `bollard-stubs`.
+///
+/// Use these types directly from `bollard::models` instead of adding `bollard-stubs`
+/// as a dependency. This ensures version compatibility and simplifies your dependencies.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use bollard::Docker;
+/// use bollard::models::ContainerCreateBody;
+/// use bollard::query_parameters::CreateContainerOptionsBuilder;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let docker = Docker::connect_with_socket_defaults()?;
+///
+/// let config = ContainerCreateBody {
+///     image: Some("alpine:latest".to_string()),
+///     ..Default::default()
+/// };
+///
+/// let options = CreateContainerOptionsBuilder::default()
+///     .name("my_container")
+///     .build();
+///
+/// docker.create_container(Some(options), config).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub use bollard_stubs::models;
+
+/// Re-exported query parameter types from `bollard-stubs`.
+///
+/// Use these types directly from `bollard::query_parameters` instead of adding
+/// `bollard-stubs` as a dependency. Each API method has a corresponding options
+/// builder (e.g., `CreateContainerOptionsBuilder`, `ListImagesOptionsBuilder`).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use bollard::Docker;
+/// use bollard::query_parameters::ListContainersOptionsBuilder;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let docker = Docker::connect_with_socket_defaults()?;
+///
+/// let options = ListContainersOptionsBuilder::default()
+///     .all(true)
+///     .build();
+///
+/// let containers = docker.list_containers(Some(options)).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub use bollard_stubs::query_parameters;
 
 #[cfg(feature = "buildkit_providerless")]
