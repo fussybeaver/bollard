@@ -1745,7 +1745,6 @@ impl Default for ResizeExecOptions
 /// use bollard_stubs::query_parameters::PruneBuildOptionsBuilder;
 ///
 /// let params = PruneBuildOptionsBuilder::new()
-/// //  .keep_storage(/* ... */)
 /// //  .reserved_space(/* ... */)
 /// //  .max_used_space(/* ... */)
 /// //  .min_free_space(/* ... */)
@@ -1762,15 +1761,6 @@ impl PruneBuildOptionsBuilder {
     /// Construct a builder of query parameters for PruneBuildOptions using defaults.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Amount of disk space in bytes to keep for cache
-    /// 
-    /// > **Deprecated**: This parameter is deprecated and has been renamed to "reserved-space".
-    /// > It is kept for backward compatibility and will be removed in API v1.49.
-    pub fn keep_storage(mut self, keep_storage: i64) -> Self {
-        self.inner.keep_storage = Some(keep_storage);
-        self
     }
 
     /// Amount of disk space in bytes to keep for cache
@@ -1839,9 +1829,6 @@ impl PruneBuildOptionsBuilder {
 pub struct PruneBuildOptions
 { 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "keep-storage")]
-    pub keep_storage: Option<i64>, 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "reserved-space")]
     pub reserved_space: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1861,7 +1848,6 @@ impl Default for PruneBuildOptions
 {
     fn default() -> Self {
         Self {
-            keep_storage: None,
             reserved_space: None,
             max_used_space: None,
             min_free_space: None,
@@ -2082,7 +2068,17 @@ impl BuildImageOptionsBuilder {
         self
     }
 
-    /// BuildKit output configuration
+    /// BuildKit output configuration in the format of a stringified JSON array of objects.
+    /// Each object must have two top-level properties: `Type` and `Attrs`.
+    /// The `Type` property must be set to 'moby'.
+    /// The `Attrs` property is a map of attributes for the BuildKit output configuration.
+    /// See https://docs.docker.com/build/exporters/oci-docker/ for more information.
+    /// 
+    /// Example:
+    /// 
+    /// ```
+    /// [{"Type":"moby","Attrs":{"type":"image","force-compression":"true","compression":"zstd"}}]
+    /// ```
     #[cfg(feature = "buildkit")]
     pub fn outputs(mut self, outputs: ImageBuildOutput) -> Self {
         self.inner.outputs = Some(outputs);
@@ -2476,6 +2472,7 @@ impl Default for CreateImageOptions
 /// let params = RemoveImageOptionsBuilder::new()
 /// //  .force(/* ... */)
 /// //  .noprune(/* ... */)
+/// //  .platforms(/* ... */)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -2501,6 +2498,17 @@ impl RemoveImageOptionsBuilder {
         self
     }
 
+    /// Select platform-specific content to delete.
+    /// Multiple values are accepted.
+    /// Each platform is a OCI platform encoded as a JSON string.
+    pub fn platforms(mut self, platforms: Vec<String>) -> Self {
+        self.inner.platforms = Some(platforms
+            .into_iter()
+            .map(|v| Into::<String>::into(v.clone()))
+            .collect());
+        self
+    }
+
     /// Consume this builder and use the `RemoveImageOptions` as parameter to the
     /// `ImageDelete` API
     pub fn build(self) -> RemoveImageOptions {
@@ -2516,6 +2524,8 @@ pub struct RemoveImageOptions
 { 
     pub force: bool, 
     pub noprune: bool, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platforms: Option<Vec<String>>, 
 }
 
 impl Default for RemoveImageOptions
@@ -2524,6 +2534,7 @@ impl Default for RemoveImageOptions
         Self {
             force: false,
             noprune: false,
+            platforms: None,
         }
     }
 }
@@ -2558,8 +2569,11 @@ impl ExportImageOptionsBuilder {
     /// If not provided, the full multi-platform image will be saved.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
-    pub fn platform(mut self, platform: &str) -> Self {
-        self.inner.platform = Some(platform.into());
+    pub fn platform(mut self, platform: Vec<String>) -> Self {
+        self.inner.platform = Some(platform
+            .into_iter()
+            .map(|v| Into::<String>::into(v.clone()))
+            .collect());
         self
     }
 
@@ -2577,7 +2591,7 @@ impl ExportImageOptionsBuilder {
 pub struct ExportImageOptions
 { 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>, 
+    pub platform: Option<Vec<String>>, 
 }
 
 impl Default for ExportImageOptions
@@ -2623,14 +2637,17 @@ impl ExportImagesOptionsBuilder {
         self
     }
 
-    /// JSON encoded OCI platform describing a platform which will be used
-    /// to select a platform-specific image to be saved if the image is
-    /// multi-platform.
-    /// If not provided, the full multi-platform image will be saved.
+    /// JSON encoded OCI platform(s) which will be used to select the
+    /// platform-specific image(s) to be saved if the image is
+    /// multi-platform. If not provided, the full multi-platform image
+    /// will be saved.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
-    pub fn platform(mut self, platform: &str) -> Self {
-        self.inner.platform = Some(platform.into());
+    pub fn platform(mut self, platform: Vec<String>) -> Self {
+        self.inner.platform = Some(platform
+            .into_iter()
+            .map(|v| Into::<String>::into(v.clone()))
+            .collect());
         self
     }
 
@@ -2650,7 +2667,7 @@ pub struct ExportImagesOptions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>, 
+    pub platform: Option<Vec<String>>, 
 }
 
 impl Default for ExportImagesOptions
@@ -2928,14 +2945,17 @@ impl ImportImageOptionsBuilder {
         self
     }
 
-    /// JSON encoded OCI platform describing a platform which will be used
-    /// to select a platform-specific image to be load if the image is
-    /// multi-platform.
-    /// If not provided, the full multi-platform image will be loaded.
+    /// JSON encoded OCI platform(s) which will be used to select the
+    /// platform-specific image(s) to load if the image is
+    /// multi-platform. If not provided, the full multi-platform image
+    /// will be loaded.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
-    pub fn platform(mut self, platform: &str) -> Self {
-        self.inner.platform = Some(platform.into());
+    pub fn platform(mut self, platform: Vec<String>) -> Self {
+        self.inner.platform = Some(platform
+            .into_iter()
+            .map(|v| Into::<String>::into(v.clone()))
+            .collect());
         self
     }
 
@@ -2954,7 +2974,7 @@ pub struct ImportImageOptions
 { 
     pub quiet: bool, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>, 
+    pub platform: Option<Vec<String>>, 
 }
 
 impl Default for ImportImageOptions
@@ -4793,6 +4813,7 @@ impl Default for UpdateSwarmOptions
 ///
 /// let params = DataUsageOptionsBuilder::new()
 /// //  ._type(/* ... */)
+/// //  .verbose(/* ... */)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -4815,6 +4836,12 @@ impl DataUsageOptionsBuilder {
         self
     }
 
+    /// Show detailed information on space usage.
+    pub fn verbose(mut self, verbose: bool) -> Self {
+        self.inner.verbose = verbose;
+        self
+    }
+
     /// Consume this builder and use the `DataUsageOptions` as parameter to the
     /// `SystemDataUsage` API
     pub fn build(self) -> DataUsageOptions {
@@ -4831,6 +4858,7 @@ pub struct DataUsageOptions
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub _type: Option<Vec<String>>, 
+    pub verbose: bool, 
 }
 
 impl Default for DataUsageOptions
@@ -4838,6 +4866,7 @@ impl Default for DataUsageOptions
     fn default() -> Self {
         Self {
             _type: None,
+            verbose: false,
         }
     }
 }
