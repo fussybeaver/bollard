@@ -10,21 +10,10 @@ use bollard::Docker;
 use futures_util::stream::TryStreamExt;
 use std::collections::HashMap;
 
-// Note: list_plugins/inspect_plugin have a deserialization bug when plugins are installed
-// (PluginInterfaceType expects struct but API returns string - see GitHub issue #651).
-// These tests only work reliably when no plugins are installed.
-
 async fn list_plugins_test(docker: Docker) -> Result<(), Error> {
-    match docker
+    docker
         .list_plugins(None::<bollard::query_parameters::ListPluginsOptions>)
-        .await
-    {
-        Ok(_) => {}
-        Err(Error::JsonDataError { .. }) => {
-            // Known bug #651: fails when plugins with PluginInterfaceType are installed
-        }
-        Err(e) => return Err(e),
-    }
+        .await?;
     Ok(())
 }
 
@@ -36,13 +25,7 @@ async fn list_plugins_with_filter_test(docker: Docker) -> Result<(), Error> {
         .filters(&filters)
         .build();
 
-    match docker.list_plugins(Some(options)).await {
-        Ok(_) => {}
-        Err(Error::JsonDataError { .. }) => {
-            // Known bug #651: fails when plugins with PluginInterfaceType are installed
-        }
-        Err(e) => return Err(e),
-    }
+    docker.list_plugins(Some(options)).await?;
     Ok(())
 }
 
