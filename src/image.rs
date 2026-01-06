@@ -848,7 +848,7 @@ impl Docker {
     /// Additionally, each layer of all exported images will have a sub directory in the archive
     /// containing the filesystem of the layer.
     ///
-    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#operation/ImageGet)
+    /// See the [Docker API documentation](https://docs.docker.com/reference/api/engine/version/v1.52/#operation/ImageGet)
     /// for more information.
     /// # Arguments
     /// - The `image_name` string referring to an individual image and tag (e.g. alpine:latest)
@@ -875,7 +875,7 @@ impl Docker {
     /// Get a tarball containing all images and metadata for several image repositories. Shared
     /// layers will be deduplicated.
     ///
-    /// See the [Docker API documentation](https://docs.docker.com/engine/api/v1.40/#tag/Image/operation/ImageGetAll)
+    /// See the [Docker API documentation](https://docs.docker.com/reference/api/engine/version/v1.52/#tag/Image/operation/ImageGetAll)
     /// for more information.
     /// # Arguments
     /// - The `image_names` Vec of image names.
