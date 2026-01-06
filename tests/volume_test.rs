@@ -3,7 +3,7 @@ extern crate hyper;
 extern crate tokio;
 
 use bollard::errors::Error;
-use bollard::models::VolumeCreateOptions;
+use bollard::models::VolumeCreateRequest;
 use bollard::query_parameters::{
     ListVolumesOptionsBuilder, PruneVolumesOptionsBuilder, RemoveVolumeOptionsBuilder,
 };
@@ -24,7 +24,7 @@ async fn list_volumes_test(docker: Docker) -> Result<(), Error> {
         String::from("bollard-maintainer"),
     );
 
-    let create_volume_options = VolumeCreateOptions {
+    let create_volume_options = VolumeCreateRequest {
         name: Some(String::from("integration_test_list_volumes")),
         labels: Some(create_volume_filters),
         ..Default::default()
@@ -56,7 +56,7 @@ async fn list_volumes_test(docker: Docker) -> Result<(), Error> {
 }
 
 async fn create_volume_test(docker: Docker) -> Result<(), Error> {
-    let create_volume_options = VolumeCreateOptions {
+    let create_volume_options = VolumeCreateRequest {
         name: Some(String::from("integration_test_create_volume")),
         ..Default::default()
     };
@@ -84,7 +84,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         String::from("shiplift-maintainer"),
     );
 
-    let create_volume_options = VolumeCreateOptions {
+    let create_volume_options = VolumeCreateRequest {
         name: Some(String::from("integration_test_prune_volumes_1")),
         labels: Some(create_volume_filters),
         ..Default::default()
@@ -100,7 +100,7 @@ async fn prune_volumes_test(docker: Docker) -> Result<(), Error> {
         String::from("bollard-maintainer"),
     );
 
-    let create_volume_options = VolumeCreateOptions {
+    let create_volume_options = VolumeCreateRequest {
         name: Some(String::from("integration_test_prune_volumes_2")),
         labels: Some(create_volume_filters),
         ..Default::default()

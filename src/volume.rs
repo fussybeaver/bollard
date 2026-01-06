@@ -65,7 +65,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Volume Create Options](VolumeCreateOptions) struct.
+    ///  - [Volume Create Request](VolumeCreateRequest) struct.
     ///
     /// # Returns
     ///
@@ -78,11 +78,11 @@ impl Docker {
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
     ///
-    /// use bollard::models::VolumeCreateOptions;
+    /// use bollard::models::VolumeCreateRequest;
     ///
     /// use std::default::Default;
     ///
-    /// let config = VolumeCreateOptions {
+    /// let config = VolumeCreateRequest {
     ///     name: Some(String::from("certs")),
     ///     ..Default::default()
     /// };
@@ -91,7 +91,7 @@ impl Docker {
     /// ```
     pub async fn create_volume(
         &self,
-        config: impl Into<VolumeCreateOptions>,
+        config: impl Into<VolumeCreateRequest>,
     ) -> Result<Volume, Error> {
         let url = "/volumes/create";
 

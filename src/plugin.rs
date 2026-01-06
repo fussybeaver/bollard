@@ -338,7 +338,12 @@ impl Docker {
 
         self.process_into_stream(req).map(|res| {
             if let Ok(CreateImageInfo {
-                error: Some(error), ..
+                error_detail:
+                    Some(ErrorDetail {
+                        message: Some(error),
+                        ..
+                    }),
+                ..
             }) = res
             {
                 Err(Error::DockerStreamError { error })
