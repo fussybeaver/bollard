@@ -38,7 +38,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [List Images Options](ListImagesOptions) struct.
+    ///  - An optional [List Images Options](crate::query_parameters::ListImagesOptions) struct.
     ///
     /// # Returns
     ///
@@ -87,7 +87,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - An optional [Create Image Options](CreateImageOptions) struct.
+    ///  - An optional [Create Image Options](crate::query_parameters::CreateImageOptions) struct.
     ///  - An optional request body consisting of a tar or tar.gz archive, or a stream
     ///    containing the root file system for the image. If this argument is used,
     ///    the value of the `from_src` option must be "-".
@@ -233,7 +233,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    /// - An optional [Prune Images Options](PruneImagesOptions) struct.
+    /// - An optional [Prune Images Options](crate::query_parameters::PruneImagesOptions) struct.
     ///
     /// # Returns
     ///
@@ -317,7 +317,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Search Image Options](SearchImagesOptions) struct.
+    ///  - [Search Image Options](crate::query_parameters::SearchImagesOptions) struct.
     ///
     /// # Returns
     ///
@@ -368,7 +368,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - An optional [Remove Image Options](RemoveImageOptions) struct.
+    ///  - An optional [Remove Image Options](crate::query_parameters::RemoveImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -415,7 +415,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Tag Image Options](TagImageOptions) struct.
+    ///  - Optional [Tag Image Options](crate::query_parameters::TagImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -460,7 +460,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Image name as a string slice.
-    ///  - Optional [Push Image Options](PushImageOptions) struct.
+    ///  - Optional [Push Image Options](crate::query_parameters::PushImageOptions) struct.
     ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///
     /// # Returns
@@ -530,7 +530,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Commit Container Options](CommitContainerOptions) struct.
+    ///  - [Commit Container Options](crate::query_parameters::CommitContainerOptions) struct.
     ///  - Container [Config](Config) struct.
     ///
     /// # Returns
@@ -587,7 +587,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Build Image Options](BuildImageOptions) struct.
+    ///  - [Build Image Options](crate::query_parameters::BuildImageOptions) struct.
     ///  - Optional [Docker Credentials](DockerCredentials) struct.
     ///  - Tar archive compressed with one of the following algorithms: identity (no compression),
     ///    gzip, bzip2, xz. Optional [Hyper Body](hyper::body::Body).
@@ -796,7 +796,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    /// - An optional [Prune Build Options](PruneBuildOptions) struct.
+    /// - An optional [Prune Build Options](crate::query_parameters::PruneBuildOptions) struct.
     ///
     /// # Returns
     ///
@@ -905,7 +905,7 @@ impl Docker {
     /// endpoint](struct.Docker.html#method.export_image).
     ///
     /// # Arguments
-    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - [Image Import Options](crate::query_parameters::ImportImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -994,7 +994,7 @@ impl Docker {
     /// endpoint](struct.Docker.html#method.export_image).
     ///
     /// # Arguments
-    ///  - [Image Import Options](ImportImageOptions) struct.
+    ///  - [Image Import Options](crate::query_parameters::ImportImageOptions) struct.
     ///  - Stream producing `Bytes` of the image
     ///
     /// # Returns

@@ -17,7 +17,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [List Volumes Options](ListVolumesOptions) struct.
+    ///  - [List Volumes Options](crate::query_parameters::ListVolumesOptions) struct.
     ///
     /// # Returns
     ///
@@ -149,7 +149,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - [Remove Volume Options](RemoveVolumeOptions) struct.
+    ///  - [Remove Volume Options](crate::query_parameters::RemoveVolumeOptions) struct.
     ///
     /// # Returns
     ///
@@ -192,7 +192,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - A [Prune Volumes Options](PruneVolumesOptions) struct.
+    ///  - A [Prune Volumes Options](crate::query_parameters::PruneVolumesOptions) struct.
     ///
     /// # Returns
     ///

@@ -215,7 +215,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [ListContainersOptions](ListContainersOptions) struct.
+    ///  - Optional [ListContainersOptions](crate::query_parameters::ListContainersOptions) struct.
     ///
     /// # Returns
     ///
@@ -896,7 +896,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Stats](Stats) struct, wrapped in a
+    ///  - [ContainerStatsResponse](crate::models::ContainerStatsResponse) struct, wrapped in a
     ///    Stream.
     ///
     /// # Examples
@@ -1250,7 +1250,7 @@ impl Docker {
     ///
     /// # Arguments
     ///
-    ///  - Optional [Upload To Container Options](UploadToContainerOptions) struct.
+    ///  - Optional [Upload To Container Options](crate::query_parameters::UploadToContainerOptions) struct.
     ///
     /// # Returns
     ///

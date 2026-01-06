@@ -253,12 +253,12 @@ pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send +
 ///
 /// The main interface for calling the Docker API. Construct a new Docker instance using one of the
 /// connect methods:
-///  - [`Docker::connect_with_http_defaults`](Docker::connect_with_http_defaults())
-///  - [`Docker::connect_with_named_pipe_defaults`](Docker::connect_with_named_pipe_defaults())
-///  - [`Docker::connect_with_ssl_defaults`](Docker::connect_with_ssl_defaults())
-///  - [`Docker::connect_with_unix_defaults`](Docker::connect_with_unix_defaults())
-///  - [`Docker::connect_with_local_defaults`](Docker::connect_with_local_defaults())
-///  - [`Docker::connect_with_ssh_defaults`](Docker::connect_with_ssh_defaults())
+///  - [`Docker::connect_with_http_defaults`] (requires `http` feature)
+///  - `Docker::connect_with_named_pipe_defaults` (requires `pipe` feature, Windows only)
+///  - `Docker::connect_with_ssl_defaults` (requires `ssl` feature)
+///  - [`Docker::connect_with_unix_defaults`] (requires `pipe` feature, Unix only)
+///  - [`Docker::connect_with_local_defaults`]
+///  - `Docker::connect_with_ssh_defaults` (requires `ssh` feature)
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
@@ -791,10 +791,7 @@ impl Docker {
     ///
     /// This is a simple wrapper over the OS specific handlers:
     ///  * Unix: [`Docker::connect_with_unix_defaults`]
-    ///  * Windows: [`Docker::connect_with_named_pipe_defaults`]
-    ///
-    /// [`Docker::connect_with_unix_defaults`]: Docker::connect_with_unix_defaults()
-    /// [`Docker::connect_with_named_pipe_defaults`]: Docker::connect_with_named_pipe_defaults()
+    ///  * Windows: `Docker::connect_with_named_pipe_defaults`
     pub fn connect_with_local_defaults() -> Result<Docker, Error> {
         #[cfg(unix)]
         return Docker::connect_with_unix_defaults();
@@ -806,10 +803,7 @@ impl Docker {
     ///
     /// This is a simple wrapper over the OS specific handlers:
     ///  * Unix: [`Docker::connect_with_unix`]
-    ///  * Windows: [`Docker::connect_with_named_pipe`]
-    ///
-    /// [`Docker::connect_with_unix`]: Docker::connect_with_unix()
-    /// [`Docker::connect_with_named_pipe`]: Docker::connect_with_named_pipe()
+    ///  * Windows: `Docker::connect_with_named_pipe`
     pub fn connect_with_local(
         addr: &str,
         timeout: u64,
