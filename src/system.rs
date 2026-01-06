@@ -21,7 +21,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - [Version](Version), wrapped in a Future.
+    ///  - [SystemVersion](crate::models::SystemVersion), wrapped in a Future.
     ///
     /// # Examples
     ///

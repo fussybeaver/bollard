@@ -99,7 +99,7 @@ impl Docker {
     /// # Arguments
     ///
     ///  - Task id as a string slice.
-    ///  - Optional [Logs Options](crate::container::LogsOptions) struct.
+    ///  - Optional [Logs Options](crate::query_parameters::LogsOptions) struct.
     ///
     /// # Returns
     ///
