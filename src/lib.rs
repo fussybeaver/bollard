@@ -32,15 +32,66 @@
 //!
 //! ## Feature flags
 //!
-//!  - `ssl`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [ring](https://github.com/briansmith/ring) provider.
-//!  - `aws-lc-rs`: enable SSL support through [Rustls](https://github.com/rustls/rustls) with the [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider.
-//!  - `ssl_providerless`: enable SSL support through [Rustls](https://github.com/rustls/rustls) without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html). You are responsible to do so.
-//!  - `chrono`: enable [Chrono](https://github.com/chronotope/chrono) for `DateTime` types.
-//!  - `time`: enable [Time 0.3](https://github.com/time-rs/time) for `DateTime` types.
-//!  - `buildkit`: use [Buildkit](https://github.com/moby/buildkit) instead of [Docker](https://github.com/moby/moby) when building images.
-//!  - `buildkit_providerless`: enable [Buildkit](https://github.com/moby/buildkit) support without installing a [CryptoProvider](https://docs.rs/rustls/0.23.12/rustls/crypto/struct.CryptoProvider.html).
-//!  - `json_data_content`: Add JSON to errors on serialization failures.
-//!  - `webpki`: Use mozilla's root certificates instead of native root certs provided by the OS.
+//! ### Quick Start
+//!
+//! | Use Case | Cargo.toml |
+//! |----------|------------|
+//! | Local Docker (Unix/Windows) | `bollard = "*"` _(defaults work)_ |
+//! | Remote Docker over HTTPS | `bollard = { version = "*", features = ["ssl"] }` |
+//! | SSH tunnel to remote Docker | `bollard = { version = "*", features = ["ssh"] }` |
+//! | BuildKit image builds | `bollard = { version = "*", features = ["buildkit", "chrono"] }` |
+//! | Minimal binary size | `bollard = { version = "*", default-features = false, features = ["pipe"] }` |
+//!
+//! ### Default Features
+//!
+//! Enabled by default:
+//! - `http` - TCP connections to remote Docker (`DOCKER_HOST=tcp://...`)
+//! - `pipe` - Unix sockets (`/var/run/docker.sock`) and Windows named pipes
+//!
+//! ### Transport Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `http` | HTTP/TCP connector for remote Docker |
+//! | `pipe` | Unix socket / Windows named pipe for local Docker |
+//! | `ssh` | SSH tunnel connector |
+//!
+//! ### TLS/SSL Features
+//!
+//! Choose **one** crypto provider:
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `ssl` | [Rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) provider (recommended) |
+//! | `aws-lc-rs` | [Rustls](https://github.com/rustls/rustls) with [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider (FIPS-compliant) |
+//! | `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
+//! | `webpki` | Use Mozilla's root certificates instead of OS native certs |
+//!
+//! ### DateTime Features
+//!
+//! For timestamp support in events and logs, choose **one**:
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `chrono` | [Chrono](https://github.com/chronotope/chrono) date/time types |
+//! | `time` | [Time 0.3](https://github.com/time-rs/time) date/time types |
+//!
+//! **Note:** `chrono` and `time` are mutually exclusive.
+//!
+//! ### BuildKit Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `buildkit` | Full [BuildKit](https://github.com/moby/buildkit) support (includes `ssl`) |
+//! | `buildkit_providerless` | BuildKit without bundled crypto provider |
+//!
+//! **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
+//!
+//! ### Development Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `json_data_content` | Include raw JSON payload in deserialization errors |
 //!
 //! ## Version
 //!
