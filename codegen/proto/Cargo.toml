@@ -10,7 +10,7 @@ edition = "2021"
 [features]
 default = ["fetch"]
 build = ["tonic-prost-build"]
-fetch = ["ureq"]
+fetch = ["ureq", "ureq/rustls"]
 
 [[bin]]
 name = "gen"
