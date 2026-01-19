@@ -17,6 +17,8 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
+use crate::serde_ext;
+
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<Vec<T>, D::Error> {
@@ -195,7 +197,7 @@ pub struct {{classname}} {
     #[serde(deserialize_with = "deserialize_nonoptional_map")]{{/isListContainer}}{{#isListContainer}}
     #[serde(deserialize_with = "deserialize_nonoptional_vec")]{{/isListContainer}}{{/isContainer}}{{#isEnum}}
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}
+    #[serde(with = "serde_ext::none_as_empty_string")]{{/isEnum}}{{#vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}
     #[serde(deserialize_with = "deserialize_hashmap_string_hashmap_empty", serialize_with = "serialize_hashmap_string_hashmap_empty", default)]{{/vendorExtensions.x-rustgen-is-hashmap-string-hashmap-empty}}{{#vendorExtensions.x-rustgen-is-datetime}}
     #[serde(
         default,
