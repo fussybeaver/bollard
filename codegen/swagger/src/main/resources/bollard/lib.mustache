@@ -20,3 +20,5 @@ pub mod models;
 
 #[cfg(feature = "buildkit")]
 pub use bollard_buildkit_proto::moby;
+
+mod serde_ext;

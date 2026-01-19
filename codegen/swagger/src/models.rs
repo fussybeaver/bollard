@@ -17,6 +17,8 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
+use crate::serde_ext;
+
 fn deserialize_nonoptional_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(
     d: D,
 ) -> Result<Vec<T>, D::Error> {
@@ -4087,7 +4089,7 @@ pub struct ImageManifestSummary {
     /// The kind of the manifest.  kind         | description -------------|----------------------------------------------------------- image        | Image manifest that can be used to start a container. attestation  | Attestation manifest produced by the Buildkit builder for a specific image manifest. 
     #[serde(rename = "Kind")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
+    #[serde(with = "serde_ext::none_as_empty_string")]
     pub kind: Option<ImageManifestSummaryKindEnum>,
 
     #[serde(rename = "ImageData")]
@@ -6116,7 +6118,7 @@ pub struct PortSummary {
 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
+    #[serde(with = "serde_ext::none_as_empty_string")]
     pub typ: Option<PortSummaryTypeEnum>,
 
 }
@@ -9265,7 +9267,7 @@ pub struct Volume {
     /// The level at which the volume exists. Either `global` for cluster-wide, or `local` for machine level. 
     #[serde(rename = "Scope")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "::serde_with::As::<::serde_with::NoneAsEmptyString>")]
+    #[serde(with = "serde_ext::none_as_empty_string")]
     pub scope: Option<VolumeScopeEnum>,
 
     #[serde(rename = "ClusterVolume")]
