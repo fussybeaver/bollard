@@ -833,28 +833,63 @@ impl Docker {
     /// ```
     pub fn connect_with_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        Self::connect_with_host(&host)
+    }
+
+    /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
+    /// The connection method is determined by `host` parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_host("unix:///var/run/docker.sock").unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    pub fn connect_with_host(host: &str) -> Result<Docker, Error> {
         match host {
             #[cfg(all(feature = "pipe", unix))]
             h if h.starts_with("unix://") => {
-                Docker::connect_with_unix(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                Docker::connect_with_unix(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
             #[cfg(all(feature = "pipe", windows))]
             h if h.starts_with("npipe://") => {
-                Docker::connect_with_named_pipe(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                Docker::connect_with_named_pipe(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
             #[cfg(feature = "http")]
             h if h.starts_with("tcp://") || h.starts_with("http://") => {
                 #[cfg(feature = "ssl_providerless")]
                 if env::var("DOCKER_TLS_VERIFY").is_ok() {
-                    return Docker::connect_with_ssl_defaults();
+                    let cert_path = DockerClientCertResolver::default_cert_path()?;
+                    return Docker::connect_with_ssl(
+                        h,
+                        &cert_path.join("key.pem"),
+                        &cert_path.join("cert.pem"),
+                        &cert_path.join("ca.pem"),
+                        DEFAULT_TIMEOUT,
+                        API_DEFAULT_VERSION,
+                    );
                 }
-                Docker::connect_with_http_defaults()
+                Docker::connect_with_http(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
             #[cfg(feature = "ssl_providerless")]
-            h if h.starts_with("https://") => Docker::connect_with_ssl_defaults(),
+            h if h.starts_with("https://") => {
+                let cert_path = DockerClientCertResolver::default_cert_path()?;
+                Docker::connect_with_ssl(
+                    h,
+                    &cert_path.join("key.pem"),
+                    &cert_path.join("cert.pem"),
+                    &cert_path.join("ca.pem"),
+                    DEFAULT_TIMEOUT,
+                    API_DEFAULT_VERSION,
+                )
+            }
             #[cfg(feature = "ssh")]
             h if h.starts_with("ssh://") => {
-                Docker::connect_with_ssh(&h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
+                Docker::connect_with_ssh(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
             }
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
