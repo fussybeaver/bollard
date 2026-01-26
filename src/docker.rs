@@ -865,7 +865,7 @@ impl Docker {
             h if h.starts_with("tcp://") || h.starts_with("http://") => {
                 #[cfg(feature = "ssl_providerless")]
                 if env::var("DOCKER_TLS_VERIFY").is_ok() {
-                    Docker::connect_with_ssl_default_certs(host)
+                    return Docker::connect_with_ssl_default_certs(host);
                 }
                 Docker::connect_with_http(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
