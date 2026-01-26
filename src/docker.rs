@@ -427,13 +427,15 @@ impl Docker {
     /// or if you are using the `ssl_providerless` feature without installing the custom cryptographic
     /// provider before with [`rustls::crypto::CryptoProvider::install_default()`]
     pub fn connect_with_ssl_defaults() -> Result<Docker, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_TCP_ADDRESS.to_string());
+        Self::connect_with_ssl_default_certs(&host)
+    }
+
+    /// Connect to a custom host using secure HTTPS, but with the default certificates.
+    fn connect_with_ssl_default_certs(host: &str) -> Result<Docker, Error> {
         let cert_path = DockerClientCertResolver::default_cert_path()?;
         Docker::connect_with_ssl(
-            if let Ok(ref host) = env::var("DOCKER_HOST") {
-                host
-            } else {
-                DEFAULT_TCP_ADDRESS
-            },
+            host,
             &cert_path.join("key.pem"),
             &cert_path.join("cert.pem"),
             &cert_path.join("ca.pem"),
@@ -863,30 +865,12 @@ impl Docker {
             h if h.starts_with("tcp://") || h.starts_with("http://") => {
                 #[cfg(feature = "ssl_providerless")]
                 if env::var("DOCKER_TLS_VERIFY").is_ok() {
-                    let cert_path = DockerClientCertResolver::default_cert_path()?;
-                    return Docker::connect_with_ssl(
-                        h,
-                        &cert_path.join("key.pem"),
-                        &cert_path.join("cert.pem"),
-                        &cert_path.join("ca.pem"),
-                        DEFAULT_TIMEOUT,
-                        API_DEFAULT_VERSION,
-                    );
+                    Docker::connect_with_ssl_default_certs(host)
                 }
                 Docker::connect_with_http(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
             }
             #[cfg(feature = "ssl_providerless")]
-            h if h.starts_with("https://") => {
-                let cert_path = DockerClientCertResolver::default_cert_path()?;
-                Docker::connect_with_ssl(
-                    h,
-                    &cert_path.join("key.pem"),
-                    &cert_path.join("cert.pem"),
-                    &cert_path.join("ca.pem"),
-                    DEFAULT_TIMEOUT,
-                    API_DEFAULT_VERSION,
-                )
-            }
+            h if h.starts_with("https://") => Docker::connect_with_ssl_default_certs(host),
             #[cfg(feature = "ssh")]
             h if h.starts_with("ssh://") => {
                 Docker::connect_with_ssh(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
