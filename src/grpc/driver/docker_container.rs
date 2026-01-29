@@ -31,8 +31,10 @@ use crate::{
     grpc::{
         build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
         error::GrpcError,
+        io::GrpcFramedTransport,
+        registry::ImageRegistryOutput,
+        BuildRef, GrpcServer,
     },
-    grpc::{io::GrpcFramedTransport, registry::ImageRegistryOutput, GrpcServer},
     Docker,
 };
 
@@ -458,6 +460,7 @@ impl super::Export for DockerContainer {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let (exporter, exporter_attrs, path) = match exporter_request {
             ImageExporterEnum::OCI(request) => ("oci", request.output.into_map(), request.path),
@@ -473,6 +476,7 @@ impl super::Export for DockerContainer {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }
@@ -485,6 +489,7 @@ impl super::Image for DockerContainer {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let exporter = "image";
         let exporter_attrs = output.into_map();
@@ -496,6 +501,7 @@ impl super::Image for DockerContainer {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }

@@ -931,6 +931,38 @@ impl Service<tonic::transport::Uri> for GrpcClient {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+/// A reference to a build within a BuildKit session
+/// It may be used to keep track of the progress of a build in BuildKit.
+///
+/// See [`bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient::status`].
+pub struct BuildRef(String);
+
+impl From<BuildRef> for String {
+    fn from(value: BuildRef) -> Self {
+        value.0
+    }
+}
+
+impl AsRef<str> for BuildRef {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for BuildRef {
+    fn default() -> Self {
+        Self::random()
+    }
+}
+
+impl BuildRef {
+    /// Generate a new, random BuildRef
+    pub fn random() -> Self {
+        Self(new_id())
+    }
+}
+
 // Reference: https://github.com/moby/buildkit/blob/master/identity/randomid.go
 pub(crate) fn new_id() -> String {
     let mut p: [u8; 17] = Default::default();
