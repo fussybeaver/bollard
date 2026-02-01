@@ -73,6 +73,7 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 

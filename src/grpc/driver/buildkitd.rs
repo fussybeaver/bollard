@@ -5,6 +5,7 @@ pub use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClien
 use crate::grpc::driver::ImageBuildFrontendOptions;
 use crate::grpc::driver::ImageBuildLoadInput;
 use crate::grpc::driver::ImageExporterEnum;
+use crate::grpc::BuildRef;
 
 use crate::grpc::registry::ImageRegistryOutput;
 use crate::grpc::DockerCredentials;
@@ -65,6 +66,7 @@ impl super::Build for BuildkitDaemon {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let mut exporter_attrs = HashMap::new();
         exporter_attrs.insert(String::from("type"), String::from("docker"));
@@ -77,6 +79,7 @@ impl super::Build for BuildkitDaemon {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }
@@ -89,6 +92,7 @@ impl super::Export for BuildkitDaemon {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let (exporter, exporter_attrs, path) = match exporter_request {
             ImageExporterEnum::OCI(request) => ("oci", request.output.into_map(), request.path),
@@ -104,6 +108,7 @@ impl super::Export for BuildkitDaemon {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }
@@ -116,6 +121,7 @@ impl super::Image for BuildkitDaemon {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let exporter = "image";
         let exporter_attrs = output.into_map();
@@ -127,6 +133,7 @@ impl super::Image for BuildkitDaemon {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }
