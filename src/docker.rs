@@ -55,6 +55,9 @@ use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
+#[cfg(feature = "websocket")]
+use tokio_tungstenite::WebSocketStream;
+
 /// The default `DOCKER_SOCKET` address that we will try to connect to.
 #[cfg(unix)]
 pub const DEFAULT_SOCKET: &str = "unix:///var/run/docker.sock";
@@ -1323,6 +1326,76 @@ impl Docker {
         let tokio_upgraded = AsyncUpgraded::new(upgraded);
 
         Ok(split(tokio_upgraded))
+    }
+
+    #[cfg(all(feature = "websocket", unix))]
+    pub(crate) async fn process_websocket<O>(
+        &self,
+        path: &str,
+        query: Option<O>,
+    ) -> Result<WebSocketStream<tokio::net::UnixStream>, Error>
+    where
+        O: Serialize,
+    {
+        use tokio_tungstenite::client_async;
+
+        let query_string = match query {
+            Some(q) => {
+                let qs = serde_urlencoded::to_string(&q)?;
+                if qs.is_empty() {
+                    String::new()
+                } else {
+                    format!("?{}", qs)
+                }
+            }
+            None => String::new(),
+        };
+
+        let ws_uri = format!("ws://localhost{}{}", path, query_string);
+        debug!("WebSocket URI: {}", ws_uri);
+
+        let stream = tokio::net::UnixStream::connect(&self.client_addr).await?;
+
+        let (ws_stream, _response) = client_async(&ws_uri, stream)
+            .await
+            .map_err(|e| Error::WebSocketError { err: e.to_string() })?;
+
+        Ok(ws_stream)
+    }
+
+    #[cfg(all(feature = "websocket", not(unix)))]
+    pub(crate) async fn process_websocket<O>(
+        &self,
+        path: &str,
+        query: Option<O>,
+    ) -> Result<WebSocketStream<tokio::net::TcpStream>, Error>
+    where
+        O: Serialize,
+    {
+        use tokio_tungstenite::client_async;
+
+        let query_string = match query {
+            Some(q) => {
+                let qs = serde_urlencoded::to_string(&q)?;
+                if qs.is_empty() {
+                    String::new()
+                } else {
+                    format!("?{}", qs)
+                }
+            }
+            None => String::new(),
+        };
+
+        let ws_uri = format!("ws://{}{}{}", self.client_addr, path, query_string);
+        debug!("WebSocket URI: {}", ws_uri);
+
+        let stream = tokio::net::TcpStream::connect(&self.client_addr).await?;
+
+        let (ws_stream, _response) = client_async(&ws_uri, stream)
+            .await
+            .map_err(|e| Error::WebSocketError { err: e.to_string() })?;
+
+        Ok(ws_stream)
     }
 
     pub(crate) fn serialize_payload<S>(body: Option<S>) -> Result<BodyType, Error>

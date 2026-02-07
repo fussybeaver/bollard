@@ -330,6 +330,223 @@ impl Stream for IncomingStream {
     }
 }
 
+#[cfg(feature = "websocket")]
+pub(crate) mod websocket {
+    use bytes::{Bytes, BytesMut};
+    use futures_core::Stream;
+    use futures_util::stream::{SplitSink, SplitStream};
+    use pin_project_lite::pin_project;
+    use std::cmp;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    #[derive(Debug)]
+    enum ReaderState {
+        /// Ready to read from the current chunk at the given position.
+        Ready(Bytes, usize),
+        /// Waiting for the next WebSocket message.
+        Waiting,
+        /// The WebSocket stream has been closed.
+        Closed,
+    }
+
+    pin_project! {
+        /// Wraps a WebSocket read stream to implement [`AsyncRead`].
+        ///
+        /// Reads binary and text WebSocket messages and provides their payloads
+        /// as a contiguous byte stream suitable for use with [`FramedRead`](tokio_util::codec::FramedRead).
+        #[derive(Debug)]
+        pub struct WebSocketReader<S> {
+            #[pin]
+            stream: SplitStream<WebSocketStream<S>>,
+            state: ReaderState,
+        }
+    }
+
+    impl<S> WebSocketReader<S> {
+        /// Create a new `WebSocketReader` from a WebSocket split stream.
+        pub fn new(stream: SplitStream<WebSocketStream<S>>) -> Self {
+            Self {
+                stream,
+                state: ReaderState::Waiting,
+            }
+        }
+    }
+
+    impl<S> AsyncRead for WebSocketReader<S>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            read_buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            loop {
+                match self.as_mut().project().state {
+                    ReaderState::Ready(ref chunk, ref mut pos) => {
+                        let chunk_start = *pos;
+                        let buf = read_buf.initialize_unfilled();
+                        let len = cmp::min(buf.len(), chunk.len() - chunk_start);
+                        let chunk_end = chunk_start + len;
+
+                        buf[..len].copy_from_slice(&chunk[chunk_start..chunk_end]);
+                        *pos += len;
+                        read_buf.advance(len);
+
+                        if *pos >= chunk.len() {
+                            *self.as_mut().project().state = ReaderState::Waiting;
+                        }
+                        return Poll::Ready(Ok(()));
+                    }
+                    ReaderState::Waiting => {
+                        match self.as_mut().project().stream.poll_next(cx) {
+                            Poll::Ready(Some(Ok(msg))) => match msg {
+                                Message::Binary(data) => {
+                                    *self.as_mut().project().state = ReaderState::Ready(data, 0);
+                                    continue;
+                                }
+                                Message::Text(text) => {
+                                    *self.as_mut().project().state = ReaderState::Ready(
+                                        Bytes::copy_from_slice(text.as_bytes()),
+                                        0,
+                                    );
+                                    continue;
+                                }
+                                Message::Close(_) => {
+                                    *self.as_mut().project().state = ReaderState::Closed;
+                                    return Poll::Ready(Ok(()));
+                                }
+                                // Ping/Pong frames are handled by tungstenite automatically
+                                Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
+                                    continue;
+                                }
+                            },
+                            Poll::Ready(Some(Err(e))) => {
+                                return Poll::Ready(Err(io::Error::other(e.to_string())));
+                            }
+                            Poll::Ready(None) => {
+                                *self.as_mut().project().state = ReaderState::Closed;
+                                return Poll::Ready(Ok(()));
+                            }
+                            Poll::Pending => {
+                                return Poll::Pending;
+                            }
+                        }
+                    }
+                    ReaderState::Closed => {
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+            }
+        }
+    }
+
+    pin_project! {
+        /// Wraps a WebSocket write sink to implement [`AsyncWrite`].
+        ///
+        /// Buffers writes and sends the accumulated data as a single binary
+        /// WebSocket message when flushed.
+        #[derive(Debug)]
+        pub struct WebSocketWriter<S> {
+            #[pin]
+            sink: SplitSink<WebSocketStream<S>, Message>,
+            buffer: BytesMut,
+        }
+    }
+
+    impl<S> WebSocketWriter<S>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        /// Create a new `WebSocketWriter` from a WebSocket split sink.
+        pub fn new(sink: SplitSink<WebSocketStream<S>, Message>) -> Self {
+            Self {
+                sink,
+                buffer: BytesMut::new(),
+            }
+        }
+    }
+
+    impl<S> AsyncWrite for WebSocketWriter<S>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<Result<usize, io::Error>> {
+            let this = self.project();
+            this.buffer.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+            use futures_util::Sink;
+
+            let mut this = self.project();
+
+            if !this.buffer.is_empty() {
+                match this.sink.as_mut().poll_ready(cx) {
+                    Poll::Ready(Ok(())) => {}
+                    Poll::Ready(Err(e)) => {
+                        return Poll::Ready(Err(io::Error::other(e)));
+                    }
+                    Poll::Pending => return Poll::Pending,
+                }
+
+                let data = this.buffer.split().freeze();
+                if let Err(e) = this.sink.as_mut().start_send(Message::Binary(data)) {
+                    return Poll::Ready(Err(io::Error::other(e)));
+                }
+            }
+
+            match this.sink.poll_flush(cx) {
+                Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(e))),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), io::Error>> {
+            use futures_util::Sink;
+
+            let mut this = self.project();
+
+            // Flush any remaining buffered data
+            if !this.buffer.is_empty() {
+                match this.sink.as_mut().poll_ready(cx) {
+                    Poll::Ready(Ok(())) => {}
+                    Poll::Ready(Err(e)) => {
+                        return Poll::Ready(Err(io::Error::other(e)));
+                    }
+                    Poll::Pending => return Poll::Pending,
+                }
+
+                let data = this.buffer.split().freeze();
+                if let Err(e) = this.sink.as_mut().start_send(Message::Binary(data)) {
+                    return Poll::Ready(Err(io::Error::other(e)));
+                }
+            }
+
+            // Close the WebSocket connection
+            match this.sink.poll_close(cx) {
+                Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(e))),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
