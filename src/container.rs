@@ -23,6 +23,8 @@ use super::Docker;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
+#[cfg(feature = "websocket")]
+use crate::read::websocket::{WebSocketReader, WebSocketWriter};
 use crate::read::NewlineLogOutputDecoder;
 
 /// Path Stat Response from HEAD request to container/{id}/archive
@@ -558,6 +560,102 @@ impl Docker {
         Ok(AttachContainerResults {
             output: Box::pin(log),
             input: Box::pin(write),
+        })
+    }
+
+    /// ---
+    ///
+    /// # Attach Container via WebSocket
+    ///
+    /// Attach to a container using the WebSocket protocol. This uses the Docker Engine API
+    /// endpoint `GET /containers/{id}/attach/ws`.
+    ///
+    /// This is an alternative to [attach_container](Docker::attach_container()) that uses
+    /// WebSocket for communication, which can be useful for browser-based terminals and
+    /// other WebSocket-native clients.
+    ///
+    /// # Known Limitations
+    ///
+    /// Docker's WebSocket attach endpoint uses `golang.org/x/net/websocket` server-side,
+    /// which has compatibility issues with standard RFC 6455 WebSocket implementations.
+    /// Data flow may be unreliable on some Docker versions. For production use, prefer
+    /// [attach_container](Docker::attach_container()) which uses HTTP upgrade to TCP.
+    ///
+    /// # Arguments
+    ///
+    /// - Container name as a string slice.
+    /// - Optional [Attach Container Options](crate::query_parameters::AttachContainerOptions) struct.
+    ///
+    /// # Returns
+    ///
+    /// - [AttachContainerResults](AttachContainerResults) wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::AttachContainerOptionsBuilder;
+    ///
+    /// let options = AttachContainerOptionsBuilder::default()
+    ///     .stdin(true)
+    ///     .stdout(true)
+    ///     .stderr(true)
+    ///     .stream(true)
+    ///     .logs(true)
+    ///     .detach_keys("ctrl-c")
+    ///     .build();
+    ///
+    /// # async {
+    /// docker.attach_container_websocket("hello-world", Some(options)).await;
+    /// # };
+    /// ```
+    #[cfg(all(feature = "websocket", unix))]
+    pub async fn attach_container_websocket(
+        &self,
+        container_name: &str,
+        options: Option<crate::query_parameters::AttachContainerOptions>,
+    ) -> Result<AttachContainerResults, Error> {
+        let path = format!("/containers/{container_name}/attach/ws");
+
+        let ws_stream = self.process_websocket(&path, options).await?;
+        let (write, read) = futures_util::StreamExt::split(ws_stream);
+
+        let ws_reader = WebSocketReader::new(read);
+        let log =
+            FramedRead::new(ws_reader, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
+
+        let ws_writer = WebSocketWriter::new(write);
+
+        Ok(AttachContainerResults {
+            output: Box::pin(log),
+            input: Box::pin(ws_writer),
+        })
+    }
+
+    /// Attach to a container using the WebSocket protocol over TCP.
+    ///
+    /// See [attach_container_websocket](Docker::attach_container_websocket()) for details.
+    #[cfg(all(feature = "websocket", not(unix)))]
+    pub async fn attach_container_websocket(
+        &self,
+        container_name: &str,
+        options: Option<crate::query_parameters::AttachContainerOptions>,
+    ) -> Result<AttachContainerResults, Error> {
+        let path = format!("/containers/{container_name}/attach/ws");
+
+        let ws_stream = self.process_websocket(&path, options).await?;
+        let (write, read) = futures_util::StreamExt::split(ws_stream);
+
+        let ws_reader = WebSocketReader::new(read);
+        let log =
+            FramedRead::new(ws_reader, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
+
+        let ws_writer = WebSocketWriter::new(write);
+
+        Ok(AttachContainerResults {
+            output: Box::pin(log),
+            input: Box::pin(ws_writer),
         })
     }
 
