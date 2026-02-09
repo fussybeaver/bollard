@@ -1358,7 +1358,7 @@ impl Docker {
 
         let (ws_stream, _response) = client_async(&ws_uri, stream)
             .await
-            .map_err(|e| Error::WebSocketError { err: e.to_string() })?;
+            .map_err(|e| Error::WebSocketError { err: Box::new(e) })?;
 
         Ok(ws_stream)
     }
@@ -1393,7 +1393,7 @@ impl Docker {
 
         let (ws_stream, _response) = client_async(&ws_uri, stream)
             .await
-            .map_err(|e| Error::WebSocketError { err: e.to_string() })?;
+            .map_err(|e| Error::WebSocketError { err: Box::new(e) })?;
 
         Ok(ws_stream)
     }

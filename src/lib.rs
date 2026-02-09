@@ -40,6 +40,7 @@
 //! | Remote Docker over HTTPS | `bollard = { version = "*", features = ["ssl"] }` |
 //! | SSH tunnel to remote Docker | `bollard = { version = "*", features = ["ssh"] }` |
 //! | BuildKit image builds | `bollard = { version = "*", features = ["buildkit", "chrono"] }` |
+//! | WebSocket container attach | `bollard = { version = "*", features = ["websocket"] }` |
 //! | Minimal binary size | `bollard = { version = "*", default-features = false, features = ["pipe"] }` |
 //!
 //! ### Default Features
@@ -86,6 +87,12 @@
 //! | `buildkit_providerless` | BuildKit without bundled crypto provider |
 //!
 //! **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
+//!
+//! ### WebSocket Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `websocket` | WebSocket support for [`attach_container_websocket`](Docker::attach_container_websocket) using [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) |
 //!
 //! ### Development Features
 //!

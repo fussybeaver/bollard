@@ -946,9 +946,7 @@ async fn attach_container_websocket_test(docker: Docker) -> Result<(), Error> {
     input.write_all(b"exit\n").await?;
     input.flush().await?;
 
-    // Docker's WebSocket server has known compatibility issues.
-    // Timeout is expected; the test verifies that the connection was established.
-    let _log = match tokio::time::timeout(
+    let log = match tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
         output.try_collect::<Vec<_>>(),
     )
@@ -962,6 +960,9 @@ async fn attach_container_websocket_test(docker: Docker) -> Result<(), Error> {
             vec![]
         }
     };
+
+    let output_found = log.iter().any(|val| val.to_string().contains("test"));
+    assert!(output_found);
 
     let _ = &docker
         .wait_container("integration_test_attach_container_ws", None)

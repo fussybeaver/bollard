@@ -186,8 +186,8 @@ pub enum Error {
     #[cfg(feature = "websocket")]
     #[error("WebSocket error: {err}")]
     WebSocketError {
-        /// The error message.
-        err: String,
+        /// The underlying WebSocket error.
+        err: Box<dyn std::error::Error + Send + Sync>,
     },
 
     /// Error emitted when an expected header is not found in the HTTP response.
