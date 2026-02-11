@@ -182,6 +182,14 @@ pub enum Error {
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
 
+    /// Error emitted when a WebSocket connection fails.
+    #[cfg(feature = "websocket")]
+    #[error("WebSocket error: {err}")]
+    WebSocketError {
+        /// The underlying WebSocket error.
+        err: Box<dyn std::error::Error + Send + Sync>,
+    },
+
     /// Error emitted when an expected header is not found in the HTTP response.
     #[error("HTTP header not found: {0}")]
     HttpHeaderNotFoundError(String),

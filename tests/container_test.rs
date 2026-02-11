@@ -924,6 +924,64 @@ fn integration_test_attach_container() {
     connect_to_docker_and_run!(attach_container_test);
 }
 
+#[cfg(feature = "test_websocket")]
+async fn attach_container_websocket_test(docker: Docker) -> Result<(), Error> {
+    create_shell_daemon(&docker, "integration_test_attach_container_ws").await?;
+
+    let AttachContainerResults { output, mut input } = docker
+        .attach_container_websocket(
+            "integration_test_attach_container_ws",
+            Some(
+                AttachContainerOptionsBuilder::default()
+                    .stream(true)
+                    .stdout(true)
+                    .stdin(true)
+                    .build(),
+            ),
+        )
+        .await?;
+
+    input.write_all(b"echo test\n").await?;
+    input.flush().await?;
+    input.write_all(b"exit\n").await?;
+    input.flush().await?;
+
+    let log = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(2),
+        output.try_collect::<Vec<_>>(),
+    )
+    .await
+    {
+        Ok(res) => res?,
+        Err(_) => {
+            docker
+                .kill_container("integration_test_attach_container_ws", None)
+                .await?;
+            vec![]
+        }
+    };
+
+    let output_found = log.iter().any(|val| val.to_string().contains("test"));
+    assert!(output_found);
+
+    let _ = &docker
+        .wait_container("integration_test_attach_container_ws", None)
+        .try_collect::<Vec<_>>()
+        .await;
+
+    let _ = &docker
+        .remove_container("integration_test_attach_container_ws", None)
+        .await?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "test_websocket")]
+fn integration_test_attach_container_websocket() {
+    connect_to_docker_and_run!(attach_container_websocket_test);
+}
+
 #[test]
 fn integration_test_resize_container_tty() {
     connect_to_docker_and_run!(resize_container_test);

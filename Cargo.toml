@@ -51,6 +51,10 @@ time = ["dep:time", "bollard-stubs/time"]
 http = ["hyper-util"]
 pipe = ["hyper-util", "hyperlocal", "hyper-named-pipe"]
 ssh = ["hyper-util", "openssh", "tower-service"]
+# Enable WebSocket support for container attach
+websocket = ["tokio-tungstenite"]
+# Enable tests specifically for websocket
+test_websocket = ["websocket"]
 
 [dependencies]
 base64 = "0.22"
@@ -85,6 +89,7 @@ thiserror = "2.0"
 time = { version = "0.3", features = ["formatting", "parsing", "serde", "serde-well-known"], optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
+tokio-tungstenite = { version = "0.28", optional = true, default-features = false, features = ["handshake"] }
 tower-service = { version = "0.3", optional = true }
 url = "2.5"
 webpki-roots = { version = "1.0", optional = true }
@@ -109,6 +114,10 @@ termion = "4.0"
 hyper-named-pipe = { version = "0.1.0", optional = true }
 winapi = { version = "0.3.9", features = ["winerror"] }
 tower-service = { version = "0.3" }
+
+[[example]]
+name = "websocket_attach"
+required-features = ["websocket"]
 
 [package.metadata.docs.rs]
 features = ["ssl", "ssh"]

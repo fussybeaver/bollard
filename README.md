@@ -40,6 +40,7 @@ bollard = "*"
 | Remote Docker over HTTPS | `bollard = { version = "*", features = ["ssl"] }` |
 | SSH tunnel to remote Docker | `bollard = { version = "*", features = ["ssh"] }` |
 | BuildKit image builds | `bollard = { version = "*", features = ["buildkit", "chrono"] }` |
+| WebSocket container attach | `bollard = { version = "*", features = ["websocket"] }` |
 | Minimal binary size | `bollard = { version = "*", default-features = false, features = ["pipe"] }` |
 
 #### Default Features
@@ -89,6 +90,12 @@ For timestamp support in events and logs, choose **one**:
 ```toml
 bollard = { version = "*", features = ["buildkit", "chrono"] }
 ```
+
+#### WebSocket Features
+
+| Feature | Description |
+|---------|-------------|
+| `websocket` | WebSocket support for container attach using [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) |
 
 #### Development Features
 
