@@ -51,7 +51,7 @@ use crate::uri::Uri;
 #[cfg(all(feature = "pipe", windows))]
 use hyper_named_pipe::NamedPipeConnector;
 
-use crate::auth::{base64_url_encode, DockerCredentialsHeader};
+use crate::auth::{base64_url_encode, DockerConfig, DockerCredentials, DockerCredentialsHeader};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -269,6 +269,7 @@ pub struct Docker {
     pub(crate) client_timeout: u64,
     pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
     pub(crate) request_modifier: Option<RequestModifier>,
+    pub(crate) docker_config: Arc<DockerConfig>,
 }
 
 impl std::fmt::Debug for Docker {
@@ -283,6 +284,7 @@ impl std::fmt::Debug for Docker {
                 "request_modifier",
                 &self.request_modifier.as_ref().map(|_| "<callback>"),
             )
+            .field("docker_config", &self.docker_config)
             .finish()
     }
 }
@@ -296,6 +298,7 @@ impl Clone for Docker {
             client_timeout: self.client_timeout,
             version: self.version.clone(),
             request_modifier: self.request_modifier.clone(),
+            docker_config: self.docker_config.clone(),
         }
     }
 }
@@ -555,6 +558,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -635,6 +639,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -714,6 +719,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -883,6 +889,109 @@ impl Docker {
             }),
         }
     }
+
+    /// Resolve inline credentials for the given registry from the loaded Docker config.
+    ///
+    /// Reads from the `auths` section of `~/.docker/config.json` (or the file pointed
+    /// to by `$DOCKER_CONFIG`). The `registry` argument may be a hostname (`docker.io`,
+    /// `gcr.io`) or a full URL (`https://index.docker.io/v1/`).
+    ///
+    /// Returns `None` if no matching entry is found in the config, or if external
+    /// credential helpers (`credsStore` / `credHelpers`) would be required.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// let docker = Docker::connect_with_socket_defaults().unwrap();
+    /// if let Some(creds) = docker.credentials_for("docker.io") {
+    ///     println!("username: {:?}", creds.username);
+    /// }
+    /// ```
+    pub fn credentials_for(&self, registry: &str) -> Option<DockerCredentials> {
+        self.docker_config.credentials_for_registry(registry)
+    }
+
+    /// Connect to Docker using environment variables, following the same conventions as
+    /// the Docker CLI.
+    ///
+    /// The following environment variables are consulted:
+    ///
+    /// - `DOCKER_HOST`: The URL to the Docker host. Defaults to the platform-specific socket.
+    /// - `DOCKER_TLS_VERIFY`: Enables TLS if set to any non-empty value. An empty string is
+    ///   treated the same as unset (TLS disabled).
+    /// - `DOCKER_CERT_PATH`: Path to a directory containing `cert.pem`, `key.pem`, and `ca.pem`.
+    ///   Setting this also enables TLS. Falls back to `~/.docker` when TLS is enabled but this
+    ///   variable is unset.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// let connection = Docker::connect_with_env().unwrap();
+    /// ```
+    pub fn connect_with_env() -> Result<Docker, Error> {
+        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+
+        // Empty string is treated the same as unset (TLS disabled)
+        let tls_verify = env::var("DOCKER_TLS_VERIFY")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .is_some();
+
+        // Empty string is treated as unset
+        let cert_path = env::var("DOCKER_CERT_PATH").ok().filter(|v| !v.is_empty());
+
+        let enable_tls = tls_verify || cert_path.is_some();
+
+        if enable_tls {
+            #[cfg(feature = "ssl_providerless")]
+            {
+                let cert_dir = if let Some(path) = cert_path {
+                    std::path::PathBuf::from(path)
+                } else {
+                    let home = home::home_dir().ok_or(NoHomePathError)?;
+                    home.join(".docker")
+                };
+                return Docker::connect_with_ssl(
+                    &host,
+                    &cert_dir.join("key.pem"),
+                    &cert_dir.join("cert.pem"),
+                    &cert_dir.join("ca.pem"),
+                    DEFAULT_TIMEOUT,
+                    API_DEFAULT_VERSION,
+                );
+            }
+            #[cfg(not(feature = "ssl_providerless"))]
+            return Err(UnsupportedURISchemeError { uri: host });
+        }
+
+        match host.as_str() {
+            #[cfg(all(feature = "pipe", unix))]
+            h if h.starts_with("unix://") => {
+                Docker::connect_with_unix(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(all(feature = "pipe", windows))]
+            h if h.starts_with("npipe://") => {
+                Docker::connect_with_named_pipe(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(feature = "http")]
+            h if h.starts_with("tcp://") || h.starts_with("http://") => {
+                Docker::connect_with_http(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            }
+            #[cfg(feature = "ssl_providerless")]
+            h if h.starts_with("https://") => Docker::connect_with_ssl_default_certs(h),
+            #[cfg(feature = "ssh")]
+            h if h.starts_with("ssh://") => {
+                Docker::connect_with_ssh(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
+            }
+            _ => Err(UnsupportedURISchemeError {
+                uri: host.to_string(),
+            }),
+        }
+    }
 }
 
 #[cfg(all(feature = "pipe", unix))]
@@ -967,6 +1076,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -1045,6 +1155,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -1127,6 +1238,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::load()?),
         };
 
         Ok(docker)
@@ -1184,6 +1296,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            docker_config: Arc::new(DockerConfig::default()),
         };
 
         Ok(docker)

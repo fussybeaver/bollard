@@ -181,6 +181,9 @@ pub enum Error {
     /// Error emitted when the Docker socket file is not found at the expected location.
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
+    /// Error emitted when the Docker configuration file exists but cannot be read or parsed.
+    #[error("Failed to parse Docker configuration file '{0}'")]
+    DockerConfigParseError(String),
 
     /// Error emitted when a WebSocket connection fails.
     #[cfg(feature = "websocket")]

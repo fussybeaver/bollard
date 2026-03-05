@@ -22,6 +22,28 @@ use crate::docker::{body_try_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
+/// Extract the registry hostname from a Docker image reference.
+///
+/// Returns `"docker.io"` when no explicit registry component is present
+/// (e.g. `"ubuntu:20.04"`, `"library/ubuntu"`).
+pub(crate) fn registry_from_image(image: &str) -> String {
+    // Strip digest (@sha256:...)
+    let image = image.split('@').next().unwrap_or(image);
+    // Split at first '/'
+    let mut parts = image.splitn(2, '/');
+    let first = parts.next().unwrap_or(image);
+    // No '/' means it's a bare image name like "ubuntu:20.04"
+    if parts.next().is_none() {
+        return "docker.io".to_string();
+    }
+    // First component is a registry if it contains '.', ':', or is "localhost"
+    if first.contains('.') || first.contains(':') || first == "localhost" {
+        first.to_string()
+    } else {
+        "docker.io".to_string()
+    }
+}
+
 enum ImageBuildBuildkitEither {
     #[allow(dead_code)]
     Left(Option<HashMap<String, DockerCredentials>>),
@@ -124,11 +146,20 @@ impl Docker {
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<CreateImageInfo, Error>> {
         let url = "/images/create";
+        let options = options.map(Into::into);
+        let credentials = credentials.or_else(|| {
+            let registry = options
+                .as_ref()
+                .and_then(|o: &crate::query_parameters::CreateImageOptions| o.from_image.as_deref())
+                .map(registry_from_image)
+                .unwrap_or_else(|| "docker.io".to_string());
+            self.credentials_for(&registry)
+        });
 
         let req = self.build_request_with_registry_auth(
             url,
             Builder::new().method(Method::POST),
-            options.map(Into::into),
+            options,
             Ok(root_fs.unwrap_or(BodyType::Left(Full::new(Bytes::new())))),
             DockerCredentialsHeader::Auth(credentials),
         );
@@ -213,6 +244,8 @@ impl Docker {
         credentials: Option<DockerCredentials>,
     ) -> Result<DistributionInspect, Error> {
         let url = format!("/distribution/{image_name}/json");
+        let credentials =
+            credentials.or_else(|| self.credentials_for(&registry_from_image(image_name)));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -395,6 +428,8 @@ impl Docker {
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
         let url = format!("/images/{image_name}");
+        let credentials =
+            credentials.or_else(|| self.credentials_for(&registry_from_image(image_name)));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -494,6 +529,9 @@ impl Docker {
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<PushImageInfo, Error>> {
         let url = format!("/images/{image_name}/push");
+        let credentials = credentials
+            .or_else(|| self.credentials_for(&registry_from_image(image_name)))
+            .unwrap_or_default();
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -502,7 +540,7 @@ impl Docker {
                 .header(CONTENT_TYPE, "application/json"),
             options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
-            DockerCredentialsHeader::Auth(Some(credentials.unwrap_or_default())),
+            DockerCredentialsHeader::Auth(Some(credentials)),
         );
 
         self.process_into_stream(req).boxed().map(|res| {
@@ -657,6 +695,14 @@ impl Docker {
     ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_ {
         let url = "/build";
         let options = options.into();
+        let credentials = credentials.or_else(|| {
+            let all = self.docker_config.all_credentials();
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
+        });
 
         match (
             if cfg!(feature = "buildkit_providerless")
@@ -957,6 +1003,14 @@ impl Docker {
         root_fs: BodyType,
         credentials: Option<HashMap<String, DockerCredentials>>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> {
+        let credentials = credentials.or_else(|| {
+            let all = self.docker_config.all_credentials();
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
+        });
         let req = self.build_request_with_registry_auth(
             "/images/load",
             Builder::new()
@@ -1049,6 +1103,14 @@ impl Docker {
     {
         // map_err to std::io::Error to use body_try_stream
         let stream = root_fs.map(|res| res.map_err(|e| std::io::Error::other(e)));
+        let credentials = credentials.or_else(|| {
+            let all = self.docker_config.all_credentials();
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
+        });
 
         let req = self.build_request_with_registry_auth(
             "/images/load",
@@ -1087,6 +1149,7 @@ mod tests {
     use futures_util::TryStreamExt;
     use yup_hyper_mock::HostToReplyConnector;
 
+    use crate::image::registry_from_image;
     use crate::{
         query_parameters::{
             BuildImageOptionsBuilder, CreateImageOptionsBuilder, PushImageOptionsBuilder,
@@ -1202,5 +1265,59 @@ mod tests {
             result,
             Err(crate::errors::Error::DockerStreamError { error: _ })
         ));
+    }
+
+    #[test]
+    fn test_registry_from_image_bare_name() {
+        assert_eq!(registry_from_image("ubuntu"), "docker.io");
+    }
+
+    #[test]
+    fn test_registry_from_image_with_tag() {
+        assert_eq!(registry_from_image("ubuntu:20.04"), "docker.io");
+    }
+
+    #[test]
+    fn test_registry_from_image_official_path() {
+        assert_eq!(registry_from_image("library/ubuntu"), "docker.io");
+    }
+
+    #[test]
+    fn test_registry_from_image_user_path() {
+        assert_eq!(registry_from_image("myuser/myimage:latest"), "docker.io");
+    }
+
+    #[test]
+    fn test_registry_from_image_explicit_registry() {
+        assert_eq!(
+            registry_from_image("gcr.io/myproject/myimage:latest"),
+            "gcr.io"
+        );
+    }
+
+    #[test]
+    fn test_registry_from_image_localhost() {
+        assert_eq!(
+            registry_from_image("localhost:5000/myimage:latest"),
+            "localhost:5000"
+        );
+    }
+
+    #[test]
+    fn test_registry_from_image_localhost_no_port() {
+        assert_eq!(registry_from_image("localhost/myimage"), "localhost");
+    }
+
+    #[test]
+    fn test_registry_from_image_with_digest() {
+        assert_eq!(
+            registry_from_image("gcr.io/myproject/myimage@sha256:abc123"),
+            "gcr.io"
+        );
+    }
+
+    #[test]
+    fn test_registry_from_image_bare_digest() {
+        assert_eq!(registry_from_image("ubuntu@sha256:abc123"), "docker.io");
     }
 }
