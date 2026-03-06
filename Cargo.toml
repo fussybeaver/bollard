@@ -52,7 +52,7 @@ http = ["hyper-util"]
 pipe = ["hyper-util", "hyperlocal", "hyper-named-pipe"]
 ssh = ["hyper-util", "openssh", "tower-service"]
 # Enable Docker config file loading and environment-variable-based connection
-with-env = ["docker_credential", "dep:directories"]
+with-env = ["docker_credential", "dep:directories", "tokio/fs"]
 # Enable WebSocket support for container attach
 websocket = ["tokio-tungstenite"]
 # Enable tests specifically for websocket

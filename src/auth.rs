@@ -5,10 +5,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 #[cfg(feature = "with-env")]
-use std::fs::File;
-#[cfg(feature = "with-env")]
-use std::io::BufReader;
-#[cfg(feature = "with-env")]
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "with-env")]
@@ -103,17 +99,18 @@ impl DockerConfig {
     /// 2. `~/.docker/config.json`
     ///
     /// Returns an empty config if no file is found or parsing fails.
-    pub fn load() -> Result<Self, Error> {
+    pub async fn load() -> Result<Self, Error> {
         let Some(path) = find_config_path() else {
             return Ok(Self::default());
         };
-        Self::load_from_file(&path)
+        Self::load_from_file(&path).await
     }
 
-    fn load_from_file(path: &Path) -> Result<Self, Error> {
-        let file = File::open(path)
+    async fn load_from_file(path: &Path) -> Result<Self, Error> {
+        let contents = tokio::fs::read(path)
+            .await
             .map_err(|_| Error::DockerConfigParseError(path.display().to_string()))?;
-        serde_json::from_reader::<_, RawDockerConfig>(BufReader::new(file))
+        serde_json::from_slice::<RawDockerConfig>(&contents)
             .map(Into::into)
             .map_err(|_| Error::DockerConfigParseError(path.display().to_string()))
     }
@@ -305,8 +302,8 @@ mod tests {
         assert!(debug.contains("https://index.docker.io/v1/"));
     }
 
-    #[test]
-    fn test_load_from_file_parses_auths() {
+    #[tokio::test]
+    async fn test_load_from_file_parses_auths() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         write!(
@@ -321,41 +318,42 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode("alice:password123")
         )
         .unwrap();
-        let config = DockerConfig::load_from_file(tmp.path()).unwrap();
+        let config = DockerConfig::load_from_file(tmp.path()).await.unwrap();
         let creds = config.auths.get("https://index.docker.io/v1/").unwrap();
         assert_eq!(creds.username.as_deref(), Some("alice"));
         assert_eq!(creds.password.as_deref(), Some("password123"));
     }
 
-    #[test]
-    fn test_load_from_file_returns_error_on_invalid_json() {
+    #[tokio::test]
+    async fn test_load_from_file_returns_error_on_invalid_json() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         write!(tmp, "not valid json").unwrap();
-        let result = DockerConfig::load_from_file(tmp.path());
+        let result = DockerConfig::load_from_file(tmp.path()).await;
         assert!(matches!(
             result,
             Err(crate::errors::Error::DockerConfigParseError(_))
         ));
     }
 
-    #[test]
-    fn test_load_from_file_returns_error_on_missing_file() {
+    #[tokio::test]
+    async fn test_load_from_file_returns_error_on_missing_file() {
         let result = DockerConfig::load_from_file(std::path::Path::new(
             "/tmp/bollard_test_nonexistent_config_xyz.json",
-        ));
+        ))
+        .await;
         assert!(matches!(
             result,
             Err(crate::errors::Error::DockerConfigParseError(_))
         ));
     }
 
-    #[test]
-    fn test_load_from_file_empty_config() {
+    #[tokio::test]
+    async fn test_load_from_file_empty_config() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         write!(tmp, "{{}}").unwrap();
-        let config = DockerConfig::load_from_file(tmp.path()).unwrap();
+        let config = DockerConfig::load_from_file(tmp.path()).await.unwrap();
         assert!(config.auths.is_empty());
         assert!(config.creds_store.is_none());
         assert!(config.cred_helpers.is_empty());
