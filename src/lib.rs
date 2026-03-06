@@ -320,6 +320,8 @@
 // declare modules
 pub mod auth;
 pub mod config;
+#[cfg(feature = "with-env")]
+pub mod env;
 pub mod container;
 mod docker;
 pub mod errors;

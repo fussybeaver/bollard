@@ -53,7 +53,9 @@ use hyper_named_pipe::NamedPipeConnector;
 
 use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 #[cfg(feature = "with-env")]
-use crate::auth::{DockerConfig, DockerCredentials};
+use crate::auth::DockerCredentials;
+#[cfg(feature = "with-env")]
+use crate::env::DockerConfig;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -988,10 +990,13 @@ impl Docker {
     ///
     /// ```rust,no_run
     /// use bollard::Docker;
-    /// use bollard::auth::DockerConfig;
+    /// use bollard::env::DockerConfig;
     ///
-    /// let docker = Docker::connect_with_socket_defaults().unwrap()
-    ///     .with_config(DockerConfig::load().unwrap());
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let docker = Docker::connect_with_socket_defaults()?
+    ///     .with_config(DockerConfig::load().await?);
+    /// # Ok(()) }
+    /// # let _ = example();
     /// ```
     #[cfg(feature = "with-env")]
     pub fn with_config(mut self, config: DockerConfig) -> Self {
