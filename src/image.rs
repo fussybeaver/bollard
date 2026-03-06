@@ -22,7 +22,6 @@ use crate::docker::{body_try_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
-
 #[cfg(feature = "with-env")]
 fn registry_from_image(image: &str) -> String {
     // Strip digest (@sha256:...)
@@ -702,7 +701,11 @@ impl Docker {
         #[cfg(feature = "with-env")]
         let credentials = credentials.or_else(|| {
             let all = self.docker_config.as_ref()?.all_credentials();
-            if all.is_empty() { None } else { Some(all) }
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
         });
 
         match (
@@ -1007,7 +1010,11 @@ impl Docker {
         #[cfg(feature = "with-env")]
         let credentials = credentials.or_else(|| {
             let all = self.docker_config.as_ref()?.all_credentials();
-            if all.is_empty() { None } else { Some(all) }
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
         });
         let req = self.build_request_with_registry_auth(
             "/images/load",
@@ -1104,7 +1111,11 @@ impl Docker {
         #[cfg(feature = "with-env")]
         let credentials = credentials.or_else(|| {
             let all = self.docker_config.as_ref()?.all_credentials();
-            if all.is_empty() { None } else { Some(all) }
+            if all.is_empty() {
+                None
+            } else {
+                Some(all)
+            }
         });
 
         let req = self.build_request_with_registry_auth(
@@ -1270,19 +1281,28 @@ mod tests {
     #[cfg(feature = "with-env")]
     #[test]
     fn test_registry_from_image_with_tag() {
-        assert_eq!(crate::image::registry_from_image("ubuntu:20.04"), "docker.io");
+        assert_eq!(
+            crate::image::registry_from_image("ubuntu:20.04"),
+            "docker.io"
+        );
     }
 
     #[cfg(feature = "with-env")]
     #[test]
     fn test_registry_from_image_official_path() {
-        assert_eq!(crate::image::registry_from_image("library/ubuntu"), "docker.io");
+        assert_eq!(
+            crate::image::registry_from_image("library/ubuntu"),
+            "docker.io"
+        );
     }
 
     #[cfg(feature = "with-env")]
     #[test]
     fn test_registry_from_image_user_path() {
-        assert_eq!(crate::image::registry_from_image("myuser/myimage:latest"), "docker.io");
+        assert_eq!(
+            crate::image::registry_from_image("myuser/myimage:latest"),
+            "docker.io"
+        );
     }
 
     #[cfg(feature = "with-env")]
@@ -1306,7 +1326,10 @@ mod tests {
     #[cfg(feature = "with-env")]
     #[test]
     fn test_registry_from_image_localhost_no_port() {
-        assert_eq!(crate::image::registry_from_image("localhost/myimage"), "localhost");
+        assert_eq!(
+            crate::image::registry_from_image("localhost/myimage"),
+            "localhost"
+        );
     }
 
     #[cfg(feature = "with-env")]
@@ -1321,6 +1344,9 @@ mod tests {
     #[cfg(feature = "with-env")]
     #[test]
     fn test_registry_from_image_bare_digest() {
-        assert_eq!(crate::image::registry_from_image("ubuntu@sha256:abc123"), "docker.io");
+        assert_eq!(
+            crate::image::registry_from_image("ubuntu@sha256:abc123"),
+            "docker.io"
+        );
     }
 }

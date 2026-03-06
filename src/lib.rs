@@ -172,6 +172,42 @@
 //!
 //! Use the `Docker::connect_with_ssl` method API to parameterise the interface.
 //!
+//! ## Client configuration and system credentials loading
+//!
+//! The `with-env` feature enables automatic credential resolution from the Docker
+//! client configuration file (`~/.docker/config.json`), including support for
+//! external credential helpers such as `osxkeychain`, `secretservice`, or `pass`.
+//!
+//! Load the configuration once and attach it to the client. API methods that
+//! accept credentials (e.g. [`Docker::create_image`], [`Docker::push_image`],
+//! [`Docker::build_image`]) will then resolve credentials automatically when the
+//! caller passes `None`.
+//!
+//! ```rust,no_run
+//! # #[cfg(feature = "with-env")]
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use bollard::Docker;
+//! use bollard::env::DockerConfig;
+//!
+//! let docker = Docker::connect_with_socket_defaults()?
+//!     .with_config(DockerConfig::load().await?);
+//! # Ok(()) }
+//! ```
+//!
+//! You can also resolve credentials for a specific registry directly:
+//!
+//! ```rust,no_run
+//! # #[cfg(feature = "with-env")]
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use bollard::env::DockerConfig;
+//!
+//! let config = DockerConfig::load().await?;
+//! if let Some(creds) = config.credentials_for_registry("https://index.docker.io/v1/") {
+//!     println!("logged in as {:?}", creds.username);
+//! }
+//! # Ok(()) }
+//! ```
+//!
 //! ## Examples
 //!
 //! Note: all these examples need a [Tokio
@@ -320,10 +356,10 @@
 // declare modules
 pub mod auth;
 pub mod config;
-#[cfg(feature = "with-env")]
-pub mod env;
 pub mod container;
 mod docker;
+#[cfg(feature = "with-env")]
+pub mod env;
 pub mod errors;
 pub mod exec;
 pub mod image;

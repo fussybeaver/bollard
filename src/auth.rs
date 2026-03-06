@@ -116,5 +116,4 @@ mod tests {
         assert!(debug.contains("alice@example.com"));
         assert!(debug.contains("https://index.docker.io/v1/"));
     }
-
 }

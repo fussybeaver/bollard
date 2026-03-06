@@ -51,9 +51,9 @@ use crate::uri::Uri;
 #[cfg(all(feature = "pipe", windows))]
 use hyper_named_pipe::NamedPipeConnector;
 
-use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 #[cfg(feature = "with-env")]
 use crate::auth::DockerCredentials;
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
 #[cfg(feature = "with-env")]
 use crate::env::DockerConfig;
 use serde::de::DeserializeOwned;
