@@ -182,6 +182,7 @@ pub enum Error {
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
     /// Error emitted when the Docker configuration file exists but cannot be read or parsed.
+    #[cfg(feature = "with-env")]
     #[error("Failed to parse Docker configuration file '{0}'")]
     DockerConfigParseError(String),
 

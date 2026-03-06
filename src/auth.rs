@@ -4,10 +4,14 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+#[cfg(feature = "with-env")]
 use std::fs::File;
+#[cfg(feature = "with-env")]
 use std::io::BufReader;
+#[cfg(feature = "with-env")]
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "with-env")]
 use crate::errors::Error;
 
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -65,11 +69,14 @@ pub(crate) fn base64_url_encode(payload: &str) -> String {
 }
 
 /// Default Docker configuration filename inside the config directory.
+#[cfg(feature = "with-env")]
 pub const DOCKER_CONFIG_FILENAME: &str = "config.json";
 
 /// Canonical name for the Docker Hub registry.
+#[cfg(feature = "with-env")]
 pub const INDEX_NAME: &str = "docker.io";
 
+#[cfg(feature = "with-env")]
 /// Parsed Docker client configuration, loaded from `~/.docker/config.json`.
 ///
 /// Loaded automatically when a [`Docker`](crate::Docker) client is created.
@@ -87,6 +94,7 @@ pub struct DockerConfig {
     pub cred_helpers: HashMap<String, String>,
 }
 
+#[cfg(feature = "with-env")]
 impl DockerConfig {
     /// Load the Docker configuration from the standard location.
     ///
@@ -164,6 +172,7 @@ impl DockerConfig {
     }
 }
 
+#[cfg(feature = "with-env")]
 fn find_config_path() -> Option<PathBuf> {
     // $DOCKER_CONFIG takes priority
     if let Ok(dir) = std::env::var("DOCKER_CONFIG") {
@@ -182,6 +191,7 @@ fn find_config_path() -> Option<PathBuf> {
     }
 }
 
+#[cfg(feature = "with-env")]
 fn docker_home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
@@ -193,6 +203,7 @@ fn docker_home_dir() -> Option<PathBuf> {
     }
 }
 
+#[cfg(feature = "with-env")]
 /// Raw deserialization target for `~/.docker/config.json`.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -202,6 +213,7 @@ struct RawDockerConfig {
     cred_helpers: HashMap<String, String>,
 }
 
+#[cfg(feature = "with-env")]
 /// Raw deserialization target for a single entry inside the `auths` map.
 #[derive(Deserialize, Default)]
 struct RawAuthEntry {
@@ -211,6 +223,7 @@ struct RawAuthEntry {
     identitytoken: Option<String>,
 }
 
+#[cfg(feature = "with-env")]
 impl From<RawDockerConfig> for DockerConfig {
     fn from(raw: RawDockerConfig) -> Self {
         let auths = raw
@@ -245,7 +258,7 @@ impl From<RawDockerConfig> for DockerConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "with-env"))]
 mod tests {
     use crate::auth::{DockerConfig, DockerCredentials};
     use base64::Engine;

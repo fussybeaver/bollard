@@ -51,7 +51,9 @@ use crate::uri::Uri;
 #[cfg(all(feature = "pipe", windows))]
 use hyper_named_pipe::NamedPipeConnector;
 
-use crate::auth::{base64_url_encode, DockerConfig, DockerCredentials, DockerCredentialsHeader};
+use crate::auth::{base64_url_encode, DockerCredentialsHeader};
+#[cfg(feature = "with-env")]
+use crate::auth::{DockerConfig, DockerCredentials};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -269,23 +271,25 @@ pub struct Docker {
     pub(crate) client_timeout: u64,
     pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
     pub(crate) request_modifier: Option<RequestModifier>,
+    #[cfg(feature = "with-env")]
     pub(crate) docker_config: Arc<DockerConfig>,
 }
 
 impl std::fmt::Debug for Docker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Docker")
-            .field("transport", &self.transport)
-            .field("client_type", &self.client_type)
-            .field("client_addr", &self.client_addr)
-            .field("client_timeout", &self.client_timeout)
-            .field("version", &self.version)
-            .field(
-                "request_modifier",
-                &self.request_modifier.as_ref().map(|_| "<callback>"),
-            )
-            .field("docker_config", &self.docker_config)
-            .finish()
+        let mut s = f.debug_struct("Docker");
+        s.field("transport", &self.transport);
+        s.field("client_type", &self.client_type);
+        s.field("client_addr", &self.client_addr);
+        s.field("client_timeout", &self.client_timeout);
+        s.field("version", &self.version);
+        s.field(
+            "request_modifier",
+            &self.request_modifier.as_ref().map(|_| "<callback>"),
+        );
+        #[cfg(feature = "with-env")]
+        s.field("docker_config", &self.docker_config);
+        s.finish()
     }
 }
 
@@ -298,6 +302,7 @@ impl Clone for Docker {
             client_timeout: self.client_timeout,
             version: self.version.clone(),
             request_modifier: self.request_modifier.clone(),
+            #[cfg(feature = "with-env")]
             docker_config: self.docker_config.clone(),
         }
     }
@@ -558,6 +563,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -639,6 +645,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -719,6 +726,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -890,29 +898,6 @@ impl Docker {
         }
     }
 
-    /// Resolve inline credentials for the given registry from the loaded Docker config.
-    ///
-    /// Reads from the `auths` section of `~/.docker/config.json` (or the file pointed
-    /// to by `$DOCKER_CONFIG`). The `registry` argument may be a hostname (`docker.io`,
-    /// `gcr.io`) or a full URL (`https://index.docker.io/v1/`).
-    ///
-    /// Returns `None` if no matching entry is found in the config, or if external
-    /// credential helpers (`credsStore` / `credHelpers`) would be required.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use bollard::Docker;
-    ///
-    /// let docker = Docker::connect_with_socket_defaults().unwrap();
-    /// if let Some(creds) = docker.credentials_for("docker.io") {
-    ///     println!("username: {:?}", creds.username);
-    /// }
-    /// ```
-    pub fn credentials_for(&self, registry: &str) -> Option<DockerCredentials> {
-        self.docker_config.credentials_for_registry(registry)
-    }
-
     /// Connect to Docker using environment variables, following the same conventions as
     /// the Docker CLI.
     ///
@@ -932,6 +917,7 @@ impl Docker {
     ///
     /// let connection = Docker::connect_with_env().unwrap();
     /// ```
+    #[cfg(feature = "with-env")]
     pub fn connect_with_env() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
 
@@ -991,6 +977,28 @@ impl Docker {
                 uri: host.to_string(),
             }),
         }
+    }
+
+    /// Resolve credentials for the given registry from the loaded Docker config.
+    ///
+    /// The `registry` argument may be a hostname (`docker.io`, `gcr.io`) or a full URL
+    /// (`https://index.docker.io/v1/`). Credential helpers are invoked as needed.
+    ///
+    /// Returns `None` if no matching credentials are found.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// let docker = Docker::connect_with_socket_defaults().unwrap();
+    /// if let Some(creds) = docker.credentials_for("docker.io") {
+    ///     println!("username: {:?}", creds.username);
+    /// }
+    /// ```
+    #[cfg(feature = "with-env")]
+    pub fn credentials_for(&self, registry: &str) -> Option<DockerCredentials> {
+        self.docker_config.credentials_for_registry(registry)
     }
 }
 
@@ -1076,6 +1084,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -1155,6 +1164,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -1238,6 +1248,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::load()?),
         };
 
@@ -1296,6 +1307,7 @@ impl Docker {
                 AtomicUsize::new(client_version.minor_version),
             )),
             request_modifier: None,
+            #[cfg(feature = "with-env")]
             docker_config: Arc::new(DockerConfig::default()),
         };
 
