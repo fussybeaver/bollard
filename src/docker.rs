@@ -272,7 +272,7 @@ pub struct Docker {
     pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
     pub(crate) request_modifier: Option<RequestModifier>,
     #[cfg(feature = "with-env")]
-    pub(crate) docker_config: Arc<DockerConfig>,
+    pub(crate) docker_config: Option<Arc<DockerConfig>>,
 }
 
 impl std::fmt::Debug for Docker {
@@ -564,7 +564,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -646,7 +646,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -727,7 +727,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -979,26 +979,34 @@ impl Docker {
         }
     }
 
-    /// Resolve credentials for the given registry from the loaded Docker config.
+    /// Attach a [`DockerConfig`] to this client for automatic credential resolution.
     ///
-    /// The `registry` argument may be a hostname (`docker.io`, `gcr.io`) or a full URL
-    /// (`https://index.docker.io/v1/`). Credential helpers are invoked as needed.
-    ///
-    /// Returns `None` if no matching credentials are found.
+    /// When a config is attached, API methods that accept credentials will fall back
+    /// to resolving them from the config whenever the caller passes `None`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// use bollard::Docker;
+    /// use bollard::auth::DockerConfig;
     ///
-    /// let docker = Docker::connect_with_socket_defaults().unwrap();
-    /// if let Some(creds) = docker.credentials_for("docker.io") {
-    ///     println!("username: {:?}", creds.username);
-    /// }
+    /// let docker = Docker::connect_with_socket_defaults().unwrap()
+    ///     .with_config(DockerConfig::load().unwrap());
     /// ```
     #[cfg(feature = "with-env")]
-    pub fn credentials_for(&self, registry: &str) -> Option<DockerCredentials> {
-        self.docker_config.credentials_for_registry(registry)
+    pub fn with_config(mut self, config: DockerConfig) -> Self {
+        self.docker_config = Some(Arc::new(config));
+        self
+    }
+
+    /// Resolve credentials for the given registry using the attached [`DockerConfig`].
+    ///
+    /// Returns `None` if no config is attached or no credentials are found.
+    #[cfg(feature = "with-env")]
+    pub(crate) fn credentials_for(&self, registry: &str) -> Option<DockerCredentials> {
+        self.docker_config
+            .as_ref()?
+            .credentials_for_registry(registry)
     }
 }
 
@@ -1085,7 +1093,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -1165,7 +1173,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -1249,7 +1257,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::load()?),
+            docker_config: None,
         };
 
         Ok(docker)
@@ -1308,7 +1316,7 @@ impl Docker {
             )),
             request_modifier: None,
             #[cfg(feature = "with-env")]
-            docker_config: Arc::new(DockerConfig::default()),
+            docker_config: None,
         };
 
         Ok(docker)
