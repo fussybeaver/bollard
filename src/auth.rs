@@ -182,24 +182,12 @@ fn find_config_path() -> Option<PathBuf> {
         }
     }
     // Fall back to ~/.docker/config.json
-    let home = docker_home_dir()?;
-    let path = home.join(".docker").join(DOCKER_CONFIG_FILENAME);
+    let base = directories::BaseDirs::new()?;
+    let path = base.home_dir().join(".docker").join(DOCKER_CONFIG_FILENAME);
     if path.exists() {
         Some(path)
     } else {
         None
-    }
-}
-
-#[cfg(feature = "with-env")]
-fn docker_home_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE").map(PathBuf::from)
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("HOME").map(PathBuf::from)
     }
 }
 
