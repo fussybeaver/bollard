@@ -917,10 +917,12 @@ impl Docker {
     /// ```rust,no_run
     /// use bollard::Docker;
     ///
-    /// let connection = Docker::connect_with_env().unwrap();
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let connection = Docker::connect_with_env().await?;
+    /// # Ok(()) }
     /// ```
     #[cfg(feature = "with-env")]
-    pub fn connect_with_env() -> Result<Docker, Error> {
+    pub async fn connect_with_env() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
 
         // Empty string is treated the same as unset (TLS disabled)
@@ -943,20 +945,21 @@ impl Docker {
                     let home = home::home_dir().ok_or(NoHomePathError)?;
                     home.join(".docker")
                 };
-                return Docker::connect_with_ssl(
+                let docker = Docker::connect_with_ssl(
                     &host,
                     &cert_dir.join("key.pem"),
                     &cert_dir.join("cert.pem"),
                     &cert_dir.join("ca.pem"),
                     DEFAULT_TIMEOUT,
                     API_DEFAULT_VERSION,
-                );
+                )?;
+                return Ok(docker.with_config(DockerConfig::load().await?));
             }
             #[cfg(not(feature = "ssl_providerless"))]
             return Err(UnsupportedURISchemeError { uri: host });
         }
 
-        match host.as_str() {
+        let docker = match host.as_str() {
             #[cfg(all(feature = "pipe", unix))]
             h if h.starts_with("unix://") => {
                 Docker::connect_with_unix(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
@@ -978,7 +981,9 @@ impl Docker {
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
             }),
-        }
+        }?;
+
+        Ok(docker.with_config(DockerConfig::load().await?))
     }
 
     /// Attach a [`DockerConfig`] to this client for automatic credential resolution.
