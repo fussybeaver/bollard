@@ -1,6 +1,6 @@
 //! Secret API: manage and inspect docker secrets within a swarm
 
-pub use crate::models::*;
+use crate::models::*;
 
 use super::Docker;
 use crate::{docker::BodyType, errors::Error};
