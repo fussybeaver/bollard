@@ -79,7 +79,7 @@ impl Docker {
     /// # use std::default::Default;
     /// # use base64::Engine;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
-    /// use bollard::secret::SecretSpec;
+    /// use bollard::models::SecretSpec;
     ///
     /// use base64;
     ///
