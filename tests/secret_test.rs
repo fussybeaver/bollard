@@ -4,7 +4,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bollard::errors::Error;
 use bollard::query_parameters::{ListSecretsOptionsBuilder, UpdateSecretOptionsBuilder};
-use bollard::{secret::*, Docker};
+use bollard::{models::*, Docker};
 
 use tokio::runtime::Runtime;
 
