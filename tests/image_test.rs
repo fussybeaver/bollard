@@ -727,6 +727,7 @@ COPY --from=builder1 /token /",
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 
@@ -854,6 +855,7 @@ RUN touch bollard.txt
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 
@@ -918,6 +920,7 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 
@@ -1041,6 +1044,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 
@@ -1166,6 +1170,7 @@ ENTRYPOINT ls buildkit-bollard.txt
         frontend_opts,
         load_input,
         Some(creds_hsh),
+        None,
     )
     .await;
 
@@ -1258,9 +1263,15 @@ RUN touch bollard.txt
     let load_input =
         bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
 
-    let res =
-        bollard::grpc::driver::Build::docker_build(driver, name, frontend_opts, load_input, None)
-            .await;
+    let res = bollard::grpc::driver::Build::docker_build(
+        driver,
+        name,
+        frontend_opts,
+        load_input,
+        None,
+        None,
+    )
+    .await;
 
     assert!(res.is_ok());
     let _ = &docker
