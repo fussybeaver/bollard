@@ -61,6 +61,16 @@ fn test_version_ssh() {
     );
 }
 
+#[cfg(all(unix, feature = "test_podman"))]
+#[test]
+#[allow(clippy::redundant_closure_call)]
+fn test_version_podman() {
+    rt_exec!(
+        Docker::connect_with_podman_defaults().unwrap().version(),
+        |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
+    )
+}
+
 #[cfg(unix)]
 #[test]
 fn test_downversioning() {

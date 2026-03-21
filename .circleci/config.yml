@@ -146,6 +146,27 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -- --check --verbose"
+  test_podman:
+    docker:
+      - image: docker:27.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run:
+          name: Start Podman daemon container
+          command: docker run -d --privileged --name podman -v podman-sock:/run/podman quay.io/podman/stable:latest podman system service --time=0 unix:///run/podman/podman.sock
+      - run:
+          name: Wait for Podman socket
+          command: |
+            for i in $(seq 1 30); do
+              docker exec podman test -S /run/podman/podman.sock && exit 0
+              sleep 1
+            done
+            echo "Podman socket not found" && exit 1
+      - run:
+          name: Run version test against Podman
+          command: docker run -ti -e DOCKER_HOST='unix:///run/podman/podman.sock' -v podman-sock:/run/podman --rm --link podman:podman bollard cargo test --features test_podman --test version_test -- test_version_podman
   test_sshforward:
     docker:
       - image: docker:27.3
@@ -179,3 +200,4 @@ workflows:
       - test_race
       - test_sshforward
       - test_swarm
+      - test_podman
