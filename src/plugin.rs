@@ -2,7 +2,7 @@
 
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
-use crate::{docker::BodyType, errors::Error};
+use crate::{client::BodyType, errors::Error};
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::StreamExt;

@@ -18,7 +18,7 @@ pub mod registry;
 mod ssh;
 
 use crate::auth::DockerCredentials;
-use crate::docker::BodyType;
+use crate::client::BodyType;
 use crate::health::health_check_response::ServingStatus;
 use crate::health::health_server::Health;
 use crate::health::{HealthCheckRequest, HealthCheckResponse};

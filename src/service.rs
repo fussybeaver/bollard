@@ -1,7 +1,7 @@
 //! Service API: manage and inspect docker services within a swarm
 
+use crate::client::BodyType;
 use crate::container::LogOutput;
-use crate::docker::BodyType;
 pub use crate::models::*;
 
 use super::Docker;

@@ -6,7 +6,7 @@ use http_body_util::Full;
 use hyper::Method;
 
 use super::Docker;
-use crate::docker::BodyType;
+use crate::client::BodyType;
 use crate::errors::Error;
 
 use crate::models::*;

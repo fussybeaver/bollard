@@ -20,7 +20,7 @@ use std::fmt;
 use std::pin::Pin;
 
 use super::Docker;
-use crate::docker::BodyType;
+use crate::client::BodyType;
 use crate::errors::Error;
 use crate::models::*;
 #[cfg(feature = "websocket")]

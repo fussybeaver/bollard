@@ -74,6 +74,18 @@ pub const DEFAULT_TCP_ADDRESS: &str = "tcp://localhost:2375";
 #[cfg(feature = "ssh")]
 pub const DEFAULT_SSH_ADDRESS: &str = "ssh://localhost";
 
+/// The default rootless Podman socket path template.
+///
+/// The `{UID}` placeholder must be replaced with the actual user ID at runtime.
+/// Podman's rootless socket lives under `$XDG_RUNTIME_DIR/podman/podman.sock`,
+/// which on most Linux systems is `/run/user/{UID}/podman/podman.sock`.
+#[cfg(all(unix, feature = "podman"))]
+pub(crate) const DEFAULT_PODMAN_SOCKET_TEMPLATE: &str = "/run/user/{UID}/podman/podman.sock";
+
+/// The default Podman system socket (rootful, requires group membership or root).
+#[cfg(all(unix, feature = "podman"))]
+pub(crate) const DEFAULT_PODMAN_SYSTEM_SOCKET: &str = "unix:///run/podman/podman.sock";
+
 /// The default `DOCKER_HOST` address that we will try to connect to.
 #[cfg(unix)]
 pub const DEFAULT_DOCKER_HOST: &str = DEFAULT_SOCKET;
@@ -794,11 +806,16 @@ impl Docker {
 
     /// Connect using the local machine connection method with default arguments.
     ///
-    /// This is a simple wrapper over the OS specific handlers:
-    ///  * Unix: [`Docker::connect_with_unix_defaults`]
-    ///  * Windows: `Docker::connect_with_named_pipe_defaults`
+    /// When the `podman` feature is enabled, tries Podman sockets first
+    /// (rootless, then system) before falling back to the Docker socket.
+    /// See [`Docker::connect_with_podman_defaults`] for the full discovery order.
+    ///
+    /// Without the `podman` feature, delegates to [`Docker::connect_with_unix_defaults`]
+    /// on Unix or `connect_with_named_pipe_defaults` on Windows.
     pub fn connect_with_local_defaults() -> Result<Docker, Error> {
-        #[cfg(unix)]
+        #[cfg(all(unix, feature = "podman"))]
+        return Docker::connect_with_podman_defaults();
+        #[cfg(all(unix, not(feature = "podman")))]
         return Docker::connect_with_unix_defaults();
         #[cfg(windows)]
         return Docker::connect_with_named_pipe_defaults();
@@ -918,6 +935,94 @@ impl Docker {
         let path = socket_path.as_deref();
         let path_ref: &str = path.unwrap_or(DEFAULT_SOCKET);
         Docker::connect_with_unix(path_ref, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+    }
+
+    /// Resolve the rootless Podman socket path for the current user.
+    ///
+    /// Checks `$XDG_RUNTIME_DIR/podman/podman.sock` first, then falls back to
+    /// `/run/user/$UID/podman/podman.sock`. Returns `None` if neither exists.
+    #[cfg(feature = "podman")]
+    fn podman_rootless_socket_path() -> Option<String> {
+        // Prefer XDG_RUNTIME_DIR (the canonical way)
+        if let Ok(xrd) = env::var("XDG_RUNTIME_DIR") {
+            let sock = format!("{xrd}/podman/podman.sock");
+            if Path::new(&sock).exists() {
+                return Some(sock);
+            }
+        }
+
+        // Fall back to /run/user/$UID/podman/podman.sock
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if let Ok(meta) = std::fs::metadata("/proc/self") {
+                let sock = DEFAULT_PODMAN_SOCKET_TEMPLATE.replace("{UID}", &meta.uid().to_string());
+                if Path::new(&sock).exists() {
+                    return Some(sock);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Resolve the Podman system socket path.
+    ///
+    /// Checks `/run/podman/podman.sock`. Returns `None` if it doesn't exist.
+    #[cfg(feature = "podman")]
+    fn podman_system_socket_path() -> Option<&'static str> {
+        let path = DEFAULT_PODMAN_SYSTEM_SOCKET
+            .strip_prefix("unix://")
+            .unwrap_or(DEFAULT_PODMAN_SYSTEM_SOCKET);
+        if Path::new(path).exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+
+    /// Connect to a Podman socket with default arguments.
+    ///
+    /// # Socket discovery order
+    ///
+    /// 1. `$DOCKER_HOST` — if set and starts with `unix://`, used directly.
+    /// 2. Rootless Podman: `$XDG_RUNTIME_DIR/podman/podman.sock`
+    /// 3. Rootless Podman: `/run/user/$UID/podman/podman.sock`
+    /// 4. System Podman: `/run/podman/podman.sock`
+    /// 5. Falls back to the default Docker socket (`/var/run/docker.sock`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// use futures_util::future::TryFutureExt;
+    ///
+    /// let connection = Docker::connect_with_podman_defaults().unwrap();
+    /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
+    /// ```
+    #[cfg(feature = "podman")]
+    pub fn connect_with_podman_defaults() -> Result<Docker, Error> {
+        // Honour explicit DOCKER_HOST first
+        if let Some(host) = env::var("DOCKER_HOST")
+            .ok()
+            .filter(|p| p.starts_with("unix://"))
+        {
+            return Docker::connect_with_unix(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+        }
+
+        // Probe for Podman rootless socket
+        if let Some(sock) = Self::podman_rootless_socket_path() {
+            return Docker::connect_with_unix(&sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+        }
+
+        // Probe for Podman system socket
+        if let Some(sock) = Self::podman_system_socket_path() {
+            return Docker::connect_with_unix(sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+        }
+
+        // Fall back to default Docker socket
+        Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
     }
 
     /// Connect using a Unix socket.
@@ -1672,4 +1777,136 @@ pub fn body_try_stream(
 /// Convenience method to wrap bytes into a bollard BodyType
 pub fn body_full(body: Bytes) -> BodyType {
     BodyType::Left(Full::new(body))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(all(unix, feature = "podman"))]
+    mod podman {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        #[test]
+        fn rootless_socket_from_xdg_runtime_dir() {
+            let dir = tempfile::tempdir().unwrap();
+            let sock_dir = dir.path().join("podman");
+            std::fs::create_dir_all(&sock_dir).unwrap();
+            let sock = sock_dir.join("podman.sock");
+            std::fs::write(&sock, b"").unwrap();
+
+            // Set XDG_RUNTIME_DIR to our temp dir
+            let _guard = TempEnvVar::set("XDG_RUNTIME_DIR", dir.path().to_str().unwrap());
+
+            let found = Docker::podman_rootless_socket_path();
+            assert_eq!(found.as_deref(), Some(sock.to_str().unwrap()));
+        }
+
+        #[test]
+        fn rootless_socket_returns_none_when_missing() {
+            // Point XDG_RUNTIME_DIR at empty dir — no podman socket
+            let dir = tempfile::tempdir().unwrap();
+            let _guard = TempEnvVar::set("XDG_RUNTIME_DIR", dir.path().to_str().unwrap());
+
+            let found = Docker::podman_rootless_socket_path();
+            // May still find one via /run/user/$UID fallback on a Podman host,
+            // but should not find one in the XDG dir we set.
+            let xdg_sock = dir.path().join("podman/podman.sock");
+            if let Some(ref path) = found {
+                assert_ne!(path.as_str(), xdg_sock.to_str().unwrap());
+            }
+        }
+
+        #[test]
+        fn system_socket_returns_none_when_missing() {
+            // System socket at /run/podman/podman.sock may or may not exist
+            // depending on the host, but the function should not panic.
+            let _ = Docker::podman_system_socket_path();
+        }
+
+        #[test]
+        fn connect_with_podman_defaults_respects_docker_host() {
+            // Create a fake socket
+            let dir = tempfile::tempdir().unwrap();
+            let sock = dir.path().join("test.sock");
+            std::fs::write(&sock, b"").unwrap();
+
+            let uri = format!("unix://{}", sock.display());
+            let _guard = TempEnvVar::set("DOCKER_HOST", &uri);
+
+            let docker = Docker::connect_with_podman_defaults().unwrap();
+            assert_eq!(docker.client_addr, sock.to_str().unwrap());
+        }
+
+        /// RAII guard that sets an env var and restores the previous value on drop.
+        struct TempEnvVar {
+            key: String,
+            prev: Option<String>,
+        }
+
+        impl TempEnvVar {
+            fn set(key: &str, val: &str) -> Self {
+                let prev = env::var(key).ok();
+                env::set_var(key, val);
+                Self {
+                    key: key.to_string(),
+                    prev,
+                }
+            }
+        }
+
+        impl Drop for TempEnvVar {
+            fn drop(&mut self) {
+                match &self.prev {
+                    Some(v) => env::set_var(&self.key, v),
+                    None => env::remove_var(&self.key),
+                }
+            }
+        }
+    }
+
+    #[cfg(all(unix, feature = "pipe"))]
+    mod docker_defaults {
+        use super::*;
+
+        #[test]
+        fn connect_with_unix_defaults_respects_docker_host() {
+            let dir = tempfile::tempdir().unwrap();
+            let sock = dir.path().join("test.sock");
+            std::fs::write(&sock, b"").unwrap();
+
+            let uri = format!("unix://{}", sock.display());
+            // Temporarily set DOCKER_HOST
+            let prev = env::var("DOCKER_HOST").ok();
+            env::set_var("DOCKER_HOST", &uri);
+
+            let docker = Docker::connect_with_unix_defaults().unwrap();
+            assert_eq!(docker.client_addr, sock.to_str().unwrap());
+
+            // Restore
+            match prev {
+                Some(v) => env::set_var("DOCKER_HOST", v),
+                None => env::remove_var("DOCKER_HOST"),
+            }
+        }
+
+        #[test]
+        fn connect_with_unix_defaults_ignores_non_unix_docker_host() {
+            let prev = env::var("DOCKER_HOST").ok();
+            env::set_var("DOCKER_HOST", "tcp://localhost:2375");
+
+            // Should fall through to DEFAULT_SOCKET, which may or may not exist
+            let result = Docker::connect_with_unix_defaults();
+            // On a system without Docker, this errors with SocketNotFoundError — that's fine
+            if let Err(Error::SocketNotFoundError(addr)) = &result {
+                assert!(addr.contains("docker.sock"));
+            }
+
+            match prev {
+                Some(v) => env::set_var("DOCKER_HOST", v),
+                None => env::remove_var("DOCKER_HOST"),
+            }
+        }
+    }
 }

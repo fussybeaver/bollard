@@ -5,7 +5,7 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http_body_util::Full;
 
-use crate::{container::LogOutput, docker::BodyType, errors::Error, Docker};
+use crate::{client::BodyType, container::LogOutput, errors::Error, Docker};
 use http::{request::Builder, Method};
 
 impl Docker {

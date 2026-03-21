@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
-use crate::docker::{body_try_stream, BodyType};
+use crate::client::{body_try_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
 
