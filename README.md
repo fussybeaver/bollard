@@ -4,17 +4,19 @@
 [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv/branch/master?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 [![docs](https://docs.rs/bollard/badge.svg)](https://docs.rs/bollard/)
 
-## Bollard: an asynchronous rust client library for the docker API
+## Bollard: an asynchronous rust client library for the Docker/Podman API
 
 Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
 futures, streams and the async/await paradigm.
 
-This library features Windows support through [Named
+This library supports both [Docker](https://github.com/moby/moby) and
+[Podman](https://github.com/containers/podman) as first-class container runtimes, with
+automatic socket discovery for rootless Podman. It features Windows support through [Named
 Pipes](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes) and HTTPS support through optional
 [Rustls](https://github.com/rustls/rustls) bindings. Serialization types for interfacing with
-[Docker](https://github.com/moby/moby) and [Buildkit](https://github.com/moby/buildkit) are
-generated through OpenAPI, protobuf and upstream documentation.
+Docker, Podman, and [Buildkit](https://github.com/moby/buildkit) are generated through OpenAPI,
+protobuf and upstream documentation.
 
 ## Install
 
@@ -37,6 +39,7 @@ bollard = "*"
 | Use Case | Cargo.toml |
 |----------|------------|
 | Local Docker (Unix/Windows) | `bollard = "*"` _(defaults work)_ |
+| Local Podman (rootless/rootful) | `bollard = { version = "*", features = ["podman"] }` |
 | Remote Docker over HTTPS | `bollard = { version = "*", features = ["ssl"] }` |
 | SSH tunnel to remote Docker | `bollard = { version = "*", features = ["ssh"] }` |
 | BuildKit image builds | `bollard = { version = "*", features = ["buildkit", "chrono"] }` |
@@ -46,16 +49,34 @@ bollard = "*"
 #### Default Features
 
 Enabled by default:
-- `http` - TCP connections to remote Docker (`DOCKER_HOST=tcp://...`)
-- `pipe` - Unix sockets (`/var/run/docker.sock`) and Windows named pipes
+- `docker` - Prefer Docker system socket (`/var/run/docker.sock`) in `connect_with_local_defaults`
+- `http` - TCP connections to remote Docker/Podman (`DOCKER_HOST=tcp://...`)
+- `pipe` - Unix sockets and Windows named pipes
+
+#### Runtime Features
+
+| Feature | Description |
+|---------|-------------|
+| `docker` | Prefer Docker system socket in `connect_with_local_defaults` (default) |
+| `podman` | Prefer Podman sockets (rootless then system) in `connect_with_local_defaults` |
+
+When both `docker` and `podman` are enabled, `podman` takes precedence — rootless
+Podman sockets are tried first, then the system Podman socket, then Docker.
+
+**Podman socket discovery order:**
+1. `$DOCKER_HOST` (if set and `unix://`)
+2. `$XDG_RUNTIME_DIR/podman/podman.sock` (rootless)
+3. `/run/user/$UID/podman/podman.sock` (rootless fallback)
+4. `/run/podman/podman.sock` (system/rootful)
+5. `/var/run/docker.sock` (Docker fallback)
 
 #### Transport Features
 
 | Feature | Description |
 |---------|-------------|
-| `http` | HTTP/TCP connector for remote Docker |
-| `pipe` | Unix socket / Windows named pipe for local Docker |
-| `ssh` | SSH tunnel connector (requires `ssh` feature) |
+| `http` | HTTP/TCP connector for remote Docker/Podman |
+| `pipe` | Unix socket / Windows named pipe for local Docker/Podman |
+| `ssh` | SSH tunnel connector |
 
 #### TLS/SSL Features
 
@@ -115,9 +136,32 @@ to allow downgrading to an older API version.
 
 ## Usage
 
-### Connecting with the docker daemon
+### Connecting with the container runtime
 
-Connect to the docker server according to your architecture and security remit.
+Connect to Docker or Podman according to your architecture and security remit.
+
+#### Local (recommended)
+
+The client will auto-detect the best available socket. With the `podman` feature enabled,
+it probes rootless and system Podman sockets before falling back to Docker.
+
+```rust
+use bollard::Docker;
+Docker::connect_with_local_defaults();
+```
+
+Use the `Docker::connect_with_local` method API to parameterise this interface.
+
+#### Podman
+
+Explicitly connect to Podman with automatic rootless/system socket discovery.
+Requires the `podman` feature.
+
+```rust
+use bollard::Docker;
+#[cfg(feature = "podman")]
+Docker::connect_with_podman_defaults();
+```
 
 #### Socket
 
@@ -131,20 +175,6 @@ Docker::connect_with_socket_defaults();
 ```
 
 Use the `Docker::connect_with_socket` method API to parameterise this interface.
-
-#### Local
-
-The client will connect to the OS specific handler it is compiled for.
-
-This is a convenience for localhost environment that should run on multiple
-operating systems.
-
-```rust
-use bollard::Docker;
-Docker::connect_with_local_defaults();
-```
-
-Use the `Docker::connect_with_local` method API to parameterise this interface.
 
 #### HTTP
 

@@ -4,7 +4,7 @@ use bollard_stubs::models::{Node, NodeSpec};
 use bytes::Bytes;
 use http_body_util::Full;
 
-use crate::{docker::BodyType, errors::Error, Docker};
+use crate::{client::BodyType, errors::Error, Docker};
 use http::{request::Builder, Method};
 
 impl Docker {

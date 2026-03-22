@@ -1,6 +1,6 @@
 //! Swarm API: Docker swarm is a container orchestration tool, meaning that it allows the user to manage multiple containers deployed across multiple host machines.
 
-use crate::docker::BodyType;
+use crate::client::BodyType;
 
 use hyper::Method;
 

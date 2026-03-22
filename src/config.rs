@@ -3,7 +3,7 @@
 pub use crate::models::*;
 
 use super::Docker;
-use crate::{docker::BodyType, errors::Error};
+use crate::{client::BodyType, errors::Error};
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;

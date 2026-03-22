@@ -13,7 +13,7 @@ use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::auth::DockerCredentials;
-use crate::docker::BodyType;
+use crate::client::BodyType;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
 use crate::{
     grpc::error::GrpcError,

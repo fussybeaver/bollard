@@ -5,7 +5,7 @@ use url::Url;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 
-use crate::docker::{ClientType, ClientVersion};
+use crate::client::{ClientType, ClientVersion};
 use crate::errors::Error;
 
 #[derive(Debug)]
