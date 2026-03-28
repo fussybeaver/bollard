@@ -4,17 +4,19 @@
 //! [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv/branch/master?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 //! [![docs](https://docs.rs/bollard/badge.svg)](https://docs.rs/bollard/)
 //!
-//! # Bollard: an asynchronous rust client library for the docker API
+//! # Bollard: an asynchronous rust client library for the Docker/Podman API
 //!
 //! Bollard leverages the latest [Hyper](https://github.com/hyperium/hyper) and
 //! [Tokio](https://github.com/tokio-rs/tokio) improvements for an asynchronous API containing
 //! futures, streams and the async/await paradigm.
 //!
-//! This library features Windows support through [Named
+//! This library supports both [Docker](https://github.com/moby/moby) and
+//! [Podman](https://github.com/containers/podman) as first-class container runtimes, with
+//! automatic socket discovery for rootless Podman. It features Windows support through [Named
 //! Pipes](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes) and HTTPS support through optional
 //! [Rustls](https://github.com/rustls/rustls) bindings. Serialization types for interfacing with
-//! [Docker](https://github.com/moby/moby) and [Buildkit](https://github.com/moby/buildkit) are
-//! generated through OpenAPI, protobuf and upstream documentation.
+//! [Docker](https://github.com/moby/moby) and [Buildkit](https://github.com/moby/buildkit) are generated through OpenAPI,
+//! protobuf and upstream documentation.
 //!
 //! # Install
 //!
@@ -46,15 +48,15 @@
 //! ### Default Features
 //!
 //! Enabled by default:
-//! - `http` - TCP connections to remote Docker (`DOCKER_HOST=tcp://...`)
-//! - `pipe` - Unix sockets (`/var/run/docker.sock`) and Windows named pipes
+//! - `http` - TCP connections to remote Docker/Podman (`DOCKER_HOST=tcp://...`)
+//! - `pipe` - Unix sockets and Windows named pipes
 //!
 //! ### Transport Features
 //!
 //! | Feature | Description |
 //! |---------|-------------|
-//! | `http` | HTTP/TCP connector for remote Docker |
-//! | `pipe` | Unix socket / Windows named pipe for local Docker |
+//! | `http` | HTTP/TCP connector for remote Docker/Podman |
+//! | `pipe` | Unix socket / Windows named pipe for local Docker/Podman |
 //! | `ssh` | SSH tunnel connector |
 //!
 //! ### TLS/SSL Features
@@ -112,9 +114,31 @@
 //!
 //! # Usage
 //!
-//! ## Connecting with the docker daemon
+//! ## Connecting with the container runtime
 //!
-//! Connect to the docker server according to your architecture and security remit.
+//! Connect to Docker or Podman according to your architecture and security remit.
+//!
+//! ### Local (recommended)
+//!
+//! Auto-detect the best available socket on the local machine.
+//!
+//! ```rust
+//! use bollard::Docker;
+//! Docker::connect_with_local_defaults();
+//! ```
+//!
+//! Use the [`Docker::connect_with_local`] method API to parameterise this interface.
+//!
+//! ### Podman
+//!
+//! Explicitly connect to Podman with automatic rootless/system socket discovery
+//! (Unix only). Probes `$DOCKER_HOST`, then rootless Podman sockets, then the
+//! system Podman socket, and finally falls back to the Docker socket.
+//!
+//! ```rust,no_run
+//! use bollard::Docker;
+//! Docker::connect_with_podman_defaults();
+//! ```
 //!
 //! ### Socket
 //!
@@ -127,21 +151,7 @@
 //! Docker::connect_with_socket_defaults();
 //! ```
 //!
-//! Use the `Docker::connect_with_socket` method API to parameterise this interface.
-//!
-//! ### Local
-//!
-//! The client will connect to the OS specific handler it is compiled for.
-//!
-//! This is a convenience for localhost environment that should run on multiple
-//! operating systems.
-//!
-//! ```rust
-//! use bollard::Docker;
-//! Docker::connect_with_local_defaults();
-//! ```
-//!
-//! Use the `Docker::connect_with_local` method API to parameterise this interface.
+//! Use the [`Docker::connect_with_socket`] method API to parameterise this interface.
 //!
 //! ### HTTP
 //!
@@ -153,7 +163,7 @@
 //! Docker::connect_with_http_defaults();
 //! ```
 //!
-//! Use the `Docker::connect_with_http` method API to parameterise the interface.
+//! Use the [`Docker::connect_with_http`] method API to parameterise the interface.
 //!
 //! ### SSL via Rustls
 //!

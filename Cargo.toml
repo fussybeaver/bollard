@@ -8,7 +8,7 @@ homepage = "https://github.com/fussybeaver/bollard"
 repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard"
 readme = "README.md"
-keywords = ["docker"]
+keywords = ["docker", "podman", "container"]
 edition = "2021"
 
 [workspace]
@@ -31,6 +31,8 @@ test_ssh = ["ssh"]
 test_ssl = ["dep:webpki-roots", "ssl_providerless"]
 test_ring = ["test_ssl", "ssl"]
 test_aws_lc_rs = ["test_ssl", "aws-lc-rs"]
+# Enable tests specifically for podman
+test_podman = []
 # Enable tests specifically for macos
 test_macos = []
 # Enable tests specifically for buildkit's sshforward functionality
@@ -103,6 +105,7 @@ tokio = { version = "1.38", features = ["fs", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7", features = ["io"] }
 yup-hyper-mock = { version = "8.0.0" }
 once_cell = "1.19"
+tempfile = "3.27.0"
 
 [target.'cfg(unix)'.dependencies]
 hyperlocal = { version = "0.9.0", optional = true }
