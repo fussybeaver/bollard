@@ -18,6 +18,8 @@ pub struct PruneRequest {
 pub struct DiskUsageRequest {
     #[prost(string, repeated, tag = "1")]
     pub filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(int64, tag = "2")]
+    pub age_limit: i64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiskUsageResponse {
@@ -97,6 +99,10 @@ pub struct SolveRequest {
     pub source_policy: ::core::option::Option<sourcepolicy::Policy>,
     #[prost(message, repeated, tag = "13")]
     pub exporters: ::prost::alloc::vec::Vec<Exporter>,
+    #[prost(bool, tag = "14")]
+    pub enable_session_exporter: bool,
+    #[prost(string, tag = "15")]
+    pub source_policy_session: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CacheOptions {
