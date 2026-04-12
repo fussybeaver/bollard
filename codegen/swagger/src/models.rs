@@ -4772,8 +4772,8 @@ pub struct MountPoint {
 }
 
 /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `cluster` a Swarm cluster volume. - `image` an OCI image. - `npipe` a named pipe from the host into the container. - `tmpfs` a `tmpfs`. - `volume` a docker volume with the given `Name`. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
-pub type MountPointType = HashMap<String, Option<Vec<PortBinding>>>;
+// top-level string enum: swagger-codegen loses enum values, generate as String alias
+pub type MountPointType = String;
 
 /// Optional configuration for the `tmpfs` type.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -4796,8 +4796,60 @@ pub struct MountTmpfsOptions {
 }
 
 /// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. The `Source` must exist prior to creating the container. - `cluster` a Swarm cluster volume - `image` Mounts an image. - `npipe` Mounts a named pipe from the host into the container. The `Source` must exist prior to creating the container. - `tmpfs` Create a tmpfs with the given options. The mount `Source` cannot be specified for tmpfs. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
-pub type MountType = HashMap<String, Option<Vec<PortBinding>>>;
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum MountType { 
+    #[serde(rename = "bind")]
+    BIND,
+    #[serde(rename = "cluster")]
+    CLUSTER,
+    #[serde(rename = "image")]
+    IMAGE,
+    #[serde(rename = "npipe")]
+    NPIPE,
+    #[serde(rename = "tmpfs")]
+    TMPFS,
+    #[serde(rename = "volume")]
+    VOLUME,
+}
+
+impl ::std::fmt::Display for MountType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            MountType::BIND => write!(f, "{}", "bind"),
+            MountType::CLUSTER => write!(f, "{}", "cluster"),
+            MountType::IMAGE => write!(f, "{}", "image"),
+            MountType::NPIPE => write!(f, "{}", "npipe"),
+            MountType::TMPFS => write!(f, "{}", "tmpfs"),
+            MountType::VOLUME => write!(f, "{}", "volume"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for MountType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "bind" => Ok(MountType::BIND),
+            "cluster" => Ok(MountType::CLUSTER),
+            "image" => Ok(MountType::IMAGE),
+            "npipe" => Ok(MountType::NPIPE),
+            "tmpfs" => Ok(MountType::TMPFS),
+            "volume" => Ok(MountType::VOLUME),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::default::Default for MountType {
+    fn default() -> Self { 
+        MountType::BIND
+    }
+}
 
 /// Optional configuration for the `volume` type.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

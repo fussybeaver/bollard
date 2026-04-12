@@ -577,9 +577,11 @@ impl CreateContainerOptionsBuilder {
     /// with the available image, and a warning is added to the `Warnings`
     /// field in the response, for example;
     /// 
-    ///     WARNING: The requested image's platform (linux/arm64/v8) does not
-    ///              match the detected host platform (linux/amd64) and no
-    ///              specific platform was requested
+    /// ```text
+    /// WARNING: The requested image's platform (linux/arm64/v8) does not
+    ///          match the detected host platform (linux/amd64) and no
+    ///          specific platform was requested
+    /// ```
     pub fn platform(mut self, platform: &str) -> Self {
         self.inner.platform = platform.into();
         self
