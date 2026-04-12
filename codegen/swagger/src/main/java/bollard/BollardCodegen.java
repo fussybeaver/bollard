@@ -13,9 +13,15 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.HashSet;
+import java.util.Set;
 
 public class BollardCodegen extends RustServerCodegen {
     private static final Logger LOGGER = LoggerFactory.getLogger(BollardCodegen.class);
+
+    // Models that have additionalProperties in the swagger spec and should be generated as HashMap.
+    // Populated in preprocessSwagger by inspecting the raw spec definitions.
+    private final Set<String> portmapLikeModels = new HashSet<>();
 
     public BollardCodegen() {
         super();
@@ -57,6 +63,10 @@ public class BollardCodegen extends RustServerCodegen {
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
     }
 
+    // Top-level string enum models whose enum values swagger-codegen fails to carry through to
+    // CodegenModel.allowableValues. Populated in preprocessSwagger by reading the raw spec.
+    private final Map<String, List<String>> specStringEnumValues = new HashMap<>();
+
     private static ArrayList<String> enumToString;
     static {
         enumToString = new ArrayList();
@@ -85,6 +95,28 @@ public class BollardCodegen extends RustServerCodegen {
                 String[] cliOptionLineSplit = cliOptionline.split("=");
                 if (cliOptionLineSplit.length == 2) {
                     queryParameterMappings.put(cliOptionLineSplit[0].trim(), cliOptionLineSplit[1].trim());
+                }
+            }
+        }
+
+        // Inspect raw swagger definitions to classify emptyVars models:
+        //  - additionalProperties → PortMap-like (generate as HashMap)
+        //  - type: string + enum values → unrecognized string enum (generate as proper Rust enum)
+        if (swagger.getDefinitions() != null) {
+            for (Map.Entry<String, io.swagger.models.Model> defEntry : swagger.getDefinitions().entrySet()) {
+                io.swagger.models.Model model = defEntry.getValue();
+                String modelName = toModelName(defEntry.getKey());
+                if (model instanceof io.swagger.models.ModelImpl) {
+                    io.swagger.models.ModelImpl modelImpl = (io.swagger.models.ModelImpl) model;
+                    if (modelImpl.getAdditionalProperties() != null) {
+                        portmapLikeModels.add(modelName);
+                    } else if ("string".equals(modelImpl.getType()) && modelImpl.getEnum() != null && !modelImpl.getEnum().isEmpty()) {
+                        List<String> enumValues = new ArrayList<>();
+                        for (Object val : modelImpl.getEnum()) {
+                            enumValues.add(val.toString());
+                        }
+                        specStringEnumValues.put(modelName, enumValues);
+                    }
                 }
             }
         }
@@ -286,6 +318,36 @@ public class BollardCodegen extends RustServerCodegen {
             }
         }
 
+        // Distinguish top-level string enums (e.g. MountType) from PortMap-like additionalProperties
+        // objects. portmapLikeModels was populated in preprocessSwagger by checking additionalProperties.
+        for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
+            CodegenModel model = entry.getValue();
+            if (model.emptyVars) {
+                if (portmapLikeModels.contains(model.classname)) {
+                    // Object with additionalProperties (PortMap, Topology, etc.): keep HashMap treatment
+                    model.vendorExtensions.put("x-rustgen-portmap-like", true);
+                } else if (!model.isEnum && specStringEnumValues.containsKey(model.classname)) {
+                    // Top-level string enum read from the spec but not propagated by swagger-codegen
+                    // (isEnum=false, allowableValues=null) — reconstruct allowableValues so the
+                    // template generates a proper Rust enum. Skip models already correctly recognized.
+                    model.isEnum = true;
+                    model.dataType = "String";
+                    List<Map<String, String>> enumVarsList = new ArrayList<>();
+                    for (String val : specStringEnumValues.get(model.classname)) {
+                        Map<String, String> enumVar = new HashMap<>();
+                        String name = val.isEmpty() ? "EMPTY" : val.toUpperCase().replace("-", "_").replace(".", "_");
+                        enumVar.put("name", name);
+                        enumVar.put("value", "\"" + val + "\"");
+                        enumVarsList.add(enumVar);
+                    }
+                    Map<String, Object> allowableValues = new HashMap<>();
+                    allowableValues.put("enumVars", enumVarsList);
+                    allowableValues.put("values", specStringEnumValues.get(model.classname));
+                    model.allowableValues = allowableValues;
+                }
+                // else: unknown bare type — the String alias fallback in the template handles it
+            }
+        }
 
         return newObjs;
     }
@@ -365,13 +427,29 @@ public class BollardCodegen extends RustServerCodegen {
                     for (final CodegenParameter param : operation.queryParams) {
                         if (param.unescapedDescription != null) {
                             String[] splitLines = param.unescapedDescription.split("\n");
-                            String[] description = new String[splitLines.length];
-
-                            for (int i = 0, splitLinesLength = splitLines.length; i < splitLinesLength; i++) {
-                                String docLine = splitLines[i];
-                                description[i] = "    /// " + docLine;
+                            List<String> descriptionLines = new ArrayList<>();
+                            boolean inCodeBlock = false;
+                            for (String docLine : splitLines) {
+                                // Markdown 4-space indented lines become Rustdoc code blocks that
+                                // the doctest runner tries to compile. Wrap them in ```text``` fences.
+                                if (docLine.startsWith("    ") && !docLine.trim().isEmpty()) {
+                                    if (!inCodeBlock) {
+                                        descriptionLines.add("    /// ```text");
+                                        inCodeBlock = true;
+                                    }
+                                    descriptionLines.add("    /// " + docLine.substring(4));
+                                } else {
+                                    if (inCodeBlock) {
+                                        descriptionLines.add("    /// ```");
+                                        inCodeBlock = false;
+                                    }
+                                    descriptionLines.add("    /// " + docLine);
+                                }
                             }
-                            param.unescapedDescription = String.join("\n", description);
+                            if (inCodeBlock) {
+                                descriptionLines.add("    /// ```");
+                            }
+                            param.unescapedDescription = String.join("\n", descriptionLines);
                         }
                         if (param.isString) {
                             operation.vendorExtensions.put("x-codegen-query-param-has-string", "true");
