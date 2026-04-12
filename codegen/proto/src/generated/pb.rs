@@ -472,6 +472,10 @@ pub struct FileActionCopy {
     /// mode in non-octal format
     #[prost(string, tag = "15")]
     pub mode_str: ::prost::alloc::string::String,
+    /// required paths that must be included in the copy. This is only used when
+    /// include_patterns has at least one pattern.
+    #[prost(string, repeated, tag = "16")]
+    pub required_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileActionMkFile {
