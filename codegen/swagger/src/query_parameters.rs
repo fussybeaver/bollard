@@ -2756,6 +2756,7 @@ impl Default for ImageHistoryOptions
 ///
 /// let params = InspectImageOptionsBuilder::new()
 /// //  .manifests(/* ... */)
+/// //  .platform(/* ... */)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -2770,8 +2771,29 @@ impl InspectImageOptionsBuilder {
     }
 
     /// Include Manifests in the image summary.
+    /// 
+    /// The `manifests` and `platform` options are mutually exclusive, and
+    /// an error is produced if both are set.
     pub fn manifests(mut self, manifests: bool) -> Self {
         self.inner.manifests = manifests;
+        self
+    }
+
+    /// JSON-encoded OCI platform to select the platform-variant.
+    /// If omitted, it defaults to any locally available platform,
+    /// prioritizing the daemon's host platform.
+    /// 
+    /// If the daemon provides a multi-platform image store, this selects
+    /// the platform-variant to show inspect. If the image is
+    /// a single-platform image, or if the multi-platform image does not
+    /// provide a variant matching the given platform, an error is returned.
+    /// 
+    /// The `platform` and `manifests` options are mutually exclusive, and
+    /// an error is produced if both are set.
+    /// 
+    /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    pub fn platform(mut self, platform: &str) -> Self {
+        self.inner.platform = Some(platform.into());
         self
     }
 
@@ -2789,6 +2811,8 @@ impl InspectImageOptionsBuilder {
 pub struct InspectImageOptions
 { 
     pub manifests: bool, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>, 
 }
 
 impl Default for InspectImageOptions
@@ -2796,6 +2820,7 @@ impl Default for InspectImageOptions
     fn default() -> Self {
         Self {
             manifests: false,
+            platform: None,
         }
     }
 }
