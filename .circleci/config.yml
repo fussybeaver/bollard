@@ -3,7 +3,7 @@ version: 2
 jobs:
   test_ssl:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -20,7 +20,7 @@ jobs:
       - run: docker run -ti -e DOCKER_CERT_PATH=/certs -e DOCKER_HOST='https://test.example.com:2376' --volumes-from certs --rm --link test-docker-daemon:docker bollard cargo test --features test_ssl,aws-lc-rs -- --test test_connect_with_defaults
   test_http:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -30,7 +30,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='tcp://test.example.com:2375' --rm --link test-docker-daemon:docker bollard cargo test -- --test test_connect_with_defaults
   test_ssh:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -53,7 +53,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='ssh://test.example.com' --rm -v ssh:/root/.ssh --link test-docker-daemon:docker bollard cargo test --features test_ssh -- --test test_connect_with_defaults
   test_unix:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -62,7 +62,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test -- --test test_connect_with_defaults
   test_buildkit:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -70,7 +70,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
   test_chrono:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -78,7 +78,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features chrono --tests
   test_time:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -86,7 +86,7 @@ jobs:
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features time --tests
   test_swarm:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -94,7 +94,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test --features test_swarm test_swarm
   test_csi:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -134,7 +134,7 @@ jobs:
               cargo test --features test_csi -- --test-threads 1 --test integration_test_cluster_volume_accessible_topology --nocapture
   test_race:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -144,7 +144,7 @@ jobs:
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test test_runtime
   test_doc:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -152,7 +152,7 @@ jobs:
       - run: docker run -ti --rm bollard cargo test --all-features --target x86_64-unknown-linux-gnu --doc
   test_crypto_provider:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -162,7 +162,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features ssl_providerless"
   test_clippy:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -170,7 +170,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --all-targets -- -Dwarnings"
   test_audit:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -180,7 +180,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "cargo install cargo-audit && cargo audit --deny warnings --ignore=RUSTSEC-2020-0071 --ignore=RUSTSEC-2024-0436"
   test_fmt:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -188,7 +188,7 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -- --check --verbose"
   test_podman:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
@@ -209,7 +209,7 @@ jobs:
           command: docker run -ti -e DOCKER_HOST='unix:///run/podman/podman.sock' -v podman-sock:/run/podman --rm --link podman:podman bollard cargo test --features test_podman --test version_test -- test_version_podman
   test_sshforward:
     docker:
-      - image: docker:27.3
+      - image: docker:29.3
     steps:
       - checkout
       - setup_remote_docker
