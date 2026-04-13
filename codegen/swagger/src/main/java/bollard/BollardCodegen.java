@@ -13,15 +13,9 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.HashSet;
-import java.util.Set;
 
 public class BollardCodegen extends RustServerCodegen {
     private static final Logger LOGGER = LoggerFactory.getLogger(BollardCodegen.class);
-
-    // Models that have additionalProperties in the swagger spec and should be generated as HashMap.
-    // Populated in preprocessSwagger by inspecting the raw spec definitions.
-    private final Set<String> portmapLikeModels = new HashSet<>();
 
     public BollardCodegen() {
         super();
@@ -99,18 +93,30 @@ public class BollardCodegen extends RustServerCodegen {
             }
         }
 
-        // Inspect raw swagger definitions to classify emptyVars models:
-        //  - additionalProperties → PortMap-like (generate as HashMap)
-        //  - type: string + enum values → unrecognized string enum (generate as proper Rust enum)
+        // Fix Topology: the swagger spec incorrectly defines it as additionalProperties: string,
+        // but the actual Go type (api/types/volume/cluster_volume.go) has a Segments field of
+        // type map[string]string. Patch the model before codegen runs so the correct struct is
+        // generated. See codegen/swagger/MOBY_TOPOLOGY_SPEC_BUG.md for the upstream issue.
+        if (swagger.getDefinitions() != null && swagger.getDefinitions().containsKey("Topology")) {
+            io.swagger.models.Model topologyDef = swagger.getDefinitions().get("Topology");
+            if (topologyDef instanceof io.swagger.models.ModelImpl) {
+                io.swagger.models.ModelImpl topologyImpl = (io.swagger.models.ModelImpl) topologyDef;
+                topologyImpl.setAdditionalProperties(null);
+                io.swagger.models.properties.MapProperty segmentsProperty = new io.swagger.models.properties.MapProperty();
+                segmentsProperty.setAdditionalProperties(new io.swagger.models.properties.StringProperty());
+                topologyImpl.addProperty("Segments", segmentsProperty);
+            }
+        }
+
+        // Inspect raw swagger definitions to classify top-level string enums whose enum values
+        // swagger-codegen fails to carry through to CodegenModel.allowableValues.
         if (swagger.getDefinitions() != null) {
             for (Map.Entry<String, io.swagger.models.Model> defEntry : swagger.getDefinitions().entrySet()) {
                 io.swagger.models.Model model = defEntry.getValue();
                 String modelName = toModelName(defEntry.getKey());
                 if (model instanceof io.swagger.models.ModelImpl) {
                     io.swagger.models.ModelImpl modelImpl = (io.swagger.models.ModelImpl) model;
-                    if (modelImpl.getAdditionalProperties() != null) {
-                        portmapLikeModels.add(modelName);
-                    } else if ("string".equals(modelImpl.getType()) && modelImpl.getEnum() != null && !modelImpl.getEnum().isEmpty()) {
+                    if ("string".equals(modelImpl.getType()) && modelImpl.getEnum() != null && !modelImpl.getEnum().isEmpty()) {
                         List<String> enumValues = new ArrayList<>();
                         for (Object val : modelImpl.getEnum()) {
                             enumValues.add(val.toString());
@@ -306,30 +312,17 @@ public class BollardCodegen extends RustServerCodegen {
                     }
                 }
             }
-        }
 
-        for (Entry<String, Object> entry : objs.entrySet()) {
-            String modelName = toModelName(entry.getKey());
-            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
-            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
-            for (Map<String, Object> mo : models) {
-                CodegenModel cm = (CodegenModel) mo.get("model");
-                allModels.put(modelName, cm);
-            }
-        }
-
-        // Distinguish top-level string enums (e.g. MountType) from PortMap-like additionalProperties
-        // objects. portmapLikeModels was populated in preprocessSwagger by checking additionalProperties.
-        for (Entry<String, CodegenModel> entry : allModels.entrySet()) {
-            CodegenModel model = entry.getValue();
+            // For emptyVars models, set x-rustgen-type-alias to the Rust type string so the
+            // template emits `pub type Classname = <value>;` without extra branching.
             if (model.emptyVars) {
-                if (portmapLikeModels.contains(model.classname)) {
-                    // Object with additionalProperties (PortMap, Topology, etc.): keep HashMap treatment
-                    model.vendorExtensions.put("x-rustgen-portmap-like", true);
+                if ("PortMap".equals(model.classname)) {
+                    // PortMap is the only additionalProperties-array type in the Docker API spec.
+                    model.vendorExtensions.put("x-rustgen-type-alias", "HashMap<String, Option<Vec<PortBinding>>>");
                 } else if (!model.isEnum && specStringEnumValues.containsKey(model.classname)) {
                     // Top-level string enum read from the spec but not propagated by swagger-codegen
                     // (isEnum=false, allowableValues=null) — reconstruct allowableValues so the
-                    // template generates a proper Rust enum. Skip models already correctly recognized.
+                    // template generates a proper Rust enum. Skip models already correctly recognised.
                     model.isEnum = true;
                     model.dataType = "String";
                     List<Map<String, String>> enumVarsList = new ArrayList<>();
@@ -344,8 +337,10 @@ public class BollardCodegen extends RustServerCodegen {
                     allowableValues.put("enumVars", enumVarsList);
                     allowableValues.put("values", specStringEnumValues.get(model.classname));
                     model.allowableValues = allowableValues;
+                } else if (!model.isEnum) {
+                    // Unknown bare emptyVars type: generate as a String alias.
+                    model.vendorExtensions.put("x-rustgen-type-alias", "String");
                 }
-                // else: unknown bare type — the String alias fallback in the template handles it
             }
         }
 
