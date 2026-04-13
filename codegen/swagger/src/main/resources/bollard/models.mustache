@@ -177,11 +177,8 @@ impl std::default::Default for {{classname}}{{enumName}} {
 }
 {{/isEnum}}{{^isEnum}}{{^dataType}}{{#arrayModelType}}{{! vec}}
 pub type {{classname}} = Vec<{{{arrayModelType}}}>;
-{{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}{{#vendorExtensions.x-rustgen-portmap-like}}// special-casing PortMap, cos swagger-codegen doesn't figure out this type
-pub type {{classname}} = HashMap<String, Option<Vec<PortBinding>>>;
-{{/vendorExtensions.x-rustgen-portmap-like}}{{^vendorExtensions.x-rustgen-portmap-like}}// top-level string enum: swagger-codegen loses enum values, generate as String alias
-pub type {{classname}} = String;
-{{/vendorExtensions.x-rustgen-portmap-like}}{{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, {{^vendorExtensions.x-rustgen-grpc-aux}}Serialize, {{/vendorExtensions.x-rustgen-grpc-aux}}Deserialize)]{{#xmlName}}
+{{/arrayModelType}}{{^arrayModelType}}{{#emptyVars}}{{#vendorExtensions.x-rustgen-type-alias}}pub type {{classname}} = {{{vendorExtensions.x-rustgen-type-alias}}};
+{{/vendorExtensions.x-rustgen-type-alias}}{{/emptyVars}}{{^emptyVars}}{{! general struct}}#[derive(Debug, Clone, Default, PartialEq, {{^vendorExtensions.x-rustgen-grpc-aux}}Serialize, {{/vendorExtensions.x-rustgen-grpc-aux}}Deserialize)]{{#xmlName}}
 #[serde(rename = "{{xmlName}}")]{{/xmlName}}
 pub struct {{classname}} {
 {{#vars}}{{#description}}    /// {{{description}}}

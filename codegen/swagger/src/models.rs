@@ -4772,7 +4772,6 @@ pub struct MountPoint {
 }
 
 /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `cluster` a Swarm cluster volume. - `image` an OCI image. - `npipe` a named pipe from the host into the container. - `tmpfs` a `tmpfs`. - `volume` a docker volume with the given `Name`. 
-// top-level string enum: swagger-codegen loses enum values, generate as String alias
 pub type MountPointType = String;
 
 /// Optional configuration for the `tmpfs` type.
@@ -6108,7 +6107,6 @@ pub struct PortBinding {
 }
 
 /// PortMap describes the mapping of container ports to host ports, using the container's port-number and protocol as key in the format `<port>/<protocol>`, for example, `80/udp`.  If a container's port is mapped for multiple protocols, separate entries are added to the mapping table. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type PortMap = HashMap<String, Option<Vec<PortBinding>>>;
 
 /// represents the port status of a task's host ports whose service has published host ports
@@ -9489,8 +9487,13 @@ pub struct TlsInfo {
 }
 
 /// A map of topological domains to topological segments. For in depth details, see documentation for the Topology object in the CSI specification. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
-pub type Topology = HashMap<String, Option<Vec<PortBinding>>>;
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Topology {
+    #[serde(rename = "Segments")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<HashMap<String, String>>,
+
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnlockKeyResponse {
