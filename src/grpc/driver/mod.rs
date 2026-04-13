@@ -25,6 +25,17 @@ use super::{
     GrpcServer,
 };
 
+/// DEFAULT_MAX_SEND_MSG_SIZE defines the default maximum message size for
+/// sending protobufs passed over the GRPC API.
+/// See https://github.com/containerd/containerd/blob/997f813b5cfdd7e120ee60d93b83ac6babbcfb1a/defaults/defaults.go#L23-L25
+/// Used by buildkit [here](https://github.com/moby/buildkit/blob/082e8d8cf3267ddd3a28de1e258eaec20ebe3bbe/cmd/buildkitd/main.go#L310)
+const DEFAULT_MAX_SEND_MSG_SIZE: usize = 16 << 20;
+/// DEFAULT_MAX_RECV_MSG_SIZE defines the default maximum message size for
+/// receiving protobufs passed over the GRPC API.
+/// See https://github.com/containerd/containerd/blob/997f813b5cfdd7e120ee60d93b83ac6babbcfb1a/defaults/defaults.go#L20-L22
+/// Used by buildkit [here](https://github.com/moby/buildkit/blob/082e8d8cf3267ddd3a28de1e258eaec20ebe3bbe/cmd/buildkitd/main.go#L309)
+const DEFAULT_MAX_RECV_MSG_SIZE: usize = 16 << 20;
+
 /// The Buildkit Daemon driver opens a GRPC connection by connecting to a Buildkit Daemon over a TCP connection.
 pub mod buildkitd;
 /// The Buildkit Channel driver opens a GRPC connection by using an existing [`tonic::transport::Channel`]
@@ -162,8 +173,13 @@ pub(crate) async fn solve(
     let secret_provider = super::SecretProvider::new(secret_sources);
 
     let auth = AuthServer::new(auth_provider);
-    let upload = UploadServer::new(upload_provider);
-    let secret = SecretsServer::new(secret_provider);
+    let upload = UploadServer::new(upload_provider)
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+
+    let secret = SecretsServer::new(secret_provider)
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
     let mut services: Vec<GrpcServer> = vec![
         GrpcServer::Auth(auth),
