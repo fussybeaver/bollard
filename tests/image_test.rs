@@ -1532,7 +1532,7 @@ RUN echo bollard > bollard.txt
     let old_cache_size = docker
         .df(None::<DataUsageOptions>)
         .await?
-        .build_cache_disk_usage
+        .build_cache_usage
         .and_then(|data| data.total_size)
         .unwrap_or(0);
 
@@ -1541,7 +1541,7 @@ RUN echo bollard > bollard.txt
     let new_cache_size = docker
         .df(None::<DataUsageOptions>)
         .await?
-        .build_cache_disk_usage
+        .build_cache_usage
         .and_then(|data| data.total_size)
         .unwrap_or(0);
 
