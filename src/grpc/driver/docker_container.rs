@@ -9,7 +9,7 @@ use std::{
 
 use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
-    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountTypeEnum,
+    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountType,
     SystemInfoCgroupDriverEnum,
 };
 use bytes::BytesMut;
@@ -328,7 +328,7 @@ impl DockerContainer {
         let host_config = HostConfig {
             privileged: Some(true),
             mounts: Some(vec![Mount {
-                typ: Some(MountTypeEnum::VOLUME),
+                typ: Some(MountType::VOLUME),
                 source: Some(format!("{}_state", &self.name)),
                 target: Some(String::from(DEFAULT_STATE_DIR)),
                 ..Default::default()

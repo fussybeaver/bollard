@@ -285,7 +285,7 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - Vector of [History Response Item](HistoryResponseItem), wrapped in a
+    ///  - Vector of [History Response Item](ImageHistoryResponseItem), wrapped in a
     ///    Future.
     ///
     /// # Examples
@@ -296,7 +296,10 @@ impl Docker {
     ///
     /// docker.image_history("hello-world");
     /// ```
-    pub async fn image_history(&self, image_name: &str) -> Result<Vec<HistoryResponseItem>, Error> {
+    pub async fn image_history(
+        &self,
+        image_name: &str,
+    ) -> Result<Vec<ImageHistoryResponseItem>, Error> {
         let url = format!("/images/{image_name}/history");
 
         let req = self.build_request(
@@ -559,7 +562,7 @@ impl Docker {
     pub async fn commit_container(
         &self,
         options: impl Into<crate::query_parameters::CommitContainerOptions>,
-        config: impl Into<crate::models::ContainerConfig>,
+        config: impl Into<ContainerConfig>,
     ) -> Result<IdResponse, Error> {
         let url = "/commit";
 

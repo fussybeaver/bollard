@@ -208,6 +208,8 @@ pub(crate) async fn solve(
         exporters: vec![],
         internal: false,
         source_policy: None,
+        enable_session_exporter: false,
+        source_policy_session: String::new(),
     };
 
     debug!("sending solve request: {:#?}", solve_request);
