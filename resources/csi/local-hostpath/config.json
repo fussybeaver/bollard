@@ -1,0 +1,39 @@
+{
+    "description": "democratic-csi storage driver",
+    "interface": {
+      "types": ["docker.csinode/1.0", "docker.csicontroller/1.0"],
+      "socket": "csi-local-path.sock"
+    },
+    "network": {
+      "type": "host"
+    },
+    "mounts": [
+      {
+        "name": "csi-local-hostpath",
+        "description": "Local Host Path",
+        "type": "bind",
+        "source": "/var/lib/csi-local-hostpath",
+        "destination": "/var/lib/csi-local-hostpath",
+        "options": ["bind"],
+        "settable": ["source"]
+      }
+    ],
+    "env": [
+      {
+        "name": "CSI_ENDPOINT",
+        "value": "/run/docker/plugins/csi-local-path.sock"
+      }
+    ],
+    "entrypoint": [
+      "/home/csi/app/entrypoint.sh"
+    ],
+    "workdir": "/home/csi/app",
+    "linux": {
+      "capabilities": [
+        "CAP_SYS_ADMIN"
+      ],
+      "AllowAllDevices": true,
+      "devices": null
+    },
+    "PropagatedMount": "/data/published"
+  }

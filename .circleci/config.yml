@@ -92,6 +92,48 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti -e DOCKER_HOST='unix:///var/run/docker.sock' -v /var/run/docker.sock:/var/run/docker.sock --rm bollard cargo test --features test_swarm test_swarm
+  test_csi:
+    docker:
+      - image: docker:27.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build bollard image
+          command: docker build -t bollard .
+      - run:
+          name: Build and install democratic-csi local-hostpath plugin
+          command: |
+            DCSI_VERSION=1.8.4
+            docker version
+            docker info
+            # Create the host path directory on the remote Docker host via bind-mount side effect
+            docker run --rm -v /var/lib/csi-local-hostpath:/var/lib/csi-local-hostpath alpine true
+            # Export democratic-csi rootfs locally
+            mkdir -p plugin/rootfs
+            docker create --name rootfsimage democraticcsi/democratic-csi:v${DCSI_VERSION}
+            docker export rootfsimage | tar -x -C plugin/rootfs
+            docker rm -f rootfsimage
+            # Copy config files into rootfs
+            mkdir -p plugin/rootfs/home/csi/app/config
+            cp resources/csi/local-hostpath/entrypoint.sh plugin/rootfs/home/csi/app/
+            cp resources/csi/local-hostpath/local-hostpath.yaml plugin/rootfs/home/csi/app/config/
+            chmod +x plugin/rootfs/home/csi/app/entrypoint.sh
+            cp resources/csi/local-hostpath/config.json plugin/
+            # Create and enable the plugin
+            docker plugin create csi-local-path plugin/
+            docker plugin enable csi-local-path
+      - run:
+          name: Initialise Docker Swarm
+          command: docker swarm init
+      - run:
+          name: Run CSI cluster volume integration tests
+          command: |
+            docker run -ti \
+              -e DOCKER_HOST='unix:///var/run/docker.sock' \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              --rm bollard \
+              cargo test --features test_csi -- --test-threads 1 --test integration_test_cluster_volume_accessible_topology --nocapture
   test_race:
     docker:
       - image: docker:27.3
@@ -200,4 +242,5 @@ workflows:
       - test_race
       - test_sshforward
       - test_swarm
+      - test_csi
       - test_podman
