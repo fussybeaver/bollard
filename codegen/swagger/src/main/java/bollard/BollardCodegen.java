@@ -13,15 +13,9 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.HashSet;
-import java.util.Set;
 
 public class BollardCodegen extends RustServerCodegen {
     private static final Logger LOGGER = LoggerFactory.getLogger(BollardCodegen.class);
-
-    // Models that have additionalProperties in the swagger spec and should be generated as HashMap.
-    // Populated in preprocessSwagger by inspecting the raw spec definitions.
-    private final Set<String> portmapLikeModels = new HashSet<>();
 
     public BollardCodegen() {
         super();
