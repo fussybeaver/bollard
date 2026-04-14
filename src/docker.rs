@@ -101,7 +101,7 @@ const DEFAULT_TIMEOUT: u64 = 120;
 /// Default Client Version to communicate with the server.
 pub const API_DEFAULT_VERSION: &ClientVersion = &ClientVersion {
     major_version: 1,
-    minor_version: 52,
+    minor_version: 53,
 };
 
 #[derive(Debug, Clone)]
@@ -124,8 +124,7 @@ pub(crate) enum ClientType {
 /// `Request` from bollard used with `CustomTransport`
 pub type BollardRequest = Request<BodyType>;
 
-type TransportReturnTy =
-    Pin<Box<dyn Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send>>;
+type TransportReturnTy = Pin<Box<dyn Future<Output = Result<Response<Incoming>, Error>> + Send>>;
 
 /// `CustomTransport` trait
 pub trait CustomTransport: Send + Sync {
@@ -137,7 +136,7 @@ pub trait CustomTransport: Send + Sync {
 impl<Callback, ReturnTy> CustomTransport for Callback
 where
     Callback: Fn(BollardRequest) -> ReturnTy + Send + Sync,
-    ReturnTy: Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + 'static,
+    ReturnTy: Future<Output = Result<Response<Incoming>, Error>> + Send + 'static,
 {
     fn request(&self, request: BollardRequest) -> TransportReturnTy {
         Box::pin(self(request))
@@ -284,8 +283,8 @@ pub struct Docker {
     pub(crate) request_modifier: Option<RequestModifier>,
 }
 
-impl std::fmt::Debug for Docker {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Docker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Docker")
             .field("transport", &self.transport)
             .field("client_type", &self.client_type)
@@ -793,8 +792,8 @@ impl Docker {
             .trim_start_matches("npipe://");
 
         // Check if the socket file exists
-        if !std::path::Path::new(clean_path).exists() {
-            return Err(Error::SocketNotFoundError(clean_path.to_string()));
+        if !Path::new(clean_path).exists() {
+            return Err(SocketNotFoundError(clean_path.to_string()));
         }
 
         #[cfg(unix)]
@@ -1049,7 +1048,7 @@ impl Docker {
 
         // check if the socket file exists and is accessible
         if !Path::new(&client_addr).exists() {
-            return Err(Error::SocketNotFoundError(client_addr));
+            return Err(SocketNotFoundError(client_addr));
         }
 
         let unix_connector = UnixConnector;
@@ -1895,7 +1894,7 @@ mod tests {
             // Should fall through to DEFAULT_SOCKET, which may or may not exist
             let result = Docker::connect_with_unix_defaults();
             // On a system without Docker, this errors with SocketNotFoundError — that's fine
-            if let Err(Error::SocketNotFoundError(addr)) = &result {
+            if let Err(SocketNotFoundError(addr)) = &result {
                 assert!(addr.contains("docker.sock"));
             }
 

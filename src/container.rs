@@ -1695,7 +1695,7 @@ mod tests {
             mounts: Some(vec![bollard_stubs::models::Mount {
                 target: Some(String::from("/tmp")),
                 source: Some(String::from("./tmp")),
-                typ: Some(bollard_stubs::models::MountTypeEnum::BIND),
+                typ: Some(bollard_stubs::models::MountType::BIND),
                 consistency: Some(String::from("default")),
                 ..Default::default()
             }]),

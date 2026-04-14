@@ -480,7 +480,7 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
                 "stefanscherer/registry-windows",
                 "moby/buildkit:master",
                 // Containers existing on CircleCI after a prune
-                "docker.io/library/docker:27.3",
+                "docker.io/library/docker:29.3",
                 "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
             ]
             .into_iter()
@@ -700,7 +700,7 @@ async fn mount_volume_container_test(docker: Docker) -> Result<(), Error> {
             } else {
                 String::from("/tmp")
             }),
-            typ: Some(MountTypeEnum::BIND),
+            typ: Some(MountType::BIND),
             consistency: Some(String::from("default")),
             ..Default::default()
         }]),
