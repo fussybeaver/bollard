@@ -57,6 +57,10 @@ public class BollardCodegen extends RustServerCodegen {
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
     }
 
+    // Top-level string enum models whose enum values swagger-codegen fails to carry through to
+    // CodegenModel.allowableValues. Populated in preprocessSwagger by reading the raw spec.
+    private final Map<String, List<String>> specStringEnumValues = new HashMap<>();
+
     private static ArrayList<String> enumToString;
     static {
         enumToString = new ArrayList();
@@ -85,6 +89,40 @@ public class BollardCodegen extends RustServerCodegen {
                 String[] cliOptionLineSplit = cliOptionline.split("=");
                 if (cliOptionLineSplit.length == 2) {
                     queryParameterMappings.put(cliOptionLineSplit[0].trim(), cliOptionLineSplit[1].trim());
+                }
+            }
+        }
+
+        // Fix Topology: the swagger spec incorrectly defines it as additionalProperties: string,
+        // but the actual Go type (api/types/volume/cluster_volume.go) has a Segments field of
+        // type map[string]string. Patch the model before codegen runs so the correct struct is
+        // generated. See https://github.com/moby/moby/issues/52355 for the upstream issue.
+        if (swagger.getDefinitions() != null && swagger.getDefinitions().containsKey("Topology")) {
+            io.swagger.models.Model topologyDef = swagger.getDefinitions().get("Topology");
+            if (topologyDef instanceof io.swagger.models.ModelImpl) {
+                io.swagger.models.ModelImpl topologyImpl = (io.swagger.models.ModelImpl) topologyDef;
+                topologyImpl.setAdditionalProperties(null);
+                io.swagger.models.properties.MapProperty segmentsProperty = new io.swagger.models.properties.MapProperty();
+                segmentsProperty.setAdditionalProperties(new io.swagger.models.properties.StringProperty());
+                topologyImpl.addProperty("Segments", segmentsProperty);
+            }
+        }
+
+        // Inspect raw swagger definitions to classify top-level string enums whose enum values
+        // swagger-codegen fails to carry through to CodegenModel.allowableValues.
+        if (swagger.getDefinitions() != null) {
+            for (Map.Entry<String, io.swagger.models.Model> defEntry : swagger.getDefinitions().entrySet()) {
+                io.swagger.models.Model model = defEntry.getValue();
+                String modelName = toModelName(defEntry.getKey());
+                if (model instanceof io.swagger.models.ModelImpl) {
+                    io.swagger.models.ModelImpl modelImpl = (io.swagger.models.ModelImpl) model;
+                    if ("string".equals(modelImpl.getType()) && modelImpl.getEnum() != null && !modelImpl.getEnum().isEmpty()) {
+                        List<String> enumValues = new ArrayList<>();
+                        for (Object val : modelImpl.getEnum()) {
+                            enumValues.add(val.toString());
+                        }
+                        specStringEnumValues.put(modelName, enumValues);
+                    }
                 }
             }
         }
@@ -274,18 +312,37 @@ public class BollardCodegen extends RustServerCodegen {
                     }
                 }
             }
-        }
 
-        for (Entry<String, Object> entry : objs.entrySet()) {
-            String modelName = toModelName(entry.getKey());
-            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
-            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
-            for (Map<String, Object> mo : models) {
-                CodegenModel cm = (CodegenModel) mo.get("model");
-                allModels.put(modelName, cm);
+            // For emptyVars models, set x-rustgen-type-alias to the Rust type string so the
+            // template emits `pub type Classname = <value>;` without extra branching.
+            if (model.emptyVars) {
+                if ("PortMap".equals(model.classname)) {
+                    // PortMap is the only additionalProperties-array type in the Docker API spec.
+                    model.vendorExtensions.put("x-rustgen-type-alias", "HashMap<String, Option<Vec<PortBinding>>>");
+                } else if (!model.isEnum && specStringEnumValues.containsKey(model.classname)) {
+                    // Top-level string enum read from the spec but not propagated by swagger-codegen
+                    // (isEnum=false, allowableValues=null) — reconstruct allowableValues so the
+                    // template generates a proper Rust enum. Skip models already correctly recognised.
+                    model.isEnum = true;
+                    model.dataType = "String";
+                    List<Map<String, String>> enumVarsList = new ArrayList<>();
+                    for (String val : specStringEnumValues.get(model.classname)) {
+                        Map<String, String> enumVar = new HashMap<>();
+                        String name = val.isEmpty() ? "EMPTY" : val.toUpperCase().replace("-", "_").replace(".", "_");
+                        enumVar.put("name", name);
+                        enumVar.put("value", "\"" + val + "\"");
+                        enumVarsList.add(enumVar);
+                    }
+                    Map<String, Object> allowableValues = new HashMap<>();
+                    allowableValues.put("enumVars", enumVarsList);
+                    allowableValues.put("values", specStringEnumValues.get(model.classname));
+                    model.allowableValues = allowableValues;
+                } else if (!model.isEnum) {
+                    // Unknown bare emptyVars type: generate as a String alias.
+                    model.vendorExtensions.put("x-rustgen-type-alias", "String");
+                }
             }
         }
-
 
         return newObjs;
     }
@@ -365,13 +422,29 @@ public class BollardCodegen extends RustServerCodegen {
                     for (final CodegenParameter param : operation.queryParams) {
                         if (param.unescapedDescription != null) {
                             String[] splitLines = param.unescapedDescription.split("\n");
-                            String[] description = new String[splitLines.length];
-
-                            for (int i = 0, splitLinesLength = splitLines.length; i < splitLinesLength; i++) {
-                                String docLine = splitLines[i];
-                                description[i] = "    /// " + docLine;
+                            List<String> descriptionLines = new ArrayList<>();
+                            boolean inCodeBlock = false;
+                            for (String docLine : splitLines) {
+                                // Markdown 4-space indented lines become Rustdoc code blocks that
+                                // the doctest runner tries to compile. Wrap them in ```text``` fences.
+                                if (docLine.startsWith("    ") && !docLine.trim().isEmpty()) {
+                                    if (!inCodeBlock) {
+                                        descriptionLines.add("    /// ```text");
+                                        inCodeBlock = true;
+                                    }
+                                    descriptionLines.add("    /// " + docLine.substring(4));
+                                } else {
+                                    if (inCodeBlock) {
+                                        descriptionLines.add("    /// ```");
+                                        inCodeBlock = false;
+                                    }
+                                    descriptionLines.add("    /// " + docLine);
+                                }
                             }
-                            param.unescapedDescription = String.join("\n", description);
+                            if (inCodeBlock) {
+                                descriptionLines.add("    /// ```");
+                            }
+                            param.unescapedDescription = String.join("\n", descriptionLines);
                         }
                         if (param.isString) {
                             operation.vendorExtensions.put("x-codegen-query-param-has-string", "true");

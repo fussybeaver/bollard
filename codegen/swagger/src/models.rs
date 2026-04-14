@@ -345,6 +345,26 @@ pub struct BuildCacheDiskUsage {
 
 }
 
+/// BuildIdentity contains build reference information if image was created via build.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BuildIdentity {
+    /// Ref is the identifier for the build request. This reference can be used to look up the build details in BuildKit history API.
+    #[serde(rename = "Ref")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _ref: Option<String>,
+
+    /// CreatedAt is the time when the build ran.
+    #[serde(rename = "CreatedAt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]
+    pub created_at: Option<BollardDate>,
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct BuildInfo {
     #[serde(rename = "id")]
@@ -936,7 +956,7 @@ pub struct ConfigSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
 
-    /// Data is the data to store as a config, formatted as a Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-5)) string. The maximum allowed size is 1000KB, as defined in [MaxConfigSize](https://pkg.go.dev/github.com/moby/swarmkit/v2@v2.0.0-20250103191802-8c1959736554/manager/controlapi#MaxConfigSize). 
+    /// Data is the data to store as a config, formatted as a standard base64-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-4)) string. The maximum allowed size is 1000KB, as defined in [MaxConfigSize](https://pkg.go.dev/github.com/moby/swarmkit/v2@v2.0.0-20250103191802-8c1959736554/manager/controlapi#MaxConfigSize). 
     #[serde(rename = "Data")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
@@ -1485,7 +1505,7 @@ pub struct ContainerMemoryStats {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_usage: Option<u64>,
 
-    /// All the stats exported via memory.stat. when using cgroups v2.  This field is Linux-specific and omitted for Windows containers. 
+    /// All the stats exported via memory.stat.  The fields in this object differ between cgroups v1 and v2. On cgroups v1, fields such as `cache`, `rss`, `mapped_file` are available. On cgroups v2, fields such as `file`, `anon`, `inactive_file` are available.  This field is Linux-specific and omitted for Windows containers. 
     #[serde(rename = "stats")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<HashMap<String, u64>>,
@@ -3297,10 +3317,10 @@ impl ::std::convert::AsRef<str> for HealthStatusEnum {
     }
 }
 
-/// A test to perform to check that the container is healthy.
+/// A test to perform to check that the container is healthy. Healthcheck commands should be side-effect free. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HealthConfig {
-    /// The test to perform. Possible values are:  - `[]` inherit healthcheck from image or parent image - `[\"NONE\"]` disable healthcheck - `[\"CMD\", args...]` exec arguments directly - `[\"CMD-SHELL\", command]` run command with system's default shell 
+    /// The test to perform. Possible values are:  - `[]` inherit healthcheck from image or parent image - `[\"NONE\"]` disable healthcheck - `[\"CMD\", args...]` exec arguments directly - `[\"CMD-SHELL\", command]` run command with system's default shell  A non-zero exit code indicates a failed healthcheck: - `0` healthy - `1` unhealthy - `2` reserved (treated as unhealthy) - other values: error running probe 
     #[serde(rename = "Test")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<Vec<String>>,
@@ -3310,7 +3330,7 @@ pub struct HealthConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interval: Option<i64>,
 
-    /// The time to wait before considering the check to have hung. It should be 0 or at least 1000000 (1 ms). 0 means inherit. 
+    /// The time to wait before considering the check to have hung. It should be 0 or at least 1000000 (1 ms). 0 means inherit.  If the health check command does not complete within this timeout, the check is considered failed and the health check process is forcibly terminated without a graceful shutdown. 
     #[serde(rename = "Timeout")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<i64>,
@@ -3364,30 +3384,6 @@ pub struct HealthcheckResult {
     #[serde(rename = "Output")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
-
-}
-
-/// individual image layer information in response to ImageHistory operation
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct HistoryResponseItem {
-    #[serde(rename = "Id")]
-    pub id: String,
-
-    #[serde(rename = "Created")]
-    pub created: i64,
-
-    #[serde(rename = "CreatedBy")]
-    pub created_by: String,
-
-    #[serde(rename = "Tags")]
-    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
-    pub tags: Vec<String>,
-
-    #[serde(rename = "Size")]
-    pub size: i64,
-
-    #[serde(rename = "Comment")]
-    pub comment: String,
 
 }
 
@@ -3857,6 +3853,26 @@ pub struct IdResponse {
 
 }
 
+/// Identity holds information about the identity and origin of the image. This is trusted information verified by the daemon and cannot be modified by tagging an image to a different name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Identity {
+    /// Signature contains the properties of verified signatures for the image.
+    #[serde(rename = "Signature")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Vec<SignatureIdentity>>,
+
+    /// Pull contains remote location information if image was created via pull. If image was pulled via mirror, this contains the original repository location. After successful push this images also contains the pushed repository location.
+    #[serde(rename = "Pull")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull: Option<Vec<PullIdentity>>,
+
+    /// Build contains build reference information if image was created via build.
+    #[serde(rename = "Build")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build: Option<Vec<BuildIdentity>>,
+
+}
+
 /// Configuration of the image. These fields are used as defaults when starting a container from the image. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageConfig {
@@ -3942,6 +3958,30 @@ pub struct ImageDeleteResponseItem {
 
 }
 
+/// individual image layer information in response to ImageHistory operation
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageHistoryResponseItem {
+    #[serde(rename = "Id")]
+    pub id: String,
+
+    #[serde(rename = "Created")]
+    pub created: i64,
+
+    #[serde(rename = "CreatedBy")]
+    pub created_by: String,
+
+    #[serde(rename = "Tags")]
+    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
+    pub tags: Vec<String>,
+
+    #[serde(rename = "Size")]
+    pub size: i64,
+
+    #[serde(rename = "Comment")]
+    pub comment: String,
+
+}
+
 /// Image ID or Digest
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageId {
@@ -3968,6 +4008,11 @@ pub struct ImageInspect {
     #[serde(rename = "Manifests")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manifests: Option<Vec<ImageManifestSummary>>,
+
+    /// Identity holds information about the identity and origin of the image. This is trusted information verified by the daemon and cannot be modified by tagging an image to a different name.
+    #[serde(rename = "Identity")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
 
     /// List of image names/tags in the local image cache that reference this image.  Multiple image tags can refer to the same image, and this list may be empty if no tags reference the image, in which case the image is \"untagged\", in which case it can still be referenced by its ID. 
     #[serde(rename = "RepoTags")]
@@ -4406,6 +4451,42 @@ pub struct JoinTokens {
 
 }
 
+/// KnownSignerIdentity is an identifier for a special signer identity that is known to the implementation.
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum KnownSignerIdentity { 
+    #[serde(rename = "DHI")]
+    DHI,
+}
+
+impl ::std::fmt::Display for KnownSignerIdentity {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            KnownSignerIdentity::DHI => write!(f, "{}", "DHI"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for KnownSignerIdentity {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "DHI" => Ok(KnownSignerIdentity::DHI),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::default::Default for KnownSignerIdentity {
+    fn default() -> Self { 
+        KnownSignerIdentity::DHI
+    }
+}
+
 /// An object describing a limit on resources which can be requested by a task. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Limit {
@@ -4505,15 +4586,14 @@ pub struct Mount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 
-    /// Mount source (e.g. a volume name, a host path).
+    /// Mount source (e.g. a volume name, a host path). The source cannot be specified when using `Type=tmpfs`. For `Type=bind`, the source path must either exist, or the `CreateMountpoint` must be set to `true` to create the source path on the host if missing.  For `Type=npipe`, the pipe must exist prior to creating the container.
     #[serde(rename = "Source")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
-    /// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. Must exist prior to creating the container. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. - `image` Mounts an image. - `tmpfs` Create a tmpfs with the given options. The mount source cannot be specified for tmpfs. - `npipe` Mounts a named pipe from the host into the container. Must exist prior to creating the container. - `cluster` a Swarm cluster volume 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub typ: Option<MountTypeEnum>,
+    pub typ: Option<MountType>,
 
     /// Whether the mount should be read-only.
     #[serde(rename = "ReadOnly")]
@@ -4541,70 +4621,6 @@ pub struct Mount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tmpfs_options: Option<MountTmpfsOptions>,
 
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
-pub enum MountTypeEnum { 
-    #[serde(rename = "")]
-    EMPTY,
-    #[serde(rename = "bind")]
-    BIND,
-    #[serde(rename = "volume")]
-    VOLUME,
-    #[serde(rename = "image")]
-    IMAGE,
-    #[serde(rename = "tmpfs")]
-    TMPFS,
-    #[serde(rename = "npipe")]
-    NPIPE,
-    #[serde(rename = "cluster")]
-    CLUSTER,
-}
-
-impl ::std::fmt::Display for MountTypeEnum {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self { 
-            MountTypeEnum::EMPTY => write!(f, ""),
-            MountTypeEnum::BIND => write!(f, "{}", "bind"),
-            MountTypeEnum::VOLUME => write!(f, "{}", "volume"),
-            MountTypeEnum::IMAGE => write!(f, "{}", "image"),
-            MountTypeEnum::TMPFS => write!(f, "{}", "tmpfs"),
-            MountTypeEnum::NPIPE => write!(f, "{}", "npipe"),
-            MountTypeEnum::CLUSTER => write!(f, "{}", "cluster"),
-
-        }
-    }
-}
-
-impl ::std::str::FromStr for MountTypeEnum {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { 
-            "" => Ok(MountTypeEnum::EMPTY),
-            "bind" => Ok(MountTypeEnum::BIND),
-            "volume" => Ok(MountTypeEnum::VOLUME),
-            "image" => Ok(MountTypeEnum::IMAGE),
-            "tmpfs" => Ok(MountTypeEnum::TMPFS),
-            "npipe" => Ok(MountTypeEnum::NPIPE),
-            "cluster" => Ok(MountTypeEnum::CLUSTER),
-            x => Err(format!("Invalid enum type: {}", x)),
-        }
-    }
-}
-
-impl ::std::convert::AsRef<str> for MountTypeEnum {
-    fn as_ref(&self) -> &str {
-        match self { 
-            MountTypeEnum::EMPTY => "",
-            MountTypeEnum::BIND => "bind",
-            MountTypeEnum::VOLUME => "volume",
-            MountTypeEnum::IMAGE => "image",
-            MountTypeEnum::TMPFS => "tmpfs",
-            MountTypeEnum::NPIPE => "npipe",
-            MountTypeEnum::CLUSTER => "cluster",
-        }
-    }
 }
 
 /// Optional configuration for the `bind` type.
@@ -4714,10 +4730,9 @@ pub struct MountImageOptions {
 /// MountPoint represents a mount point configuration inside the container. This is used for reporting the mountpoints in use by a container. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MountPoint {
-    /// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `volume` a docker volume with the given `Name`. - `image` a docker image - `tmpfs` a `tmpfs`. - `npipe` a named pipe from the host into the container. - `cluster` a Swarm cluster volume 
     #[serde(rename = "Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub typ: Option<MountPointTypeEnum>,
+    pub typ: Option<MountPointType>,
 
     /// Name is the name reference to the underlying data defined by `Source` e.g., the volume name. 
     #[serde(rename = "Name")]
@@ -4756,69 +4771,8 @@ pub struct MountPoint {
 
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
-pub enum MountPointTypeEnum { 
-    #[serde(rename = "")]
-    EMPTY,
-    #[serde(rename = "bind")]
-    BIND,
-    #[serde(rename = "volume")]
-    VOLUME,
-    #[serde(rename = "image")]
-    IMAGE,
-    #[serde(rename = "tmpfs")]
-    TMPFS,
-    #[serde(rename = "npipe")]
-    NPIPE,
-    #[serde(rename = "cluster")]
-    CLUSTER,
-}
-
-impl ::std::fmt::Display for MountPointTypeEnum {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self { 
-            MountPointTypeEnum::EMPTY => write!(f, ""),
-            MountPointTypeEnum::BIND => write!(f, "{}", "bind"),
-            MountPointTypeEnum::VOLUME => write!(f, "{}", "volume"),
-            MountPointTypeEnum::IMAGE => write!(f, "{}", "image"),
-            MountPointTypeEnum::TMPFS => write!(f, "{}", "tmpfs"),
-            MountPointTypeEnum::NPIPE => write!(f, "{}", "npipe"),
-            MountPointTypeEnum::CLUSTER => write!(f, "{}", "cluster"),
-
-        }
-    }
-}
-
-impl ::std::str::FromStr for MountPointTypeEnum {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { 
-            "" => Ok(MountPointTypeEnum::EMPTY),
-            "bind" => Ok(MountPointTypeEnum::BIND),
-            "volume" => Ok(MountPointTypeEnum::VOLUME),
-            "image" => Ok(MountPointTypeEnum::IMAGE),
-            "tmpfs" => Ok(MountPointTypeEnum::TMPFS),
-            "npipe" => Ok(MountPointTypeEnum::NPIPE),
-            "cluster" => Ok(MountPointTypeEnum::CLUSTER),
-            x => Err(format!("Invalid enum type: {}", x)),
-        }
-    }
-}
-
-impl ::std::convert::AsRef<str> for MountPointTypeEnum {
-    fn as_ref(&self) -> &str {
-        match self { 
-            MountPointTypeEnum::EMPTY => "",
-            MountPointTypeEnum::BIND => "bind",
-            MountPointTypeEnum::VOLUME => "volume",
-            MountPointTypeEnum::IMAGE => "image",
-            MountPointTypeEnum::TMPFS => "tmpfs",
-            MountPointTypeEnum::NPIPE => "npipe",
-            MountPointTypeEnum::CLUSTER => "cluster",
-        }
-    }
-}
+/// The mount type:  - `bind` a mount of a file or directory from the host into the container. - `cluster` a Swarm cluster volume. - `image` an OCI image. - `npipe` a named pipe from the host into the container. - `tmpfs` a `tmpfs`. - `volume` a docker volume with the given `Name`. 
+pub type MountPointType = String;
 
 /// Optional configuration for the `tmpfs` type.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -4828,7 +4782,7 @@ pub struct MountTmpfsOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<i64>,
 
-    /// The permission mode for the tmpfs mount in an integer.
+    /// The permission mode for the tmpfs mount in an integer. The value must not be in octal format (e.g. 755) but rather the decimal representation of the octal value (e.g. 493). 
     #[serde(rename = "Mode")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<i64>,
@@ -4838,6 +4792,62 @@ pub struct MountTmpfsOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<Vec<String>>>,
 
+}
+
+/// The mount type. Available types:  - `bind` Mounts a file or directory from the host into the container. The `Source` must exist prior to creating the container. - `cluster` a Swarm cluster volume - `image` Mounts an image. - `npipe` Mounts a named pipe from the host into the container. The `Source` must exist prior to creating the container. - `tmpfs` Create a tmpfs with the given options. The mount `Source` cannot be specified for tmpfs. - `volume` Creates a volume with the given name and options (or uses a pre-existing volume with the same name and options). These are **not** removed when the container is removed. 
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum MountType { 
+    #[serde(rename = "bind")]
+    BIND,
+    #[serde(rename = "cluster")]
+    CLUSTER,
+    #[serde(rename = "image")]
+    IMAGE,
+    #[serde(rename = "npipe")]
+    NPIPE,
+    #[serde(rename = "tmpfs")]
+    TMPFS,
+    #[serde(rename = "volume")]
+    VOLUME,
+}
+
+impl ::std::fmt::Display for MountType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            MountType::BIND => write!(f, "{}", "bind"),
+            MountType::CLUSTER => write!(f, "{}", "cluster"),
+            MountType::IMAGE => write!(f, "{}", "image"),
+            MountType::NPIPE => write!(f, "{}", "npipe"),
+            MountType::TMPFS => write!(f, "{}", "tmpfs"),
+            MountType::VOLUME => write!(f, "{}", "volume"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for MountType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "bind" => Ok(MountType::BIND),
+            "cluster" => Ok(MountType::CLUSTER),
+            "image" => Ok(MountType::IMAGE),
+            "npipe" => Ok(MountType::NPIPE),
+            "tmpfs" => Ok(MountType::TMPFS),
+            "volume" => Ok(MountType::VOLUME),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::default::Default for MountType {
+    fn default() -> Self { 
+        MountType::BIND
+    }
 }
 
 /// Optional configuration for the `volume` type.
@@ -5617,6 +5627,16 @@ pub struct NodeStatus {
 
 }
 
+/// Information about the Node Resource Interface (NRI).  This field is only present if NRI is enabled. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct NriInfo {
+    /// Information about NRI, provided as \"label\" / \"value\" pairs.  <p><br /></p>  > **Note**: The information returned in this field, including the > formatting of values and labels, should not be considered stable, > and may change without notice. 
+    #[serde(rename = "Info")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<Vec<Vec<String>>>,
+
+}
+
 /// The version number of the object such as node, service, etc. This is needed to avoid conflicting writes. The client must send the version number along with the modified specification when updating these objects.  This approach ensures safe concurrency and determinism in that the change on the object may not be applied if the version number has changed from the last read. In other words, if two update requests specify the same base version, only one of the requests can succeed. As a result, two separate update requests that happen at the same time will not unintentionally overwrite each other. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ObjectVersion {
@@ -6087,7 +6107,6 @@ pub struct PortBinding {
 }
 
 /// PortMap describes the mapping of container ports to host ports, using the container's port-number and protocol as key in the format `<port>/<protocol>`, for example, `80/udp`.  If a container's port is mapped for multiple protocols, separate entries are added to the mapping table. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
 pub type PortMap = HashMap<String, Option<Vec<PortBinding>>>;
 
 /// represents the port status of a task's host ports whose service has published host ports
@@ -6205,6 +6224,16 @@ pub struct ProgressDetail {
     #[serde(rename = "total")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total: Option<i64>,
+
+}
+
+/// PullIdentity contains remote location information if image was created via pull. If image was pulled via mirror, this contains the original repository location.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PullIdentity {
+    /// Repository is the remote repository location the image was pulled from.
+    #[serde(rename = "Repository")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
 
 }
 
@@ -6645,7 +6674,7 @@ pub struct SecretSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
 
-    /// Data is the data to store as a secret, formatted as a Base64-url-safe-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-5)) string. It must be empty if the Driver field is set, in which case the data is loaded from an external secret store. The maximum allowed size is 500KB, as defined in [MaxSecretSize](https://pkg.go.dev/github.com/moby/swarmkit/v2@v2.0.0/api/validation#MaxSecretSize).  This field is only used to _create_ a secret, and is not returned by other endpoints. 
+    /// Data is the data to store as a secret, formatted as a standard base64-encoded ([RFC 4648](https://tools.ietf.org/html/rfc4648#section-4)) string. It must be empty if the Driver field is set, in which case the data is loaded from an external secret store. The maximum allowed size is 500KB, as defined in [MaxSecretSize](https://pkg.go.dev/github.com/moby/swarmkit/v2@v2.0.0/api/validation#MaxSecretSize).  This field is only used to _create_ a secret, and is not returned by other endpoints. 
     #[serde(rename = "Data")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
@@ -7256,6 +7285,243 @@ impl ::std::convert::AsRef<str> for ServiceUpdateStatusStateEnum {
     }
 }
 
+/// SignatureIdentity contains the properties of verified signatures for the image.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SignatureIdentity {
+    /// Name is a textual description summarizing the type of signature.
+    #[serde(rename = "Name")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Timestamps contains a list of verified signed timestamps for the signature.
+    #[serde(rename = "Timestamps")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamps: Option<Vec<SignatureTimestamp>>,
+
+    /// KnownSigner is an identifier for a special signer identity that is known to the implementation.
+    #[serde(rename = "KnownSigner")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub known_signer: Option<KnownSignerIdentity>,
+
+    /// DockerReference is the Docker image reference associated with the signature. This is an optional field only present in older hashedrecord signatures.
+    #[serde(rename = "DockerReference")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker_reference: Option<String>,
+
+    /// Signer contains information about the signer certificate used to sign the image.
+    #[serde(rename = "Signer")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer: Option<SignerIdentity>,
+
+    /// SignatureType is the type of signature format. E.g. \"bundle-v0.3\" or \"hashedrecord\".
+    #[serde(rename = "SignatureType")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_type: Option<SignatureType>,
+
+    /// Error contains error information if signature verification failed. Other fields will be empty in this case.
+    #[serde(rename = "Error")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+
+    /// Warnings contains any warnings that occurred during signature verification. For example, if there was no internet connectivity and cached trust roots were used. Warning does not indicate a failed verification but may point to configuration issues.
+    #[serde(rename = "Warnings")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
+
+}
+
+/// SignatureTimestamp contains information about a verified signed timestamp for an image signature.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SignatureTimestamp {
+    #[serde(rename = "Type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typ: Option<SignatureTimestampType>,
+
+    #[serde(rename = "URI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+
+    #[serde(rename = "Timestamp")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        serialize_with = "serialize_timestamp"
+    )]
+    pub timestamp: Option<BollardDate>,
+
+}
+
+/// SignatureTimestampType is the type of timestamp used in the signature.
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum SignatureTimestampType { 
+    #[serde(rename = "Tlog")]
+    TLOG,
+    #[serde(rename = "TimestampAuthority")]
+    TIMESTAMPAUTHORITY,
+}
+
+impl ::std::fmt::Display for SignatureTimestampType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            SignatureTimestampType::TLOG => write!(f, "{}", "Tlog"),
+            SignatureTimestampType::TIMESTAMPAUTHORITY => write!(f, "{}", "TimestampAuthority"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for SignatureTimestampType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Tlog" => Ok(SignatureTimestampType::TLOG),
+            "TimestampAuthority" => Ok(SignatureTimestampType::TIMESTAMPAUTHORITY),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::default::Default for SignatureTimestampType {
+    fn default() -> Self { 
+        SignatureTimestampType::TLOG
+    }
+}
+
+/// SignatureType is the type of signature format.
+/// Enumeration of values.
+/// Since this enum's variants do not hold data, we can easily define them them as `#[repr(C)]`
+/// which helps with FFI.
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Eq, Ord)]
+pub enum SignatureType { 
+    #[serde(rename = "bundle-v0.3")]
+    BUNDLE_V0_3,
+    #[serde(rename = "simplesigning-v1")]
+    SIMPLESIGNING_V1,
+}
+
+impl ::std::fmt::Display for SignatureType {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self { 
+            SignatureType::BUNDLE_V0_3 => write!(f, "{}", "bundle-v0.3"),
+            SignatureType::SIMPLESIGNING_V1 => write!(f, "{}", "simplesigning-v1"),
+        }
+    }
+}
+
+impl ::std::str::FromStr for SignatureType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "bundle-v0.3" => Ok(SignatureType::BUNDLE_V0_3),
+            "simplesigning-v1" => Ok(SignatureType::SIMPLESIGNING_V1),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::default::Default for SignatureType {
+    fn default() -> Self { 
+        SignatureType::BUNDLE_V0_3
+    }
+}
+
+/// SignerIdentity contains information about the signer certificate used to sign the image.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SignerIdentity {
+    /// CertificateIssuer is the certificate issuer.
+    #[serde(rename = "CertificateIssuer")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_issuer: Option<String>,
+
+    /// SubjectAlternativeName is the certificate subject alternative name.
+    #[serde(rename = "SubjectAlternativeName")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_alternative_name: Option<String>,
+
+    /// The OIDC issuer. Should match `iss` claim of ID token or, in the case of a federated login like Dex it should match the issuer URL of the upstream issuer. The issuer is not set the extensions are invalid and will fail to render.
+    #[serde(rename = "Issuer")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+
+    /// Reference to specific build instructions that are responsible for signing.
+    #[serde(rename = "BuildSignerURI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_signer_uri: Option<String>,
+
+    /// Immutable reference to the specific version of the build instructions that is responsible for signing.
+    #[serde(rename = "BuildSignerDigest")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_signer_digest: Option<String>,
+
+    /// Specifies whether the build took place in platform-hosted cloud infrastructure or customer/self-hosted infrastructure.
+    #[serde(rename = "RunnerEnvironment")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_environment: Option<String>,
+
+    /// Source repository URL that the build was based on.
+    #[serde(rename = "SourceRepositoryURI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_uri: Option<String>,
+
+    /// Immutable reference to a specific version of the source code that the build was based upon.
+    #[serde(rename = "SourceRepositoryDigest")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_digest: Option<String>,
+
+    /// Source Repository Ref that the build run was based upon.
+    #[serde(rename = "SourceRepositoryRef")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_ref: Option<String>,
+
+    /// Immutable identifier for the source repository the workflow was based upon.
+    #[serde(rename = "SourceRepositoryIdentifier")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_identifier: Option<String>,
+
+    /// Source repository owner URL of the owner of the source repository that the build was based on.
+    #[serde(rename = "SourceRepositoryOwnerURI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_owner_uri: Option<String>,
+
+    /// Immutable identifier for the owner of the source repository that the workflow was based upon.
+    #[serde(rename = "SourceRepositoryOwnerIdentifier")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_owner_identifier: Option<String>,
+
+    /// Build Config URL to the top-level/initiating build instructions.
+    #[serde(rename = "BuildConfigURI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_config_uri: Option<String>,
+
+    /// Immutable reference to the specific version of the top-level/initiating build instructions.
+    #[serde(rename = "BuildConfigDigest")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_config_digest: Option<String>,
+
+    /// Event or action that initiated the build.
+    #[serde(rename = "BuildTrigger")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_trigger: Option<String>,
+
+    /// Run Invocation URL to uniquely identify the build execution.
+    #[serde(rename = "RunInvocationURI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_invocation_uri: Option<String>,
+
+    /// Source repository visibility at the time of signing the certificate.
+    #[serde(rename = "SourceRepositoryVisibilityAtSigning")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_visibility_at_signing: Option<String>,
+
+}
+
 /// Information about the storage used by the container. 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Storage {
@@ -7690,21 +7956,21 @@ pub struct SwarmUnlockRequest {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SystemDataUsageResponse {
-    #[serde(rename = "ImagesDiskUsage")]
+    #[serde(rename = "ImageUsage")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub images_disk_usage: Option<ImagesDiskUsage>,
+    pub image_usage: Option<ImagesDiskUsage>,
 
-    #[serde(rename = "ContainersDiskUsage")]
+    #[serde(rename = "ContainerUsage")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub containers_disk_usage: Option<ContainersDiskUsage>,
+    pub container_usage: Option<ContainersDiskUsage>,
 
-    #[serde(rename = "VolumesDiskUsage")]
+    #[serde(rename = "VolumeUsage")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes_disk_usage: Option<VolumesDiskUsage>,
+    pub volume_usage: Option<VolumesDiskUsage>,
 
-    #[serde(rename = "BuildCacheDiskUsage")]
+    #[serde(rename = "BuildCacheUsage")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub build_cache_disk_usage: Option<BuildCacheDiskUsage>,
+    pub build_cache_usage: Option<BuildCacheDiskUsage>,
 
 }
 
@@ -7864,7 +8130,7 @@ pub struct SystemInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os_type: Option<String>,
 
-    /// Hardware architecture of the host, as returned by the Go runtime (`GOARCH`).  A full list of possible values can be found in the [Go documentation](https://go.dev/doc/install/source#environment). 
+    /// Hardware architecture of the host, as returned by the operating system. This is equivalent to the output of `uname -m` on Linux.  Unlike `Arch` (from `/version`), this reports the machine's native architecture, which can differ from the Go runtime architecture when running a binary compiled for a different architecture (for example, a 32-bit binary running on 64-bit hardware). 
     #[serde(rename = "Architecture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub architecture: Option<String>,
@@ -7991,6 +8257,10 @@ pub struct SystemInfo {
     #[serde(rename = "DiscoveredDevices")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discovered_devices: Option<Vec<DeviceInfo>>,
+
+    #[serde(rename = "NRI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nri: Option<NriInfo>,
 
     /// List of warnings / informational messages about missing features, or issues related to the daemon configuration.  These messages can be printed by the client as information to the user. 
     #[serde(rename = "Warnings")]
@@ -8206,7 +8476,7 @@ pub struct SystemVersion {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os: Option<String>,
 
-    /// The architecture that the daemon is running on 
+    /// Architecture of the daemon, as returned by the Go runtime (`GOARCH`).  A full list of possible values can be found in the [Go documentation](https://go.dev/doc/install/source#environment). 
     #[serde(rename = "Arch")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
@@ -9217,8 +9487,13 @@ pub struct TlsInfo {
 }
 
 /// A map of topological domains to topological segments. For in depth details, see documentation for the Topology object in the CSI specification. 
-// special-casing PortMap, cos swagger-codegen doesn't figure out this type
-pub type Topology = HashMap<String, Option<Vec<PortBinding>>>;
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Topology {
+    #[serde(rename = "Segments")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<HashMap<String, String>>,
+
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnlockKeyResponse {
