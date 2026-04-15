@@ -97,6 +97,27 @@ impl Decoder for NewlineLogOutputDecoder {
             }
         }
     }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        // Try a normal decode first (handles any complete frames still in the buffer).
+        if let Some(item) = self.decode(src)? {
+            return Ok(Some(item));
+        }
+        // At EOF, flush whatever is left as a Console message rather than letting
+        // FramedRead error with "bytes remaining on stream".  This is the common
+        // case for TTY containers whose final output line has no trailing newline.
+        if !src.is_empty() {
+            debug!(
+                "NewlineLogOutputDecoder::decode_eof: flushing {} trailing bytes: {:?}",
+                src.len(),
+                src
+            );
+            return Ok(Some(LogOutput::Console {
+                message: src.split().freeze(),
+            }));
+        }
+        Ok(None)
+    }
 }
 
 pin_project! {
@@ -685,5 +706,29 @@ mod tests {
                 message: bytes::Bytes::from(expected)
             })
         );
+    }
+
+    #[test]
+    fn newline_decode_eof_no_trailing_newline() {
+        // TTY containers (tty=true) emit raw bytes without the 8-byte multiplexed
+        // header.  When the final chunk has no trailing newline, decode() returns
+        // None and decode_eof() must flush the bytes as Console instead of letting
+        // FramedRead error with "bytes remaining on stream".
+        let payload = b"inital input string";
+        let mut buf = BytesMut::from(&payload[..]);
+        let mut codec = NewlineLogOutputDecoder::new(false);
+
+        // No newline yet — decode() waits for more data.
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(&buf[..], payload);
+
+        // At EOF, decode_eof() must flush the remainder as a Console frame.
+        assert_eq!(
+            codec.decode_eof(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from_static(payload),
+            })
+        );
+        assert!(buf.is_empty());
     }
 }

@@ -9,11 +9,12 @@ use bollard::errors::Error;
 #[cfg(feature = "test_checkpoint")]
 use bollard::query_parameters::RemoveContainerOptionsBuilder;
 use bollard::query_parameters::{
-    AttachContainerOptionsBuilder, ContainerArchiveInfoOptionsBuilder, CreateImageOptionsBuilder,
-    DownloadFromContainerOptionsBuilder, KillContainerOptionsBuilder, ListContainersOptionsBuilder,
-    LogsOptionsBuilder, PushImageOptionsBuilder, RenameContainerOptionsBuilder,
-    ResizeContainerTTYOptionsBuilder, StatsOptionsBuilder, TagImageOptionsBuilder,
-    TopOptionsBuilder, UploadToContainerOptionsBuilder,
+    AttachContainerOptionsBuilder, ContainerArchiveInfoOptionsBuilder,
+    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder,
+    KillContainerOptionsBuilder, ListContainersOptionsBuilder, LogsOptionsBuilder,
+    PushImageOptionsBuilder, RenameContainerOptionsBuilder, ResizeContainerTTYOptionsBuilder,
+    StatsOptionsBuilder, TagImageOptionsBuilder, TopOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use bollard::{body_full, Docker};
 use bollard::{body_stream, models::*};
@@ -211,6 +212,75 @@ async fn logs_test(docker: Docker) -> Result<(), Error> {
 
     let _ = &docker
         .remove_container("integration_test_logs", None)
+        .await?;
+
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn logs_tty_test(docker: Docker) -> Result<(), Error> {
+    // Regression test for TTY log decoding: when tty=true Docker sends raw PTY
+    // bytes without the 8-byte multiplexed header.  Use `printf` (no trailing
+    // newline) to exercise the decode_eof path in NewlineLogOutputDecoder.
+    let image = format!("{}alpine", registry_http_addr());
+
+    let _ = &docker
+        .create_image(
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
+            None,
+            Some(integration_test_registry_credentials()),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let result = &docker
+        .create_container(
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name("integration_test_logs_tty")
+                    .build(),
+            ),
+            ContainerCreateBody {
+                image: Some(image),
+                cmd: Some(vec!["printf".to_string(), "hello from tty".to_string()]),
+                tty: Some(true),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_ne!(result.id.len(), 0);
+
+    docker
+        .start_container("integration_test_logs_tty", None)
+        .await?;
+    docker
+        .wait_container("integration_test_logs_tty", None)
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let logs = docker
+        .logs(
+            "integration_test_logs_tty",
+            Some(
+                LogsOptionsBuilder::default()
+                    .stdout(true)
+                    .stderr(true)
+                    .build(),
+            ),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    assert!(!logs.is_empty());
+    assert_eq!(format!("{}", logs[0]), "hello from tty");
+
+    docker
+        .remove_container("integration_test_logs_tty", None)
         .await?;
 
     Ok(())
@@ -862,6 +932,12 @@ fn integration_test_top_processes() {
 // // This works on windows, but is flaky for some reason.
 fn integration_test_logs() {
     connect_to_docker_and_run!(logs_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_logs_tty() {
+    connect_to_docker_and_run!(logs_tty_test);
 }
 
 #[test]
