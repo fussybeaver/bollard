@@ -1702,11 +1702,13 @@ pub enum ContainerStateStatusEnum {
     EXITED,
     #[serde(rename = "dead")]
     DEAD,
+    #[serde(rename = "stopping")]
+    STOPPING,
 }
 
 impl ::std::fmt::Display for ContainerStateStatusEnum {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self { 
+        match *self {
             ContainerStateStatusEnum::EMPTY => write!(f, ""),
             ContainerStateStatusEnum::CREATED => write!(f, "{}", "created"),
             ContainerStateStatusEnum::RUNNING => write!(f, "{}", "running"),
@@ -1715,6 +1717,7 @@ impl ::std::fmt::Display for ContainerStateStatusEnum {
             ContainerStateStatusEnum::REMOVING => write!(f, "{}", "removing"),
             ContainerStateStatusEnum::EXITED => write!(f, "{}", "exited"),
             ContainerStateStatusEnum::DEAD => write!(f, "{}", "dead"),
+            ContainerStateStatusEnum::STOPPING => write!(f, "{}", "stopping"),
 
         }
     }
@@ -1723,7 +1726,7 @@ impl ::std::fmt::Display for ContainerStateStatusEnum {
 impl ::std::str::FromStr for ContainerStateStatusEnum {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { 
+        match s {
             "" => Ok(ContainerStateStatusEnum::EMPTY),
             "created" => Ok(ContainerStateStatusEnum::CREATED),
             "running" => Ok(ContainerStateStatusEnum::RUNNING),
@@ -1732,6 +1735,7 @@ impl ::std::str::FromStr for ContainerStateStatusEnum {
             "removing" => Ok(ContainerStateStatusEnum::REMOVING),
             "exited" => Ok(ContainerStateStatusEnum::EXITED),
             "dead" => Ok(ContainerStateStatusEnum::DEAD),
+            "stopping" => Ok(ContainerStateStatusEnum::STOPPING),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -1739,7 +1743,7 @@ impl ::std::str::FromStr for ContainerStateStatusEnum {
 
 impl ::std::convert::AsRef<str> for ContainerStateStatusEnum {
     fn as_ref(&self) -> &str {
-        match self { 
+        match self {
             ContainerStateStatusEnum::EMPTY => "",
             ContainerStateStatusEnum::CREATED => "created",
             ContainerStateStatusEnum::RUNNING => "running",
@@ -1748,6 +1752,7 @@ impl ::std::convert::AsRef<str> for ContainerStateStatusEnum {
             ContainerStateStatusEnum::REMOVING => "removing",
             ContainerStateStatusEnum::EXITED => "exited",
             ContainerStateStatusEnum::DEAD => "dead",
+            ContainerStateStatusEnum::STOPPING => "stopping",
         }
     }
 }
@@ -1969,11 +1974,13 @@ pub enum ContainerSummaryStateEnum {
     REMOVING,
     #[serde(rename = "dead")]
     DEAD,
+    #[serde(rename = "stopping")]
+    STOPPING,
 }
 
 impl ::std::fmt::Display for ContainerSummaryStateEnum {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self { 
+        match *self {
             ContainerSummaryStateEnum::EMPTY => write!(f, ""),
             ContainerSummaryStateEnum::CREATED => write!(f, "{}", "created"),
             ContainerSummaryStateEnum::RUNNING => write!(f, "{}", "running"),
@@ -1982,6 +1989,7 @@ impl ::std::fmt::Display for ContainerSummaryStateEnum {
             ContainerSummaryStateEnum::EXITED => write!(f, "{}", "exited"),
             ContainerSummaryStateEnum::REMOVING => write!(f, "{}", "removing"),
             ContainerSummaryStateEnum::DEAD => write!(f, "{}", "dead"),
+            ContainerSummaryStateEnum::STOPPING => write!(f, "{}", "stopping"),
 
         }
     }
@@ -1990,7 +1998,7 @@ impl ::std::fmt::Display for ContainerSummaryStateEnum {
 impl ::std::str::FromStr for ContainerSummaryStateEnum {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { 
+        match s {
             "" => Ok(ContainerSummaryStateEnum::EMPTY),
             "created" => Ok(ContainerSummaryStateEnum::CREATED),
             "running" => Ok(ContainerSummaryStateEnum::RUNNING),
@@ -1999,6 +2007,7 @@ impl ::std::str::FromStr for ContainerSummaryStateEnum {
             "exited" => Ok(ContainerSummaryStateEnum::EXITED),
             "removing" => Ok(ContainerSummaryStateEnum::REMOVING),
             "dead" => Ok(ContainerSummaryStateEnum::DEAD),
+            "stopping" => Ok(ContainerSummaryStateEnum::STOPPING),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -2006,7 +2015,7 @@ impl ::std::str::FromStr for ContainerSummaryStateEnum {
 
 impl ::std::convert::AsRef<str> for ContainerSummaryStateEnum {
     fn as_ref(&self) -> &str {
-        match self { 
+        match self {
             ContainerSummaryStateEnum::EMPTY => "",
             ContainerSummaryStateEnum::CREATED => "created",
             ContainerSummaryStateEnum::RUNNING => "running",
@@ -2015,6 +2024,7 @@ impl ::std::convert::AsRef<str> for ContainerSummaryStateEnum {
             ContainerSummaryStateEnum::EXITED => "exited",
             ContainerSummaryStateEnum::REMOVING => "removing",
             ContainerSummaryStateEnum::DEAD => "dead",
+            ContainerSummaryStateEnum::STOPPING => "stopping",
         }
     }
 }
