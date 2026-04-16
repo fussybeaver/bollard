@@ -55,6 +55,22 @@ public class BollardCodegen extends RustServerCodegen {
         enumValues.add(additionalEnumValues);
 
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
+
+        // Podman emits "stopping" during container destruction (containers/podman#25591)
+        // This is a legitimate transient state, not a Podman bug — see fussybeaver/bollard#701
+        enumValues = new ArrayList<Map<String, String>>();
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPING");
+        additionalEnumValues.put("value", "\"stopping\"");
+        enumValues.add(additionalEnumValues);
+        patchEnumValues.put("ContainerStateStatusEnum", enumValues);
+
+        enumValues = new ArrayList<Map<String, String>>();
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPING");
+        additionalEnumValues.put("value", "\"stopping\"");
+        enumValues.add(additionalEnumValues);
+        patchEnumValues.put("ContainerSummaryStateEnum", enumValues);
     }
 
     // Top-level string enum models whose enum values swagger-codegen fails to carry through to
