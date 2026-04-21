@@ -189,18 +189,27 @@ pub(crate) async fn solve(
 
     if ssh {
         let ssh_provider = super::SshProvider::new();
-        let ssh = SshServer::new(ssh_provider);
+        let ssh = SshServer::new(ssh_provider)
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+
         services.push(GrpcServer::Ssh(ssh));
     }
 
     if let Some(path) = path {
-        let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()));
+        let filesend = FileSendServer::new(super::FileSendImpl::new(path.as_path()))
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
         services.push(GrpcServer::FileSend(filesend));
     }
 
     let tear_down_handler = driver.get_tear_down_handler();
-    let mut control_client = driver.grpc_handle(&session_id, services).await?;
+    let mut control_client = driver
+        .grpc_handle(&session_id, services)
+        .await?
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
     let id = super::new_id();
 
