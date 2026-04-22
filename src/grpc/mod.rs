@@ -395,6 +395,11 @@ impl UploadProvider {
     }
 }
 
+/// Chunk size for streaming the build context to buildkit. Kept well below
+/// buildkit's default 16 MiB gRPC receive cap so a single message never
+/// exceeds it regardless of context size.
+const UPLOAD_CHUNK_SIZE: usize = 32 * 1024;
+
 #[tonic::async_trait]
 impl Upload for UploadProvider {
     type PullStream = Pin<Box<dyn Stream<Item = Result<UploadBytesMessage, Status>> + Send>>;
@@ -410,10 +415,12 @@ impl Upload for UploadProvider {
             .map(String::from)
             .and_then(|str| self.store.get(&str));
         if let Some(read) = key {
-            let out_stream =
-                futures_util::stream::once(futures_util::future::ok(UploadBytesMessage {
-                    data: read.to_owned(),
-                }));
+            let data = read.to_owned();
+            let out_stream = async_stream::try_stream! {
+                for chunk in data.chunks(UPLOAD_CHUNK_SIZE) {
+                    yield UploadBytesMessage { data: chunk.to_vec() };
+                }
+            };
 
             Ok(Response::new(Box::pin(out_stream)))
         } else {
