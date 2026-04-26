@@ -25,7 +25,7 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <inputSpec>https://raw.githubusercontent.com/moby/moby/docker-v29.3.1/api/docs/v1.53.yaml</inputSpec>
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/docker-v29.4.1/api/docs/v1.53.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.basedir}</output>
                 <generateApis>true</generateApis>

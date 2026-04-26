@@ -93,20 +93,6 @@ public class BollardCodegen extends RustServerCodegen {
             }
         }
 
-        // Fix Topology: the swagger spec incorrectly defines it as additionalProperties: string,
-        // but the actual Go type (api/types/volume/cluster_volume.go) has a Segments field of
-        // type map[string]string. Patch the model before codegen runs so the correct struct is
-        // generated. See https://github.com/moby/moby/issues/52355 for the upstream issue.
-        if (swagger.getDefinitions() != null && swagger.getDefinitions().containsKey("Topology")) {
-            io.swagger.models.Model topologyDef = swagger.getDefinitions().get("Topology");
-            if (topologyDef instanceof io.swagger.models.ModelImpl) {
-                io.swagger.models.ModelImpl topologyImpl = (io.swagger.models.ModelImpl) topologyDef;
-                topologyImpl.setAdditionalProperties(null);
-                io.swagger.models.properties.MapProperty segmentsProperty = new io.swagger.models.properties.MapProperty();
-                segmentsProperty.setAdditionalProperties(new io.swagger.models.properties.StringProperty());
-                topologyImpl.addProperty("Segments", segmentsProperty);
-            }
-        }
 
         // Inspect raw swagger definitions to classify top-level string enums whose enum values
         // swagger-codegen fails to carry through to CodegenModel.allowableValues.
