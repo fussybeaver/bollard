@@ -15,7 +15,10 @@ use tonic::{
     codegen::InterceptedService, metadata::MetadataValue, service::Interceptor, transport::Channel,
 };
 
-use crate::{auth::DockerCredentials, grpc::build::ImageBuildFrontendOptionsIngest};
+use crate::{
+    auth::DockerCredentials,
+    grpc::{build::ImageBuildFrontendOptionsIngest, BuildRef},
+};
 
 use super::{
     build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
@@ -110,6 +113,7 @@ pub trait Export {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError>;
 }
 
@@ -122,6 +126,7 @@ pub trait Build {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError>;
 }
 
@@ -134,9 +139,14 @@ pub trait Image {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError>;
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The nature of this function requires many parameters, maybe we can eventually create a Request structure?"
+)]
 pub(crate) async fn solve(
     driver: impl Driver,
     exporter: &str,
@@ -145,6 +155,7 @@ pub(crate) async fn solve(
     frontend_opts: ImageBuildFrontendOptions,
     load_input: ImageBuildLoadInput,
     credentials: Option<HashMap<&str, DockerCredentials>>,
+    build_ref: Option<super::BuildRef>,
 ) -> Result<(), GrpcError> {
     let session_id = crate::grpc::new_id();
 
@@ -211,10 +222,10 @@ pub(crate) async fn solve(
         .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
         .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
-    let id = super::new_id();
+    let id = build_ref.unwrap_or_default();
 
     let solve_request = SolveRequest {
-        r#ref: id,
+        r#ref: id.into(),
         cache: Some(CacheOptions {
             export_ref_deprecated: String::new(),
             import_refs_deprecated: Vec::new(),

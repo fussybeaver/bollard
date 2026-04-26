@@ -15,6 +15,7 @@ use tonic::transport::{Channel, Endpoint};
 use crate::auth::DockerCredentials;
 use crate::docker::BodyType;
 use crate::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
+use crate::grpc::BuildRef;
 use crate::{
     grpc::error::GrpcError,
     grpc::{io::GrpcTransport, GrpcClient, GrpcServer, HealthServerImpl},
@@ -136,6 +137,7 @@ impl super::Build for Moby {
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
         credentials: Option<HashMap<&str, DockerCredentials>>,
+        build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
         let mut exporter_attrs = HashMap::new();
         exporter_attrs.insert(String::from("type"), String::from("docker"));
@@ -148,6 +150,7 @@ impl super::Build for Moby {
             frontend_opts,
             load_input,
             credentials,
+            build_ref,
         )
         .await
     }
