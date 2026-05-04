@@ -33,7 +33,7 @@
                 <supportingFilesToGenerate>query_parameters.rs,models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.53.0-rc.29.3.1</packageVersion>
+                  <packageVersion>1.53.1-rc.29.3.1</packageVersion>
                   <queryParameterMappings>
                       ConfigList=ListConfigsOptions
                       ConfigUpdate=UpdateConfigOptions

@@ -1708,7 +1708,7 @@ pub enum ContainerStateStatusEnum {
 
 impl ::std::fmt::Display for ContainerStateStatusEnum {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
+        match *self { 
             ContainerStateStatusEnum::EMPTY => write!(f, ""),
             ContainerStateStatusEnum::CREATED => write!(f, "{}", "created"),
             ContainerStateStatusEnum::RUNNING => write!(f, "{}", "running"),
@@ -1726,7 +1726,7 @@ impl ::std::fmt::Display for ContainerStateStatusEnum {
 impl ::std::str::FromStr for ContainerStateStatusEnum {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s { 
             "" => Ok(ContainerStateStatusEnum::EMPTY),
             "created" => Ok(ContainerStateStatusEnum::CREATED),
             "running" => Ok(ContainerStateStatusEnum::RUNNING),
@@ -1743,7 +1743,7 @@ impl ::std::str::FromStr for ContainerStateStatusEnum {
 
 impl ::std::convert::AsRef<str> for ContainerStateStatusEnum {
     fn as_ref(&self) -> &str {
-        match self {
+        match self { 
             ContainerStateStatusEnum::EMPTY => "",
             ContainerStateStatusEnum::CREATED => "created",
             ContainerStateStatusEnum::RUNNING => "running",
@@ -1980,7 +1980,7 @@ pub enum ContainerSummaryStateEnum {
 
 impl ::std::fmt::Display for ContainerSummaryStateEnum {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
+        match *self { 
             ContainerSummaryStateEnum::EMPTY => write!(f, ""),
             ContainerSummaryStateEnum::CREATED => write!(f, "{}", "created"),
             ContainerSummaryStateEnum::RUNNING => write!(f, "{}", "running"),
@@ -1998,7 +1998,7 @@ impl ::std::fmt::Display for ContainerSummaryStateEnum {
 impl ::std::str::FromStr for ContainerSummaryStateEnum {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s { 
             "" => Ok(ContainerSummaryStateEnum::EMPTY),
             "created" => Ok(ContainerSummaryStateEnum::CREATED),
             "running" => Ok(ContainerSummaryStateEnum::RUNNING),
@@ -2015,7 +2015,7 @@ impl ::std::str::FromStr for ContainerSummaryStateEnum {
 
 impl ::std::convert::AsRef<str> for ContainerSummaryStateEnum {
     fn as_ref(&self) -> &str {
-        match self {
+        match self { 
             ContainerSummaryStateEnum::EMPTY => "",
             ContainerSummaryStateEnum::CREATED => "created",
             ContainerSummaryStateEnum::RUNNING => "running",
