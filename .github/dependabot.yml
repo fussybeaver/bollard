@@ -1,17 +1,9 @@
 version: 2
 updates:
   - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "daily"
-  - package-ecosystem: "cargo"
-    directory: "/codegen/proto"
-    schedule:
-      interval: "daily"
-  - package-ecosystem: "cargo"
-    directory: "/codegen/swagger"
-    schedule:
-      interval: "daily"
+    directories:
+      - "/"
+      - "/codegen/*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
