@@ -182,6 +182,14 @@ pub enum Error {
     #[error("Socket not found: {0}")]
     SocketNotFoundError(String),
 
+    /// Error emitted when a Docker context referenced by `DOCKER_CONTEXT` or the
+    /// `currentContext` field of `~/.docker/config.json` cannot be found on disk.
+    #[error("Docker context not found: {name}")]
+    DockerContextNotFoundError {
+        /// Name of the missing context.
+        name: String,
+    },
+
     /// Error emitted when a WebSocket connection fails.
     #[cfg(feature = "websocket")]
     #[error("WebSocket error: {err}")]

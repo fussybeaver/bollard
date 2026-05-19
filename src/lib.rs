@@ -331,6 +331,7 @@
 pub mod auth;
 pub mod config;
 pub mod container;
+pub mod context;
 
 #[cfg(test)]
 pub(crate) mod test_lock {

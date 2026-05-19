@@ -837,7 +837,15 @@ impl Docker {
 /// A Docker implementation with defaults.
 impl Docker {
     /// Connect using a Unix socket, a Windows named pipe, or via HTTP.
-    /// The connection method is determined by the `DOCKER_HOST` environment variable.
+    ///
+    /// The connection host is resolved using the same precedence as the Docker CLI:
+    ///
+    /// 1. The `DOCKER_HOST` environment variable, if set.
+    /// 2. The Docker context named by `DOCKER_CONTEXT`, if set.
+    /// 3. The `currentContext` field of `~/.docker/config.json`, if present.
+    /// 4. The platform-specific default ([`DEFAULT_DOCKER_HOST`]).
+    ///
+    /// See [`crate::context`] for details on context resolution.
     ///
     /// # Examples
     ///
@@ -850,7 +858,7 @@ impl Docker {
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_defaults() -> Result<Docker, Error> {
-        let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_DOCKER_HOST.to_string());
+        let host = crate::context::resolve_host(DEFAULT_DOCKER_HOST)?;
         Self::connect_with_host(&host)
     }
 
