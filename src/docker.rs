@@ -267,6 +267,9 @@ pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send +
 ///
 /// The main interface for calling the Docker API. Construct a new Docker instance using one of the
 /// connect methods:
+///  - [`Docker::connect_with_defaults`] (Docker CLI env + context aware)
+///  - [`Docker::connect_with_context`] (explicit named context)
+///  - [`Docker::connect_with_current_context`] (`DOCKER_CONTEXT` / config-only)
 ///  - [`Docker::connect_with_http_defaults`] (requires `http` feature)
 ///  - `Docker::connect_with_named_pipe_defaults` (requires `pipe` feature, Windows only)
 ///  - `Docker::connect_with_ssl_defaults` (requires `ssl` feature)
@@ -903,6 +906,67 @@ impl Docker {
                 uri: host.to_string(),
             }),
         }
+    }
+
+    /// Connect to the named Docker context.
+    ///
+    /// The context's `Endpoints.docker.Host` is looked up under
+    /// `$DOCKER_CONFIG/contexts/meta/*/meta.json` (default
+    /// `~/.docker/contexts/meta`). The name `"default"` (or an empty string)
+    /// returns the platform default ([`DEFAULT_DOCKER_HOST`]).
+    ///
+    /// Environment variables (`DOCKER_HOST`, `DOCKER_CONTEXT`) are ignored —
+    /// use [`Docker::connect_with_defaults`] for env-aware resolution and
+    /// [`Docker::connect_with_current_context`] to follow the Docker CLI's
+    /// current-context selection without the `DOCKER_HOST` override.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DockerContextNotFoundError`] if `name` is not
+    /// `"default"` and no matching context is found.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// let connection = Docker::connect_with_context("desktop-linux").unwrap();
+    /// ```
+    pub fn connect_with_context(name: &str) -> Result<Docker, Error> {
+        let host = crate::context::host_for_context(name, DEFAULT_DOCKER_HOST)?;
+        Self::connect_with_host(&host)
+    }
+
+    /// Connect to the Docker context that is currently selected by the CLI.
+    ///
+    /// The current context is determined by:
+    ///
+    /// 1. The `DOCKER_CONTEXT` environment variable, if non-empty.
+    /// 2. The `currentContext` field of `$DOCKER_CONFIG/config.json`.
+    /// 3. Falling back to the platform default ([`DEFAULT_DOCKER_HOST`]).
+    ///
+    /// `DOCKER_HOST` is intentionally not consulted — it is a transport
+    /// override rather than a context selector. Use
+    /// [`Docker::connect_with_defaults`] if you want `DOCKER_HOST` to win.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DockerContextNotFoundError`] if the selected context
+    /// name does not match a stored context.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use bollard::Docker;
+    ///
+    /// let connection = Docker::connect_with_current_context().unwrap();
+    /// ```
+    pub fn connect_with_current_context() -> Result<Docker, Error> {
+        let host = match crate::context::current_context_name() {
+            Some(name) => crate::context::host_for_context(&name, DEFAULT_DOCKER_HOST)?,
+            None => DEFAULT_DOCKER_HOST.to_string(),
+        };
+        Self::connect_with_host(&host)
     }
 }
 
@@ -2000,6 +2064,90 @@ mod tests {
             if let Err(SocketNotFoundError(addr)) = &result {
                 assert!(addr.contains("docker.sock"));
             }
+        }
+
+        #[test]
+        fn connect_with_context_uses_named_context() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let cfg_dir = tempfile::tempdir().unwrap();
+            let sock_dir = tempfile::tempdir().unwrap();
+            let sock = sock_dir.path().join("named.sock");
+            std::fs::write(&sock, b"").unwrap();
+            let uri = format!("unix://{}", sock.display());
+            write_context_meta(cfg_dir.path(), "my-ctx", &uri);
+
+            // DOCKER_HOST should be ignored by connect_with_context.
+            let _env = IsolatedDockerEnv::new(cfg_dir.path());
+            let _host = TempEnvVar::set("DOCKER_HOST", "tcp://ignored:9999");
+
+            let docker = Docker::connect_with_context("my-ctx").unwrap();
+            assert_eq!(docker.client_addr, sock.to_str().unwrap());
+        }
+
+        #[test]
+        fn connect_with_context_default_uses_platform_default() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let cfg_dir = tempfile::tempdir().unwrap();
+            let _env = IsolatedDockerEnv::new(cfg_dir.path());
+
+            // "default" → DEFAULT_DOCKER_HOST, which may not exist on the runner.
+            let result = Docker::connect_with_context("default");
+            if let Err(SocketNotFoundError(addr)) = &result {
+                assert!(addr.contains("docker.sock"));
+            }
+        }
+
+        #[test]
+        fn connect_with_context_unknown_errors() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let cfg_dir = tempfile::tempdir().unwrap();
+            let _env = IsolatedDockerEnv::new(cfg_dir.path());
+
+            let err = Docker::connect_with_context("ghost").unwrap_err();
+            match err {
+                Error::DockerContextNotFoundError { name } => assert_eq!(name, "ghost"),
+                other => panic!("expected DockerContextNotFoundError, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn connect_with_current_context_follows_env() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let cfg_dir = tempfile::tempdir().unwrap();
+            let sock_dir = tempfile::tempdir().unwrap();
+            let sock = sock_dir.path().join("current.sock");
+            std::fs::write(&sock, b"").unwrap();
+            let uri = format!("unix://{}", sock.display());
+            write_context_meta(cfg_dir.path(), "active", &uri);
+
+            let _env = IsolatedDockerEnv::new(cfg_dir.path());
+            let _ctx = TempEnvVar::set("DOCKER_CONTEXT", "active");
+            // DOCKER_HOST must be ignored by connect_with_current_context.
+            let _host = TempEnvVar::set("DOCKER_HOST", "tcp://ignored:9999");
+
+            let docker = Docker::connect_with_current_context().unwrap();
+            assert_eq!(docker.client_addr, sock.to_str().unwrap());
+        }
+
+        #[test]
+        fn connect_with_current_context_follows_config() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let cfg_dir = tempfile::tempdir().unwrap();
+            let sock_dir = tempfile::tempdir().unwrap();
+            let sock = sock_dir.path().join("cfg.sock");
+            std::fs::write(&sock, b"").unwrap();
+            let uri = format!("unix://{}", sock.display());
+            write_context_meta(cfg_dir.path(), "configured", &uri);
+            std::fs::write(
+                cfg_dir.path().join("config.json"),
+                r#"{"currentContext":"configured"}"#,
+            )
+            .unwrap();
+
+            let _env = IsolatedDockerEnv::new(cfg_dir.path());
+
+            let docker = Docker::connect_with_current_context().unwrap();
+            assert_eq!(docker.client_addr, sock.to_str().unwrap());
         }
 
         #[test]

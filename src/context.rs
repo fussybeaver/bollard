@@ -109,6 +109,41 @@ fn lookup_context_host(name: &str) -> Option<String> {
     None
 }
 
+/// Resolve a context name to its Docker endpoint host.
+///
+/// The name `"default"` (or an empty string) returns the supplied
+/// `default_host`. Any other name is looked up under
+/// `$DOCKER_CONFIG/contexts/meta/*/meta.json`.
+///
+/// # Errors
+///
+/// Returns [`Error::DockerContextNotFoundError`] if `name` is not `"default"`
+/// and no matching context is found.
+pub fn host_for_context(name: &str, default_host: &str) -> Result<String, Error> {
+    if name.is_empty() || name == DEFAULT_CONTEXT {
+        return Ok(default_host.to_string());
+    }
+    lookup_context_host(name).ok_or_else(|| Error::DockerContextNotFoundError {
+        name: name.to_string(),
+    })
+}
+
+/// Return the name of the "current" Docker context, considering only the
+/// Docker CLI's context-selection inputs:
+///
+/// 1. The `DOCKER_CONTEXT` environment variable, if non-empty.
+/// 2. The `currentContext` field of `$DOCKER_CONFIG/config.json`, if present.
+///
+/// Returns `None` if neither is set (the default context is implicit and is
+/// not represented by a name on disk). Notably this does **not** look at
+/// `DOCKER_HOST`, which is a transport override rather than a context name.
+pub fn current_context_name() -> Option<String> {
+    env::var("DOCKER_CONTEXT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(current_context_from_config)
+}
+
 /// Resolve the Docker daemon host using the Docker CLI precedence rules.
 ///
 /// See the [module-level documentation](crate::context) for the full ordering.
@@ -121,19 +156,10 @@ pub fn resolve_host(default_host: &str) -> Result<String, Error> {
     if let Some(host) = env::var("DOCKER_HOST").ok().filter(|s| !s.is_empty()) {
         return Ok(host);
     }
-
-    let context_name = env::var("DOCKER_CONTEXT")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .or_else(current_context_from_config);
-
-    let Some(name) = context_name else {
-        return Ok(default_host.to_string());
-    };
-    if name == DEFAULT_CONTEXT {
-        return Ok(default_host.to_string());
+    match current_context_name() {
+        Some(name) => host_for_context(&name, default_host),
+        None => Ok(default_host.to_string()),
     }
-    lookup_context_host(&name).ok_or(Error::DockerContextNotFoundError { name })
 }
 
 #[cfg(test)]
@@ -294,6 +320,75 @@ mod tests {
             Error::DockerContextNotFoundError { name } => assert_eq!(name, "missing"),
             other => panic!("expected DockerContextNotFoundError, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn host_for_context_resolves_named() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        write_meta(tmp.path(), "x", "prod", "tcp://prod:2375");
+        let _cfg = TempEnvVar::set("DOCKER_CONFIG", tmp.path().to_str().unwrap());
+
+        assert_eq!(
+            host_for_context("prod", "unix:///default.sock").unwrap(),
+            "tcp://prod:2375"
+        );
+    }
+
+    #[test]
+    fn host_for_context_default_returns_default() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let _cfg = TempEnvVar::set("DOCKER_CONFIG", tmp.path().to_str().unwrap());
+
+        assert_eq!(
+            host_for_context("default", "unix:///default.sock").unwrap(),
+            "unix:///default.sock"
+        );
+        assert_eq!(
+            host_for_context("", "unix:///default.sock").unwrap(),
+            "unix:///default.sock"
+        );
+    }
+
+    #[test]
+    fn host_for_context_unknown_errors() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let _cfg = TempEnvVar::set("DOCKER_CONFIG", tmp.path().to_str().unwrap());
+
+        let err = host_for_context("ghost", "unix:///default.sock").unwrap_err();
+        match err {
+            Error::DockerContextNotFoundError { name } => assert_eq!(name, "ghost"),
+            other => panic!("expected DockerContextNotFoundError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn current_context_name_reads_env_then_config() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        write_config(tmp.path(), Some("from-config"));
+
+        let _cfg = TempEnvVar::set("DOCKER_CONFIG", tmp.path().to_str().unwrap());
+        let _ctx = TempEnvVar::set("DOCKER_CONTEXT", "from-env");
+        let _host = TempEnvVar::unset("DOCKER_HOST");
+        assert_eq!(current_context_name().as_deref(), Some("from-env"));
+
+        // env unset → falls back to config
+        let _ctx2 = TempEnvVar::unset("DOCKER_CONTEXT");
+        assert_eq!(current_context_name().as_deref(), Some("from-config"));
+    }
+
+    #[test]
+    fn current_context_name_ignores_docker_host() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let _cfg = TempEnvVar::set("DOCKER_CONFIG", tmp.path().to_str().unwrap());
+        let _ctx = TempEnvVar::unset("DOCKER_CONTEXT");
+        let _host = TempEnvVar::set("DOCKER_HOST", "tcp://override:2375");
+
+        assert_eq!(current_context_name(), None);
     }
 
     #[test]
