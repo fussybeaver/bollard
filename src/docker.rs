@@ -1785,6 +1785,7 @@ mod tests {
 
         #[test]
         fn rootless_socket_from_xdg_runtime_dir() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
             let dir = tempfile::tempdir().unwrap();
             let sock_dir = dir.path().join("podman");
             std::fs::create_dir_all(&sock_dir).unwrap();
@@ -1800,6 +1801,7 @@ mod tests {
 
         #[test]
         fn rootless_socket_returns_none_when_missing() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
             // Point XDG_RUNTIME_DIR at empty dir — no podman socket
             let dir = tempfile::tempdir().unwrap();
             let _guard = TempEnvVar::set("XDG_RUNTIME_DIR", dir.path().to_str().unwrap());
@@ -1822,6 +1824,7 @@ mod tests {
 
         #[test]
         fn connect_with_podman_defaults_respects_docker_host() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
             // Create a fake socket
             let dir = tempfile::tempdir().unwrap();
             let sock = dir.path().join("test.sock");
@@ -1867,6 +1870,7 @@ mod tests {
 
         #[test]
         fn connect_with_unix_defaults_respects_docker_host() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
             let dir = tempfile::tempdir().unwrap();
             let sock = dir.path().join("test.sock");
             std::fs::write(&sock, b"").unwrap();
@@ -1888,6 +1892,7 @@ mod tests {
 
         #[test]
         fn connect_with_unix_defaults_ignores_non_unix_docker_host() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
             let prev = env::var("DOCKER_HOST").ok();
             env::set_var("DOCKER_HOST", "tcp://localhost:2375");
 

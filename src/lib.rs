@@ -331,6 +331,18 @@
 pub mod auth;
 pub mod config;
 pub mod container;
+
+#[cfg(test)]
+pub(crate) mod test_lock {
+    //! Process-wide lock for tests that mutate environment variables.
+    //!
+    //! Multiple tests across the crate manipulate `DOCKER_HOST`, `DOCKER_CONTEXT`,
+    //! `DOCKER_CONFIG`, and `XDG_RUNTIME_DIR`. Rust runs unit tests in parallel by
+    //! default, so without a shared lock these tests would race and produce
+    //! flaky failures.
+    use std::sync::Mutex;
+    pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
+}
 mod docker;
 pub mod errors;
 pub mod exec;
