@@ -205,9 +205,7 @@ mod tests {
     fn write_meta(dir: &std::path::Path, sub: &str, name: &str, host: &str) {
         let meta_dir = dir.join("contexts").join("meta").join(sub);
         fs::create_dir_all(&meta_dir).unwrap();
-        let body = format!(
-            r#"{{"Name":"{name}","Endpoints":{{"docker":{{"Host":"{host}"}}}}}}"#
-        );
+        let body = format!(r#"{{"Name":"{name}","Endpoints":{{"docker":{{"Host":"{host}"}}}}}}"#);
         fs::write(meta_dir.join("meta.json"), body).unwrap();
     }
 

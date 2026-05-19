@@ -1996,9 +1996,8 @@ mod tests {
         fn write_context_meta(cfg_dir: &std::path::Path, name: &str, host: &str) {
             let meta_dir = cfg_dir.join("contexts").join("meta").join("ctx");
             std::fs::create_dir_all(&meta_dir).unwrap();
-            let body = format!(
-                r#"{{"Name":"{name}","Endpoints":{{"docker":{{"Host":"{host}"}}}}}}"#
-            );
+            let body =
+                format!(r#"{{"Name":"{name}","Endpoints":{{"docker":{{"Host":"{host}"}}}}}}"#);
             std::fs::write(meta_dir.join("meta.json"), body).unwrap();
         }
 
