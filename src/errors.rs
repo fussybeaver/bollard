@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// Generic Docker errors
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Error emitted during client instantiation when the `DOCKER_CERT_PATH` environment variable
     /// is invalid.
