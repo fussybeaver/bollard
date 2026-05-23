@@ -117,8 +117,7 @@ termion = "4.0"
 
 [target.'cfg(windows)'.dependencies]
 hyper-named-pipe = { version = "0.1.0", optional = true }
-winapi = { version = "0.3.9", features = ["winerror"] }
-tower-service = { version = "0.3" }
+tower-service = "0.3"
 
 [[example]]
 name = "websocket_attach"
