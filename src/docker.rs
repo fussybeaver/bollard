@@ -1248,6 +1248,22 @@ impl Docker {
 }
 
 #[cfg(feature = "ssh")]
+/// Options for SSH connection.
+#[derive(Debug, Clone, Default)]
+pub struct SshOptions {
+    /// Path to the private key file.
+    pub keypair_path: Option<String>,
+    /// Path to the known hosts file.
+    pub user_known_hosts_file: Option<String>,
+    /// Path to the custom SSH configuration file.
+    pub config_file: Option<String>,
+    /// Connection timeout for the SSH handshake.
+    pub connect_timeout: Option<std::time::Duration>,
+    /// Host key check behavior.
+    pub known_hosts_check: Option<openssh::KnownHosts>,
+}
+
+#[cfg(feature = "ssh")]
 /// A Docker implementation typed to connect to an SSH connection.
 impl Docker {
     /// Connect using SSH using defaults that are signalled by environment variables.
@@ -1302,12 +1318,24 @@ impl Docker {
         client_version: &ClientVersion,
         keypair_path: Option<String>,
     ) -> Result<Docker, Error> {
+        let options = SshOptions {
+            keypair_path,
+            ..Default::default()
+        };
+        
+        Docker::connect_with_ssh_options(addr, timeout, client_version, options)
+    }
+
+    /// Connect using SSH with custom options.
+    pub fn connect_with_ssh_options(
+        addr: &str,
+        timeout: u64,
+        client_version: &ClientVersion,
+        options: SshOptions,
+    ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("ssh://", "", 1);
 
-        let ssh_connector = match keypair_path {
-            Some(path) => crate::ssh::SshConnector::with_keypair(path.to_string()),
-            None => crate::ssh::SshConnector::new(),
-        };
+        let ssh_connector = crate::ssh::SshConnector::new(options);
 
         let client_builder = Client::builder(TokioExecutor::new());
 

@@ -370,6 +370,11 @@ pub use crate::docker::{
     API_DEFAULT_VERSION,
 };
 
+#[cfg(feature = "ssh")]
+pub use crate::docker::SshOptions;
+#[cfg(feature = "ssh")]
+pub use openssh::KnownHosts;
+
 /// Re-exported request body and response types from `bollard-stubs`.
 ///
 /// Use these types directly from `bollard::models` instead of adding `bollard-stubs`

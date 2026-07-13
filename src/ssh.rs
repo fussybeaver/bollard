@@ -1,3 +1,4 @@
+use crate::docker::SshOptions;
 use futures_util::FutureExt;
 use hyper_util::rt::TokioIo;
 use std::future::Future;
@@ -8,18 +9,12 @@ use std::task::{ready, Context, Poll};
 
 #[derive(Clone)]
 pub(crate) struct SshConnector {
-    keypair_path: Option<String>,
+    options: SshOptions,
 }
 
 impl SshConnector {
-    pub fn new() -> Self {
-        Self { keypair_path: None }
-    }
-
-    pub fn with_keypair(keypair_path: String) -> Self {
-        Self {
-            keypair_path: Some(keypair_path),
-        }
+    pub fn new(options: SshOptions) -> Self {
+        Self { options }
     }
 }
 
@@ -40,7 +35,7 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
     }
 
     fn call(&mut self, destination: hyper::Uri) -> Self::Future {
-        let keypair_path = self.keypair_path.clone();
+        let options = self.options.clone();
 
         async move {
             let authority = match destination.scheme() {
@@ -56,8 +51,20 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
 
             let mut builder = openssh::SessionBuilder::default();
 
-            if let Some(key_path) = keypair_path {
+            if let Some(key_path) = options.keypair_path {
                 builder.keyfile(key_path);
+            }
+            if let Some(hosts_file) = options.user_known_hosts_file {
+                builder.user_known_hosts_file(hosts_file);
+            }
+            if let Some(cfg_file) = options.config_file {
+                builder.config_file(cfg_file);
+            }
+            if let Some(timeout) = options.connect_timeout {
+                builder.connect_timeout(timeout);
+            }
+            if let Some(hosts_check) = options.known_hosts_check {
+                builder.known_hosts_check(hosts_check);
             }
 
             let resolved_uri = format!("ssh://{}", authority.as_str());
