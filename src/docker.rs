@@ -1322,7 +1322,7 @@ impl Docker {
             keypair_path,
             ..Default::default()
         };
-        
+
         Docker::connect_with_ssh_options(addr, timeout, client_version, options)
     }
 
