@@ -60,7 +60,8 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                 builder.keyfile(key_path);
             }
 
-            let (builder, destination) = builder.resolve(authority.as_str());
+            let resolved_uri = format!("ssh://{}", authority.as_str());
+            let (builder, destination) = builder.resolve(&resolved_uri);
             let tempdir = builder.launch_master(destination).await?;
             let session = Arc::new(openssh::Session::new_process_mux(tempdir));
 
