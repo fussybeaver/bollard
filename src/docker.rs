@@ -1279,6 +1279,44 @@ pub struct SshOptions {
 }
 
 #[cfg(feature = "ssh")]
+impl SshOptions {
+    /// Create a new default set of SSH options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the path to the private key file.
+    pub fn with_keypair_path(mut self, path: String) -> Self {
+        self.keypair_path = Some(path);
+        self
+    }
+
+    /// Set the path to the known hosts file.
+    pub fn with_user_known_hosts_file(mut self, path: String) -> Self {
+        self.user_known_hosts_file = Some(path);
+        self
+    }
+
+    /// Set the path to the custom SSH configuration file.
+    pub fn with_config_file(mut self, path: String) -> Self {
+        self.config_file = Some(path);
+        self
+    }
+
+    /// Set the connection timeout.
+    pub fn with_connect_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connect_timeout = Some(timeout);
+        self
+    }
+
+    /// Set the host key verification policy.
+    pub fn with_known_hosts_check(mut self, check: openssh::KnownHosts) -> Self {
+        self.known_hosts_check = Some(check);
+        self
+    }
+}
+
+#[cfg(feature = "ssh")]
 /// A Docker implementation typed to connect to an SSH connection.
 impl Docker {
     /// Connect using SSH using defaults that are signalled by environment variables.
@@ -1358,13 +1396,11 @@ impl Docker {
     ///
     /// use futures_util::future::TryFutureExt;
     ///
-    /// let options = SshOptions {
-    ///     keypair_path: Some("/path/to/id_rsa".to_string()),
-    ///     user_known_hosts_file: Some("/path/to/known_hosts".to_string()),
-    ///     connect_timeout: Some(Duration::from_secs(10)),
-    ///     known_hosts_check: Some(KnownHosts::Accept),
-    ///     ..Default::default()
-    /// };
+    /// let options = SshOptions::new()
+    ///     .with_keypair_path("/path/to/id_rsa".to_string())
+    ///     .with_user_known_hosts_file("/path/to/known_hosts".to_string())
+    ///     .with_connect_timeout(Duration::from_secs(10))
+    ///     .with_known_hosts_check(KnownHosts::Accept);
     ///
     /// let connection = Docker::connect_with_ssh_options(
     ///     "ssh://user@my-custom-docker-server",
