@@ -1,15 +1,16 @@
 //! The central LLB builder types: [`State`], [`ExecState`], and [`Constraints`].
 
 use std::fmt::Display;
+use std::sync::Arc;
 
 use bollard_buildkit_proto::pb;
 
 use crate::definition::Definition;
 use crate::error::LlbError;
 use crate::ops::exec::{
-    AddSecret, CacheSharingMode, Mount, MountType, NetMode, SecurityMode,
+    AddSecret, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode, Shlex,
 };
-use crate::ops::file::{FileAction, FileOpts};
+use crate::ops::file::{FileAction, FileOp, FileOpts};
 use crate::ops::OperationOutput;
 use crate::platform::Platform;
 
@@ -26,6 +27,11 @@ impl State {
             output,
             constraints: Constraints::default(),
         }
+    }
+
+    /// Access the operation output backing this state.
+    pub(crate) fn output(&self) -> &OperationOutput {
+        &self.output
     }
 
     /// Set the working directory for subsequent exec steps.
@@ -55,8 +61,13 @@ impl State {
     }
 
     /// Apply a file action to this state.
-    pub fn file(self, _action: FileAction, _opts: impl Into<FileOpts>) -> Self {
-        todo!("State::file is implemented in Phase 3")
+    pub fn file(self, action: FileAction, opts: impl Into<FileOpts>) -> Self {
+        let opts = opts.into();
+        let file_op = FileOp::new(self.output, action, opts);
+        Self {
+            output: OperationOutput::Owned(Arc::new(file_op)),
+            constraints: self.constraints,
+        }
     }
 
     /// Return the platform constraint for this state.
@@ -132,13 +143,23 @@ impl MarshalOpts {
 #[derive(Clone, Debug)]
 pub struct ExecState {
     base: State,
-    run: RunOpts,
+    /// Accumulated run-time options. Mutated by [`RunOpt`] implementations.
+    pub(crate) run: RunOpts,
 }
 
 impl ExecState {
     /// Return the post-exec state.
     pub fn root(self) -> State {
-        todo!("ExecState::root is implemented in Phase 3")
+        let exec_op = ExecOp::new(
+            self.base.output,
+            self.base.constraints.cwd.clone(),
+            self.base.constraints.env.clone(),
+            self.run,
+        );
+        State {
+            output: OperationOutput::Owned(Arc::new(exec_op)),
+            constraints: self.base.constraints,
+        }
     }
 
     /// Add a bind mount from a source state.
@@ -261,6 +282,24 @@ impl RunOpts {
         self.security = security;
         self
     }
+
+    /// Add a bind mount.
+    pub fn with_mount<S: Into<String>>(mut self, target: S, src: crate::State) -> Self {
+        self.mounts.push(Mount {
+            target: target.into(),
+            source: Some(src),
+            mount_type: MountType::Bind,
+            readonly: false,
+            output: None,
+        });
+        self
+    }
+
+    /// Add a secret.
+    pub fn with_secret(mut self, opts: impl Into<AddSecret>) -> Self {
+        self.secrets.push(opts.into());
+        self
+    }
 }
 
 /// Marker trait for types that can be applied to an [`ExecState`].
@@ -269,14 +308,11 @@ pub trait RunOpt {
     fn apply(self, exec: &mut ExecState);
 }
 
-impl<S: Into<String>> From<S> for AddSecret {
-    fn from(id: S) -> Self {
+impl From<Shlex> for RunOpts {
+    fn from(value: Shlex) -> Self {
         Self {
-            id: id.into(),
-            as_env: false,
-            env_name: None,
-            target: None,
-            optional: false,
+            args: value.args,
+            ..Default::default()
         }
     }
 }

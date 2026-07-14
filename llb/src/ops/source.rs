@@ -103,10 +103,7 @@ impl Image {
         metadata: OpMetadata,
     ) -> Self {
         let identifier = format!("docker-image://{reference}");
-        let source_op = pb::SourceOp {
-            identifier,
-            attrs,
-        };
+        let source_op = pb::SourceOp { identifier, attrs };
         let pb_op = pb::Op {
             inputs: Vec::new(),
             platform: platform.clone().map(Into::into),

@@ -17,6 +17,8 @@
 #![warn(missing_docs, rust_2018_idioms)]
 #![allow(clippy::upper_case_acronyms, dead_code)]
 
+/// The marshalled LLB graph.
+pub mod definition;
 /// Error types produced when marshalling LLB graphs.
 pub mod error;
 /// Digest and serialization helpers.
@@ -27,14 +29,17 @@ pub(crate) mod metadata;
 pub(crate) mod ops;
 /// OCI platform constraints and well-known constants.
 pub mod platform;
-/// The marshalled LLB graph.
-pub mod definition;
 /// The central builder types: [`State`], [`ExecState`], [`Constraints`].
 pub mod state;
 
 pub use definition::Definition;
 pub use error::LlbError;
 pub use marshal::Digest;
+pub use ops::exec::{
+    shlex, AddEnv, AddMount, AddSecret, CacheSharingMode, Mount, MountType, NetMode, SecurityMode,
+    Shlex, WithCustomName,
+};
+pub use ops::file::{copy, mkdir, mkfile, rm, symlink, CopyInfo, FileAction, FileOpts};
 pub use ops::source::{image, local, scratch, Image, Local, ResolveMode, Scratch};
 pub use platform::Platform;
 pub use state::{Constraints, ExecState, MarshalOpts, RunOpt, RunOpts, State};
