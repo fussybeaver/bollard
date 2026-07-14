@@ -25,6 +25,16 @@ pub(crate) mod marshal;
 pub(crate) mod metadata;
 /// Core operation graph types.
 pub(crate) mod ops;
+/// OCI platform constraints and well-known constants.
+pub mod platform;
+/// The marshalled LLB graph.
+pub mod definition;
+/// The central builder types: [`State`], [`ExecState`], [`Constraints`].
+pub mod state;
 
+pub use definition::Definition;
 pub use error::LlbError;
 pub use marshal::Digest;
+pub use ops::source::{image, local, scratch, Image, Local, ResolveMode, Scratch};
+pub use platform::Platform;
+pub use state::{Constraints, ExecState, MarshalOpts, RunOpt, RunOpts, State};

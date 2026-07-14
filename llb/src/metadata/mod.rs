@@ -3,7 +3,7 @@
 pub mod attr;
 pub mod cap;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use bollard_buildkit_proto::pb;
 
@@ -30,13 +30,13 @@ impl From<OpMetadata> for pb::OpMetadata {
     fn from(value: OpMetadata) -> Self {
         Self {
             ignore_cache: value.ignore_cache,
-            description: value.description.into_iter().collect::<HashMap<_, _>>(),
+            description: value.description,
             export_cache: value.export_cache.map(|v| pb::ExportCache { value: v }),
             caps: value
                 .caps
                 .into_iter()
                 .map(|cap| (cap, true))
-                .collect::<HashMap<_, _>>(),
+                .collect::<BTreeMap<_, _>>(),
             progress_group: value.progress_group,
         }
     }

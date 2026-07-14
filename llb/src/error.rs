@@ -29,4 +29,8 @@ pub enum LlbError {
     /// An I/O error occurred while writing the LLB dump.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// A feature or operation has not been implemented yet.
+    #[error("not yet implemented: {0}")]
+    Unimplemented(&'static str),
 }

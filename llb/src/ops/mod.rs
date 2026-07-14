@@ -1,6 +1,10 @@
 //! Core operation graph types: [`Operation`], [`Context`], [`Node`], and
 //! [`OperationOutput`].
 
+pub(crate) mod exec;
+pub(crate) mod file;
+pub(crate) mod source;
+
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
