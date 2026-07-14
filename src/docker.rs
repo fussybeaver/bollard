@@ -1250,6 +1250,7 @@ impl Docker {
 }
 
 #[cfg(feature = "ssh")]
+#[non_exhaustive]
 /// Options for SSH connection.
 #[derive(Debug, Clone, Default)]
 pub struct SshOptions {

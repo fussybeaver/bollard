@@ -64,6 +64,10 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                 builder.connect_timeout(timeout);
             }
             if let Some(hosts_check) = options.known_hosts_check {
+                if matches!(hosts_check, openssh::KnownHosts::Accept) {
+                    log::warn!("host key verification is disabled, this may allow man-in-the-middle (MITM) attacks");
+                }
+
                 builder.known_hosts_check(hosts_check);
             }
 
