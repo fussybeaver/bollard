@@ -10,7 +10,7 @@ documentation = "https://docs.rs/bollard-llb"
 edition = "2021"
 
 [dependencies]
-bollard-buildkit-proto = "0.8.0"
+bollard-buildkit-proto = { path = "../codegen/proto", default-features = false }
 hex = "0.4"
 indexmap = "2"
 prost = "0.14"
