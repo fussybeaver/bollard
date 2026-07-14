@@ -9,11 +9,15 @@ repository = "https://github.com/fussybeaver/bollard"
 documentation = "https://docs.rs/bollard-llb"
 edition = "2021"
 
+[features]
+dump_json = ["dep:serde_json"]
+
 [dependencies]
 bollard-buildkit-proto = { path = "../codegen/proto", default-features = false }
 hex = "0.4"
 indexmap = "2"
 prost = "0.14"
+serde_json = { version = "1", optional = true }
 sha2 = "0.10"
 shlex = "1"
 thiserror = "2"

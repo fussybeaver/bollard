@@ -15,6 +15,16 @@ pub enum LlbError {
         source: prost::EncodeError,
     },
 
+    /// Failed to decode a protobuf message.
+    #[error("failed to decode protobuf for {op}: {source}")]
+    Decode {
+        /// Human-readable operation name used in diagnostics.
+        op: String,
+        /// The underlying prost decode error.
+        #[source]
+        source: prost::DecodeError,
+    },
+
     /// An operation referenced an input that was not registered.
     #[error("missing input for operation")]
     MissingInput,

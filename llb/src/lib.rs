@@ -19,6 +19,8 @@
 
 /// The marshalled LLB graph.
 pub mod definition;
+/// Human-readable and JSON dumping for [`Definition`].
+pub mod dump;
 /// Error types produced when marshalling LLB graphs.
 pub mod error;
 /// Digest and serialization helpers.
@@ -33,6 +35,9 @@ pub mod platform;
 pub mod state;
 
 pub use definition::Definition;
+#[cfg(feature = "dump_json")]
+pub use dump::dump_json;
+pub use dump::dump_text;
 pub use error::LlbError;
 pub use marshal::Digest;
 pub use ops::exec::{

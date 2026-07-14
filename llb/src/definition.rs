@@ -5,6 +5,7 @@
 //! and then encoded to bytes for a BuildKit `SolveRequest`.
 
 use std::collections::BTreeMap;
+use std::io;
 
 use bollard_buildkit_proto::pb;
 use prost::Message;
@@ -52,5 +53,21 @@ impl Definition {
                 source,
             })?;
         Ok(buf)
+    }
+
+    /// Write this definition as binary protobuf to a writer.
+    ///
+    /// This is the streaming equivalent of [`into_bytes`](Self::into_bytes) and
+    /// matches Go's `llb.WriteTo(def, w)` exactly.
+    pub fn write_to<W: io::Write>(&self, w: &mut W) -> Result<(), LlbError> {
+        let mut buf = Vec::new();
+        self.to_pb()
+            .encode(&mut buf)
+            .map_err(|source| LlbError::Encode {
+                op: "Definition".to_string(),
+                source,
+            })?;
+        w.write_all(&buf)?;
+        Ok(())
     }
 }
