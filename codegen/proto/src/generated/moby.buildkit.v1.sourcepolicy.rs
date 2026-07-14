@@ -14,8 +14,8 @@ pub struct Rule {
 pub struct Update {
     #[prost(string, tag = "1")]
     pub identifier: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "2")]
-    pub attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,

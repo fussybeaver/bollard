@@ -3,8 +3,8 @@
 pub struct WorkerRecord {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "2")]
-    pub labels: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub labels: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -48,8 +48,8 @@ pub struct CdiDevice {
     pub name: ::prost::alloc::string::String,
     #[prost(bool, tag = "2")]
     pub auto_allow: bool,
-    #[prost(map = "string, string", tag = "3")]
-    pub annotations: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "3")]
+    pub annotations: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,

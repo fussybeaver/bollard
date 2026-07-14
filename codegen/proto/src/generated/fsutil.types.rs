@@ -20,8 +20,8 @@ pub struct Stat {
     pub devmajor: i64,
     #[prost(int64, tag = "9")]
     pub devminor: i64,
-    #[prost(map = "string, bytes", tag = "10")]
-    pub xattrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, bytes", tag = "10")]
+    pub xattrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::vec::Vec<u8>,
     >,

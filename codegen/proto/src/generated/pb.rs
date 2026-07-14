@@ -230,8 +230,8 @@ pub struct SourceOp {
     #[prost(string, tag = "1")]
     pub identifier: ::prost::alloc::string::String,
     /// attrs are defined in attr.go
-    #[prost(map = "string, string", tag = "2")]
-    pub attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -242,13 +242,16 @@ pub struct SourceOp {
 pub struct BuildOp {
     #[prost(int64, tag = "1")]
     pub builder: i64,
-    #[prost(map = "string, message", tag = "2")]
-    pub inputs: ::std::collections::HashMap<::prost::alloc::string::String, BuildInput>,
+    #[prost(btree_map = "string, message", tag = "2")]
+    pub inputs: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        BuildInput,
+    >,
     #[prost(message, optional, tag = "3")]
     pub def: ::core::option::Option<Definition>,
     /// outputs
-    #[prost(map = "string, string", tag = "4")]
-    pub attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "4")]
+    pub attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -266,8 +269,8 @@ pub struct OpMetadata {
     #[prost(bool, tag = "1")]
     pub ignore_cache: bool,
     /// Description can be used for keeping any text fields that builder doesn't parse
-    #[prost(map = "string, string", tag = "2")]
-    pub description: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub description: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -275,16 +278,19 @@ pub struct OpMetadata {
     /// WorkerConstraint worker_constraint = 3;
     #[prost(message, optional, tag = "4")]
     pub export_cache: ::core::option::Option<ExportCache>,
-    #[prost(map = "string, bool", tag = "5")]
-    pub caps: ::std::collections::HashMap<::prost::alloc::string::String, bool>,
+    #[prost(btree_map = "string, bool", tag = "5")]
+    pub caps: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        bool,
+    >,
     #[prost(message, optional, tag = "6")]
     pub progress_group: ::core::option::Option<ProgressGroup>,
 }
 /// Source is a source mapping description for a file
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Source {
-    #[prost(map = "string, message", tag = "1")]
-    pub locations: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "1")]
+    pub locations: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         Locations,
     >,
@@ -375,8 +381,8 @@ pub struct Definition {
     pub def: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// metadata contains metadata for the each of the Op messages.
     /// A key must be an LLB op digest string. Currently, empty string is not expected as a key, but it may change in the future.
-    #[prost(map = "string, message", tag = "2")]
-    pub metadata: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "2")]
+    pub metadata: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         OpMetadata,
     >,

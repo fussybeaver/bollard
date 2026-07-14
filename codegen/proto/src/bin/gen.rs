@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .out_dir("src/generated")
         .compile_well_known_types(true)
+        .btree_map(".")
         .compile_protos(
             &[
                 "resources/fsutil/types/stat.proto",
@@ -34,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "resources/moby/filesync/v1/filesync.proto",
                 "resources/moby/upload/v1/upload.proto",
                 "resources/grpc/health/v1/health.proto",
+                "resources/pb/ops.proto",
             ],
             &["resources"],
         )?;

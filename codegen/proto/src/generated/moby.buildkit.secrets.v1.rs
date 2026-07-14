@@ -3,8 +3,8 @@
 pub struct GetSecretRequest {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "2")]
-    pub annotations: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub annotations: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,

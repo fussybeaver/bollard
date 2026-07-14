@@ -60,8 +60,8 @@ pub struct HealthListRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthListResponse {
     /// statuses contains all the services and their respective status.
-    #[prost(map = "string, message", tag = "1")]
-    pub statuses: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "1")]
+    pub statuses: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         HealthCheckResponse,
     >,

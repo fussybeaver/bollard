@@ -69,8 +69,8 @@ pub struct SolveRequest {
     /// appended to the Exporters field if Exporters was not explicitly set.
     #[prost(string, tag = "3")]
     pub exporter_deprecated: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "4")]
-    pub exporter_attrs_deprecated: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "4")]
+    pub exporter_attrs_deprecated: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -78,8 +78,8 @@ pub struct SolveRequest {
     pub session: ::prost::alloc::string::String,
     #[prost(string, tag = "6")]
     pub frontend: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "7")]
-    pub frontend_attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "7")]
+    pub frontend_attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -87,8 +87,8 @@ pub struct SolveRequest {
     pub cache: ::core::option::Option<CacheOptions>,
     #[prost(string, repeated, tag = "9")]
     pub entitlements: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(map = "string, message", tag = "10")]
-    pub frontend_inputs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "10")]
+    pub frontend_inputs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         super::super::super::pb::Definition,
     >,
@@ -120,8 +120,8 @@ pub struct CacheOptions {
     pub import_refs_deprecated: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// ExportAttrsDeprecated is deprecated since BuildKit v0.4.0.
     /// See the description of ExportRefDeprecated.
-    #[prost(map = "string, string", tag = "3")]
-    pub export_attrs_deprecated: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "3")]
+    pub export_attrs_deprecated: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -139,16 +139,16 @@ pub struct CacheOptionsEntry {
     pub r#type: ::prost::alloc::string::String,
     /// Attrs are like mode=(min,max), ref=example.com:5000/foo/bar .
     /// See cache importer/exporter implementations' documentation.
-    #[prost(map = "string, string", tag = "2")]
-    pub attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SolveResponse {
-    #[prost(map = "string, string", tag = "1")]
-    pub exporter_response: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "1")]
+    pub exporter_response: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -297,8 +297,8 @@ pub struct BuildHistoryRecord {
     pub r#ref: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub frontend: ::prost::alloc::string::String,
-    #[prost(map = "string, string", tag = "3")]
-    pub frontend_attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "3")]
+    pub frontend_attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -316,15 +316,15 @@ pub struct BuildHistoryRecord {
     >,
     #[prost(message, optional, tag = "8")]
     pub logs: ::core::option::Option<Descriptor>,
-    #[prost(map = "string, string", tag = "9")]
-    pub exporter_response: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "9")]
+    pub exporter_response: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
     #[prost(message, optional, tag = "10")]
     pub result: ::core::option::Option<BuildResultInfo>,
-    #[prost(map = "string, message", tag = "11")]
-    pub results: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "11")]
+    pub results: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         BuildResultInfo,
     >,
@@ -368,8 +368,8 @@ pub struct Descriptor {
     pub digest: ::prost::alloc::string::String,
     #[prost(int64, tag = "3")]
     pub size: i64,
-    #[prost(map = "string, string", tag = "5")]
-    pub annotations: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "5")]
+    pub annotations: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -380,8 +380,8 @@ pub struct BuildResultInfo {
     pub result_deprecated: ::core::option::Option<Descriptor>,
     #[prost(message, repeated, tag = "2")]
     pub attestations: ::prost::alloc::vec::Vec<Descriptor>,
-    #[prost(map = "int64, message", tag = "3")]
-    pub results: ::std::collections::HashMap<i64, Descriptor>,
+    #[prost(btree_map = "int64, message", tag = "3")]
+    pub results: ::prost::alloc::collections::BTreeMap<i64, Descriptor>,
 }
 /// Exporter describes the output exporter
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -390,8 +390,8 @@ pub struct Exporter {
     #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
     /// Attrs specifies exporter configuration
-    #[prost(map = "string, string", tag = "2")]
-    pub attrs: ::std::collections::HashMap<
+    #[prost(btree_map = "string, string", tag = "2")]
+    pub attrs: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
