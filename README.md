@@ -67,7 +67,7 @@ Choose **one** crypto provider:
 |---------|-------------|
 | `ssl` | [Rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) provider (recommended) |
 | `aws-lc-rs` | [Rustls](https://github.com/rustls/rustls) with [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider (FIPS-compliant) |
-| `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [CryptoProvider](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
+| `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
 | `webpki` | Use Mozilla's root certificates instead of OS native certs |
 
 #### DateTime Features
@@ -88,16 +88,13 @@ For timestamp support in events and logs, choose **one**:
 | `buildkit` | Full [BuildKit](https://github.com/moby/buildkit) support (includes `ssl`) |
 | `buildkit_providerless` | BuildKit without bundled crypto provider |
 
-**Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling. Example:
-```toml
-bollard = { version = "*", features = ["buildkit", "chrono"] }
-```
+**Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
 
 #### WebSocket Features
 
 | Feature | Description |
 |---------|-------------|
-| `websocket` | WebSocket support for container attach using [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) |
+| `websocket` | WebSocket support for [`attach_container_websocket`](Docker::attach_container_websocket) using [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) |
 
 #### Development Features
 
@@ -130,19 +127,13 @@ use bollard::Docker;
 Docker::connect_with_local_defaults();
 ```
 
-Use the `Docker::connect_with_local` method API to parameterise this interface.
+Use the [`Docker::connect_with_local`] method API to parameterise this interface.
 
 #### Podman
 
 Explicitly connect to Podman with automatic rootless/system socket discovery
-(Unix only).
-
-**Socket discovery order:**
-1. `$DOCKER_HOST` (if set and `unix://`)
-2. `$XDG_RUNTIME_DIR/podman/podman.sock` (rootless)
-3. `/run/user/$UID/podman/podman.sock` (rootless fallback)
-4. `/run/podman/podman.sock` (system/rootful)
-5. `/var/run/docker.sock` (Docker fallback)
+(Unix only). Probes `$DOCKER_HOST`, then rootless Podman sockets, then the
+system Podman socket, and finally falls back to the Docker socket.
 
 ```rust
 use bollard::Docker;
@@ -160,7 +151,7 @@ use bollard::Docker;
 Docker::connect_with_socket_defaults();
 ```
 
-Use the `Docker::connect_with_socket` method API to parameterise this interface.
+Use the [`Docker::connect_with_socket`] method API to parameterise this interface.
 
 #### HTTP
 
@@ -172,7 +163,7 @@ use bollard::Docker;
 Docker::connect_with_http_defaults();
 ```
 
-Use the `Docker::connect_with_http` method API to parameterise the interface.
+Use the [`Docker::connect_with_http`] method API to parameterise the interface.
 
 #### SSL via Rustls
 
@@ -190,6 +181,19 @@ Docker::connect_with_ssl_defaults();
 ```
 
 Use the `Docker::connect_with_ssl` method API to parameterise the interface.
+
+#### SSH
+
+The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
+`ssh://localhost` if missing.
+
+```rust
+use bollard::Docker;
+#[cfg(feature = "ssh")]
+Docker::connect_with_ssh_defaults();
+```
+
+Use the [`Docker::connect_with_ssh`] or [`Docker::connect_with_ssh_options`] method API to parameterise the interface.
 
 ### Examples
 
@@ -220,20 +224,18 @@ To list docker images available on the Docker server:
 
 ```rust
 use bollard::Docker;
-use bollard::image::ListImagesOptions;
+use bollard::query_parameters::ListImagesOptionsBuilder;
 
 use futures_util::future::FutureExt;
-
-use std::default::Default;
 
 // Use a connection function described above
 // let docker = Docker::connect_...;
 
 async move {
-    let images = &docker.list_images(Some(ListImagesOptions::<String> {
-        all: true,
-        ..Default::default()
-    })).await.unwrap();
+    let options = ListImagesOptionsBuilder::default()
+        .all(true)
+        .build();
+    let images = &docker.list_images(Some(options)).await.unwrap();
 
     for image in images {
         println!("-> {:?}", image);
