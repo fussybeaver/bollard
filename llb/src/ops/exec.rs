@@ -224,8 +224,12 @@ impl ExecOp {
         base: OperationOutput,
         cwd: Option<String>,
         env: Vec<(String, String)>,
-        run: RunOpts,
+        mut run: RunOpts,
     ) -> Self {
+        // Sort mounts by target path to match Go's ExecOp.Marshal ordering.
+        // The rootfs mount at "/" is added separately and remains first.
+        run.mounts.sort_by(|a, b| a.target.cmp(&b.target));
+
         // Collect operation inputs. The base state is always input 0 (the
         // rootfs). Additional inputs are deduplicated by content digest so that
         // two mounts referencing the same source share an input index.

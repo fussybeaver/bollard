@@ -11,7 +11,7 @@ use crate::ops::exec::{
     AddSecret, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode, Shlex,
 };
 use crate::ops::file::{FileAction, FileOp, FileOpts};
-use crate::ops::OperationOutput;
+use crate::ops::{Context, OperationOutput};
 use crate::platform::Platform;
 
 /// A filesystem state in the LLB graph. Cheaply cloneable (Arc-backed).
@@ -80,7 +80,10 @@ impl State {
 
     /// Marshal this state into a [`Definition`].
     pub fn marshal(&self, _opts: MarshalOpts) -> Result<Definition, LlbError> {
-        Err(LlbError::Unimplemented("State::marshal"))
+        let mut ctx = Context::new();
+        let root_ref = ctx.register(&self.output)?;
+        let wrapper_ref = ctx.append_wrapper(root_ref)?;
+        Ok(ctx.finalize(wrapper_ref.digest().clone()))
     }
 
     /// Set a custom name for the operation that produces this state.
