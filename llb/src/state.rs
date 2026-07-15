@@ -3,8 +3,6 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
-use bollard_buildkit_proto::pb;
-
 use crate::definition::Definition;
 use crate::error::LlbError;
 use crate::ops::exec::{
@@ -61,16 +59,17 @@ impl State {
     }
 
     /// Apply a file action to this state.
-    pub fn file(self, action: FileAction, opts: impl Into<FileOpts>) -> Self {
+    pub fn file(self, action: FileAction, opts: impl Into<FileOpts>) -> Result<Self, LlbError> {
         let opts = opts.into();
-        let file_op = FileOp::new(self.output, action, opts);
-        Self {
+        let file_op = FileOp::new(self.output, action, opts)?;
+        Ok(Self {
             output: OperationOutput::Owned(Arc::new(file_op)),
             constraints: self.constraints,
-        }
+        })
     }
 
-    /// Return the platform constraint for this state.
+    /// Return the platform constraint for this state, defaulting to
+    /// `linux/amd64` when none is set.
     pub fn platform(&self) -> Platform {
         self.constraints
             .platform
@@ -78,12 +77,23 @@ impl State {
             .unwrap_or_else(|| Platform::LINUX_AMD64.clone())
     }
 
+    /// Set the platform constraint for this state.
+    pub fn with_platform(mut self, platform: Platform) -> Self {
+        self.constraints.platform = Some(platform);
+        self
+    }
+
     /// Marshal this state into a [`Definition`].
     pub fn marshal(&self, opts: MarshalOpts) -> Result<Definition, LlbError> {
         let mut ctx = Context::new();
         let root_ref = ctx.register(&self.output)?;
-        let platform = opts.platform.map(Into::into);
-        let wrapper_ref = ctx.append_wrapper(root_ref, platform)?;
+        let platform = opts
+            .platform
+            .clone()
+            .or_else(|| self.constraints.platform.clone())
+            .map(Into::into);
+        let wrapper_ref =
+            ctx.append_wrapper(root_ref, platform, self.constraints.custom_name.as_deref())?;
         Ok(ctx.finalize(wrapper_ref.digest().clone()))
     }
 
@@ -94,7 +104,7 @@ impl State {
     }
 
     /// Construct a scratch (empty) state.
-    pub fn scratch() -> Self {
+    pub fn scratch() -> Result<Self, LlbError> {
         crate::scratch()
     }
 }
@@ -114,26 +124,29 @@ impl Constraints {
         self.platform = Some(platform);
         self
     }
-
-    /// Convert to a protobuf [`pb::Platform`].
-    pub fn to_pb_platform(&self) -> Option<pb::Platform> {
-        self.platform.clone().map(Into::into)
-    }
 }
 
 /// Options passed to [`State::marshal`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MarshalOpts {
     /// Platform constraint applied at the root wrapper vertex.
     pub platform: Option<Platform>,
 }
 
+impl Default for MarshalOpts {
+    fn default() -> Self {
+        Self {
+            // Match Go's `llb.State.Marshal(ctx)`, which defaults to linux/amd64. This keeps
+            // wrapper digests identical across SDKs and avoids cross-SDK cache fragmentation.
+            platform: Some(Platform::LINUX_AMD64.clone()),
+        }
+    }
+}
+
 impl MarshalOpts {
     /// Marshal with the `linux/amd64` platform constraint.
     pub fn linux_amd64() -> Self {
-        Self {
-            platform: Some(Platform::LINUX_AMD64.clone()),
-        }
+        Self::default()
     }
 
     /// Marshal with the given platform constraint.
@@ -153,17 +166,17 @@ pub struct ExecState {
 
 impl ExecState {
     /// Return the post-exec state.
-    pub fn root(self) -> State {
+    pub fn root(self) -> Result<State, LlbError> {
         let exec_op = ExecOp::new(
             self.base.output,
             self.base.constraints.cwd.clone(),
             self.base.constraints.env.clone(),
             self.run,
-        );
-        State {
+        )?;
+        Ok(State {
             output: OperationOutput::Owned(Arc::new(exec_op)),
             constraints: self.base.constraints,
-        }
+        })
     }
 
     /// Add a bind mount from a source state.

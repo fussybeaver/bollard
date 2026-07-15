@@ -24,13 +24,19 @@ use prost::Message;
 
 fn alpine() -> State {
     State::from(
-        Image::new("docker.io/library/alpine:latest").with_platform(Platform::LINUX_AMD64.clone()),
+        Image::new("docker.io/library/alpine:latest")
+            .unwrap()
+            .with_platform(Platform::LINUX_AMD64.clone())
+            .unwrap(),
     )
 }
 
 fn busybox() -> State {
     State::from(
-        Image::new("docker.io/library/busybox:latest").with_platform(Platform::LINUX_AMD64.clone()),
+        Image::new("docker.io/library/busybox:latest")
+            .unwrap()
+            .with_platform(Platform::LINUX_AMD64.clone())
+            .unwrap(),
     )
 }
 
@@ -104,6 +110,7 @@ fn parity_image_run() {
             alpine()
                 .run(shlex("echo hello"))
                 .root()
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
@@ -117,6 +124,7 @@ fn parity_merge() {
         include_bytes!("../testdata/golden/merge.llb.pb"),
         || {
             merge(vec![alpine(), busybox()], MergeOpts::new())
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
@@ -138,6 +146,7 @@ fn parity_copy_all_flags() {
                 .with_exclude_pattern("*.tmp");
             alpine()
                 .file(action, FileOpts::new())
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
@@ -163,6 +172,7 @@ fn parity_secret_as_env() {
                     },
                 )
                 .root()
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
@@ -179,6 +189,7 @@ fn parity_cache_mount_shared() {
                 .run(shlex("echo hello"))
                 .add_mount_cache("/cache", "cache-id", CacheSharingMode::Shared)
                 .root()
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
@@ -195,10 +206,62 @@ fn parity_cache_mount_locked() {
                 .run(shlex("echo hello"))
                 .add_mount_cache("/cache", "cache-id", CacheSharingMode::Locked)
                 .root()
+                .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
     );
+}
+
+#[test]
+fn parity_multi_mount_ordering() {
+    // Mounts added out of order; Rust sorts by target path to match Go's
+    // ExecOp.Marshal canonicalization.
+    let def = alpine()
+        .run(shlex("echo hello"))
+        .add_mount_cache("/c", "cache-c", CacheSharingMode::Shared)
+        .add_mount_cache("/a", "cache-a", CacheSharingMode::Shared)
+        .add_mount_cache("/b", "cache-b", CacheSharingMode::Shared)
+        .root()
+        .unwrap()
+        .marshal(MarshalOpts::linux_amd64())
+        .unwrap();
+
+    let golden = pb::Definition::decode(
+        include_bytes!("../testdata/golden/multi_mount_ordering.llb.pb").as_slice(),
+    )
+    .unwrap();
+    assert_eq!(def.def.len(), golden.def.len());
+
+    // Decode the exec op and compare mount target order.
+    let rust_exec = find_exec_op(&def);
+    let golden_exec = find_exec_op_in_definition(&golden);
+    let rust_targets: Vec<&str> = rust_exec.mounts.iter().map(|m| m.dest.as_str()).collect();
+    let golden_targets: Vec<&str> = golden_exec.mounts.iter().map(|m| m.dest.as_str()).collect();
+    assert_eq!(
+        rust_targets, golden_targets,
+        "mount target order should match Go"
+    );
+}
+
+fn find_exec_op(def: &bollard_llb::Definition) -> pb::ExecOp {
+    for bytes in &def.def {
+        let op = pb::Op::decode(bytes.as_slice()).unwrap();
+        if let Some(pb::op::Op::Exec(exec)) = op.op {
+            return exec;
+        }
+    }
+    panic!("no exec op found");
+}
+
+fn find_exec_op_in_definition(def: &pb::Definition) -> pb::ExecOp {
+    for bytes in &def.def {
+        let op = pb::Op::decode(bytes.as_slice()).unwrap();
+        if let Some(pb::op::Op::Exec(exec)) = op.op {
+            return exec;
+        }
+    }
+    panic!("no exec op found");
 }
 
 #[test]
@@ -209,10 +272,15 @@ fn parity_local_all_attrs() {
         || {
             State::from(
                 Local::new("context")
+                    .unwrap()
                     .with_follow_paths(["src"])
+                    .unwrap()
                     .with_session_id("sess")
+                    .unwrap()
                     .with_shared_key_hint("hint")
-                    .with_unique_id("unique"),
+                    .unwrap()
+                    .with_unique_id("unique")
+                    .unwrap(),
             )
             .marshal(MarshalOpts::linux_amd64())
             .unwrap()
@@ -228,7 +296,9 @@ fn parity_local_all_attrs() {
 #[test]
 fn parity_mkdir_parents_structural() {
     let def = scratch()
+        .unwrap()
         .file(mkdir("/tmp", 0o755).with_parents(true), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     assert_eq!(def.def.len(), 3);
@@ -238,7 +308,9 @@ fn parity_mkdir_parents_structural() {
 #[test]
 fn parity_mkfile_structural() {
     let def = scratch()
+        .unwrap()
         .file(mkfile("/hello", 0o644, b"world"), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     assert_eq!(def.def.len(), 3);
@@ -247,21 +319,35 @@ fn parity_mkfile_structural() {
 
 #[test]
 fn parity_file_operations_chain_structural() {
-    let base = scratch().file(mkdir("/app", 0o755).with_parents(true), FileOpts::new());
-    let with_config = base.clone().file(
-        mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
-        FileOpts::new(),
-    );
-    let with_symlink = with_config.clone().file(
-        symlink("/app/config.toml", "/app/current-config"),
-        FileOpts::new(),
-    );
-    let with_copy = with_symlink.clone().file(
-        copy(with_symlink, "/app/config.toml", "/app/config.toml.bak").with_create_dest_path(true),
-        FileOpts::new(),
-    );
+    let base = scratch()
+        .unwrap()
+        .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
+        .unwrap();
+    let with_config = base
+        .clone()
+        .file(
+            mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            FileOpts::new(),
+        )
+        .unwrap();
+    let with_symlink = with_config
+        .clone()
+        .file(
+            symlink("/app/config.toml", "/app/current-config"),
+            FileOpts::new(),
+        )
+        .unwrap();
+    let with_copy = with_symlink
+        .clone()
+        .file(
+            copy(with_symlink, "/app/config.toml", "/app/config.toml.bak")
+                .with_create_dest_path(true),
+            FileOpts::new(),
+        )
+        .unwrap();
     let def = with_copy
         .file(rm("/app/current-config"), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     assert_eq!(def.def.len(), 7);

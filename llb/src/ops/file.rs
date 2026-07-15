@@ -1,10 +1,9 @@
 //! File-operation types: copy, mkdir, mkfile, and friends.
 
 use bollard_buildkit_proto::pb;
-use prost::Message;
 
 use crate::error::LlbError;
-use crate::marshal::{sha256_op, Digest};
+use crate::marshal::Digest;
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput, OutputIdx};
 use crate::state::State;
@@ -338,7 +337,11 @@ pub(crate) struct FileOp {
 impl FileOp {
     /// Build a new file operation from the base state, a single action, and
     /// options.
-    pub(crate) fn new(base: OperationOutput, action: FileAction, opts: FileOpts) -> Self {
+    pub(crate) fn new(
+        base: OperationOutput,
+        action: FileAction,
+        opts: FileOpts,
+    ) -> Result<Self, LlbError> {
         let mut inputs: Vec<OperationOutput> = vec![base.clone()];
         let mut input_keys: Vec<(Digest, OutputIdx)> =
             vec![(base.operation().digest().clone(), base.index())];
@@ -363,20 +366,16 @@ impl FileOp {
             op: Some(pb::op::Op::File(file_op)),
         };
 
-        let digest = sha256_op(&pb_op).expect("FileOp protobuf encoding is infallible");
-        let mut bytes = Vec::new();
-        pb_op
-            .encode(&mut bytes)
-            .expect("FileOp protobuf encoding is infallible");
+        let (digest, bytes) = crate::marshal::encode_and_hash(&pb_op)?;
 
         let metadata = build_file_metadata(&action, &opts);
 
-        Self {
+        Ok(Self {
             inputs,
             bytes,
             digest,
             metadata,
-        }
+        })
     }
 }
 
@@ -568,34 +567,35 @@ mod tests {
     #[test]
     fn fileop_copy_has_two_inputs() {
         // Use an image for the base so the base digest differs from the copy source.
-        let base =
-            OperationOutput::Owned(Arc::new(crate::ops::source::Image::new("alpine:latest")));
-        let src = scratch();
+        let base = OperationOutput::Owned(Arc::new(
+            crate::ops::source::Image::new("alpine:latest").unwrap(),
+        ));
+        let src = scratch().unwrap();
         let action = copy(src, "/src", "/dest");
-        let op = FileOp::new(base, action, FileOpts::default());
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
         assert_eq!(op.inputs.len(), 2);
     }
 
     #[test]
     fn fileop_mkdir_has_one_input() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
         let action = mkdir("/app", 0o755).with_parents(true);
-        let op = FileOp::new(base, action, FileOpts::default());
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
         assert_eq!(op.inputs.len(), 1);
     }
 
     #[test]
     fn fileop_digest_stable() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
         let action = mkdir("/app", 0o755);
-        let a = FileOp::new(base.clone(), action.clone(), FileOpts::default());
-        let b = FileOp::new(base, action, FileOpts::default());
+        let a = FileOp::new(base.clone(), action.clone(), FileOpts::default()).unwrap();
+        let b = FileOp::new(base, action, FileOpts::default()).unwrap();
         assert_eq!(a.digest, b.digest);
     }
 
     #[test]
     fn copy_options_chain() {
-        let src = scratch();
+        let src = scratch().unwrap();
         let action = copy(src, "/src", "/dest")
             .with_create_dest_path(true)
             .with_exclude_pattern("*.log")
@@ -612,7 +612,12 @@ mod tests {
 
     #[test]
     fn state_file_chains() {
-        let s = scratch().file(mkdir("/app", 0o755), FileOpts::default());
-        let _ = s.file(mkfile("/app/foo", 0o644, "hi"), FileOpts::default());
+        let s = scratch()
+            .unwrap()
+            .file(mkdir("/app", 0o755), FileOpts::default())
+            .unwrap();
+        let _ = s
+            .file(mkfile("/app/foo", 0o644, "hi"), FileOpts::default())
+            .unwrap();
     }
 }

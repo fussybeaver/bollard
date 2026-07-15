@@ -1,22 +1,21 @@
 //! Execution-operation types: mounts, secrets, cache mounts, run options, and
 //! [`ExecOp`] serialization.
 
-use bollard_buildkit_proto::pb;
-use prost::Message;
-
 use crate::error::LlbError;
-use crate::marshal::{sha256_op, Digest};
+use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput, OutputIdx};
 use crate::state::{ExecState, RunOpts, State};
+use bollard_buildkit_proto::pb;
 
 /// How a cache mount is shared between concurrent builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CacheSharingMode {
-    /// Concurrent reads, no write locking.
+    /// Concurrent reads, no write locking (default; matches Go's
+    /// `AsPersistentCacheDir` default).
+    #[default]
     Shared,
     /// Serializes writes.
-    #[default]
     Locked,
     /// Fully private mount.
     Private,
@@ -225,8 +224,11 @@ impl ExecOp {
         cwd: Option<String>,
         env: Vec<(String, String)>,
         mut run: RunOpts,
-    ) -> Self {
-        // Sort mounts by target path to match Go's ExecOp.Marshal ordering.
+    ) -> Result<Self, LlbError> {
+        // Sort mounts by target path to match Go's moby/buildkit client/llb
+        // ExecOp.Marshal behavior (github.com/moby/buildkit@v0.31.1,
+        // client/llb/exec.go:145-148). This canonicalization keeps cache keys
+        // stable regardless of the order in which mounts were added.
         // The rootfs mount at "/" is added separately and remains first.
         run.mounts.sort_by(|a, b| a.target.cmp(&b.target));
 
@@ -331,20 +333,16 @@ impl ExecOp {
             op: Some(pb::op::Op::Exec(exec)),
         };
 
-        let digest = sha256_op(&pb_op).expect("ExecOp protobuf encoding is infallible");
-        let mut bytes = Vec::new();
-        pb_op
-            .encode(&mut bytes)
-            .expect("ExecOp protobuf encoding is infallible");
+        let (digest, bytes) = encode_and_hash(&pb_op)?;
 
         let metadata = build_exec_metadata(&run);
 
-        Self {
+        Ok(Self {
             inputs,
             bytes,
             digest,
             metadata,
-        }
+        })
     }
 }
 
@@ -523,48 +521,74 @@ impl crate::state::RunOpt for WithCustomName {
 mod tests {
     use std::sync::Arc;
 
+    use prost::Message;
+
     use super::*;
     use crate::ops::source::Scratch;
     use crate::ops::OperationOutput;
     use crate::scratch;
 
     #[test]
+    fn cache_sharing_mode_default_is_shared() {
+        assert_eq!(CacheSharingMode::default(), CacheSharingMode::Shared);
+    }
+
+    #[test]
+    fn cache_sharing_mode_as_i32_matches_proto() {
+        assert_eq!(
+            CacheSharingMode::Shared.as_i32(),
+            pb::CacheSharingOpt::Shared as i32
+        );
+        assert_eq!(
+            CacheSharingMode::Locked.as_i32(),
+            pb::CacheSharingOpt::Locked as i32
+        );
+        assert_eq!(
+            CacheSharingMode::Private.as_i32(),
+            pb::CacheSharingOpt::Private as i32
+        );
+    }
+
+    #[test]
     fn execop_digest_stable() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
         let a = ExecOp::new(
             base.clone(),
             None,
             Vec::new(),
             RunOpts::default().with_arg("echo"),
-        );
-        let b = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("echo"));
+        )
+        .unwrap();
+        let b = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("echo")).unwrap();
         assert_eq!(a.digest, b.digest);
     }
 
     #[test]
     fn execop_digest_differs_by_args() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
         let a = ExecOp::new(
             base.clone(),
             None,
             Vec::new(),
             RunOpts::default().with_arg("echo"),
-        );
-        let b = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("cat"));
+        )
+        .unwrap();
+        let b = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("cat")).unwrap();
         assert_ne!(a.digest, b.digest);
     }
 
     #[test]
     fn execop_mount_input_dedup() {
         // Use an image for the base so the base digest differs from the mount source.
-        let base =
-            OperationOutput::Owned(Arc::new(crate::ops::source::Image::new("alpine:latest")));
-        let src = scratch();
+        let base = OperationOutput::Owned(Arc::new(
+            crate::ops::source::Image::new("alpine:latest").unwrap(),
+        ));
+        let src = scratch().unwrap();
         let run = RunOpts::default()
             .with_arg("echo")
             .with_mount("/a", src.clone())
             .with_mount("/b", src);
-        let op = ExecOp::new(base, None, Vec::new(), run);
+        let op = ExecOp::new(base, None, Vec::new(), run).unwrap();
         // base + one deduplicated mount source = 2 inputs
         assert_eq!(op.inputs.len(), 2);
     }
@@ -583,14 +607,14 @@ mod tests {
 
     #[test]
     fn exec_state_root_chains() {
-        let s = scratch().run(shlex("echo hello")).root();
-        let _ = s.run(shlex("echo again")).root();
+        let s = scratch().unwrap().run(shlex("echo hello")).root().unwrap();
+        let _ = s.run(shlex("echo again")).root().unwrap();
     }
 
     #[test]
     fn execop_rootfs_mount() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
-        let op = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("echo"));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
+        let op = ExecOp::new(base, None, Vec::new(), RunOpts::default().with_arg("echo")).unwrap();
         let pb_op = pb::Op::decode(op.bytes.as_slice()).unwrap();
         let exec = match pb_op.op {
             Some(pb::op::Op::Exec(e)) => e,
@@ -602,9 +626,9 @@ mod tests {
 
     #[test]
     fn execop_env_merge_run_overrides_base() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new()));
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
         let run = RunOpts::default().with_env("K", "V2");
-        let op = ExecOp::new(base, None, vec![("K".to_string(), "V1".to_string())], run);
+        let op = ExecOp::new(base, None, vec![("K".to_string(), "V1".to_string())], run).unwrap();
         let pb_op = pb::Op::decode(op.bytes.as_slice()).unwrap();
         let exec = match pb_op.op {
             Some(pb::op::Op::Exec(e)) => e,

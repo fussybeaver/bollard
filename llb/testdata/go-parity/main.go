@@ -33,6 +33,7 @@ func main() {
 		{"cache_mount_shared", cacheMountShared()},
 		{"cache_mount_locked", cacheMountLocked()},
 		{"file_operations_chain", fileOperationsChain()},
+		{"multi_mount_ordering", multiMountOrdering()},
 	}
 
 	for _, c := range cases {
@@ -126,6 +127,20 @@ func cacheMountLocked() llb.State {
 		Run(
 			llb.Shlex("echo hello"),
 			llb.AddMount("/cache", llb.Scratch(), llb.AsPersistentCacheDir("cache-id", llb.CacheMountLocked)),
+		).
+		Root()
+}
+
+func multiMountOrdering() llb.State {
+	// Mounts are deliberately added out of alphabetical order. Go's ExecOp
+	// Marshal sorts them by target path, so the serialized op should contain
+	// /a, /b, /c regardless of insertion order.
+	return llb.Image("alpine:latest").
+		Run(
+			llb.Shlex("echo hello"),
+			llb.AddMount("/c", llb.Scratch(), llb.AsPersistentCacheDir("cache-c", llb.CacheMountShared)),
+			llb.AddMount("/a", llb.Scratch(), llb.AsPersistentCacheDir("cache-a", llb.CacheMountShared)),
+			llb.AddMount("/b", llb.Scratch(), llb.AsPersistentCacheDir("cache-b", llb.CacheMountShared)),
 		).
 		Root()
 }

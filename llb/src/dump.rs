@@ -592,8 +592,10 @@ mod tests {
 
     fn sample_def() -> Definition {
         image("alpine:latest")
+            .unwrap()
             .run(shlex("echo hello"))
             .root()
+            .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap()
     }
@@ -631,14 +633,18 @@ mod tests {
     fn dump_text_renders_merge_and_file() {
         let def = merge(
             vec![
-                image("alpine:latest"),
-                scratch().file(
-                    mkdir("/tmp", 0o755).with_parents(true),
-                    crate::FileOpts::new(),
-                ),
+                image("alpine:latest").unwrap(),
+                scratch()
+                    .unwrap()
+                    .file(
+                        mkdir("/tmp", 0o755).with_parents(true),
+                        crate::FileOpts::new(),
+                    )
+                    .unwrap(),
             ],
             crate::MergeOpts::new(),
         )
+        .unwrap()
         .marshal(MarshalOpts::default())
         .unwrap();
         let mut out = Vec::new();
@@ -652,10 +658,12 @@ mod tests {
     #[test]
     fn dump_text_renders_copy() {
         let def = image("alpine:latest")
+            .unwrap()
             .file(
-                copy(image("busybox:latest"), "/src", "/dst").with_create_dest_path(true),
+                copy(image("busybox:latest").unwrap(), "/src", "/dst").with_create_dest_path(true),
                 crate::FileOpts::new(),
             )
+            .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap();
         let mut out = Vec::new();
@@ -668,7 +676,9 @@ mod tests {
     #[test]
     fn dump_text_renders_mkfile() {
         let def = scratch()
+            .unwrap()
             .file(mkfile("/hello", 0o644, b"world"), crate::FileOpts::new())
+            .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap();
         let mut out = Vec::new();
@@ -699,9 +709,13 @@ mod tests {
     #[test]
     fn dump_json_matches_def_count() {
         let def = merge(
-            vec![image("alpine:latest"), image("busybox:latest")],
+            vec![
+                image("alpine:latest").unwrap(),
+                image("busybox:latest").unwrap(),
+            ],
             crate::MergeOpts::new(),
         )
+        .unwrap()
         .marshal(MarshalOpts::default())
         .unwrap();
         let mut out = Vec::new();

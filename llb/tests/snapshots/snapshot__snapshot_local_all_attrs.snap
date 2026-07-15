@@ -1,10 +1,9 @@
 ---
 source: llb/tests/snapshot.rs
-assertion_line: 135
 expression: "SnapshotDefinition::from(&def)"
 ---
 SnapshotDefinition {
-    root: "sha256:0eaa1a024c1d3d41e3104a4a12bb8874266784be0cb8e97239e08af1312c382d",
+    root: "sha256:a557fa3a4a4987fd4f6c91b0a5f8464c15973cf90f457e29dd477775286a9087",
     ops: [
         Op {
             inputs: [],
@@ -16,9 +15,9 @@ SnapshotDefinition {
                         identifier: "local://context",
                         attrs: {
                             "local.followpaths": "[\"src\"]",
-                            "local.session": "sess",
+                            "local.sessionid": "sess",
                             "local.sharedkeyhint": "hint",
-                            "local.unique": "unique",
+                            "local.uniquename": "unique",
                         },
                     },
                 ),
@@ -27,7 +26,7 @@ SnapshotDefinition {
         Op {
             inputs: [
                 Input {
-                    digest: "sha256:51f9c5698e59305056ee6f7f0d53950a4f66e78a6ad8a6ac03d1deb538c986c5",
+                    digest: "sha256:e7bdf2a34adcf1f726f14e9779c88cbb48a8a1b953a9d1eba1f5dcd02f2a372c",
                     index: 0,
                 },
             ],
@@ -45,7 +44,7 @@ SnapshotDefinition {
         },
     ],
     metadata: {
-        "sha256:0eaa1a024c1d3d41e3104a4a12bb8874266784be0cb8e97239e08af1312c382d": OpMetadata {
+        "sha256:a557fa3a4a4987fd4f6c91b0a5f8464c15973cf90f457e29dd477775286a9087": OpMetadata {
             ignore_cache: false,
             description: {},
             export_cache: None,
@@ -55,7 +54,7 @@ SnapshotDefinition {
             },
             progress_group: None,
         },
-        "sha256:51f9c5698e59305056ee6f7f0d53950a4f66e78a6ad8a6ac03d1deb538c986c5": OpMetadata {
+        "sha256:e7bdf2a34adcf1f726f14e9779c88cbb48a8a1b953a9d1eba1f5dcd02f2a372c": OpMetadata {
             ignore_cache: false,
             description: {},
             export_cache: None,

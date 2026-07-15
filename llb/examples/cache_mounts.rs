@@ -14,10 +14,12 @@ use bollard_llb::{image, shlex, CacheSharingMode};
 
 fn main() {
     let st = image("alpine:latest")
+        .unwrap()
         .run(shlex("apk add --no-cache curl git jq"))
         .with_custom_name("install packages with cached apk")
         .add_mount_cache("/var/cache/apk", "apk-cache", CacheSharingMode::Shared)
-        .root();
+        .root()
+        .unwrap();
 
     let st = st
         .run(shlex(
@@ -29,7 +31,8 @@ fn main() {
             "build-cache-v1",
             CacheSharingMode::Private,
         )
-        .root();
+        .root()
+        .unwrap();
 
     let st = st
         .run(shlex(
@@ -37,7 +40,8 @@ fn main() {
         ))
         .with_custom_name("finalize with locked cache")
         .add_mount_cache("/tmp/locked", "locked-state", CacheSharingMode::Locked)
-        .root();
+        .root()
+        .unwrap();
 
     let def = st.marshal(Default::default()).unwrap();
     def.write_to(&mut std::io::stdout()).unwrap();

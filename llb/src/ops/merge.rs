@@ -3,10 +3,9 @@
 //! Mirrors Go's `github.com/moby/buildkit/client/llb.Merge`.
 
 use bollard_buildkit_proto::pb;
-use prost::Message;
 
 use crate::error::LlbError;
-use crate::marshal::{sha256_op, Digest};
+use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput};
 use crate::state::State;
@@ -38,15 +37,18 @@ impl MergeOpts {
 /// - zero inputs → [`crate::scratch()`]
 /// - one input → the input itself
 /// - two or more inputs → a `MergeOp` vertex
-pub fn merge<I: IntoIterator<Item = State>>(inputs: I, opts: impl Into<MergeOpts>) -> State {
+pub fn merge<I: IntoIterator<Item = State>>(
+    inputs: I,
+    opts: impl Into<MergeOpts>,
+) -> Result<State, LlbError> {
     let opts = opts.into();
     let inputs: Vec<State> = inputs.into_iter().collect();
     match inputs.len() {
         0 => crate::scratch(),
-        1 => inputs.into_iter().next().expect("one input"),
+        1 => Ok(inputs.into_iter().next().expect("one input")),
         _ => {
-            let op = MergeOp::new(inputs, opts);
-            State::new(OperationOutput::Owned(std::sync::Arc::new(op)))
+            let op = MergeOp::new(inputs, opts)?;
+            Ok(State::new(OperationOutput::Owned(std::sync::Arc::new(op))))
         }
     }
 }
@@ -65,7 +67,7 @@ impl MergeOp {
     ///
     /// Each input gets its own [`pb::Input`] and [`pb::MergeInput`]; there is
     /// no input deduplication, matching Go's `MergeOp.Marshal`.
-    pub(crate) fn new(states: Vec<State>, opts: MergeOpts) -> Self {
+    pub(crate) fn new(states: Vec<State>, opts: MergeOpts) -> Result<Self, LlbError> {
         let inputs: Vec<OperationOutput> = states.iter().map(|s| s.output().clone()).collect();
 
         let pb_inputs: Vec<pb::Input> = inputs
@@ -91,11 +93,7 @@ impl MergeOp {
             op: Some(pb::op::Op::Merge(merge_op)),
         };
 
-        let digest = sha256_op(&pb_op).expect("MergeOp protobuf encoding is infallible");
-        let mut bytes = Vec::new();
-        pb_op
-            .encode(&mut bytes)
-            .expect("MergeOp protobuf encoding is infallible");
+        let (digest, bytes) = encode_and_hash(&pb_op)?;
 
         let mut metadata = OpMetadata::default();
         metadata.caps.insert(cap::CAP_MERGE_OP.to_string());
@@ -106,12 +104,12 @@ impl MergeOp {
             metadata.caps.insert(cap::CAP_META_DESCRIPTION.to_string());
         }
 
-        Self {
+        Ok(Self {
             inputs,
             bytes,
             digest,
             metadata,
-        }
+        })
     }
 }
 
@@ -134,22 +132,29 @@ impl Operation for MergeOp {
 
 #[cfg(test)]
 mod tests {
+    use prost::Message;
+
     use super::*;
 
     #[test]
     fn merge_zero_inputs_is_scratch() {
-        let s = merge(Vec::<State>::new(), MergeOpts::new());
+        let s = merge(Vec::<State>::new(), MergeOpts::new()).unwrap();
         // The scratch source is the canonical empty state.
         assert_eq!(
             s.output().operation().digest().as_str(),
-            crate::scratch().output().operation().digest().as_str()
+            crate::scratch()
+                .unwrap()
+                .output()
+                .operation()
+                .digest()
+                .as_str()
         );
     }
 
     #[test]
     fn merge_one_input_returns_input() {
-        let img = crate::image("alpine:latest");
-        let s = merge(vec![img.clone()], MergeOpts::new());
+        let img = crate::image("alpine:latest").unwrap();
+        let s = merge(vec![img.clone()], MergeOpts::new()).unwrap();
         assert_eq!(
             s.output().operation().digest().as_str(),
             img.output().operation().digest().as_str()
@@ -160,18 +165,20 @@ mod tests {
     fn mergeop_digest_stable() {
         let a = merge(
             vec![
-                crate::image("alpine:latest"),
-                crate::image("busybox:latest"),
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
             ],
             MergeOpts::new(),
-        );
+        )
+        .unwrap();
         let b = merge(
             vec![
-                crate::image("alpine:latest"),
-                crate::image("busybox:latest"),
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
             ],
             MergeOpts::new(),
-        );
+        )
+        .unwrap();
         assert_eq!(
             a.output().operation().digest().as_str(),
             b.output().operation().digest().as_str()
@@ -182,11 +189,12 @@ mod tests {
     fn mergeop_has_two_inputs() {
         let op = MergeOp::new(
             vec![
-                crate::image("alpine:latest"),
-                crate::image("busybox:latest"),
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
             ],
             MergeOpts::new(),
-        );
+        )
+        .unwrap();
         assert_eq!(op.inputs.len(), 2);
     }
 
@@ -194,11 +202,12 @@ mod tests {
     fn mergeop_variant_is_merge() {
         let op = MergeOp::new(
             vec![
-                crate::image("alpine:latest"),
-                crate::image("busybox:latest"),
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
             ],
             MergeOpts::new(),
-        );
+        )
+        .unwrap();
         let pb_op = pb::Op::decode(op.bytes.as_slice()).unwrap();
         assert!(
             matches!(pb_op.op, Some(pb::op::Op::Merge(_))),
@@ -209,9 +218,10 @@ mod tests {
     #[test]
     fn mergeop_custom_name_metadata() {
         let op = MergeOp::new(
-            vec![crate::image("alpine:latest")],
+            vec![crate::image("alpine:latest").unwrap()],
             MergeOpts::new().with_custom_name("merged"),
-        );
+        )
+        .unwrap();
         assert_eq!(
             op.metadata
                 .description

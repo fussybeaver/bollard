@@ -47,14 +47,30 @@ pub fn sha256(bytes: &[u8]) -> Digest {
     Digest(Arc::from(format!("sha256:{}", hex::encode(hash))))
 }
 
-/// Deterministically encode a protobuf `Op` and compute its SHA-256 digest.
+/// Deterministically encode a protobuf `Op` into bytes.
 ///
-/// Callers must ensure the encoded form is deterministic (see module note).
-pub fn sha256_op(op: &pb::Op) -> Result<Digest, LlbError> {
+/// The encoded form is used both for transport and for content-digest
+/// computation.
+pub fn encode_op(op: &pb::Op) -> Result<Vec<u8>, LlbError> {
     let mut buf = Vec::new();
     op.encode(&mut buf).map_err(|source| LlbError::Encode {
         op: "Op".to_string(),
         source,
     })?;
-    Ok(sha256(&buf))
+    Ok(buf)
+}
+
+/// Deterministically encode a protobuf `Op` and return both its SHA-256 digest
+/// and the encoded bytes.
+///
+/// This encodes the op exactly once, hashes the resulting buffer, and then
+/// returns the same buffer for storage. Callers must ensure the encoded form is
+/// deterministic (see module note).
+pub fn encode_and_hash(op: &pb::Op) -> Result<(Digest, Vec<u8>), LlbError> {
+    let mut bytes = Vec::new();
+    op.encode(&mut bytes).map_err(|source| LlbError::Encode {
+        op: "Op".to_string(),
+        source,
+    })?;
+    Ok((sha256(&bytes), bytes))
 }

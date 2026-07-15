@@ -44,8 +44,10 @@ impl From<&bollard_llb::Definition> for SnapshotDefinition {
 #[test]
 fn snapshot_image_run() {
     let def = image("alpine:latest")
+        .unwrap()
         .run(shlex("echo hello"))
         .root()
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -54,9 +56,13 @@ fn snapshot_image_run() {
 #[test]
 fn snapshot_merge() {
     let def = merge(
-        vec![image("alpine:latest"), image("busybox:latest")],
+        vec![
+            image("alpine:latest").unwrap(),
+            image("busybox:latest").unwrap(),
+        ],
         MergeOpts::new(),
     )
+    .unwrap()
     .marshal(MarshalOpts::linux_amd64())
     .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -64,8 +70,8 @@ fn snapshot_merge() {
 
 #[test]
 fn snapshot_copy_all_flags() {
-    let base = image("alpine:latest");
-    let src = image("busybox:latest");
+    let base = image("alpine:latest").unwrap();
+    let src = image("busybox:latest").unwrap();
     let action = copy(src, "/src", "/dst")
         .with_create_dest_path(true)
         .with_follow_symlinks(true)
@@ -75,6 +81,7 @@ fn snapshot_copy_all_flags() {
         .with_exclude_pattern("*.tmp");
     let def = base
         .file(action, FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -83,7 +90,9 @@ fn snapshot_copy_all_flags() {
 #[test]
 fn snapshot_mkdir_parents() {
     let def = scratch()
+        .unwrap()
         .file(mkdir("/tmp", 0o755).with_parents(true), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -92,7 +101,9 @@ fn snapshot_mkdir_parents() {
 #[test]
 fn snapshot_mkfile() {
     let def = scratch()
+        .unwrap()
         .file(mkfile("/hello", 0o644, b"world"), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -101,6 +112,7 @@ fn snapshot_mkfile() {
 #[test]
 fn snapshot_secret_as_env() {
     let def = image("alpine:latest")
+        .unwrap()
         .run(shlex("cat /secrets/token"))
         .add_secret(
             "token",
@@ -113,6 +125,7 @@ fn snapshot_secret_as_env() {
             },
         )
         .root()
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -122,10 +135,15 @@ fn snapshot_secret_as_env() {
 fn snapshot_local_all_attrs() {
     let def = State::from(
         Local::new("context")
+            .unwrap()
             .with_follow_paths(["src"])
+            .unwrap()
             .with_session_id("sess")
+            .unwrap()
             .with_shared_key_hint("hint")
-            .with_unique_id("unique"),
+            .unwrap()
+            .with_unique_id("unique")
+            .unwrap(),
     )
     .marshal(MarshalOpts::linux_amd64())
     .unwrap();
@@ -135,9 +153,11 @@ fn snapshot_local_all_attrs() {
 #[test]
 fn snapshot_cache_mount_shared() {
     let def = image("alpine:latest")
+        .unwrap()
         .run(shlex("echo hello"))
         .add_mount_cache("/cache", "cache-id", CacheSharingMode::Shared)
         .root()
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -146,9 +166,11 @@ fn snapshot_cache_mount_shared() {
 #[test]
 fn snapshot_cache_mount_locked() {
     let def = image("alpine:latest")
+        .unwrap()
         .run(shlex("echo hello"))
         .add_mount_cache("/cache", "cache-id", CacheSharingMode::Locked)
         .root()
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));
@@ -156,25 +178,39 @@ fn snapshot_cache_mount_locked() {
 
 #[test]
 fn snapshot_file_operations_chain() {
-    let base = scratch().file(mkdir("/app", 0o755).with_parents(true), FileOpts::new());
+    let base = scratch()
+        .unwrap()
+        .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
+        .unwrap();
 
-    let with_config = base.clone().file(
-        mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
-        FileOpts::new(),
-    );
+    let with_config = base
+        .clone()
+        .file(
+            mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            FileOpts::new(),
+        )
+        .unwrap();
 
-    let with_symlink = with_config.clone().file(
-        symlink("/app/config.toml", "/app/current-config"),
-        FileOpts::new(),
-    );
+    let with_symlink = with_config
+        .clone()
+        .file(
+            symlink("/app/config.toml", "/app/current-config"),
+            FileOpts::new(),
+        )
+        .unwrap();
 
-    let with_copy = with_symlink.clone().file(
-        copy(with_symlink, "/app/config.toml", "/app/config.toml.bak").with_create_dest_path(true),
-        FileOpts::new(),
-    );
+    let with_copy = with_symlink
+        .clone()
+        .file(
+            copy(with_symlink, "/app/config.toml", "/app/config.toml.bak")
+                .with_create_dest_path(true),
+            FileOpts::new(),
+        )
+        .unwrap();
 
     let def = with_copy
         .file(rm("/app/current-config"), FileOpts::new())
+        .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
     insta::assert_debug_snapshot!(SnapshotDefinition::from(&def));

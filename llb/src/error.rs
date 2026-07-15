@@ -43,4 +43,8 @@ pub enum LlbError {
     /// A feature or operation has not been implemented yet.
     #[error("not yet implemented: {0}")]
     Unimplemented(&'static str),
+
+    /// Failed to serialize a value to an intermediate representation.
+    #[error("serialization error: {0}")]
+    Serialization(String),
 }
