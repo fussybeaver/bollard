@@ -21,6 +21,42 @@ use bollard_llb::{
     Image, Local, MarshalOpts, MergeOpts, Platform, State,
 };
 use prost::Message;
+use sha2::{Digest, Sha256};
+
+const GO_MOD_CONTENT: &str = include_str!("../testdata/go-parity/go.mod");
+const OPS_PROTO_BYTES: &[u8] = include_bytes!("../../codegen/proto/resources/pb/ops.proto");
+
+/// Pin the BuildKit version used by the Go parity generator.
+fn parse_go_buildkit_version(go_mod: &str) -> Option<String> {
+    for line in go_mod.lines() {
+        if !line.contains("github.com/moby/buildkit") || line.contains("// indirect") {
+            continue;
+        }
+        for token in line.split_whitespace() {
+            if token.len() > 1 && token.starts_with('v') && token.as_bytes()[1].is_ascii_digit() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn go_oracle_version() -> String {
+    parse_go_buildkit_version(GO_MOD_CONTENT).unwrap_or_else(|| "unknown".to_string())
+}
+
+fn ops_proto_sha256() -> String {
+    hex::encode(Sha256::digest(OPS_PROTO_BYTES))
+}
+
+fn provenance(name: &str) -> String {
+    format!(
+        "fixture={} go_oracle={} ops_proto_sha256={}",
+        name,
+        go_oracle_version(),
+        ops_proto_sha256()
+    )
+}
 
 fn alpine() -> State {
     State::from(
@@ -47,13 +83,16 @@ fn assert_vertex_count(
 ) {
     let rust_def = build();
     let golden_def = pb::Definition::decode(golden_bytes).unwrap();
+    let context = provenance(name);
+
     assert_eq!(
         rust_def.def.len(),
         golden_def.def.len(),
-        "{}: vertex count differs (rust={}, go={})",
+        "{}: vertex count differs (rust={}, go={}) [provenance: {}]",
         name,
         rust_def.def.len(),
         golden_def.def.len(),
+        context,
     );
 
     // Op-variant types match.
@@ -71,8 +110,8 @@ fn assert_vertex_count(
     let golden_types: Vec<OpKind> = golden_ops.iter().map(op_kind).collect();
     assert_eq!(
         rust_types, golden_types,
-        "{}: op-variant sequence differs",
-        name,
+        "{}: op-variant sequence differs [provenance: {}]",
+        name, context,
     );
 }
 
@@ -231,7 +270,15 @@ fn parity_multi_mount_ordering() {
         include_bytes!("../testdata/golden/multi_mount_ordering.llb.pb").as_slice(),
     )
     .unwrap();
-    assert_eq!(def.def.len(), golden.def.len());
+    let context = provenance("multi_mount_ordering");
+    assert_eq!(
+        def.def.len(),
+        golden.def.len(),
+        "multi_mount_ordering: vertex count differs (rust={}, go={}) [provenance: {}]",
+        def.def.len(),
+        golden.def.len(),
+        context,
+    );
 
     // Decode the exec op and compare mount target order.
     let rust_exec = find_exec_op(&def);
@@ -240,7 +287,8 @@ fn parity_multi_mount_ordering() {
     let golden_targets: Vec<&str> = golden_exec.mounts.iter().map(|m| m.dest.as_str()).collect();
     assert_eq!(
         rust_targets, golden_targets,
-        "mount target order should match Go"
+        "multi_mount_ordering: mount target order should match Go [provenance: {}]",
+        context,
     );
 }
 
@@ -295,30 +343,45 @@ fn parity_local_all_attrs() {
 
 #[test]
 fn parity_mkdir_parents_structural() {
+    let name = "mkdir_parents_structural";
     let def = scratch()
         .unwrap()
         .file(mkdir("/tmp", 0o755).with_parents(true), FileOpts::new())
         .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
-    assert_eq!(def.def.len(), 3);
-    assert_ends_with_wrapper(&def);
+    assert_eq!(
+        def.def.len(),
+        3,
+        "{}: vertex count should be 3 [provenance: {}]",
+        name,
+        provenance(name)
+    );
+    assert_ends_with_wrapper(name, &def);
 }
 
 #[test]
 fn parity_mkfile_structural() {
+    let name = "mkfile_structural";
     let def = scratch()
         .unwrap()
         .file(mkfile("/hello", 0o644, b"world"), FileOpts::new())
         .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
-    assert_eq!(def.def.len(), 3);
-    assert_ends_with_wrapper(&def);
+    assert_eq!(
+        def.def.len(),
+        3,
+        "{}: vertex count should be 3 [provenance: {}]",
+        name,
+        provenance(name)
+    );
+    assert_ends_with_wrapper(name, &def);
 }
 
 #[test]
 fn parity_file_operations_chain_structural() {
+    let name = "file_operations_chain_structural";
     let base = scratch()
         .unwrap()
         .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
@@ -350,14 +413,39 @@ fn parity_file_operations_chain_structural() {
         .unwrap()
         .marshal(MarshalOpts::linux_amd64())
         .unwrap();
-    assert_eq!(def.def.len(), 7);
-    assert_ends_with_wrapper(&def);
+    assert_eq!(
+        def.def.len(),
+        7,
+        "{}: vertex count should be 7 [provenance: {}]",
+        name,
+        provenance(name)
+    );
+    assert_ends_with_wrapper(name, &def);
 }
 
-fn assert_ends_with_wrapper(def: &bollard_llb::Definition) {
+fn assert_ends_with_wrapper(name: &str, def: &bollard_llb::Definition) {
     let last = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
     assert!(
         last.op.is_none(),
-        "last vertex should be a wrapper (no op variant)"
+        "{}: last vertex should be a wrapper (no op variant) [provenance: {}]",
+        name,
+        provenance(name),
+    );
+}
+
+#[test]
+fn parity_provenance_self_check() {
+    let go_version = go_oracle_version();
+    assert!(
+        go_version.starts_with('v'),
+        "unexpected Go oracle version: {}",
+        go_version
+    );
+    let hash = ops_proto_sha256();
+    assert_eq!(
+        hash.len(),
+        64,
+        "ops.proto hash should be 64 hex chars: {}",
+        hash
     );
 }

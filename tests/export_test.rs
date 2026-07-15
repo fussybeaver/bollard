@@ -3,7 +3,6 @@
 use bollard::errors::Error;
 use bollard::Docker;
 
-use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 use tokio::runtime::Runtime;
 
 use std::io::Write;
@@ -53,8 +52,14 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     .annotation("exporter", "Bollard")
     .dest(dest_path);
 
-    let buildkit_builder = DockerContainerBuilder::new(&docker);
-    let driver = buildkit_builder.bootstrap().await.unwrap();
+    let driver = crate::common::buildkit_test::builder(&docker)
+        .bootstrap()
+        .await
+        .unwrap();
+    let version_record = crate::common::buildkit_test::record_version(&docker, &driver).await;
+    if let Ok(record) = version_record.as_ref() {
+        println!("{}", record);
+    }
 
     let load_input =
         bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
@@ -78,6 +83,8 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     .await;
 
     assert!(res.is_ok());
+
+    version_record?;
 
     assert!(dest_path.exists());
 

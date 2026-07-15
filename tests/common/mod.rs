@@ -305,3 +305,179 @@ where
     })
     .await
 }
+
+#[cfg(feature = "buildkit")]
+pub mod buildkit_test {
+    //! BuildKit integration test helpers for the Docker-container driver.
+    #![allow(dead_code)]
+
+    use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+    use bollard::grpc::driver::docker_container::{
+        DockerContainer, DockerContainerBuilder, DEFAULT_IMAGE,
+    };
+    use bollard::models::{ContainerInspectResponse, ExecInspectResponse, ImageInspect};
+    use bollard::query_parameters::InspectContainerOptions;
+    use bollard::Docker;
+    use futures_util::StreamExt;
+    use sha2::{Digest, Sha256};
+
+    use super::Error;
+
+    const GO_MOD_CONTENT: &str = include_str!("../../llb/testdata/go-parity/go.mod");
+    const OPS_PROTO_BYTES: &[u8] = include_bytes!("../../codegen/proto/resources/pb/ops.proto");
+
+    /// Provenance record for a BuildKit test run.
+    #[derive(Debug, Clone, Default)]
+    pub struct BuildkitVersionRecord {
+        /// The image requested in `Config.Image` of the BuildKit container.
+        pub requested_image: String,
+        /// The resolved content-addressable image ID.
+        pub resolved_image_id: String,
+        /// Available repo digests for the resolved image.
+        pub resolved_repo_digests: Vec<String>,
+        /// Output of `buildkitd --version`.
+        pub buildkitd_version: String,
+        /// Output of `buildctl --version`.
+        pub buildctl_version: String,
+        /// BuildKit version pinned by the Go parity generator.
+        pub go_oracle_version: String,
+        /// SHA-256 of the checked-in `ops.proto` schema.
+        pub ops_proto_sha256: String,
+    }
+
+    impl std::fmt::Display for BuildkitVersionRecord {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            writeln!(f, "=== Bollard BuildKit compatibility baseline ===")?;
+            writeln!(f, "requested_image: {}", self.requested_image)?;
+            writeln!(f, "resolved_image_id: {}", self.resolved_image_id)?;
+            writeln!(f, "resolved_repo_digests: {:?}", self.resolved_repo_digests)?;
+            writeln!(f, "buildkitd_version: {}", self.buildkitd_version)?;
+            writeln!(f, "buildctl_version: {}", self.buildctl_version)?;
+            writeln!(f, "go_oracle_version: {}", self.go_oracle_version)?;
+            writeln!(f, "ops_proto_sha256: {}", self.ops_proto_sha256)?;
+            write!(f, "===")
+        }
+    }
+
+    /// Read the optional `BOLLARD_BUILDKIT_TEST_IMAGE` override.
+    pub fn test_image() -> Option<String> {
+        std::env::var("BOLLARD_BUILDKIT_TEST_IMAGE")
+            .ok()
+            .filter(|s| !s.is_empty())
+    }
+
+    /// The default BuildKit image used by the driver.
+    pub fn default_image() -> &'static str {
+        DEFAULT_IMAGE
+    }
+
+    /// Build a [`DockerContainerBuilder`], applying the environment override if set.
+    pub fn builder(docker: &Docker) -> DockerContainerBuilder {
+        let mut builder = DockerContainerBuilder::new(docker);
+        if let Some(image) = test_image() {
+            builder.image(&image);
+        }
+        builder
+    }
+
+    /// Parse the pinned `github.com/moby/buildkit` version from the Go parity generator.
+    pub fn parse_go_buildkit_version(go_mod: &str) -> Option<String> {
+        for line in go_mod.lines() {
+            if !line.contains("github.com/moby/buildkit") || line.contains("// indirect") {
+                continue;
+            }
+            for token in line.split_whitespace() {
+                if token.len() > 1 && token.starts_with('v') && token.as_bytes()[1].is_ascii_digit()
+                {
+                    return Some(token.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// The BuildKit version pinned by the Go parity generator.
+    pub fn go_oracle_version() -> String {
+        parse_go_buildkit_version(GO_MOD_CONTENT).unwrap_or_else(|| "unknown".to_string())
+    }
+
+    /// SHA-256 of the checked-in `ops.proto` schema.
+    pub fn ops_proto_sha256() -> String {
+        hex::encode(Sha256::digest(OPS_PROTO_BYTES))
+    }
+
+    /// Capture a BuildKit version record after the container has booted.
+    pub async fn record_version(
+        docker: &Docker,
+        container: &DockerContainer,
+    ) -> Result<BuildkitVersionRecord, Error> {
+        let name = container.name();
+        let inspect: ContainerInspectResponse = docker
+            .inspect_container(name, None::<InspectContainerOptions>)
+            .await?;
+        let requested_image = inspect.config.and_then(|c| c.image).unwrap_or_default();
+
+        let image_inspect: ImageInspect = docker.inspect_image(&requested_image).await?;
+        let resolved_image_id = image_inspect.id.unwrap_or_default();
+        let resolved_repo_digests = image_inspect.repo_digests.unwrap_or_default();
+
+        let buildkitd_version = exec_command(docker, name, vec!["buildkitd", "--version"]).await?;
+        let buildctl_version = exec_command(docker, name, vec!["buildctl", "--version"]).await?;
+
+        Ok(BuildkitVersionRecord {
+            requested_image,
+            resolved_image_id,
+            resolved_repo_digests,
+            buildkitd_version,
+            buildctl_version,
+            go_oracle_version: go_oracle_version(),
+            ops_proto_sha256: ops_proto_sha256(),
+        })
+    }
+
+    async fn exec_command(
+        docker: &Docker,
+        container_name: &str,
+        cmd: Vec<&str>,
+    ) -> Result<String, Error> {
+        let exec_id = docker
+            .create_exec(
+                container_name,
+                CreateExecOptions {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    cmd: Some(cmd.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .id;
+
+        let mut stdout = Vec::new();
+        if let StartExecResults::Attached {
+            mut output,
+            input: _,
+        } = docker
+            .start_exec(&exec_id, None::<StartExecOptions>)
+            .await?
+        {
+            while let Some(Ok(log)) = output.next().await {
+                stdout.extend_from_slice(log.into_bytes().as_ref());
+            }
+        }
+
+        let output = String::from_utf8_lossy(&stdout).trim().to_string();
+        let inspect: ExecInspectResponse = docker.inspect_exec(&exec_id).await?;
+        if inspect.exit_code != Some(0) {
+            return Err(Error::DockerContainerWaitError {
+                error: format!(
+                    "command {:?} failed with exit code {:?}: {}",
+                    cmd, inspect.exit_code, output
+                ),
+                code: inspect.exit_code.unwrap_or(-1),
+            });
+        }
+
+        Ok(output)
+    }
+}
