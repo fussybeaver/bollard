@@ -1,0 +1,72 @@
+---
+source: llb/tests/snapshot.rs
+assertion_line: 135
+expression: "SnapshotDefinition::from(&def)"
+---
+SnapshotDefinition {
+    root: "sha256:0eaa1a024c1d3d41e3104a4a12bb8874266784be0cb8e97239e08af1312c382d",
+    ops: [
+        Op {
+            inputs: [],
+            platform: None,
+            constraints: None,
+            op: Some(
+                Source(
+                    SourceOp {
+                        identifier: "local://context",
+                        attrs: {
+                            "local.followpaths": "[\"src\"]",
+                            "local.session": "sess",
+                            "local.sharedkeyhint": "hint",
+                            "local.unique": "unique",
+                        },
+                    },
+                ),
+            ),
+        },
+        Op {
+            inputs: [
+                Input {
+                    digest: "sha256:51f9c5698e59305056ee6f7f0d53950a4f66e78a6ad8a6ac03d1deb538c986c5",
+                    index: 0,
+                },
+            ],
+            platform: Some(
+                Platform {
+                    architecture: "amd64",
+                    os: "linux",
+                    variant: "",
+                    os_version: "",
+                    os_features: [],
+                },
+            ),
+            constraints: None,
+            op: None,
+        },
+    ],
+    metadata: {
+        "sha256:0eaa1a024c1d3d41e3104a4a12bb8874266784be0cb8e97239e08af1312c382d": OpMetadata {
+            ignore_cache: false,
+            description: {},
+            export_cache: None,
+            caps: {
+                "constraints": true,
+                "platform": true,
+            },
+            progress_group: None,
+        },
+        "sha256:51f9c5698e59305056ee6f7f0d53950a4f66e78a6ad8a6ac03d1deb538c986c5": OpMetadata {
+            ignore_cache: false,
+            description: {},
+            export_cache: None,
+            caps: {
+                "source.local": true,
+                "source.local.followpaths": true,
+                "source.local.sessionid": true,
+                "source.local.sharedkeyhint": true,
+                "source.local.unique": true,
+            },
+            progress_group: None,
+        },
+    },
+}

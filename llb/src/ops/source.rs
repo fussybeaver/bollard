@@ -198,19 +198,18 @@ impl Local {
     }
 
     /// Set follow-paths for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.FollowPaths`.
     pub fn with_follow_paths<I, S>(mut self, paths: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let joined: String = paths
-            .into_iter()
-            .map(|p| p.into())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !joined.is_empty() {
+        let paths: Vec<String> = paths.into_iter().map(|p| p.into()).collect();
+        if !paths.is_empty() {
+            let value = serde_json::to_string(&paths).unwrap_or_default();
             self.attrs
-                .insert(attr::LOCAL_FOLLOW_PATHS.to_string(), joined);
+                .insert(attr::LOCAL_FOLLOW_PATHS.to_string(), value);
             self.metadata
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS.to_string());
@@ -253,19 +252,18 @@ impl Local {
     }
 
     /// Set include patterns for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.IncludePatterns`.
     pub fn with_include_patterns<I, S>(mut self, patterns: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let joined: String = patterns
-            .into_iter()
-            .map(|p| p.into())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !joined.is_empty() {
+        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
+        if !patterns.is_empty() {
+            let value = serde_json::to_string(&patterns).unwrap_or_default();
             self.attrs
-                .insert(attr::LOCAL_INCLUDE_PATTERNS.to_string(), joined);
+                .insert(attr::LOCAL_INCLUDE_PATTERNS.to_string(), value);
             self.metadata
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_INCLUDE_PATTERNS.to_string());
@@ -275,19 +273,18 @@ impl Local {
     }
 
     /// Set exclude patterns for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.ExcludePatterns`.
     pub fn with_exclude_patterns<I, S>(mut self, patterns: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let joined: String = patterns
-            .into_iter()
-            .map(|p| p.into())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !joined.is_empty() {
+        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
+        if !patterns.is_empty() {
+            let value = serde_json::to_string(&patterns).unwrap_or_default();
             self.attrs
-                .insert(attr::LOCAL_EXCLUDE_PATTERNS.to_string(), joined);
+                .insert(attr::LOCAL_EXCLUDE_PATTERNS.to_string(), value);
             self.metadata
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_EXCLUDE_PATTERNS.to_string());
@@ -429,6 +426,24 @@ pub fn scratch() -> State {
     State::new(OperationOutput::Owned(Arc::new(Scratch::new())))
 }
 
+impl From<Image> for State {
+    fn from(image: Image) -> Self {
+        State::new(OperationOutput::Owned(Arc::new(image)))
+    }
+}
+
+impl From<Local> for State {
+    fn from(local: Local) -> Self {
+        State::new(OperationOutput::Owned(Arc::new(local)))
+    }
+}
+
+impl From<Scratch> for State {
+    fn from(scratch: Scratch) -> Self {
+        State::new(OperationOutput::Owned(Arc::new(scratch)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,7 +465,7 @@ mod tests {
     #[test]
     fn local_follow_paths_encoded() {
         let local = Local::new("context").with_follow_paths(["src", "Cargo.toml"]);
-        let expected = "src\nCargo.toml";
+        let expected = r#"["src","Cargo.toml"]"#;
         assert_eq!(
             local.attrs.get(attr::LOCAL_FOLLOW_PATHS),
             Some(&expected.to_string())

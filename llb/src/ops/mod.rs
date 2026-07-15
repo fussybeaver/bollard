@@ -182,13 +182,17 @@ impl Context {
     /// the real root. It exists to anchor the marshal-time constraints (via
     /// capability caps) without mutating the shared, deduplicated real root op.
     /// This matches Go's `client/llb.State.Marshal` output.
-    pub(crate) fn append_wrapper(&mut self, root: NodeRef) -> Result<NodeRef, LlbError> {
+    pub(crate) fn append_wrapper(
+        &mut self,
+        root: NodeRef,
+        platform: Option<pb::Platform>,
+    ) -> Result<NodeRef, LlbError> {
         let wrapper_op = pb::Op {
             inputs: vec![pb::Input {
                 digest: root.digest().as_str().to_string(),
                 index: root.index().0 as i64,
             }],
-            platform: None,
+            platform,
             constraints: None,
             op: None,
         };
@@ -284,10 +288,123 @@ mod tests {
     }
 
     #[test]
+    fn marshal_dedup_identical_exec_ops() {
+        let base = image("alpine:latest");
+        let a = base.clone().run(shlex("echo hello")).root();
+        let b = base.run(shlex("echo hello")).root();
+        let def = merge(vec![a, b], crate::ops::merge::MergeOpts::new())
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        // One image + one exec (deduped) + merge + wrapper = 4 entries.
+        assert_eq!(def.def.len(), 4);
+    }
+
+    #[test]
+    fn marshal_dedup_identical_file_ops() {
+        let base = scratch();
+        let a = base.clone().file(
+            crate::mkdir("/tmp", 0o755).with_parents(true),
+            crate::FileOpts::new(),
+        );
+        let b = base.file(
+            crate::mkdir("/tmp", 0o755).with_parents(true),
+            crate::FileOpts::new(),
+        );
+        let def = merge(vec![a, b], crate::ops::merge::MergeOpts::new())
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        // One scratch + one mkdir (deduped) + merge + wrapper = 4 entries.
+        assert_eq!(def.def.len(), 4);
+    }
+
+    #[test]
+    fn marshal_dedup_shared_subgraph() {
+        let alpine = image("alpine:latest");
+        let branch_a = alpine.clone().run(shlex("echo a")).root();
+        let branch_b = alpine.run(shlex("echo b")).root();
+        let def = merge(
+            vec![branch_a, branch_b],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        // One shared image + two distinct execs + merge + wrapper = 5 entries.
+        assert_eq!(def.def.len(), 5);
+    }
+
+    #[test]
+    fn marshal_dedup_count_exact() {
+        let def = merge(
+            vec![
+                image("alpine:latest"),
+                image("busybox:latest"),
+                image("alpine:latest"),
+            ],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        // Two unique images (alpine deduped) + merge + wrapper = 4 entries.
+        assert_eq!(def.def.len(), 4);
+    }
+
+    #[test]
     fn marshal_topological_order() {
         let s = image("alpine:latest").run(shlex("echo hello")).root();
         let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
 
+    #[test]
+    fn marshal_topological_order_deep_chain() {
+        let s = image("alpine:latest")
+            .run(shlex("echo 1"))
+            .root()
+            .run(shlex("echo 2"))
+            .root()
+            .run(shlex("echo 3"))
+            .root()
+            .run(shlex("echo 4"))
+            .root()
+            .run(shlex("echo 5"))
+            .root();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    #[test]
+    fn marshal_topological_order_diamond() {
+        let alpine = image("alpine:latest");
+        let branch_a = alpine.clone().run(shlex("echo a")).root();
+        let branch_b = alpine.run(shlex("echo b")).root();
+        let s = merge(
+            vec![branch_a, branch_b],
+            crate::ops::merge::MergeOpts::new(),
+        );
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    #[test]
+    fn marshal_topological_order_merge_with_file_ops() {
+        let image_branch = image("alpine:latest")
+            .file(
+                crate::mkdir("/app", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .run(shlex("echo hello"))
+            .root();
+        let scratch_branch =
+            scratch().file(crate::mkfile("/tmp", 0o644, b"x"), crate::FileOpts::new());
+        let s = merge(
+            vec![image_branch, scratch_branch],
+            crate::ops::merge::MergeOpts::new(),
+        );
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    fn assert_topological_order(def: &Definition) {
         let mut seen: HashSet<String> = HashSet::new();
         for bytes in &def.def {
             let op = pb::Op::decode(bytes.as_slice()).unwrap();
@@ -335,6 +452,61 @@ mod tests {
     }
 
     #[test]
+    fn marshal_round_trip_multi_step() {
+        let s = image("alpine:latest")
+            .run(shlex("echo one"))
+            .root()
+            .run(shlex("echo two"))
+            .root()
+            .run(shlex("echo three"))
+            .root();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_round_trip_merge_exec() {
+        let merged = merge(
+            vec![image("alpine:latest"), image("busybox:latest")],
+            crate::ops::merge::MergeOpts::new(),
+        );
+        let s = merged.run(shlex("echo hello")).root();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_round_trip_file_chain() {
+        use crate::{mkdir, mkfile};
+        let s = scratch()
+            .file(
+                mkdir("/app", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .file(
+                mkfile("/app/hello", 0o644, b"world"),
+                crate::FileOpts::new(),
+            );
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
     fn marshal_full_chain() {
         let s = image("alpine:latest").run(shlex("echo hello")).root();
         let def = s.marshal(MarshalOpts::default()).unwrap();
@@ -356,5 +528,38 @@ mod tests {
             .get(def.root.as_str())
             .expect("root has metadata");
         assert!(wrapper_md.caps.contains_key(cap::CAP_META_DESCRIPTION));
+    }
+
+    #[test]
+    fn marshal_wrapper_platform_none_by_default() {
+        let s = scratch();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        assert_eq!(wrapper_op.platform, None);
+    }
+
+    #[test]
+    fn marshal_wrapper_platform_linux_amd64() {
+        let s = scratch();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        assert_eq!(
+            wrapper_op.platform,
+            Some(pb::Platform {
+                architecture: "amd64".to_string(),
+                os: "linux".to_string(),
+                variant: String::new(),
+                os_version: String::new(),
+                os_features: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn marshal_wrapper_digest_differs_with_platform() {
+        let s = scratch();
+        let def_default = s.marshal(MarshalOpts::default()).unwrap();
+        let def_linux_amd64 = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        assert_ne!(def_default.root, def_linux_amd64.root);
     }
 }

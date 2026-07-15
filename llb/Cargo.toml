@@ -10,14 +10,17 @@ documentation = "https://docs.rs/bollard-llb"
 edition = "2021"
 
 [features]
-dump_json = ["dep:serde_json"]
+dump_json = []
 
 [dependencies]
 bollard-buildkit-proto = { path = "../codegen/proto", default-features = false }
 hex = "0.4"
 indexmap = "2"
 prost = "0.14"
-serde_json = { version = "1", optional = true }
+serde_json = "1"
 sha2 = "0.10"
 shlex = "1"
 thiserror = "2"
+
+[dev-dependencies]
+insta = { version = "1", features = ["filters"] }

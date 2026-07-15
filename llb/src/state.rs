@@ -79,10 +79,11 @@ impl State {
     }
 
     /// Marshal this state into a [`Definition`].
-    pub fn marshal(&self, _opts: MarshalOpts) -> Result<Definition, LlbError> {
+    pub fn marshal(&self, opts: MarshalOpts) -> Result<Definition, LlbError> {
         let mut ctx = Context::new();
         let root_ref = ctx.register(&self.output)?;
-        let wrapper_ref = ctx.append_wrapper(root_ref)?;
+        let platform = opts.platform.map(Into::into);
+        let wrapper_ref = ctx.append_wrapper(root_ref, platform)?;
         Ok(ctx.finalize(wrapper_ref.digest().clone()))
     }
 
