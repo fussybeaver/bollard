@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::build::ImageBuildOutputCompression;
 
@@ -19,7 +19,7 @@ pub struct ImageRegistryOutput {
     pub(crate) oci_mediatypes: bool,
     pub(crate) unpack: bool,
     pub(crate) store: bool,
-    pub(crate) annotation: HashMap<String, String>,
+    pub(crate) annotation: BTreeMap<String, String>,
 }
 
 impl ImageRegistryOutput {
@@ -36,8 +36,8 @@ impl ImageRegistryOutput {
         }
     }
 
-    pub(crate) fn into_map(self) -> HashMap<String, String> {
-        let mut attrs = HashMap::new();
+    pub(crate) fn into_map(self) -> BTreeMap<String, String> {
+        let mut attrs = BTreeMap::new();
 
         attrs.insert(String::from("name"), self.name);
 

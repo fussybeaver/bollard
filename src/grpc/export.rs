@@ -4,7 +4,7 @@ pub use bollard_buildkit_proto::fsutil;
 pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
 
@@ -29,7 +29,7 @@ pub struct ImageExporterOutput {
     pub(crate) compression_level: Option<u8>,
     pub(crate) force_compression: bool,
     pub(crate) oci_mediatypes: bool,
-    pub(crate) annotation: HashMap<String, String>,
+    pub(crate) annotation: BTreeMap<String, String>,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
@@ -94,8 +94,8 @@ impl ImageExporterOutput {
         }
     }
 
-    pub(crate) fn into_map(self) -> HashMap<String, String> {
-        let mut attrs = HashMap::new();
+    pub(crate) fn into_map(self) -> BTreeMap<String, String> {
+        let mut attrs = BTreeMap::new();
 
         attrs.insert(String::from("name"), self.name);
         attrs.insert(String::from("compression"), self.compression.to_string());

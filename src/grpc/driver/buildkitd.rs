@@ -10,7 +10,7 @@ use crate::grpc::BuildRef;
 use crate::grpc::registry::ImageRegistryOutput;
 use crate::grpc::DockerCredentials;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 pub use tonic::transport::Endpoint;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
@@ -68,7 +68,7 @@ impl super::Build for BuildkitDaemon {
         credentials: Option<HashMap<&str, DockerCredentials>>,
         build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
-        let mut exporter_attrs = HashMap::new();
+        let mut exporter_attrs = BTreeMap::new();
         exporter_attrs.insert(String::from("type"), String::from("docker"));
         exporter_attrs.insert(String::from("name"), String::from(name));
         super::solve(
@@ -136,5 +136,14 @@ impl super::Image for BuildkitDaemon {
             build_ref,
         )
         .await
+    }
+}
+
+impl super::SolveDefinition for BuildkitDaemon {
+    async fn solve_definition(
+        self,
+        request: super::DefinitionSolveRequest,
+    ) -> Result<(), GrpcError> {
+        super::solve_definition(self, request).await
     }
 }

@@ -1136,10 +1136,10 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
-    let cache_attrs = std::collections::HashMap::new();
+    let cache_attrs = std::collections::BTreeMap::new();
     let cache_from = bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry {
         r#type: String::from("inline"),
-        attrs: std::collections::HashMap::clone(&cache_attrs),
+        attrs: std::collections::BTreeMap::clone(&cache_attrs),
     };
     let cache_to = bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry {
         r#type: String::from("inline"),

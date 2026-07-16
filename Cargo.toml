@@ -64,7 +64,7 @@ test_websocket = ["websocket"]
 [dependencies]
 base64 = "0.22"
 bollard-stubs = { version = "=1.53.1-rc.29.3.1", default-features = false }
-bollard-buildkit-proto = { version = "0.8.0", optional = true }
+bollard-buildkit-proto = { version = "0.8.1", path = "codegen/proto", optional = true }
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
 futures-core = "0.3"
@@ -102,7 +102,9 @@ async-stream = { version = "0.3.5", optional = true }
 bitflags = { version = "2.6.0", optional = true }
 
 [dev-dependencies]
+bollard-llb = { path = "llb" }
 flate2 = "1.0"
+prost = "0.14"
 tar = "0.4"
 tokio = { version = "1.38", features = ["fs", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7", features = ["io"] }

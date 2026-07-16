@@ -3,7 +3,7 @@ pub use bollard_buildkit_proto::health;
 pub use bollard_buildkit_proto::moby;
 use bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::net::IpAddr;
 use std::path::Path;
@@ -158,7 +158,7 @@ pub struct NamedContext {
 pub(crate) struct ImageBuildFrontendOptionsIngest {
     pub cache_to: Vec<CacheOptionsEntry>,
     pub cache_from: Vec<CacheOptionsEntry>,
-    pub frontend_attrs: HashMap<String, String>,
+    pub frontend_attrs: BTreeMap<String, String>,
     pub secret_sources: HashMap<String, SecretSource>,
     pub ssh: bool,
 }
@@ -170,7 +170,7 @@ impl ImageBuildFrontendOptions {
     }
 
     pub(crate) fn consume(self) -> ImageBuildFrontendOptionsIngest {
-        let mut attrs = HashMap::new();
+        let mut attrs = BTreeMap::new();
 
         if let Some(dockerfile) = self.dockerfile {
             attrs.insert(

@@ -1,6 +1,6 @@
 #![cfg(feature = "buildkit_providerless")]
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::pin::Pin;
 
 use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
@@ -139,7 +139,7 @@ impl super::Build for Moby {
         credentials: Option<HashMap<&str, DockerCredentials>>,
         build_ref: Option<BuildRef>,
     ) -> Result<(), GrpcError> {
-        let mut exporter_attrs = HashMap::new();
+        let mut exporter_attrs = BTreeMap::new();
         exporter_attrs.insert(String::from("type"), String::from("docker"));
         exporter_attrs.insert(String::from("name"), String::from(name));
         super::solve(

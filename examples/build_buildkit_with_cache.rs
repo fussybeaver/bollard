@@ -46,7 +46,7 @@ async fn main() {
             panic!("Please set the REGISTRY_HTTP_ADDR environment variable");
         };
 
-        let mut cache_attrs = std::collections::HashMap::new();
+        let mut cache_attrs = std::collections::BTreeMap::new();
         cache_attrs.insert(String::from("mode"), String::from("max"));
         cache_attrs.insert(
             String::from("ref"),
@@ -54,7 +54,7 @@ async fn main() {
         );
         let cache_from = CacheOptionsEntry {
             r#type: String::from("registry"),
-            attrs: std::collections::HashMap::clone(&cache_attrs),
+            attrs: std::collections::BTreeMap::clone(&cache_attrs),
         };
         let cache_to = CacheOptionsEntry {
             r#type: String::from("registry"),

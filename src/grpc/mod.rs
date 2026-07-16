@@ -293,6 +293,22 @@ impl FileSendPacketImpl {
     }
 }
 
+impl FileSendPacketImpl {
+    /// Join a relative path under the destination directory, rejecting
+    /// components that could escape the export root.
+    fn safe_path(base: &Path, path: &str) -> Result<PathBuf, Status> {
+        let p = Path::new(path);
+        for component in p.components() {
+            if !matches!(component, std::path::Component::Normal(_)) {
+                return Err(Status::invalid_argument(format!(
+                    "invalid path component in {path:?}"
+                )));
+            }
+        }
+        Ok(base.join(p))
+    }
+}
+
 #[tonic::async_trait]
 impl FileSendPacket for FileSendPacketImpl {
     type DiffCopyStream = Pin<Box<dyn Stream<Item = Result<Packet, Status>> + Send>>;
@@ -301,7 +317,8 @@ impl FileSendPacket for FileSendPacketImpl {
         request: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
         let base_path = self.dest.clone();
-        std::fs::create_dir_all(&base_path).unwrap();
+        std::fs::create_dir_all(&base_path)
+            .map_err(|e| Status::internal(format!("failed to create export directory: {e}")))?;
         trace!(
             "Protobuf FileSend (packet) diff_copy triggered: {:#?}",
             request
@@ -315,16 +332,21 @@ impl FileSendPacket for FileSendPacketImpl {
             let mut stats = HashMap::new();
             let mut received_all_stats = false;
 
-            while let Some(Ok(packet)) = in_stream.next().await {
-                match PacketType::try_from(packet.r#type) {
-                    Ok(PacketType::PacketStat) => {
+            while let Some(packet) = in_stream.next().await {
+                let packet = packet.map_err(|e| Status::internal(format!("packet stream error: {e}")))?;
+                match PacketType::try_from(packet.r#type)
+                    .map_err(|_| Status::invalid_argument("unknown packet type"))? {
+                    PacketType::PacketStat => {
                         if let Some(stat) = packet.stat {
+                            let target = Self::safe_path(&base_path, &stat.path)?;
                             if fsutil::FileMode::Type.bits() & stat.mode == 0 {
-                                std::fs::File::create(base_path.join(&stat.path)).unwrap();
+                                std::fs::File::create(&target)
+                                    .map_err(|e| Status::internal(format!("failed to create file: {e}")))?;
                                 stats.insert(file_id, stat);
                             } else if fsutil::FileMode::Dir.bits() & stat.mode != 0 {
-                                std::fs::create_dir(base_path.join(stat.path)).unwrap()
-                            };
+                                std::fs::create_dir(&target)
+                                    .map_err(|e| Status::internal(format!("failed to create directory: {e}")))?;
+                            }
                             file_id += 1;
                         } else {
                             received_all_stats = true;
@@ -337,21 +359,28 @@ impl FileSendPacket for FileSendPacketImpl {
                                 };
                             }
                         }
-                    },
-                    Ok(PacketType::PacketReq) => panic!("server should not request"),
-                    Ok(PacketType::PacketData) => {
+                    }
+                    PacketType::PacketReq => {
+                        Err(Status::failed_precondition("server received a request packet"))?;
+                    }
+                    PacketType::PacketData => {
                         if packet.data.is_empty() {
                             // all data for file has been received
                             stats.remove(&packet.id);
                         } else {
-                            let stat = stats.get(&packet.id).unwrap();
-                            let file_path = base_path.join(stat.path.clone());
-                            std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+                            let stat = stats.get(&packet.id)
+                                .ok_or_else(|| Status::invalid_argument("data packet for unknown file"))?;
+                            let file_path = Self::safe_path(&base_path, &stat.path)?;
+                            if let Some(parent) = file_path.parent() {
+                                std::fs::create_dir_all(parent)
+                                    .map_err(|e| Status::internal(format!("failed to create parent directory: {e}")))?;
+                            }
                             let mut file = OpenOptions::new()
                                 .append(true)
-                                .open(file_path)
-                                .unwrap();
-                            file.write_all(packet.data.as_slice()).unwrap();
+                                .open(&file_path)
+                                .map_err(|e| Status::internal(format!("failed to open file for append: {e}")))?;
+                            file.write_all(&packet.data)
+                                .map_err(|e| Status::internal(format!("failed to write file data: {e}")))?;
                         }
 
                         if stats.is_empty() && received_all_stats {
@@ -362,10 +391,13 @@ impl FileSendPacket for FileSendPacketImpl {
                                 data: vec![]
                             };
                         }
-                    },
-                    Ok(PacketType::PacketFin) => return,
-                    Ok(PacketType::PacketErr) => panic!("{}", String::from_utf8(packet.data).unwrap()),
-                    Err(_) => panic!("unhandled packet type")
+                    }
+                    PacketType::PacketFin => return,
+                    PacketType::PacketErr => {
+                        let msg = String::from_utf8(packet.data)
+                            .unwrap_or_else(|_| String::from("invalid packet error encoding"));
+                        Err(Status::unknown(format!("packet error: {msg}")))?;
+                    }
                 }
             }
         };
