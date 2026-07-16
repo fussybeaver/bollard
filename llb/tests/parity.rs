@@ -19,7 +19,7 @@
 
 use bollard_llb::{
     copy, merge, mkdir, mkfile, rm, scratch, shlex, symlink, AddSecret, CacheSharingMode, FileOpts,
-    Image, Local, MarshalOpts, MergeOpts, State,
+    Image, Local, MarshalOpts, MergeOpts, Platform, ResolveMode, RunOpts, State,
 };
 use sha2::{Digest, Sha256};
 
@@ -141,7 +141,7 @@ fn parity_secret_as_env() {
                     AddSecret {
                         id: String::new(),
                         as_env: true,
-                        env_name: Some("TOKEN".into()),
+                        env_name: None,
                         target: None,
                         optional: false,
                     },
@@ -217,6 +217,10 @@ fn parity_local_all_attrs() {
                 Local::new("context")
                     .unwrap()
                     .with_follow_paths(["src"])
+                    .unwrap()
+                    .with_include_patterns(["*.go"])
+                    .unwrap()
+                    .with_exclude_patterns(["*_test.go"])
                     .unwrap()
                     .with_session_id("sess")
                     .unwrap()
@@ -297,6 +301,321 @@ fn parity_file_operations_chain() {
                 .unwrap();
             with_copy
                 .file(rm("/app/current-config"), FileOpts::new())
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_image_resolve_force_pull() {
+    assert_go_parity(
+        "image_resolve_force_pull",
+        include_bytes!("../testdata/golden/image_resolve_force_pull.llb.pb"),
+        || {
+            State::from(
+                Image::new("alpine:latest")
+                    .unwrap()
+                    .with_resolve_mode(ResolveMode::ForcePull)
+                    .unwrap(),
+            )
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_image_resolve_prefer_local() {
+    assert_go_parity(
+        "image_resolve_prefer_local",
+        include_bytes!("../testdata/golden/image_resolve_prefer_local.llb.pb"),
+        || {
+            State::from(
+                Image::new("alpine:latest")
+                    .unwrap()
+                    .with_resolve_mode(ResolveMode::PreferLocal)
+                    .unwrap(),
+            )
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_platform_arm64() {
+    assert_go_parity(
+        "platform_arm64",
+        include_bytes!("../testdata/golden/platform_arm64.llb.pb"),
+        || {
+            alpine()
+                .run(shlex("echo hello"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64().with_platform(Platform::LINUX_ARM64))
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_platform_arm_v7() {
+    assert_go_parity(
+        "platform_arm_v7",
+        include_bytes!("../testdata/golden/platform_arm_v7.llb.pb"),
+        || {
+            alpine()
+                .run(shlex("echo hello"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64().with_platform(Platform::LINUX_ARM_V7))
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_exec_default_meta() {
+    assert_go_parity(
+        "exec_default_meta",
+        include_bytes!("../testdata/golden/exec_default_meta.llb.pb"),
+        || {
+            alpine()
+                .run(RunOpts::default().with_arg("true"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_exec_custom_name_ignore_cache() {
+    assert_go_parity(
+        "exec_custom_name_ignore_cache",
+        include_bytes!("../testdata/golden/exec_custom_name_ignore_cache.llb.pb"),
+        || {
+            alpine()
+                .run(RunOpts {
+                    args: vec!["echo".into(), "hello".into()],
+                    custom_name: Some("named exec".into()),
+                    ignore_cache: true,
+                    ..Default::default()
+                })
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_merge_custom_name() {
+    assert_go_parity(
+        "merge_custom_name",
+        include_bytes!("../testdata/golden/merge_custom_name.llb.pb"),
+        || {
+            merge(
+                vec![alpine(), busybox()],
+                MergeOpts::new().with_custom_name("merged"),
+            )
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_rm_wildcard() {
+    assert_go_parity(
+        "rm_wildcard",
+        include_bytes!("../testdata/golden/rm_wildcard.llb.pb"),
+        || {
+            scratch()
+                .unwrap()
+                .file(rm("/tmp/*").with_allow_wildcard(true), FileOpts::new())
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_symlink() {
+    assert_go_parity(
+        "symlink",
+        include_bytes!("../testdata/golden/symlink.llb.pb"),
+        || {
+            scratch()
+                .unwrap()
+                .file(symlink("/target", "/link"), FileOpts::new())
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_secret_file_default() {
+    assert_go_parity(
+        "secret_file_default",
+        include_bytes!("../testdata/golden/secret_file_default.llb.pb"),
+        || {
+            alpine()
+                .run(
+                    RunOpts::default()
+                        .with_arg("cat")
+                        .with_arg("/run/secrets/token"),
+                )
+                .add_secret(
+                    "token",
+                    AddSecret {
+                        id: String::new(),
+                        as_env: false,
+                        env_name: None,
+                        target: Some("/run/secrets/token".into()),
+                        optional: false,
+                    },
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_secret_file_optional() {
+    assert_go_parity(
+        "secret_file_optional",
+        include_bytes!("../testdata/golden/secret_file_optional.llb.pb"),
+        || {
+            alpine()
+                .run(
+                    RunOpts::default()
+                        .with_arg("cat")
+                        .with_arg("/run/secrets/token"),
+                )
+                .add_secret(
+                    "token",
+                    AddSecret {
+                        id: String::new(),
+                        as_env: false,
+                        env_name: None,
+                        target: Some("/run/secrets/token".into()),
+                        optional: true,
+                    },
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_secret_env_explicit_name() {
+    assert_go_parity(
+        "secret_env_explicit_name",
+        include_bytes!("../testdata/golden/secret_env_explicit_name.llb.pb"),
+        || {
+            alpine()
+                .run(
+                    RunOpts::default()
+                        .with_arg("cat")
+                        .with_arg("/secrets/token"),
+                )
+                .add_secret(
+                    "mysecret",
+                    AddSecret {
+                        id: String::new(),
+                        as_env: true,
+                        env_name: Some("MY_SECRET".into()),
+                        target: None,
+                        optional: false,
+                    },
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_cache_mount_private() {
+    assert_go_parity(
+        "cache_mount_private",
+        include_bytes!("../testdata/golden/cache_mount_private.llb.pb"),
+        || {
+            alpine()
+                .run(shlex("echo hello"))
+                .add_mount_cache("/cache", "cache-id", CacheSharingMode::Private)
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_scratch_direct() {
+    assert_go_parity(
+        "scratch_direct",
+        include_bytes!("../testdata/golden/scratch_direct.llb.pb"),
+        || {
+            scratch()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_scratch_exec_root() {
+    assert_go_parity(
+        "scratch_exec_root",
+        include_bytes!("../testdata/golden/scratch_exec_root.llb.pb"),
+        || {
+            scratch()
+                .unwrap()
+                .run(RunOpts::default().with_arg("echo").with_arg("hello"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_scratch_bind_mount() {
+    assert_go_parity(
+        "scratch_bind_mount",
+        include_bytes!("../testdata/golden/scratch_bind_mount.llb.pb"),
+        || {
+            alpine()
+                .run(shlex("echo hello"))
+                .add_mount("/scratch", scratch().unwrap())
+                .root()
                 .unwrap()
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
