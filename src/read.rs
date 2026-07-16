@@ -134,66 +134,68 @@ impl<T> JsonLineDecoder<T> {
     }
 }
 
-fn decode_json_from_slice<T: DeserializeOwned>(slice: &[u8]) -> Result<Option<T>, Error> {
-    debug!(
-        "Decoding JSON line from stream: {}",
-        String::from_utf8_lossy(slice)
-    );
-
-    match serde_json::from_slice(slice) {
-        Ok(json) => Ok(json),
-        Err(ref e) if e.is_data() => Err(JsonDataError {
-            message: e.to_string(),
-            column: e.column(),
-            #[cfg(feature = "json_data_content")]
-            contents: String::from_utf8_lossy(slice).to_string(),
-        }),
-        Err(e) if e.is_eof() => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-
 impl<T> Decoder for JsonLineDecoder<T>
 where
     T: DeserializeOwned,
 {
     type Item = T;
     type Error = Error;
+
+    // Docker streams whitespace-separated JSON values (progress messages are
+    // CRLF-terminated). Rather than split on '\n' and reason about the leftover
+    // bytes -- which mishandles a "\r\n" terminator that arrives split from its
+    // value across a read boundary, orphaning a lone '\r' that later surfaces as
+    // a spurious "bytes remaining on stream" (#560) -- parse one value at a time
+    // with serde's StreamDeserializer, which skips any inter-value whitespace
+    // ('\r', '\n', spaces, blank lines) for free.
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let nl_index = src.iter().position(|b| *b == b'\n');
+        decode_stream(src, false)
+    }
 
-        if !src.is_empty() {
-            if let Some(pos) = nl_index {
-                let remainder = src.split_off(pos + 1);
-                let slice = &src[..src.len() - 1];
+    // At EOF a trailing value need not be whitespace-terminated, so an
+    // incomplete-value error on the remainder is only a real truncation if
+    // non-whitespace bytes remain; pure trailing whitespace (e.g. a '\r' whose
+    // '\n' never arrived) is a clean end.
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        decode_stream(src, true)
+    }
+}
 
-                match decode_json_from_slice(slice) {
-                    Ok(None) => {
-                        // Unescaped newline inside the json structure
-                        src.truncate(src.len() - 1); // Remove the newline
-                        src.unsplit(remainder);
-                        Ok(None)
-                    }
-                    Ok(json) => {
-                        // Newline delimited json
-                        src.unsplit(remainder);
-                        src.advance(pos + 1);
-                        Ok(json)
-                    }
-                    Err(e) => Err(e),
-                }
-            } else {
-                // No newline delimited json.
-                match decode_json_from_slice(src) {
-                    Ok(None) => Ok(None),
-                    Ok(json) => {
-                        src.clear();
-                        Ok(json)
-                    }
-                    Err(e) => Err(e),
-                }
+/// Pulls the next whitespace-separated JSON value out of `src`. `result` is that
+/// value (`Some(Ok)`), a decode error (`Some(Err)`, which is `is_eof()` when the
+/// value is only partially buffered), or `None` when the buffer holds nothing
+/// but whitespace. `consumed` is how many bytes that step read: leading
+/// whitespace plus the value, with any trailing bytes left in place.
+fn decode_stream<T: DeserializeOwned>(src: &mut BytesMut, eof: bool) -> Result<Option<T>, Error> {
+    let (result, consumed) = {
+        let mut stream = serde_json::Deserializer::from_slice(src).into_iter::<T>();
+        let result = stream.next();
+        (result, stream.byte_offset())
+    };
+    match result {
+        Some(Ok(value)) => {
+            src.advance(consumed);
+            Ok(Some(value))
+        }
+        // Malformed JSON (not merely incomplete): a genuine protocol error.
+        Some(Err(e)) if !e.is_eof() => Err(JsonDataError {
+            message: e.to_string(),
+            column: e.column(),
+            #[cfg(feature = "json_data_content")]
+            contents: String::from_utf8_lossy(src).to_string(),
+        }),
+        // Incomplete next value, or a whitespace-only buffer (StreamDeserializer
+        // yields None). Wait for more bytes; at EOF, pure trailing whitespace is
+        // a clean end and anything else is a real truncation.
+        Some(Err(_)) | None => {
+            if eof && !src.iter().all(|b| b.is_ascii_whitespace()) {
+                return Err(Error::IOError {
+                    err: std::io::Error::other("bytes remaining on stream"),
+                });
             }
-        } else {
+            if eof {
+                src.clear();
+            }
             Ok(None)
         }
     }
@@ -592,12 +594,46 @@ mod tests {
         let mut buf = BytesMut::from(&b"{}\n{}\n\n{}\n"[..]);
         let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
 
+        // Inter-value whitespace (including the blank line) is skipped, so the
+        // three objects decode back to back; the trailing "\n" is not a value.
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
-        assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
-        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(codec.decode_eof(&mut buf).unwrap(), None);
         assert!(buf.is_empty());
+    }
+
+    // Regression for the "bytes remaining on stream" flake (#560): a
+    // CRLF-terminated value whose "\r\n" arrives split from the value across a
+    // read boundary must not leave an orphaned '\r' that errors at EOF. Docker's
+    // progress stream uses CRLF, so this is the common case.
+    #[test]
+    fn json_decode_crlf_split_before_terminator() {
+        let mut codec: JsonLineDecoder<HashMap<String, String>> = JsonLineDecoder::new();
+
+        // The value arrives; its terminating "\r\n" has not yet been read.
+        let mut buf = BytesMut::from(&b"{\"status\":\"Downloaded\"}"[..]);
+        let expected: HashMap<String, String> = [("status".to_string(), "Downloaded".to_string())]
+            .into_iter()
+            .collect();
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(expected));
+
+        // The orphaned terminator arrives on its own: inter-value whitespace, so
+        // nothing to yield and no error, at EOF too.
+        buf.put(&b"\r\n"[..]);
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+        assert_eq!(codec.decode_eof(&mut buf).unwrap(), None);
+        assert!(buf.is_empty());
+    }
+
+    // A genuinely partial value at EOF is a real truncation and must still error
+    // (the fix must not mask that by treating everything as benign).
+    #[test]
+    fn json_decode_eof_on_partial_value_errors() {
+        let mut buf = BytesMut::from(&b"{\"status\":\"Downlo"[..]);
+        let mut codec: JsonLineDecoder<HashMap<String, String>> = JsonLineDecoder::new();
+        assert!(codec.decode_eof(&mut buf).is_err());
     }
 
     #[test]
@@ -605,14 +641,14 @@ mod tests {
         let mut buf = BytesMut::from(&b"{}\n{}\n\n{"[..]);
         let mut codec: JsonLineDecoder<HashMap<(), ()>> = JsonLineDecoder::new();
 
+        // Each decode advances past exactly one value; trailing whitespace is
+        // left for the next call to skip. The trailing partial "{" waits.
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
-        assert_eq!(buf, &b"{}\n\n{"[..]);
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
-        assert_eq!(codec.decode(&mut buf).unwrap(), None);
-        assert_eq!(buf, &b"{"[..]);
         buf.put(&b"}"[..]);
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(HashMap::new()));
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
         assert!(buf.is_empty());
     }
 
@@ -649,8 +685,10 @@ mod tests {
             }),
             ..Default::default()
         };
+        // The object is incomplete (missing its outer '}'); the embedded '\n'
+        // is not a frame boundary, so decode waits and leaves the buffer intact.
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
-        assert_eq!(buf, &b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}"[..]);
+        assert_eq!(buf, &b"{\"status\":\"Extracting\",\"progressDetail\":{\"current\":33980416,\"total\":102266715}\n"[..]);
         buf.put(&b"}"[..]);
         assert_eq!(codec.decode(&mut buf).unwrap(), Some(expected));
         assert!(buf.is_empty());
