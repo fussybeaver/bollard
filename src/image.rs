@@ -658,6 +658,77 @@ impl Docker {
         credentials: Option<HashMap<String, DockerCredentials>>,
         tar: Option<BodyType>,
     ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_ {
+        #[cfg(feature = "buildkit_providerless")]
+        return self.build_image_impl(options, credentials, tar, Default::default());
+        #[cfg(not(feature = "buildkit_providerless"))]
+        self.build_image_impl(options, credentials, tar)
+    }
+
+    /// ---
+    ///
+    /// # Build Image with session providers
+    ///
+    /// [`Docker::build_image`], additionally registering session provider services —
+    /// the client-side services BuildKit calls back over the build's session to serve
+    /// a Dockerfile's `RUN --mount=type=secret` and `RUN --mount=type=ssh`
+    /// instructions. Only meaningful for a build issued with
+    /// [`BuilderVersion::BuilderBuildKit`](crate::query_parameters::BuilderVersion)
+    /// and a `session` id, since only such a build has a session for the daemon to
+    /// call back over.
+    ///
+    /// # Arguments
+    ///
+    ///  - [Build Image Options](crate::query_parameters::BuildImageOptions) struct.
+    ///  - Optional [Docker Credentials](DockerCredentials) hashmap, keyed by registry.
+    ///  - Optional tarball body (see [`Docker::build_image`]).
+    ///  - [Session Providers](crate::grpc::build::ImageBuildSessionProviders) — the
+    ///    secret sources and/or ssh-agent forwarding to serve during the build.
+    ///
+    /// # Returns
+    ///
+    ///  - [Build Info](BuildInfo), wrapped in an asynchronous Stream.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::{BuildImageOptionsBuilder, BuilderVersion};
+    /// use bollard::grpc::build::{ImageBuildSessionProviders, SecretSource};
+    /// use bollard::body_full;
+    ///
+    /// let options = BuildImageOptionsBuilder::default()
+    ///     .dockerfile("Dockerfile")
+    ///     .t("my-image")
+    ///     .version(BuilderVersion::BuilderBuildKit)
+    ///     .session("my-session-id")
+    ///     .build();
+    ///
+    /// let providers = ImageBuildSessionProviders::default()
+    ///     .set_secret("token", &SecretSource::Env(String::from("MY_TOKEN")));
+    ///
+    /// # let contents = Vec::new();
+    /// docker.build_image_with_session_providers(options, None, Some(body_full(contents.into())), providers);
+    /// ```
+    #[cfg(feature = "buildkit_providerless")]
+    pub fn build_image_with_session_providers(
+        &self,
+        options: impl Into<crate::query_parameters::BuildImageOptions>,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+        tar: Option<BodyType>,
+        providers: crate::grpc::build::ImageBuildSessionProviders,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_ {
+        self.build_image_impl(options, credentials, tar, providers)
+    }
+
+    fn build_image_impl(
+        &self,
+        options: impl Into<crate::query_parameters::BuildImageOptions>,
+        credentials: Option<HashMap<String, DockerCredentials>>,
+        tar: Option<BodyType>,
+        #[cfg(feature = "buildkit_providerless")]
+        providers: crate::grpc::build::ImageBuildSessionProviders,
+    ) -> impl Stream<Item = Result<BuildInfo, Error>> + '_ {
         let url = "/build";
         let options = options.into();
 
@@ -692,7 +763,7 @@ impl Docker {
                 );
 
                 let session = stream::once(
-                    self.start_session(session_id, creds, outputs)
+                    self.start_session(session_id, creds, outputs, providers)
                         .map(|_| Either::Right(()))
                         .fuse(),
                 );
@@ -752,6 +823,7 @@ impl Docker {
         id: String,
         credentials: Option<HashMap<String, DockerCredentials>>,
         outputs: Option<crate::query_parameters::ImageBuildOutput>,
+        providers: crate::grpc::build::ImageBuildSessionProviders,
     ) -> Result<(), crate::grpc::error::GrpcError> {
         let driver = crate::grpc::driver::moby::Moby::new(self);
 
@@ -785,6 +857,22 @@ impl Docker {
         };
 
         services.push(crate::grpc::GrpcServer::Auth(auth));
+
+        if !providers.secrets.is_empty() {
+            let secret_provider = crate::grpc::SecretProvider::new(providers.secrets);
+            let secret = bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::SecretsServer::new(secret_provider)
+                .max_decoding_message_size(crate::grpc::driver::DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(crate::grpc::driver::DEFAULT_MAX_SEND_MSG_SIZE);
+            services.push(crate::grpc::GrpcServer::Secrets(secret));
+        }
+
+        if providers.ssh {
+            let ssh_provider = crate::grpc::SshProvider::new();
+            let ssh = bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(ssh_provider)
+                .max_decoding_message_size(crate::grpc::driver::DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(crate::grpc::driver::DEFAULT_MAX_SEND_MSG_SIZE);
+            services.push(crate::grpc::GrpcServer::Ssh(ssh));
+        }
 
         crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
 

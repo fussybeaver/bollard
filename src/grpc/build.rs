@@ -57,6 +57,49 @@ pub enum SecretSource {
     Env(String),
 }
 
+/// Session provider services to register for a
+/// [`Docker::build_image_with_session_providers`](crate::Docker::build_image_with_session_providers)
+/// build — the client-side services BuildKit calls back over the build's session
+/// to serve a Dockerfile's `RUN --mount=type=secret` and `RUN --mount=type=ssh`
+/// instructions. The gRPC-session equivalents on [`ImageBuildFrontendOptions`]
+/// (`set_secret`/`enable_ssh`) only apply to builds driven through the
+/// [GRPC driver](module@crate::grpc::driver); this type carries the same
+/// configuration for builds issued through the Docker daemon's classic `/build`
+/// endpoint with [`BuilderVersion::BuilderBuildKit`](bollard_stubs::query_parameters::BuilderVersion).
+///
+/// ## Examples
+///
+/// ```rust
+/// use bollard::grpc::build::{ImageBuildSessionProviders, SecretSource};
+///
+/// let providers = ImageBuildSessionProviders::default()
+///     .set_secret("token", &SecretSource::Env(String::from("MY_TOKEN")))
+///     .enable_ssh(true);
+/// ```
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ImageBuildSessionProviders {
+    pub(crate) secrets: HashMap<String, SecretSource>,
+    pub(crate) ssh: bool,
+}
+
+impl ImageBuildSessionProviders {
+    /// Add a secret source, keyed by the id a Dockerfile's
+    /// `RUN --mount=type=secret,id=<key>` instruction references.
+    pub fn set_secret(mut self, key: &str, value: &SecretSource) -> Self {
+        self.secrets
+            .insert(String::from(key), SecretSource::clone(value));
+        self
+    }
+
+    /// Enable sshforward to the ssh-agent the host's `SSH_AUTH_SOCK` points at,
+    /// under buildkit's implicit `default` agent id, for a Dockerfile's
+    /// `RUN --mount=type=ssh` instructions.
+    pub fn enable_ssh(mut self, value: bool) -> Self {
+        self.ssh = value;
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 /// A list of hostnames/IP mappings to add to the container's `/etc/hosts` file.
 pub struct ImageBuildHostIp {
