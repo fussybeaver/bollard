@@ -868,9 +868,11 @@ impl Docker {
 
         if providers.ssh {
             let ssh_provider = crate::grpc::SshProvider::new();
-            let ssh = bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(ssh_provider)
-                .max_decoding_message_size(crate::grpc::driver::DEFAULT_MAX_RECV_MSG_SIZE)
-                .max_encoding_message_size(crate::grpc::driver::DEFAULT_MAX_SEND_MSG_SIZE);
+            let ssh = bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(
+                ssh_provider,
+            )
+            .max_decoding_message_size(crate::grpc::driver::DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(crate::grpc::driver::DEFAULT_MAX_SEND_MSG_SIZE);
             services.push(crate::grpc::GrpcServer::Ssh(ssh));
         }
 
