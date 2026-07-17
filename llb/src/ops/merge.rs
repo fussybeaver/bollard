@@ -149,6 +149,7 @@ mod tests {
         s.marshal(crate::state::MarshalOpts::default())
             .unwrap()
             .root
+            .expect("non-empty merge has a real head")
             .to_string()
     }
 

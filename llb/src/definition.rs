@@ -17,7 +17,7 @@ use crate::marshal::Digest;
 ///
 /// The `def` field is a topologically sorted list of serialized [`pb::Op`]
 /// vertices: children precede parents, and the final entry is a synthetic
-/// wrapper vertex that points at the real root.
+/// wrapper vertex that points at the real head.
 ///
 #[derive(Clone, Debug)]
 pub struct Definition {
@@ -31,8 +31,11 @@ pub struct Definition {
     /// user locations contain an empty [`pb::Locations`] value.
     pub source: Option<pb::Source>,
 
-    /// Digest of the root (last) vertex.
-    pub root: Digest,
+    /// Digest of the real graph head referenced by the final wrapper.
+    ///
+    /// This is `None` for an empty scratch definition. The wrapper digest is
+    /// intentionally not exposed as the graph head.
+    pub root: Option<Digest>,
 }
 
 impl Definition {

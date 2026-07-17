@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use crate::definition::Definition;
 use crate::error::LlbError;
-use crate::marshal::Digest;
 use crate::ops::exec::{
     AddSecret, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode, Shlex,
 };
@@ -92,7 +91,7 @@ impl State {
                 def: Vec::new(),
                 metadata: BTreeMap::new(),
                 source: None,
-                root: Digest::empty(),
+                root: None,
             });
         }
         let platform = opts
@@ -110,8 +109,12 @@ impl State {
         };
         let mut ctx = Context::new(platform, worker_filters);
         let root_ref = ctx.register(&self.output)?;
-        let wrapper_ref = ctx.append_wrapper(root_ref, self.constraints.custom_name.as_deref())?;
-        Ok(ctx.finalize(wrapper_ref.digest().clone()))
+        let wrapper_ref =
+            ctx.append_wrapper(root_ref.clone(), self.constraints.custom_name.as_deref())?;
+        Ok(ctx.finalize(
+            wrapper_ref.digest().clone(),
+            Some(root_ref.digest().clone()),
+        ))
     }
 
     /// Set a custom name for the operation that produces this state.

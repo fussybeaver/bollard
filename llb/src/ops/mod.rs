@@ -277,14 +277,14 @@ impl Context {
 
     /// Finalize the context into a [`Definition`].
     ///
-    /// `root` is the digest of the wrapper vertex produced by
-    /// [`append_wrapper`].
-    pub(crate) fn finalize(self, root: Digest) -> Definition {
+    /// `wrapper_root` is the digest of the wrapper vertex produced by
+    /// [`append_wrapper`]. `head` is the real graph head referenced by it.
+    pub(crate) fn finalize(self, wrapper_root: Digest, head: Option<Digest>) -> Definition {
         let mut locations = BTreeMap::new();
         let mut def = Vec::with_capacity(self.nodes.len());
         let mut metadata = BTreeMap::new();
         for (digest, node) in self.nodes {
-            if digest != root {
+            if digest != wrapper_root {
                 // Go's source-map collector records every real vertex, even
                 // when it has no user-facing source locations. Keep the
                 // entries empty so the direct-solve boundary can remove them
@@ -306,7 +306,7 @@ impl Context {
                 locations,
                 infos: Vec::new(),
             }),
-            root,
+            root: head,
         }
     }
 }
@@ -349,7 +349,7 @@ mod tests {
         assert!(def.def.is_empty());
         assert!(def.metadata.is_empty());
         assert!(def.source.is_none());
-        assert!(def.root.as_str().is_empty());
+        assert_eq!(def.root, None);
     }
 
     #[test]
@@ -370,7 +370,10 @@ mod tests {
         for bytes in def.def.iter().take(def.def.len() - 1) {
             assert!(source.locations.contains_key(sha256(bytes).as_str()));
         }
-        assert!(!source.locations.contains_key(def.root.as_str()));
+        let head = def.root.as_ref().expect("non-empty definition has a head");
+        assert!(source.locations.contains_key(head.as_str()));
+        let wrapper_digest = sha256(def.def.last().expect("definition has wrapper"));
+        assert!(!source.locations.contains_key(wrapper_digest.as_str()));
     }
 
     #[test]
@@ -579,7 +582,7 @@ mod tests {
 
         let wrapper_md = def
             .metadata
-            .get(def.root.as_str())
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
             .expect("root has metadata");
         assert!(wrapper_md.caps.contains_key(cap::CAP_CONSTRAINTS));
         assert!(wrapper_md.caps.contains_key(cap::CAP_PLATFORM));
@@ -677,8 +680,10 @@ mod tests {
         let def = s.marshal(MarshalOpts::default()).unwrap();
         assert!(!def.def.is_empty());
 
-        let last_dgst = sha256(def.def.last().unwrap());
-        assert_eq!(def.root.as_str(), last_dgst.as_str());
+        let wrapper = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let head = def.root.as_ref().expect("non-empty definition has a head");
+        assert_eq!(wrapper.inputs[0].digest, head.as_str());
+        assert_ne!(head.as_str(), sha256(def.def.last().unwrap()).as_str());
     }
 
     #[test]
@@ -692,7 +697,7 @@ mod tests {
         let def = s.marshal(MarshalOpts::default()).unwrap();
         let wrapper_md = def
             .metadata
-            .get(def.root.as_str())
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
             .expect("root has metadata");
         assert!(wrapper_md.caps.contains_key(cap::CAP_META_DESCRIPTION));
     }
@@ -766,7 +771,7 @@ mod tests {
         let def = s.marshal(MarshalOpts::default()).unwrap();
         let wrapper_md = def
             .metadata
-            .get(def.root.as_str())
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
             .expect("root has metadata");
         assert_eq!(
             wrapper_md.description.get(attr::DESCRIPTION_NAME),

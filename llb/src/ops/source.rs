@@ -583,6 +583,7 @@ mod tests {
             .marshal(MarshalOpts::default())
             .unwrap()
             .root
+            .expect("non-empty image has a real head")
             .to_string()
     }
 
