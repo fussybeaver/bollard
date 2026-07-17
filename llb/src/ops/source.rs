@@ -24,12 +24,8 @@ pub struct Image {
 impl Image {
     /// Create a new image source.
     pub fn new<S: Into<String>>(reference: S) -> Result<Self, LlbError> {
-        let reference = reference.into();
-        let mut attrs = BTreeMap::new();
-        attrs.insert(
-            attr::IMAGE_RESOLVE_MODE.to_string(),
-            attr::IMAGE_RESOLVE_MODE_DEFAULT.to_string(),
-        );
+        let reference = normalize_image_reference(&reference.into())?;
+        let attrs = BTreeMap::new();
         let mut metadata = OpMetadata::default();
         metadata.caps.insert(cap::CAP_SOURCE_IMAGE.to_string());
         Ok(Self {
@@ -42,17 +38,25 @@ impl Image {
 
     /// Set the resolve mode for the image.
     pub fn with_resolve_mode(mut self, mode: ResolveMode) -> Result<Self, LlbError> {
-        let value = mode.as_str();
-        self.attrs
-            .insert(attr::IMAGE_RESOLVE_MODE.to_string(), value.to_string());
         if mode == ResolveMode::Default {
             self.metadata
                 .caps
                 .remove(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE);
+            self.attrs.remove(attr::IMAGE_RESOLVE_MODE);
         } else {
-            self.metadata
-                .caps
-                .insert(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE.to_string());
+            self.attrs.insert(
+                attr::IMAGE_RESOLVE_MODE.to_string(),
+                mode.as_str().to_string(),
+            );
+            if mode == ResolveMode::ForcePull {
+                self.metadata
+                    .caps
+                    .insert(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE.to_string());
+            } else {
+                self.metadata
+                    .caps
+                    .remove(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE);
+            }
         }
         Ok(self)
     }
@@ -136,6 +140,240 @@ impl ResolveMode {
             ResolveMode::PreferLocal => attr::IMAGE_RESOLVE_MODE_PREFER_LOCAL,
         }
     }
+}
+
+const DEFAULT_IMAGE_DOMAIN: &str = "docker.io";
+const DEFAULT_IMAGE_NAMESPACE: &str = "library";
+
+fn normalize_image_reference(reference: &str) -> Result<String, LlbError> {
+    if reference.is_empty()
+        || reference
+            .chars()
+            .any(|c| c.is_ascii_whitespace() || c.is_control())
+        || reference.split('@').count() > 2
+    {
+        return Err(LlbError::InvalidReference {
+            reference: reference.to_string(),
+        });
+    }
+
+    let (name_and_tag, digest) = match reference.split_once('@') {
+        Some((name, digest)) if !name.is_empty() && !digest.is_empty() => {
+            validate_digest(digest, reference)?;
+            (name, Some(digest))
+        }
+        Some(_) => {
+            return Err(LlbError::InvalidReference {
+                reference: reference.to_string(),
+            });
+        }
+        None => (reference, None),
+    };
+
+    let (name, tag) = split_image_tag(name_and_tag, reference)?;
+    let (domain, remote) = split_image_domain(name);
+    validate_image_domain(domain, reference)?;
+    let remote = if domain == DEFAULT_IMAGE_DOMAIN && !remote.contains('/') {
+        format!("{DEFAULT_IMAGE_NAMESPACE}/{remote}")
+    } else {
+        remote.to_string()
+    };
+
+    validate_image_name(&remote, reference)?;
+    let mut normalized = format!("{domain}/{remote}");
+    if let Some(tag) = tag {
+        normalized.push(':');
+        normalized.push_str(tag);
+    } else if digest.is_none() {
+        normalized.push_str(":latest");
+    }
+    if let Some(digest) = digest {
+        normalized.push('@');
+        normalized.push_str(digest);
+    }
+    Ok(normalized)
+}
+
+fn split_image_tag<'a>(
+    reference: &'a str,
+    original: &str,
+) -> Result<(&'a str, Option<&'a str>), LlbError> {
+    let slash = reference.rfind('/').unwrap_or(0);
+    let tag_start = reference[slash..].find(':').map(|index| slash + index);
+    let Some(tag_start) = tag_start else {
+        return Ok((reference, None));
+    };
+    let (name, tag) = reference.split_at(tag_start);
+    let tag = &tag[1..];
+    if tag.is_empty()
+        || tag.len() > 128
+        || !tag.as_bytes()[0].is_ascii_alphanumeric()
+        || !tag
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'.' || c == b'-')
+    {
+        return Err(LlbError::InvalidReference {
+            reference: original.to_string(),
+        });
+    }
+    Ok((name, Some(tag)))
+}
+
+fn split_image_domain(reference: &str) -> (&str, &str) {
+    let Some((first, remainder)) = reference.split_once('/') else {
+        return (DEFAULT_IMAGE_DOMAIN, reference);
+    };
+    if first == "localhost"
+        || first.contains('.')
+        || first.contains(':')
+        || first.chars().any(|c| c.is_ascii_uppercase())
+    {
+        let domain = if first == "index.docker.io" {
+            DEFAULT_IMAGE_DOMAIN
+        } else {
+            first
+        };
+        (domain, remainder)
+    } else {
+        (DEFAULT_IMAGE_DOMAIN, reference)
+    }
+}
+
+fn validate_image_name(name: &str, original: &str) -> Result<(), LlbError> {
+    if name.is_empty()
+        || name.len() > 255
+        || (name.len() == 64 && name.bytes().all(|c| c.is_ascii_hexdigit()))
+        || name
+            .split('/')
+            .any(|component| !valid_image_component(component))
+    {
+        return Err(LlbError::InvalidReference {
+            reference: original.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_image_domain(domain: &str, original: &str) -> Result<(), LlbError> {
+    if domain == "localhost" {
+        return Ok(());
+    }
+
+    if domain.starts_with('[') {
+        let Some(end) = domain.find(']') else {
+            return Err(LlbError::InvalidReference {
+                reference: original.to_string(),
+            });
+        };
+        let address = &domain[1..end];
+        let port = &domain[end + 1..];
+        if address.is_empty()
+            || !address.bytes().all(|c| c.is_ascii_hexdigit() || c == b':')
+            || (!port.is_empty()
+                && (!port.starts_with(':') || !port[1..].bytes().all(|c| c.is_ascii_digit())))
+        {
+            return Err(LlbError::InvalidReference {
+                reference: original.to_string(),
+            });
+        }
+        return Ok(());
+    }
+
+    let (host, port) = match domain.rsplit_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (domain, None),
+    };
+    let invalid_port =
+        port.is_some_and(|port| port.is_empty() || !port.bytes().all(|c| c.is_ascii_digit()));
+    if host.is_empty()
+        || invalid_port
+        || host
+            .split('.')
+            .any(|component| !valid_domain_component(component))
+    {
+        return Err(LlbError::InvalidReference {
+            reference: original.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn valid_domain_component(component: &str) -> bool {
+    let bytes = component.as_bytes();
+    !bytes.is_empty()
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || *c == b'-')
+}
+
+fn valid_image_component(component: &str) -> bool {
+    let bytes = component.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_lowercase() || bytes[index].is_ascii_digit() {
+            index += 1;
+            continue;
+        }
+        match bytes[index] {
+            b'.' => {
+                index += 1;
+                if index == bytes.len()
+                    || !bytes[index].is_ascii_lowercase() && !bytes[index].is_ascii_digit()
+                {
+                    return false;
+                }
+            }
+            b'_' => {
+                index += 1;
+                if index < bytes.len() && bytes[index] == b'_' {
+                    index += 1;
+                }
+                if index == bytes.len()
+                    || !bytes[index].is_ascii_lowercase() && !bytes[index].is_ascii_digit()
+                {
+                    return false;
+                }
+            }
+            b'-' => {
+                while index < bytes.len() && bytes[index] == b'-' {
+                    index += 1;
+                }
+                if index == bytes.len()
+                    || !bytes[index].is_ascii_lowercase() && !bytes[index].is_ascii_digit()
+                {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn validate_digest(digest: &str, original: &str) -> Result<(), LlbError> {
+    let Some((algorithm, encoded)) = digest.split_once(':') else {
+        return Err(LlbError::InvalidReference {
+            reference: original.to_string(),
+        });
+    };
+    if algorithm.is_empty()
+        || !algorithm.as_bytes()[0].is_ascii_alphabetic()
+        || !algorithm
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'+' | b'.'))
+        || encoded.len() < 32
+        || !encoded.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(LlbError::InvalidReference {
+            reference: original.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// A local build-context source.
@@ -321,6 +559,16 @@ impl From<Local> for State {
 mod tests {
     use super::*;
     use crate::state::MarshalOpts;
+    use prost::Message;
+
+    fn source_op(image: Image) -> pb::SourceOp {
+        let definition = State::from(image).marshal(MarshalOpts::default()).unwrap();
+        let op = pb::Op::decode(definition.def[0].as_slice()).unwrap();
+        match op.op.unwrap() {
+            pb::op::Op::Source(source) => source,
+            other => panic!("expected source operation, got {other:?}"),
+        }
+    }
 
     fn image_digest(image: Image) -> String {
         State::from(image)
@@ -347,6 +595,102 @@ mod tests {
                 .unwrap(),
         );
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn image_reference_is_normalized_like_docker() {
+        let cases = [
+            ("alpine", "docker-image://docker.io/library/alpine:latest"),
+            (
+                "alpine:3.20",
+                "docker-image://docker.io/library/alpine:3.20",
+            ),
+            (
+                "docker.io/alpine",
+                "docker-image://docker.io/library/alpine:latest",
+            ),
+            (
+                "ghcr.io/example/app",
+                "docker-image://ghcr.io/example/app:latest",
+            ),
+            (
+                "localhost:5000/example/app",
+                "docker-image://localhost:5000/example/app:latest",
+            ),
+        ];
+
+        for (reference, expected) in cases {
+            assert_eq!(
+                source_op(Image::new(reference).unwrap()).identifier,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn image_digest_reference_is_preserved() {
+        let digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let source = source_op(Image::new(format!("alpine@{digest}")).unwrap());
+        assert_eq!(
+            source.identifier,
+            format!("docker-image://docker.io/library/alpine@{digest}")
+        );
+    }
+
+    #[test]
+    fn default_resolve_mode_is_unset() {
+        let image = Image::new("alpine:latest").unwrap();
+        assert!(!source_op(image)
+            .attrs
+            .contains_key(attr::IMAGE_RESOLVE_MODE));
+    }
+
+    #[test]
+    fn resolve_mode_attributes_and_capabilities_match_go() {
+        let force_pull = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::ForcePull)
+            .unwrap();
+        assert_eq!(
+            source_op(force_pull)
+                .attrs
+                .get(attr::IMAGE_RESOLVE_MODE)
+                .map(String::as_str),
+            Some(attr::IMAGE_RESOLVE_MODE_FORCE_PULL)
+        );
+
+        let prefer_local = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::PreferLocal)
+            .unwrap();
+        assert_eq!(
+            source_op(prefer_local.clone())
+                .attrs
+                .get(attr::IMAGE_RESOLVE_MODE)
+                .map(String::as_str),
+            Some(attr::IMAGE_RESOLVE_MODE_PREFER_LOCAL)
+        );
+        assert!(!prefer_local
+            .metadata
+            .caps
+            .contains(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE));
+
+        let reset = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::ForcePull)
+            .unwrap()
+            .with_resolve_mode(ResolveMode::Default)
+            .unwrap();
+        assert!(!source_op(reset)
+            .attrs
+            .contains_key(attr::IMAGE_RESOLVE_MODE));
+    }
+
+    #[test]
+    fn invalid_image_references_are_rejected() {
+        for reference in ["", "Alpine:latest", "alpine:", "alpine@sha256:not-a-digest"] {
+            assert!(Image::new(reference).is_err(), "accepted {reference:?}");
+        }
     }
 
     #[test]

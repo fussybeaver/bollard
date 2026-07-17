@@ -626,7 +626,7 @@ mod tests {
         assert!(text.contains("source"));
         assert!(text.contains("exec"));
         assert!(text.contains("wrapper"));
-        assert!(text.contains("docker-image://alpine:latest"));
+        assert!(text.contains("docker-image://docker.io/library/alpine:latest"));
     }
 
     #[test]

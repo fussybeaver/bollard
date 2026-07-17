@@ -4,14 +4,9 @@
 //! using BuildKit v0.31.1. These tests now use a complete decoded-field
 //! comparator instead of only vertex counts and op-variant sequences.
 //!
-//! Notable known differences vs Go:
-//! - Go emits empty `WorkerConstraints` on every vertex; prost omits
-//!   zero-length message fields.
-//! - Go omits `image.resolvemode=default` from source attrs; Rust includes it.
-//! - Go normalizes image references to `docker.io/library/...`; Rust does not.
-//! - Go computes digest from a different canonical encoding,
-//!   so digest strings differ even for structurally identical graphs.
-//! - Go emits source metadata for these fixtures; Rust does not yet.
+//! Remaining known differences vs Go are source-map population and wire-level
+//! protobuf encoding. Image references and resolve-mode defaults are normalized
+//! by the Rust implementation before operation serialization.
 
 use bollard_llb::{
     copy, merge, mkdir, mkfile, rm, scratch, shlex, symlink, AddSecret, CacheSharingMode, FileOpts,
