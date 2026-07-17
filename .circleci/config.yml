@@ -227,7 +227,7 @@ jobs:
       - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,chrono,test_sshforward --verbose integration_test_build_buildkit_ssh 
   test_llb_goldens:
     docker:
-      - image: golang:1.24
+      - image: golang:1.25
     steps:
       - checkout
       - run:

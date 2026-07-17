@@ -45,6 +45,8 @@ pub enum FileAction {
     Rm {
         /// Path to remove.
         path: String,
+        /// Allow the path to be absent.
+        allow_not_found: bool,
         /// Allow wildcards.
         allow_wildcard: bool,
     },
@@ -127,6 +129,23 @@ impl FileAction {
                 ..
             } => *aw = v,
             _ => {}
+        }
+        self
+    }
+
+    /// Set `allow_not_found` on a [`FileAction::Rm`].
+    pub fn with_allow_not_found(mut self, v: bool) -> Self {
+        if let Self::Rm {
+            path,
+            allow_wildcard,
+            ..
+        } = self
+        {
+            self = Self::Rm {
+                path,
+                allow_not_found: v,
+                allow_wildcard,
+            };
         }
         self
     }
@@ -313,6 +332,7 @@ pub fn mkfile<S: Into<String>>(path: S, mode: u32, data: impl Into<Vec<u8>>) -> 
 pub fn rm<S: Into<String>>(path: S) -> FileAction {
     FileAction::Rm {
         path: path.into(),
+        allow_not_found: false,
         allow_wildcard: false,
     }
 }
@@ -484,11 +504,12 @@ fn build_pb_file_action(
         }
         FileAction::Rm {
             path,
+            allow_not_found,
             allow_wildcard,
         } => {
             let rm = pb::FileActionRm {
                 path: path.clone(),
-                allow_not_found: false,
+                allow_not_found: *allow_not_found,
                 allow_wildcard: *allow_wildcard,
             };
             pb::FileAction {
@@ -563,6 +584,7 @@ mod tests {
     use crate::ops::source::Scratch;
     use crate::ops::OperationOutput;
     use crate::scratch;
+    use prost::Message;
 
     #[test]
     fn fileop_copy_has_two_inputs() {
@@ -608,6 +630,43 @@ mod tests {
             }
             _ => panic!("expected Copy"),
         }
+    }
+
+    #[test]
+    fn rm_options_chain() {
+        let action = rm("/tmp/file")
+            .with_allow_not_found(true)
+            .with_allow_wildcard(true);
+        match action {
+            FileAction::Rm {
+                allow_not_found,
+                allow_wildcard,
+                ..
+            } => {
+                assert!(allow_not_found);
+                assert!(allow_wildcard);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
+
+    #[test]
+    fn rm_allow_not_found_marshals() {
+        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
+        let op = FileOp::new(
+            base,
+            rm("/tmp/file").with_allow_not_found(true),
+            FileOpts::default(),
+        )
+        .unwrap();
+        let encoded = pb::Op::decode(op.bytes.as_slice()).unwrap();
+        let Some(pb::op::Op::File(file)) = encoded.op else {
+            panic!("expected file operation");
+        };
+        let Some(pb::file_action::Action::Rm(rm)) = file.actions[0].action.as_ref() else {
+            panic!("expected rm action");
+        };
+        assert!(rm.allow_not_found);
     }
 
     #[test]

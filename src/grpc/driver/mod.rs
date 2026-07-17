@@ -419,13 +419,15 @@ pub(crate) async fn solve_definition(
 }
 
 fn build_definition_solve_request(
-    definition: pb::Definition,
+    mut definition: pb::Definition,
     exporter: &DefinitionExporter,
     options: &DefinitionSolveOptions,
     session_id: &str,
     build_ref: Option<BuildRef>,
 ) -> SolveRequest {
     let id = build_ref.unwrap_or_default();
+
+    normalize_empty_source_locations(&mut definition);
 
     let (exporter_type, exporter_attrs, exporters) = match exporter {
         DefinitionExporter::Local(path) => {
@@ -461,6 +463,14 @@ fn build_definition_solve_request(
         source_policy: None,
         enable_session_exporter: false,
         source_policy_session: String::new(),
+    }
+}
+
+fn normalize_empty_source_locations(definition: &mut pb::Definition) {
+    if let Some(source) = definition.source.as_mut() {
+        source
+            .locations
+            .retain(|_, locations| !locations.locations.is_empty());
     }
 }
 
@@ -574,6 +584,68 @@ mod tests {
         assert_eq!(cache.exports[0].r#type, "local");
         assert_eq!(cache.imports.len(), 1);
         assert_eq!(cache.imports[0].r#type, "registry");
+    }
+
+    #[test]
+    fn definition_solve_request_removes_empty_source_locations() {
+        let mut locations = BTreeMap::new();
+        locations.insert(
+            "empty".to_string(),
+            pb::Locations {
+                locations: Vec::new(),
+            },
+        );
+        locations.insert(
+            "populated".to_string(),
+            pb::Locations {
+                locations: vec![pb::Location {
+                    source_index: 0,
+                    ranges: Vec::new(),
+                }],
+            },
+        );
+        let definition = pb::Definition {
+            source: Some(pb::Source {
+                locations,
+                infos: vec![pb::SourceInfo::default()],
+            }),
+            ..Default::default()
+        };
+
+        let request = build_definition_solve_request(
+            definition,
+            &DefinitionExporter::Local(PathBuf::from("/out")),
+            &DefinitionSolveOptions::default(),
+            "session-id",
+            None,
+        );
+
+        let source = request
+            .definition
+            .expect("definition present")
+            .source
+            .expect("source present");
+        assert!(!source.locations.contains_key("empty"));
+        assert_eq!(source.locations.len(), 1);
+        assert_eq!(source.locations["populated"].locations.len(), 1);
+        assert_eq!(source.infos.len(), 1);
+    }
+
+    #[test]
+    fn definition_solve_request_preserves_definition_without_source() {
+        let request = build_definition_solve_request(
+            pb::Definition::default(),
+            &DefinitionExporter::Local(PathBuf::from("/out")),
+            &DefinitionSolveOptions::default(),
+            "session-id",
+            None,
+        );
+
+        assert!(request
+            .definition
+            .expect("definition present")
+            .source
+            .is_none());
     }
 
     #[tokio::test]

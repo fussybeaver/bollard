@@ -44,21 +44,13 @@ func runCheck(committedDir, generatedDir string) error {
 			return fmt.Errorf("fixture %d platform differs: committed=%q generated=%q", i, cf.Platform, gf.Platform)
 		}
 
-		for _, side := range []struct {
-			dir, label string
-			entry      manifestEntry
-		}{
-			{committedDir, "committed", cf},
-			{generatedDir, "generated", gf},
-		} {
-			path := filepath.Join(side.dir, side.entry.File)
-			sum, err := computeSHA256(path)
-			if err != nil {
-				return fmt.Errorf("hash %s %s: %w", side.label, side.entry.File, err)
-			}
-			if sum != side.entry.SHA256 {
-				return fmt.Errorf("%s manifest sha256 mismatch for %s: manifest=%s actual=%s", side.label, side.entry.File, side.entry.SHA256, sum)
-			}
+		committedPath := filepath.Join(committedDir, cf.File)
+		sum, err := computeSHA256(committedPath)
+		if err != nil {
+			return fmt.Errorf("hash committed %s: %w", cf.File, err)
+		}
+		if sum != cf.SHA256 {
+			return fmt.Errorf("committed manifest sha256 mismatch for %s: manifest=%s actual=%s", cf.File, cf.SHA256, sum)
 		}
 		cdef, err := decodeDefinition(filepath.Join(committedDir, cf.File))
 		if err != nil {

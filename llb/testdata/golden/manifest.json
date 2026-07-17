@@ -1,5 +1,5 @@
 {
-  "generator_version": "phase2-1",
+  "generator_version": "phase4-file-ops-1",
   "buildkit_version": "v0.31.1",
   "fixtures": [
     {
@@ -84,6 +84,36 @@
       "file": "symlink.llb.pb",
       "fixture": "symlink",
       "sha256": "f19ebdb464906f553c2a32aa5acb8cde7a33a74b24d470f1a3f9ca7db08b373d",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_mkdir.llb.pb",
+      "fixture": "file_ops_mkdir",
+      "sha256": "448abf0c10e37c73b05a9be8844ac01c6decfc9f8f854ad1daab6c6654466f5a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_mkfile.llb.pb",
+      "fixture": "file_ops_mkfile",
+      "sha256": "58eb69259a02b15d0128d8851fe467ba3d351e28e66db90fc08797ba1dd72e7e",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_symlink.llb.pb",
+      "fixture": "file_ops_symlink",
+      "sha256": "2fdfae848e8f81663a853aec95b7299855c1d295ae417ef2433264a46be83fb9",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_copy.llb.pb",
+      "fixture": "file_ops_copy",
+      "sha256": "e50858a7173ff126ed2d67269694ee76c4e52368241089a3161c5b13d087a1e3",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_rm.llb.pb",
+      "fixture": "file_ops_rm",
+      "sha256": "ba0d63267f4d0e6e2d9f482f1ab5a3a35d19af64f494841ed26fa4d72abc25f0",
       "platform": "linux/amd64"
     },
     {

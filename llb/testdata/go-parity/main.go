@@ -39,7 +39,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "phase2-1"
+const generatorVersion = "phase4-file-ops-1"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -97,6 +97,11 @@ func main() {
 		{"mkfile", mkfile, defaultPlatform(), "linux/amd64"},
 		{"rm_wildcard", rmWildcard, defaultPlatform(), "linux/amd64"},
 		{"symlink", symlinkFixture, defaultPlatform(), "linux/amd64"},
+		{"file_ops_mkdir", fileOpsMkdir, defaultPlatform(), "linux/amd64"},
+		{"file_ops_mkfile", fileOpsMkfile, defaultPlatform(), "linux/amd64"},
+		{"file_ops_symlink", fileOpsSymlink, defaultPlatform(), "linux/amd64"},
+		{"file_ops_copy", fileOpsCopy, defaultPlatform(), "linux/amd64"},
+		{"file_ops_rm", fileOpsRm, defaultPlatform(), "linux/amd64"},
 		{"secret_file_default", secretFileDefault, defaultPlatform(), "linux/amd64"},
 		{"secret_file_optional", secretFileOptional, defaultPlatform(), "linux/amd64"},
 		{"secret_as_env", secretAsEnv, defaultPlatform(), "linux/amd64"},
@@ -365,6 +370,32 @@ func fileOperationsChain() llb.State {
 		CreateDestPath: true,
 	}))
 	return withCopy.File(llb.Rm("/app/current-config"))
+}
+
+func fileOpsMkdir() llb.State {
+	return llb.Scratch().File(llb.Mkdir("/app", 0o755, llb.WithParents(true)))
+}
+
+func fileOpsMkfile() llb.State {
+	base := fileOpsMkdir()
+	return base.File(llb.Mkfile("/app/config.toml", 0o644, []byte("[server]\nhost = \"0.0.0.0\"\n")))
+}
+
+func fileOpsSymlink() llb.State {
+	base := fileOpsMkfile()
+	return base.File(llb.Symlink("/app/config.toml", "/app/current-config"))
+}
+
+func fileOpsCopy() llb.State {
+	base := fileOpsMkfile()
+	return base.File(llb.Copy(base, "/app/config.toml", "/app/config.toml.bak", &llb.CopyInfo{
+		CreateDestPath: true,
+	}))
+}
+
+func fileOpsRm() llb.State {
+	base := fileOpsSymlink()
+	return base.File(llb.Rm("/app/current-config"))
 }
 
 func scratchDirect() llb.State {
