@@ -6,7 +6,7 @@ pub(crate) mod file;
 pub(crate) mod merge;
 pub(crate) mod source;
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -17,6 +17,7 @@ use crate::definition::Definition;
 use crate::error::LlbError;
 use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
+use crate::platform::Platform;
 
 /// Index of an output produced by an operation.
 ///
@@ -43,14 +44,24 @@ pub(crate) enum OperationOutput {
         /// Which output index this handle refers to.
         index: OutputIdx,
     },
+    /// An empty output representing an absent (scratch) filesystem.
+    ///
+    /// Go's `llb.Scratch()` does not produce a vertex; it is encoded as an
+    /// input index of `-1` on the consuming operation.
+    Empty,
 }
 
 impl OperationOutput {
     /// The operation that produces this output.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on [`OperationOutput::Empty`].
     pub(crate) fn operation(&self) -> &dyn Operation {
         match self {
             OperationOutput::Owned(op) => op.as_ref(),
             OperationOutput::Borrowed { op, .. } => op.as_ref(),
+            OperationOutput::Empty => panic!("empty output has no operation"),
         }
     }
 
@@ -59,7 +70,13 @@ impl OperationOutput {
         match self {
             OperationOutput::Owned(_) => OutputIdx::PRIMARY,
             OperationOutput::Borrowed { index, .. } => *index,
+            OperationOutput::Empty => OutputIdx::PRIMARY,
         }
+    }
+
+    /// Returns `true` if this output represents an empty scratch filesystem.
+    pub(crate) fn is_empty(&self) -> bool {
+        matches!(self, OperationOutput::Empty)
     }
 }
 
@@ -69,12 +86,6 @@ impl OperationOutput {
 /// [`Debug`], and are responsible for recursively registering their inputs with
 /// the [`Context`] before serializing themselves.
 pub(crate) trait Operation: Send + Sync + Debug {
-    /// Content digest of the serialized [`bollard_buildkit_proto::pb::Op`].
-    ///
-    /// This is the stable identity used for dedup; two operations with the
-    /// same digest serialize to identical bytes.
-    fn digest(&self) -> &Digest;
-
     /// Serialize this operation into a [`pb::Op`], register its inputs, and
     /// insert the resulting [`Node`] into `ctx`.
     ///
@@ -124,50 +135,65 @@ pub(crate) struct Node {
     pub metadata: OpMetadata,
 }
 
-/// Marshaling context: maintains the post-order register table and dedups
-/// operations by content digest.
-#[derive(Clone, Debug, Default)]
+/// Marshaling context: maintains the post-order register table, dedups
+/// operations by content digest, and holds the active marshal-time constraints.
+#[derive(Clone, Debug)]
 pub(crate) struct Context {
     /// Registered nodes in insertion (post-order) order.
     nodes: IndexMap<Digest, Node>,
-    /// Digests that have already been serialized.
-    seen: HashSet<Digest>,
+    /// Cache of serialized operation identities to their node digest.
+    ///
+    /// This avoids re-traversing shared subgraphs while still computing the
+    /// final content digest from the encoded bytes.
+    serialized: HashMap<(usize, OutputIdx), NodeRef>,
+    /// Marshal-time platform constraint.
+    platform: Option<Platform>,
+    /// Marshal-time worker constraint filters.
+    worker_filters: Vec<String>,
 }
 
 impl Context {
-    /// Create an empty context.
-    pub(crate) fn new() -> Self {
-        Self::default()
+    /// Create a context with the given marshal-time constraints.
+    pub(crate) fn new(platform: Option<Platform>, worker_filters: Vec<String>) -> Self {
+        Self {
+            nodes: IndexMap::new(),
+            serialized: HashMap::new(),
+            platform,
+            worker_filters,
+        }
     }
 
     /// Ensure an output's producing operation is serialized, returning a
     /// reference to it.
     ///
     /// On first encounter the operation is serialized, which recursively
-    /// registers its inputs first. Subsequent references short-circuit.
+    /// registers its inputs first. Subsequent references to the same
+    /// operation object short-circuit through an identity cache.
     pub(crate) fn register(&mut self, output: &OperationOutput) -> Result<NodeRef, LlbError> {
-        let op = output.operation();
-        let digest = op.digest().clone();
-        if !self.seen.contains(&digest) {
-            op.serialize(self)?;
-            self.seen.insert(digest.clone());
+        if output.is_empty() {
+            return Ok(NodeRef::new(Digest::empty(), OutputIdx::PRIMARY));
         }
-        Ok(NodeRef::new(digest, output.index()))
+        let op = output.operation();
+        let key = (operation_identity_key(op), output.index());
+        if let Some(node_ref) = self.serialized.get(&key) {
+            return Ok(node_ref.clone());
+        }
+        let node_ref = op.serialize(self)?;
+        self.serialized.insert(key, node_ref.clone());
+        Ok(node_ref)
     }
 
     /// Insert a serialized node into the context.
     ///
     /// Callers (operation `serialize` implementations) are responsible for
     /// having already registered all inputs.
+    ///
+    /// If a node with the same content digest is already present, the existing
+    /// entry is reused for deduplication.
     pub(crate) fn insert_node(&mut self, node: Node) -> NodeRef {
-        let index = OutputIdx::PRIMARY;
         let digest = node.digest.clone();
-        debug_assert!(
-            !self.nodes.contains_key(&digest),
-            "duplicate node insertion for {digest}"
-        );
-        self.nodes.insert(digest.clone(), node);
-        NodeRef::new(digest, index)
+        self.nodes.entry(digest.clone()).or_insert(node);
+        NodeRef::new(digest, OutputIdx::PRIMARY)
     }
 
     /// Iterate registered nodes in post-order (children before parents).
@@ -175,16 +201,35 @@ impl Context {
         &self.nodes
     }
 
+    /// Return the active marshal-time platform constraint.
+    pub(crate) fn platform(&self) -> Option<Platform> {
+        self.platform.clone()
+    }
+
+    /// Return the active marshal-time worker filters.
+    pub(crate) fn worker_filters(&self) -> &[String] {
+        &self.worker_filters
+    }
+
+    /// Combine the active marshal-time platform with an operation's own
+    /// platform. The marshal-time platform overrides the operation's own
+    /// platform.
+    pub(crate) fn combined_platform(
+        &self,
+        operation_platform: Option<Platform>,
+    ) -> Option<Platform> {
+        self.platform.clone().or(operation_platform)
+    }
+
     /// Append the synthetic root wrapper vertex.
     ///
     /// The wrapper is a no-variant [`pb::Op`] with a single input pointing at
-    /// the real root. It exists to anchor the marshal-time constraints (via
-    /// capability caps) without mutating the shared, deduplicated real root op.
-    /// This matches Go's `client/llb.State.Marshal` output.
+    /// the real root. It does not carry platform or worker constraints; those
+    /// are now placed on each real operation. The wrapper metadata still
+    /// advertises the scheduling capabilities used by the graph.
     pub(crate) fn append_wrapper(
         &mut self,
         root: NodeRef,
-        platform: Option<pb::Platform>,
         custom_name: Option<&str>,
     ) -> Result<NodeRef, LlbError> {
         let wrapper_op = pb::Op {
@@ -192,7 +237,7 @@ impl Context {
                 digest: root.digest().as_str().to_string(),
                 index: root.index().0 as i64,
             }],
-            platform,
+            platform: None,
             constraints: None,
             op: None,
         };
@@ -232,7 +277,8 @@ impl Context {
 
     /// Finalize the context into a [`Definition`].
     ///
-    /// `root` is the digest of the wrapper vertex produced by [`append_wrapper`].
+    /// `root` is the digest of the wrapper vertex produced by
+    /// [`append_wrapper`].
     pub(crate) fn finalize(self, root: Digest) -> Definition {
         let def = self.nodes.values().map(|n| n.bytes.clone()).collect();
         let metadata = self
@@ -247,6 +293,15 @@ impl Context {
             root,
         }
     }
+}
+
+/// Return a stable identity key for an operation object.
+///
+/// The key is the address of the [`Arc`]-allocated operation, used to avoid
+/// re-serializing the same operation during a single marshal pass.
+fn operation_identity_key(op: &dyn Operation) -> usize {
+    let ptr: *const dyn Operation = op;
+    ptr as *const () as usize
 }
 
 #[cfg(test)]
@@ -268,8 +323,17 @@ mod tests {
 
     #[test]
     fn context_starts_empty() {
-        let ctx = Context::new();
+        let ctx = Context::new(None, Vec::new());
         assert!(ctx.nodes().is_empty());
+    }
+
+    #[test]
+    fn marshal_scratch_direct_is_empty() {
+        let def = scratch().unwrap().marshal(MarshalOpts::default()).unwrap();
+        assert!(def.def.is_empty());
+        assert!(def.metadata.is_empty());
+        assert!(def.source.is_none());
+        assert!(def.root.as_str().is_empty());
     }
 
     #[test]
@@ -325,8 +389,8 @@ mod tests {
             .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap();
-        // One scratch + one mkdir (deduped) + merge + wrapper = 4 entries.
-        assert_eq!(def.def.len(), 4);
+        // Scratch produces no vertex. One mkdir (deduped) + merge + wrapper = 3 entries.
+        assert_eq!(def.def.len(), 3);
     }
 
     #[test]
@@ -440,6 +504,10 @@ mod tests {
         for bytes in &def.def {
             let op = pb::Op::decode(bytes.as_slice()).unwrap();
             for input in &op.inputs {
+                if input.index < 0 {
+                    // Scratch inputs have no digest.
+                    continue;
+                }
                 assert!(
                     seen.contains(&input.digest),
                     "input {} referenced before it was defined",
@@ -451,24 +519,25 @@ mod tests {
         }
     }
 
+    fn find_op_by_variant<F>(def: &Definition, mut predicate: F) -> Option<pb::Op>
+    where
+        F: FnMut(&pb::op::Op) -> bool,
+    {
+        def.def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| op.op.as_ref().is_some_and(&mut predicate))
+    }
+
     #[test]
     fn marshal_wrapper_is_no_variant() {
-        let s = scratch().unwrap();
+        let s = image("alpine:latest").unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
         let wrapper_bytes = def.def.last().expect("definition is non-empty");
         let wrapper_op = pb::Op::decode(wrapper_bytes.as_slice()).unwrap();
         assert!(wrapper_op.op.is_none());
         assert_eq!(wrapper_op.inputs.len(), 1);
-        assert_eq!(
-            wrapper_op.platform,
-            Some(pb::Platform {
-                architecture: "amd64".to_string(),
-                os: "linux".to_string(),
-                variant: String::new(),
-                os_version: String::new(),
-                os_features: Vec::new(),
-            })
-        );
+        assert_eq!(wrapper_op.platform, None);
         assert_eq!(wrapper_op.constraints, None);
 
         let wrapper_md = def
@@ -592,12 +661,13 @@ mod tests {
     }
 
     #[test]
-    fn marshal_wrapper_platform_default_is_linux_amd64() {
-        let s = scratch().unwrap();
+    fn marshal_image_op_platform_default_is_linux_amd64() {
+        let s = image("alpine:latest").unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
-        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
         assert_eq!(
-            wrapper_op.platform,
+            image_op.platform,
             Some(pb::Platform {
                 architecture: "amd64".to_string(),
                 os: "linux".to_string(),
@@ -606,23 +676,31 @@ mod tests {
                 os_features: Vec::new(),
             })
         );
+        assert!(image_op.constraints.is_some());
     }
 
     #[test]
-    fn marshal_wrapper_platform_none_when_opts_explicitly_none() {
-        let s = scratch().unwrap();
-        let def = s.marshal(MarshalOpts { platform: None }).unwrap();
-        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
-        assert_eq!(wrapper_op.platform, None);
+    fn marshal_image_op_platform_none_when_opts_explicitly_none() {
+        let s = image("alpine:latest").unwrap();
+        let def = s
+            .marshal(MarshalOpts {
+                platform: None,
+                worker_filters: Vec::new(),
+            })
+            .unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(image_op.platform, None);
     }
 
     #[test]
-    fn marshal_wrapper_platform_linux_amd64() {
-        let s = scratch().unwrap();
+    fn marshal_image_op_platform_linux_amd64() {
+        let s = image("alpine:latest").unwrap();
         let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
-        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
         assert_eq!(
-            wrapper_op.platform,
+            image_op.platform,
             Some(pb::Platform {
                 architecture: "amd64".to_string(),
                 os: "linux".to_string(),
@@ -634,8 +712,8 @@ mod tests {
     }
 
     #[test]
-    fn marshal_wrapper_digest_differs_with_platform() {
-        let s = scratch().unwrap();
+    fn marshal_definition_digest_differs_with_platform() {
+        let s = image("alpine:latest").unwrap();
         let def_default = s.marshal(MarshalOpts::default()).unwrap();
         let def_arm64 = s
             .marshal(MarshalOpts::default().with_platform(Platform::LINUX_ARM64.clone()))
@@ -645,7 +723,9 @@ mod tests {
 
     #[test]
     fn marshal_state_custom_name_in_wrapper_metadata() {
-        let s = scratch().unwrap().with_custom_name("root wrapper name");
+        let s = image("alpine:latest")
+            .unwrap()
+            .with_custom_name("root wrapper name");
         let def = s.marshal(MarshalOpts::default()).unwrap();
         let wrapper_md = def
             .metadata
@@ -660,13 +740,19 @@ mod tests {
 
     #[test]
     fn marshal_constraints_platform_used_when_opts_platform_none() {
-        let s = scratch()
+        let s = image("alpine:latest")
             .unwrap()
             .with_platform(Platform::LINUX_ARM64.clone());
-        let def = s.marshal(MarshalOpts { platform: None }).unwrap();
-        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let def = s
+            .marshal(MarshalOpts {
+                platform: None,
+                worker_filters: Vec::new(),
+            })
+            .unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
         assert_eq!(
-            wrapper_op.platform,
+            image_op.platform,
             Some(pb::Platform {
                 architecture: "arm64".to_string(),
                 os: "linux".to_string(),
@@ -679,13 +765,14 @@ mod tests {
 
     #[test]
     fn marshal_opts_platform_overrides_constraints_platform() {
-        let s = scratch()
+        let s = image("alpine:latest")
             .unwrap()
             .with_platform(Platform::LINUX_ARM64.clone());
         let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
-        let wrapper_op = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
         assert_eq!(
-            wrapper_op.platform,
+            image_op.platform,
             Some(pb::Platform {
                 architecture: "amd64".to_string(),
                 os: "linux".to_string(),
@@ -694,5 +781,32 @@ mod tests {
                 os_features: Vec::new(),
             })
         );
+    }
+
+    #[test]
+    fn marshal_worker_constraints_on_real_ops() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = s
+            .marshal(MarshalOpts::default().with_worker_filter("foo"))
+            .unwrap();
+        for bytes in &def.def {
+            let op = pb::Op::decode(bytes.as_slice()).unwrap();
+            if op.op.is_some() {
+                let constraints = op
+                    .constraints
+                    .as_ref()
+                    .expect("real operation should have worker constraints");
+                assert_eq!(constraints.filter, vec!["foo"]);
+            } else {
+                assert!(
+                    op.constraints.is_none(),
+                    "wrapper should have no constraints"
+                );
+            }
+        }
     }
 }

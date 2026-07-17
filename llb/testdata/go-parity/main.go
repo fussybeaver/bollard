@@ -39,7 +39,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "phase4-file-ops-1"
+const generatorVersion = "phase5-secrets-1"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -104,6 +104,7 @@ func main() {
 		{"file_ops_rm", fileOpsRm, defaultPlatform(), "linux/amd64"},
 		{"secret_file_default", secretFileDefault, defaultPlatform(), "linux/amd64"},
 		{"secret_file_optional", secretFileOptional, defaultPlatform(), "linux/amd64"},
+		{"secret_file_permissions", secretFilePermissions, defaultPlatform(), "linux/amd64"},
 		{"secret_as_env", secretAsEnv, defaultPlatform(), "linux/amd64"},
 		{"secret_env_explicit_name", secretEnvExplicitName, defaultPlatform(), "linux/amd64"},
 		{"local_all_attrs", localAllAttrs, defaultPlatform(), "linux/amd64"},
@@ -287,6 +288,19 @@ func secretFileOptional() llb.State {
 		Run(
 			llb.Shlex("cat /run/secrets/token"),
 			llb.AddSecret("token", llb.SecretID("token"), llb.SecretOptional),
+		).
+		Root()
+}
+
+func secretFilePermissions() llb.State {
+	return llb.Image("alpine:latest").
+		Run(
+			llb.Shlex("cat /run/secrets/license"),
+			llb.AddSecret(
+				"/run/secrets/license",
+				llb.SecretID("license"),
+				llb.SecretFileOpt(1000, 1001, 0o440),
+			),
 		).
 		Root()
 }

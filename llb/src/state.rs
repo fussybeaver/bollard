@@ -1,10 +1,12 @@
 //! The central LLB builder types: [`State`], [`ExecState`], and [`Constraints`].
 
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::definition::Definition;
 use crate::error::LlbError;
+use crate::marshal::Digest;
 use crate::ops::exec::{
     AddSecret, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode, Shlex,
 };
@@ -85,15 +87,30 @@ impl State {
 
     /// Marshal this state into a [`Definition`].
     pub fn marshal(&self, opts: MarshalOpts) -> Result<Definition, LlbError> {
-        let mut ctx = Context::new();
-        let root_ref = ctx.register(&self.output)?;
+        if self.output.is_empty() {
+            return Ok(Definition {
+                def: Vec::new(),
+                metadata: BTreeMap::new(),
+                source: None,
+                root: Digest::empty(),
+            });
+        }
         let platform = opts
             .platform
             .clone()
-            .or_else(|| self.constraints.platform.clone())
-            .map(Into::into);
-        let wrapper_ref =
-            ctx.append_wrapper(root_ref, platform, self.constraints.custom_name.as_deref())?;
+            .or_else(|| self.constraints.platform.clone());
+        let worker_filters = if self.constraints.worker_filters.is_empty() {
+            opts.worker_filters.clone()
+        } else {
+            opts.worker_filters
+                .iter()
+                .cloned()
+                .chain(self.constraints.worker_filters.iter().cloned())
+                .collect()
+        };
+        let mut ctx = Context::new(platform, worker_filters);
+        let root_ref = ctx.register(&self.output)?;
+        let wrapper_ref = ctx.append_wrapper(root_ref, self.constraints.custom_name.as_deref())?;
         Ok(ctx.finalize(wrapper_ref.digest().clone()))
     }
 
@@ -113,6 +130,7 @@ impl State {
 #[derive(Clone, Debug, Default)]
 pub struct Constraints {
     platform: Option<Platform>,
+    worker_filters: Vec<String>,
     cwd: Option<String>,
     env: Vec<(String, String)>,
     custom_name: Option<String>,
@@ -124,13 +142,21 @@ impl Constraints {
         self.platform = Some(platform);
         self
     }
+
+    /// Add a worker constraint filter.
+    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
+        self.worker_filters.push(filter.into());
+        self
+    }
 }
 
 /// Options passed to [`State::marshal`].
 #[derive(Clone, Debug)]
 pub struct MarshalOpts {
-    /// Platform constraint applied at the root wrapper vertex.
+    /// Platform constraint applied to real operation vertices.
     pub platform: Option<Platform>,
+    /// Worker constraint filters applied to real operation vertices.
+    pub worker_filters: Vec<String>,
 }
 
 impl Default for MarshalOpts {
@@ -139,6 +165,7 @@ impl Default for MarshalOpts {
             // Match Go's `llb.State.Marshal(ctx)`, which defaults to linux/amd64. This keeps
             // wrapper digests identical across SDKs and avoids cross-SDK cache fragmentation.
             platform: Some(Platform::LINUX_AMD64.clone()),
+            worker_filters: Vec::new(),
         }
     }
 }
@@ -152,6 +179,12 @@ impl MarshalOpts {
     /// Marshal with the given platform constraint.
     pub fn with_platform(mut self, platform: Platform) -> Self {
         self.platform = Some(platform);
+        self
+    }
+
+    /// Marshal with the given worker constraint filter.
+    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
+        self.worker_filters.push(filter.into());
         self
     }
 }
@@ -169,6 +202,7 @@ impl ExecState {
     pub fn root(self) -> Result<State, LlbError> {
         let exec_op = ExecOp::new(
             self.base.output,
+            self.base.constraints.platform.clone(),
             self.base.constraints.cwd.clone(),
             self.base.constraints.env.clone(),
             self.run,

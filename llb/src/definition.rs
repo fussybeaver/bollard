@@ -18,6 +18,7 @@ use crate::marshal::Digest;
 /// The `def` field is a topologically sorted list of serialized [`pb::Op`]
 /// vertices: children precede parents, and the final entry is a synthetic
 /// wrapper vertex that points at the real root.
+///
 #[derive(Clone, Debug)]
 pub struct Definition {
     /// Serialized [`pb::Op`] bytes in topological (post-order) order.

@@ -348,25 +348,47 @@ pub fn symlink<S1: Into<String>, S2: Into<String>>(target: S1, link_path: S2) ->
 /// A fully assembled file operation.
 #[derive(Clone, Debug)]
 pub(crate) struct FileOp {
-    inputs: Vec<OperationOutput>,
-    bytes: Vec<u8>,
-    digest: Digest,
+    base: OperationOutput,
+    action: FileAction,
+    opts: FileOpts,
     metadata: OpMetadata,
 }
 
 impl FileOp {
     /// Build a new file operation from the base state, a single action, and
     /// options.
+    ///
+    /// The actual protobuf bytes are computed at marshal time so that the
+    /// active worker constraints affect the content digest.
     pub(crate) fn new(
         base: OperationOutput,
         action: FileAction,
         opts: FileOpts,
     ) -> Result<Self, LlbError> {
-        let mut inputs: Vec<OperationOutput> = vec![base.clone()];
-        let mut input_keys: Vec<(Digest, OutputIdx)> =
-            vec![(base.operation().digest().clone(), base.index())];
+        let metadata = build_file_metadata(&action, &opts);
+        Ok(Self {
+            base,
+            action,
+            opts,
+            metadata,
+        })
+    }
+}
 
-        let pb_action = build_pb_file_action(&action, &mut inputs, &mut input_keys);
+impl Operation for FileOp {
+    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+        let base_empty = self.base.is_empty();
+        let mut inputs: Vec<OperationOutput> = Vec::new();
+        let mut input_keys: Vec<(Digest, OutputIdx)> = Vec::new();
+
+        if !base_empty {
+            let node_ref = ctx.register(&self.base)?;
+            inputs.push(self.base.clone());
+            input_keys.push((node_ref.digest().clone(), node_ref.index()));
+        }
+
+        let pb_action =
+            build_pb_file_action(&self.action, base_empty, &mut inputs, &mut input_keys, ctx)?;
         let file_op = pb::FileOp {
             actions: vec![pb_action],
         };
@@ -382,35 +404,16 @@ impl FileOp {
         let pb_op = pb::Op {
             inputs: pb_inputs,
             platform: None,
-            constraints: None,
+            constraints: Some(pb::WorkerConstraints {
+                filter: ctx.worker_filters().to_vec(),
+            }),
             op: Some(pb::op::Op::File(file_op)),
         };
 
         let (digest, bytes) = crate::marshal::encode_and_hash(&pb_op)?;
-
-        let metadata = build_file_metadata(&action, &opts);
-
-        Ok(Self {
-            inputs,
+        Ok(ctx.insert_node(Node {
             bytes,
             digest,
-            metadata,
-        })
-    }
-}
-
-impl Operation for FileOp {
-    fn digest(&self) -> &Digest {
-        &self.digest
-    }
-
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
-        for input in &self.inputs {
-            ctx.register(input)?;
-        }
-        Ok(ctx.insert_node(Node {
-            bytes: self.bytes.clone(),
-            digest: self.digest.clone(),
             metadata: self.metadata.clone(),
         }))
     }
@@ -418,9 +421,12 @@ impl Operation for FileOp {
 
 fn build_pb_file_action(
     action: &FileAction,
+    base_empty: bool,
     inputs: &mut Vec<OperationOutput>,
     input_keys: &mut Vec<(Digest, OutputIdx)>,
-) -> pb::FileAction {
+    ctx: &mut Context,
+) -> Result<pb::FileAction, LlbError> {
+    let base_input = if base_empty { -1 } else { 0 };
     match action {
         FileAction::Copy {
             src,
@@ -428,18 +434,20 @@ fn build_pb_file_action(
             dest_path,
             info,
         } => {
-            let digest = src.output().operation().digest().clone();
-            let index = src.output().index();
-            let secondary = if let Some(pos) = input_keys
-                .iter()
-                .position(|(d, i)| d == &digest && i == &index)
-            {
-                pos as i64
+            let secondary = if src.output().is_empty() {
+                -1
             } else {
-                let pos = inputs.len() as i64;
-                inputs.push(src.output().clone());
-                input_keys.push((digest, index));
-                pos
+                let output = src.output().clone();
+                let node_ref = ctx.register(&output)?;
+                let key = (node_ref.digest().clone(), node_ref.index());
+                if let Some(pos) = input_keys.iter().position(|k| *k == key) {
+                    pos as i64
+                } else {
+                    let pos = inputs.len() as i64;
+                    inputs.push(output);
+                    input_keys.push(key);
+                    pos
+                }
             };
 
             let copy = pb::FileActionCopy {
@@ -461,12 +469,12 @@ fn build_pb_file_action(
                 required_paths: Vec::new(),
             };
 
-            pb::FileAction {
-                input: 0,
+            Ok(pb::FileAction {
+                input: base_input,
                 secondary_input: secondary,
                 output: 0,
                 action: Some(pb::file_action::Action::Copy(copy)),
-            }
+            })
         }
         FileAction::Mkdir {
             path,
@@ -480,12 +488,12 @@ fn build_pb_file_action(
                 owner: None,
                 timestamp: -1,
             };
-            pb::FileAction {
-                input: 0,
+            Ok(pb::FileAction {
+                input: base_input,
                 secondary_input: -1,
                 output: 0,
                 action: Some(pb::file_action::Action::Mkdir(mkdir)),
-            }
+            })
         }
         FileAction::MkFile { path, mode, data } => {
             let mkfile = pb::FileActionMkFile {
@@ -495,12 +503,12 @@ fn build_pb_file_action(
                 owner: None,
                 timestamp: -1,
             };
-            pb::FileAction {
-                input: 0,
+            Ok(pb::FileAction {
+                input: base_input,
                 secondary_input: -1,
                 output: 0,
                 action: Some(pb::file_action::Action::Mkfile(mkfile)),
-            }
+            })
         }
         FileAction::Rm {
             path,
@@ -512,12 +520,12 @@ fn build_pb_file_action(
                 allow_not_found: *allow_not_found,
                 allow_wildcard: *allow_wildcard,
             };
-            pb::FileAction {
-                input: 0,
+            Ok(pb::FileAction {
+                input: base_input,
                 secondary_input: -1,
                 output: 0,
                 action: Some(pb::file_action::Action::Rm(rm)),
-            }
+            })
         }
         FileAction::Symlink { target, link_path } => {
             let symlink = pb::FileActionSymlink {
@@ -526,12 +534,12 @@ fn build_pb_file_action(
                 owner: None,
                 timestamp: -1,
             };
-            pb::FileAction {
-                input: 0,
+            Ok(pb::FileAction {
+                input: base_input,
                 secondary_input: -1,
                 output: 0,
                 action: Some(pb::file_action::Action::Symlink(symlink)),
-            }
+            })
         }
     }
 }
@@ -581,10 +589,28 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::ops::source::Scratch;
     use crate::ops::OperationOutput;
     use crate::scratch;
     use prost::Message;
+
+    fn serialize_file_op(op: FileOp) -> (pb::FileOp, crate::ops::Context) {
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        let file = match pb_op.op {
+            Some(pb::op::Op::File(file)) => file,
+            _ => panic!("expected FileOp"),
+        };
+        (file, ctx)
+    }
+
+    fn file_op_digest(base: OperationOutput, action: FileAction) -> String {
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        node_ref.digest().to_string()
+    }
 
     #[test]
     fn fileop_copy_has_two_inputs() {
@@ -592,27 +618,35 @@ mod tests {
         let base = OperationOutput::Owned(Arc::new(
             crate::ops::source::Image::new("alpine:latest").unwrap(),
         ));
-        let src = scratch().unwrap();
+        let src = crate::image("busybox:latest").unwrap();
         let action = copy(src, "/src", "/dest");
         let op = FileOp::new(base, action, FileOpts::default()).unwrap();
-        assert_eq!(op.inputs.len(), 2);
+        let (file, ctx) = serialize_file_op(op);
+        let node = ctx.nodes().values().last().unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert_eq!(pb_op.inputs.len(), 2);
+        assert_eq!(file.actions[0].secondary_input, 1);
     }
 
     #[test]
-    fn fileop_mkdir_has_one_input() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
+    fn fileop_mkdir_has_zero_inputs_for_scratch() {
+        let base = scratch().unwrap().output().clone();
         let action = mkdir("/app", 0o755).with_parents(true);
         let op = FileOp::new(base, action, FileOpts::default()).unwrap();
-        assert_eq!(op.inputs.len(), 1);
+        let (file, ctx) = serialize_file_op(op);
+        let node = ctx.nodes().values().last().unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert_eq!(pb_op.inputs.len(), 0);
+        assert_eq!(file.actions[0].input, -1);
     }
 
     #[test]
     fn fileop_digest_stable() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
+        let base = scratch().unwrap().output().clone();
         let action = mkdir("/app", 0o755);
-        let a = FileOp::new(base.clone(), action.clone(), FileOpts::default()).unwrap();
-        let b = FileOp::new(base, action, FileOpts::default()).unwrap();
-        assert_eq!(a.digest, b.digest);
+        let a = file_op_digest(base.clone(), action.clone());
+        let b = file_op_digest(base, action);
+        assert_eq!(a, b);
     }
 
     #[test]
@@ -652,17 +686,14 @@ mod tests {
 
     #[test]
     fn rm_allow_not_found_marshals() {
-        let base = OperationOutput::Owned(Arc::new(Scratch::new().unwrap()));
+        let base = scratch().unwrap().output().clone();
         let op = FileOp::new(
             base,
             rm("/tmp/file").with_allow_not_found(true),
             FileOpts::default(),
         )
         .unwrap();
-        let encoded = pb::Op::decode(op.bytes.as_slice()).unwrap();
-        let Some(pb::op::Op::File(file)) = encoded.op else {
-            panic!("expected file operation");
-        };
+        let (file, _) = serialize_file_op(op);
         let Some(pb::file_action::Action::Rm(rm)) = file.actions[0].action.as_ref() else {
             panic!("expected rm action");
         };

@@ -46,6 +46,6 @@ pub use ops::exec::{
 };
 pub use ops::file::{copy, mkdir, mkfile, rm, symlink, CopyInfo, FileAction, FileOpts};
 pub use ops::merge::{merge, MergeOpts};
-pub use ops::source::{image, local, scratch, Image, Local, ResolveMode, Scratch};
+pub use ops::source::{image, local, scratch, Image, Local, ResolveMode};
 pub use platform::Platform;
 pub use state::{Constraints, ExecState, MarshalOpts, RunOpt, RunOpts, State};

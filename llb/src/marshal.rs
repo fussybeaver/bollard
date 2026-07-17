@@ -27,6 +27,16 @@ impl Digest {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Sentinel digest used for empty scratch inputs.
+    pub(crate) fn empty() -> Self {
+        Digest(Arc::from(""))
+    }
+
+    /// Returns `true` for the empty scratch sentinel digest.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl Display for Digest {

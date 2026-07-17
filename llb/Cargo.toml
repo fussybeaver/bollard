@@ -21,6 +21,3 @@ serde_json = "1"
 sha2 = "0.10"
 shlex = "1"
 thiserror = "2"
-
-[dev-dependencies]
-insta = { version = "1", features = ["filters"] }

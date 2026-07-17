@@ -6,7 +6,7 @@ use std::sync::Arc;
 use bollard_buildkit_proto::pb;
 
 use crate::error::LlbError;
-use crate::marshal::{encode_and_hash, Digest};
+use crate::marshal::encode_and_hash;
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput};
 use crate::platform::Platform;
@@ -18,8 +18,6 @@ pub struct Image {
     reference: String,
     attrs: BTreeMap<String, String>,
     platform: Option<Platform>,
-    bytes: Vec<u8>,
-    digest: Digest,
     metadata: OpMetadata,
 }
 
@@ -34,7 +32,12 @@ impl Image {
         );
         let mut metadata = OpMetadata::default();
         metadata.caps.insert(cap::CAP_SOURCE_IMAGE.to_string());
-        Self::from_parts(reference, attrs, None, metadata)
+        Ok(Self {
+            reference,
+            attrs,
+            platform: None,
+            metadata,
+        })
     }
 
     /// Set the resolve mode for the image.
@@ -51,7 +54,6 @@ impl Image {
                 .caps
                 .insert(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE.to_string());
         }
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -62,7 +64,6 @@ impl Image {
         self.metadata
             .caps
             .insert(cap::CAP_SOURCE_IMAGE_LAYER_LIMIT.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -74,7 +75,6 @@ impl Image {
         self.metadata
             .caps
             .insert(cap::CAP_SOURCE_IMAGE_CHECKSUM.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -82,7 +82,6 @@ impl Image {
     pub fn with_platform(mut self, platform: Platform) -> Result<Self, LlbError> {
         self.platform = Some(platform);
         self.metadata.caps.insert(cap::CAP_PLATFORM.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -91,57 +90,28 @@ impl Image {
         self.metadata
             .description
             .insert(attr::DESCRIPTION_NAME.to_string(), name.into());
-        self.rebuild()?;
         Ok(self)
-    }
-
-    fn from_parts(
-        reference: String,
-        attrs: BTreeMap<String, String>,
-        platform: Option<Platform>,
-        metadata: OpMetadata,
-    ) -> Result<Self, LlbError> {
-        let identifier = format!("docker-image://{reference}");
-        let source_op = pb::SourceOp {
-            identifier,
-            attrs: attrs.clone(),
-        };
-        let pb_op = pb::Op {
-            inputs: Vec::new(),
-            platform: platform.clone().map(Into::into),
-            constraints: None,
-            op: Some(pb::op::Op::Source(source_op)),
-        };
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(Self {
-            reference,
-            attrs,
-            platform,
-            bytes,
-            digest,
-            metadata,
-        })
-    }
-
-    fn rebuild(&mut self) -> Result<(), LlbError> {
-        let reference = self.reference.clone();
-        let attrs = self.attrs.clone();
-        let platform = self.platform.clone();
-        let metadata = self.metadata.clone();
-        *self = Self::from_parts(reference, attrs, platform, metadata)?;
-        Ok(())
     }
 }
 
 impl Operation for Image {
-    fn digest(&self) -> &Digest {
-        &self.digest
-    }
-
     fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+        let platform = ctx.combined_platform(self.platform.clone()).map(Into::into);
+        let pb_op = pb::Op {
+            inputs: Vec::new(),
+            platform,
+            constraints: Some(pb::WorkerConstraints {
+                filter: ctx.worker_filters().to_vec(),
+            }),
+            op: Some(pb::op::Op::Source(pb::SourceOp {
+                identifier: format!("docker-image://{}", self.reference),
+                attrs: self.attrs.clone(),
+            })),
+        };
+        let (digest, bytes) = encode_and_hash(&pb_op)?;
         Ok(ctx.insert_node(Node {
-            bytes: self.bytes.clone(),
-            digest: self.digest.clone(),
+            bytes,
+            digest,
             metadata: self.metadata.clone(),
         }))
     }
@@ -174,8 +144,6 @@ pub struct Local {
     name: String,
     identifier: String,
     attrs: BTreeMap<String, String>,
-    bytes: Vec<u8>,
-    digest: Digest,
     metadata: OpMetadata,
 }
 
@@ -186,7 +154,12 @@ impl Local {
         let identifier = format!("local://{name}");
         let mut metadata = OpMetadata::default();
         metadata.caps.insert(cap::CAP_SOURCE_LOCAL.to_string());
-        Self::from_parts(name, identifier, BTreeMap::new(), metadata)
+        Ok(Self {
+            name,
+            identifier,
+            attrs: BTreeMap::new(),
+            metadata,
+        })
     }
 
     /// Set follow-paths for the local source.
@@ -207,7 +180,6 @@ impl Local {
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS.to_string());
         }
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -218,7 +190,6 @@ impl Local {
         self.metadata
             .caps
             .insert(cap::CAP_SOURCE_LOCAL_SESSION_ID.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -229,7 +200,6 @@ impl Local {
         self.metadata
             .caps
             .insert(cap::CAP_SOURCE_LOCAL_SHARED_KEY_HINT.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -240,7 +210,6 @@ impl Local {
         self.metadata
             .caps
             .insert(cap::CAP_SOURCE_LOCAL_UNIQUE.to_string());
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -262,7 +231,6 @@ impl Local {
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_INCLUDE_PATTERNS.to_string());
         }
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -284,7 +252,6 @@ impl Local {
                 .caps
                 .insert(cap::CAP_SOURCE_LOCAL_EXCLUDE_PATTERNS.to_string());
         }
-        self.rebuild()?;
         Ok(self)
     }
 
@@ -293,96 +260,28 @@ impl Local {
         self.metadata
             .description
             .insert(attr::DESCRIPTION_NAME.to_string(), name.into());
-        self.rebuild()?;
         Ok(self)
-    }
-
-    fn from_parts(
-        name: String,
-        identifier: String,
-        attrs: BTreeMap<String, String>,
-        metadata: OpMetadata,
-    ) -> Result<Self, LlbError> {
-        let source_op = pb::SourceOp {
-            identifier: identifier.clone(),
-            attrs: attrs.clone(),
-        };
-        let pb_op = pb::Op {
-            inputs: Vec::new(),
-            platform: None,
-            constraints: None,
-            op: Some(pb::op::Op::Source(source_op)),
-        };
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(Self {
-            name,
-            identifier,
-            attrs,
-            bytes,
-            digest,
-            metadata,
-        })
-    }
-
-    fn rebuild(&mut self) -> Result<(), LlbError> {
-        let name = self.name.clone();
-        let identifier = self.identifier.clone();
-        let attrs = self.attrs.clone();
-        let metadata = self.metadata.clone();
-        *self = Self::from_parts(name, identifier, attrs, metadata)?;
-        Ok(())
     }
 }
 
 impl Operation for Local {
-    fn digest(&self) -> &Digest {
-        &self.digest
-    }
-
     fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
-        Ok(ctx.insert_node(Node {
-            bytes: self.bytes.clone(),
-            digest: self.digest.clone(),
-            metadata: self.metadata.clone(),
-        }))
-    }
-}
-
-/// A scratch (empty) source.
-#[derive(Clone, Debug)]
-pub struct Scratch {
-    bytes: Vec<u8>,
-    digest: Digest,
-}
-
-impl Scratch {
-    /// Create a new scratch source.
-    pub fn new() -> Result<Self, LlbError> {
-        let source_op = pb::SourceOp {
-            identifier: "scratch://".to_string(),
-            attrs: BTreeMap::new(),
-        };
         let pb_op = pb::Op {
             inputs: Vec::new(),
             platform: None,
-            constraints: None,
-            op: Some(pb::op::Op::Source(source_op)),
+            constraints: Some(pb::WorkerConstraints {
+                filter: ctx.worker_filters().to_vec(),
+            }),
+            op: Some(pb::op::Op::Source(pb::SourceOp {
+                identifier: self.identifier.clone(),
+                attrs: self.attrs.clone(),
+            })),
         };
         let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(Self { bytes, digest })
-    }
-}
-
-impl Operation for Scratch {
-    fn digest(&self) -> &Digest {
-        &self.digest
-    }
-
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
         Ok(ctx.insert_node(Node {
-            bytes: self.bytes.clone(),
-            digest: self.digest.clone(),
-            metadata: OpMetadata::default(),
+            bytes,
+            digest,
+            metadata: self.metadata.clone(),
         }))
     }
 }
@@ -403,9 +302,7 @@ pub fn local<S: Into<String>>(name: S) -> Result<State, LlbError> {
 
 /// Create an empty scratch state.
 pub fn scratch() -> Result<State, LlbError> {
-    Ok(State::new(OperationOutput::Owned(
-        Arc::new(Scratch::new()?),
-    )))
+    Ok(State::new(OperationOutput::Empty))
 }
 
 impl From<Image> for State {
@@ -420,31 +317,36 @@ impl From<Local> for State {
     }
 }
 
-impl From<Scratch> for State {
-    fn from(scratch: Scratch) -> Self {
-        State::new(OperationOutput::Owned(Arc::new(scratch)))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::MarshalOpts;
+
+    fn image_digest(image: Image) -> String {
+        State::from(image)
+            .marshal(MarshalOpts::default())
+            .unwrap()
+            .root
+            .to_string()
+    }
 
     #[test]
     fn image_digest_stable() {
-        let a = Image::new("alpine:latest").unwrap();
-        let b = Image::new("alpine:latest").unwrap();
-        assert_eq!(a.digest, b.digest);
+        let a = image_digest(Image::new("alpine:latest").unwrap());
+        let b = image_digest(Image::new("alpine:latest").unwrap());
+        assert_eq!(a, b);
     }
 
     #[test]
     fn image_digest_differs_by_resolve_mode() {
-        let a = Image::new("alpine:latest").unwrap();
-        let b = Image::new("alpine:latest")
-            .unwrap()
-            .with_resolve_mode(ResolveMode::ForcePull)
-            .unwrap();
-        assert_ne!(a.digest, b.digest);
+        let a = image_digest(Image::new("alpine:latest").unwrap());
+        let b = image_digest(
+            Image::new("alpine:latest")
+                .unwrap()
+                .with_resolve_mode(ResolveMode::ForcePull)
+                .unwrap(),
+        );
+        assert_ne!(a, b);
     }
 
     #[test]
@@ -465,9 +367,10 @@ mod tests {
     }
 
     #[test]
-    fn scratch_digest_stable() {
-        let a = Scratch::new().unwrap();
-        let b = Scratch::new().unwrap();
-        assert_eq!(a.digest, b.digest);
+    fn scratch_is_empty_output() {
+        let a = scratch().unwrap();
+        let b = scratch().unwrap();
+        assert!(a.output().is_empty());
+        assert!(b.output().is_empty());
     }
 }

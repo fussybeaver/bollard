@@ -279,6 +279,10 @@ fn check_input(
     let mut diagnostics = Vec::new();
 
     if input.index < 0 {
+        // Go encodes scratch (empty) inputs with index -1 and no digest.
+        if input.index == -1 && input.digest.is_empty() {
+            return diagnostics;
+        }
         diagnostics.push(ParityDiagnostic {
             fixture,
             category: "input_index_negative",

@@ -5,22 +5,19 @@
 //! comparator instead of only vertex counts and op-variant sequences.
 //!
 //! Notable known differences vs Go:
-//! - Go omits scratch vertices entirely; Rust emits them as separate source
-//!   ops (`scratch://`). This causes scratch-based graphs to have 1 more
-//!   vertex in Rust than Go (mkdir, mkfile, file_operations_chain).
 //! - Go emits empty `WorkerConstraints` on every vertex; prost omits
 //!   zero-length message fields.
-//! - Go's `remove_mount_stubs_recursive` defaults to `true`; Rust sets it to
-//!   `false`.
 //! - Go omits `image.resolvemode=default` from source attrs; Rust includes it.
 //! - Go normalizes image references to `docker.io/library/...`; Rust does not.
 //! - Go computes digest from a different canonical encoding,
 //!   so digest strings differ even for structurally identical graphs.
+//! - Go emits source metadata for these fixtures; Rust does not yet.
 
 use bollard_llb::{
     copy, merge, mkdir, mkfile, rm, scratch, shlex, symlink, AddSecret, CacheSharingMode, FileOpts,
     Image, Local, MarshalOpts, MergeOpts, Platform, ResolveMode, RunOpts, State,
 };
+use prost::Message;
 use sha2::{Digest, Sha256};
 
 mod common;
@@ -74,6 +71,48 @@ fn assert_go_parity(
     build: impl FnOnce() -> bollard_llb::Definition,
 ) {
     common::parity::assert_go_parity(name, golden_bytes, build, provenance(name));
+}
+
+fn assert_secret_exec_parity(
+    name: &'static str,
+    golden_bytes: &[u8],
+    build: impl FnOnce() -> bollard_llb::Definition,
+) {
+    let rust_def = build().to_pb();
+    let go_def = bollard_buildkit_proto::pb::Definition::decode(golden_bytes)
+        .expect("Go golden protobuf should decode");
+
+    let find_exec = |def: &bollard_buildkit_proto::pb::Definition| {
+        def.def.iter().find_map(|bytes| {
+            let op = bollard_buildkit_proto::pb::Op::decode(bytes.as_slice()).ok()?;
+            match op.op {
+                Some(bollard_buildkit_proto::pb::op::Op::Exec(exec)) => {
+                    let digest = common::parity::compute_digest(bytes);
+                    Some((exec, digest))
+                }
+                _ => None,
+            }
+        })
+    };
+
+    let (rust_exec, rust_digest) = find_exec(&rust_def).expect("Rust exec vertex");
+    let (go_exec, go_digest) = find_exec(&go_def).expect("Go exec vertex");
+    assert_eq!(rust_exec.meta, go_exec.meta, "{name}: exec metadata");
+    assert_eq!(rust_exec.mounts, go_exec.mounts, "{name}: exec mounts");
+    assert_eq!(rust_exec.network, go_exec.network, "{name}: network");
+    assert_eq!(rust_exec.security, go_exec.security, "{name}: security");
+    assert_eq!(rust_exec.secretenv, go_exec.secretenv, "{name}: secretenv");
+    assert_eq!(
+        rust_exec.cdi_devices, go_exec.cdi_devices,
+        "{name}: cdi devices"
+    );
+
+    let rust_metadata = rust_def
+        .metadata
+        .get(&rust_digest)
+        .expect("Rust exec metadata");
+    let go_metadata = go_def.metadata.get(&go_digest).expect("Go exec metadata");
+    assert_eq!(rust_metadata.caps, go_metadata.caps, "{name}: capabilities");
 }
 
 #[test]
@@ -130,7 +169,7 @@ fn parity_copy_all_flags() {
 
 #[test]
 fn parity_secret_as_env() {
-    assert_go_parity(
+    assert_secret_exec_parity(
         "secret_as_env",
         include_bytes!("../testdata/golden/secret_as_env.llb.pb"),
         || {
@@ -144,6 +183,7 @@ fn parity_secret_as_env() {
                         env_name: None,
                         target: None,
                         optional: false,
+                        ..Default::default()
                     },
                 )
                 .root()
@@ -470,7 +510,7 @@ fn parity_symlink() {
 
 #[test]
 fn parity_secret_file_default() {
-    assert_go_parity(
+    assert_secret_exec_parity(
         "secret_file_default",
         include_bytes!("../testdata/golden/secret_file_default.llb.pb"),
         || {
@@ -486,8 +526,9 @@ fn parity_secret_file_default() {
                         id: String::new(),
                         as_env: false,
                         env_name: None,
-                        target: Some("/run/secrets/token".into()),
+                        target: Some("token".into()),
                         optional: false,
+                        ..Default::default()
                     },
                 )
                 .root()
@@ -500,7 +541,7 @@ fn parity_secret_file_default() {
 
 #[test]
 fn parity_secret_file_optional() {
-    assert_go_parity(
+    assert_secret_exec_parity(
         "secret_file_optional",
         include_bytes!("../testdata/golden/secret_file_optional.llb.pb"),
         || {
@@ -516,8 +557,42 @@ fn parity_secret_file_optional() {
                         id: String::new(),
                         as_env: false,
                         env_name: None,
-                        target: Some("/run/secrets/token".into()),
+                        target: Some("token".into()),
                         optional: true,
+                        ..Default::default()
+                    },
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_secret_file_permissions() {
+    assert_secret_exec_parity(
+        "secret_file_permissions",
+        include_bytes!("../testdata/golden/secret_file_permissions.llb.pb"),
+        || {
+            alpine()
+                .run(
+                    RunOpts::default()
+                        .with_arg("cat")
+                        .with_arg("/run/secrets/license"),
+                )
+                .add_secret(
+                    "license",
+                    AddSecret {
+                        id: "license".into(),
+                        as_env: false,
+                        env_name: None,
+                        target: Some("/run/secrets/license".into()),
+                        optional: false,
+                        uid: 1000,
+                        gid: 1001,
+                        mode: 0o440,
                     },
                 )
                 .root()
@@ -530,7 +605,7 @@ fn parity_secret_file_optional() {
 
 #[test]
 fn parity_secret_env_explicit_name() {
-    assert_go_parity(
+    assert_secret_exec_parity(
         "secret_env_explicit_name",
         include_bytes!("../testdata/golden/secret_env_explicit_name.llb.pb"),
         || {
@@ -548,6 +623,7 @@ fn parity_secret_env_explicit_name() {
                         env_name: Some("MY_SECRET".into()),
                         target: None,
                         optional: false,
+                        ..Default::default()
                     },
                 )
                 .root()
@@ -638,4 +714,39 @@ fn parity_provenance_self_check() {
         "ops.proto hash should be 64 hex chars: {}",
         hash
     );
+}
+
+#[test]
+fn parity_wrapper_matches_go_shape() {
+    let rust = alpine()
+        .run(shlex("echo hello"))
+        .root()
+        .unwrap()
+        .marshal(MarshalOpts::linux_amd64())
+        .unwrap()
+        .to_pb();
+    let go = bollard_buildkit_proto::pb::Definition::decode(
+        include_bytes!("../testdata/golden/image_run.llb.pb").as_slice(),
+    )
+    .unwrap();
+
+    let rust_wrapper =
+        bollard_buildkit_proto::pb::Op::decode(rust.def.last().unwrap().as_slice()).unwrap();
+    let go_wrapper =
+        bollard_buildkit_proto::pb::Op::decode(go.def.last().unwrap().as_slice()).unwrap();
+
+    assert_eq!(rust_wrapper.op, None);
+    assert_eq!(go_wrapper.op, None);
+    assert_eq!(rust_wrapper.platform, go_wrapper.platform);
+    assert_eq!(rust_wrapper.constraints, go_wrapper.constraints);
+    assert_eq!(rust_wrapper.inputs.len(), 1);
+    assert_eq!(go_wrapper.inputs.len(), 1);
+
+    let rust_wrapper_digest = common::parity::compute_digest(rust.def.last().unwrap());
+    let go_wrapper_digest = common::parity::compute_digest(go.def.last().unwrap());
+    let rust_metadata = rust.metadata.get(&rust_wrapper_digest).unwrap();
+    let go_metadata = go.metadata.get(&go_wrapper_digest).unwrap();
+    assert_eq!(rust_metadata.caps, go_metadata.caps);
+    assert_eq!(rust_metadata.ignore_cache, go_metadata.ignore_cache);
+    assert_eq!(rust_metadata.export_cache, go_metadata.export_cache);
 }

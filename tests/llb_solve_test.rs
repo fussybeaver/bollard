@@ -56,7 +56,7 @@ fn registry_credentials() -> HashMap<String, DockerCredentials> {
     let host = crate::common::registry_http_addr()
         .trim_end_matches('/')
         .to_string();
-    if !host.is_empty() {
+    if !host.is_empty() && std::env::var_os("REGISTRY_PASSWORD").is_some() {
         map.insert(host, crate::common::integration_test_registry_credentials());
     }
     map
@@ -200,7 +200,7 @@ fn scratch_mkfile_def() -> Result<pb::Definition, Error> {
 
 fn image_exec_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, shlex, MarshalOpts, State};
-    let state: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let state: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     Ok(state
         .run(shlex("sh -c 'echo hello > /phase4-image'"))
         .root()
@@ -258,7 +258,7 @@ fn file_operations_def_with_base(
 
 fn file_secret_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts, State};
-    let state: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let state: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     Ok(state
         .run(
             RunOpts::default()
@@ -274,6 +274,7 @@ fn file_secret_def() -> Result<pb::Definition, Error> {
                 env_name: None,
                 target: Some("/run/secrets/token".into()),
                 optional: false,
+                ..Default::default()
             },
         )
         .root()
@@ -285,7 +286,7 @@ fn file_secret_def() -> Result<pb::Definition, Error> {
 
 fn env_secret_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts, State};
-    let state: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let state: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     Ok(state
         .run(
             RunOpts::default()
@@ -301,6 +302,7 @@ fn env_secret_def() -> Result<pb::Definition, Error> {
                 env_name: Some("MY_SECRET".into()),
                 target: None,
                 optional: false,
+                ..Default::default()
             },
         )
         .root()
@@ -312,9 +314,9 @@ fn env_secret_def() -> Result<pb::Definition, Error> {
 
 fn merge_cache_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, merge, shlex, CacheSharingMode, MarshalOpts, MergeOpts, State};
-    let a: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let a: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     let a = a.run(shlex("echo from-a > /a")).root().map_err(llb_err)?;
-    let b: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let b: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     let b = b.run(shlex("echo from-b > /b")).root().map_err(llb_err)?;
     let merged = merge(vec![a, b], MergeOpts::new()).map_err(llb_err)?;
     Ok(merged
@@ -329,7 +331,7 @@ fn merge_cache_def() -> Result<pb::Definition, Error> {
 
 fn cache_proof_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, shlex, MarshalOpts, State};
-    let state: State = image(registry_image("alpine")).map_err(llb_err)?;
+    let state: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
     Ok(state
         .run(shlex("sh -c 'date +%s > /cache-proof'"))
         .root()
@@ -550,11 +552,12 @@ async fn llb_solve_file_secret_test(docker: Docker) -> Result<(), Error> {
     let out_dir = dest.path().join("out");
     std::fs::create_dir(&out_dir)?;
     let def = file_secret_def()?;
-    let res = solve_to_dir(&docker, def, &out_dir, secrets, None).await;
-    assert!(
-        res.is_err(),
-        "expected file-secret solve to fail until Phase 5 adds the secret mount"
-    );
+    solve_to_dir(&docker, def, &out_dir, secrets, None).await?;
+
+    let expected = format!("{:x}  -\n", Sha256::digest(token.as_bytes()));
+    assert_exported_file(&out_dir, "derived", expected.as_bytes(), 0o644);
+    assert_exported_absent(&out_dir, "run/secrets/token");
+    assert_exported_absent(&out_dir, "token");
     Ok(())
 }
 
