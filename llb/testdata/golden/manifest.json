@@ -1,5 +1,5 @@
 {
-  "generator_version": "phase5-secrets-1",
+  "generator_version": "phase5-rm-1",
   "buildkit_version": "v0.31.1",
   "fixtures": [
     {
@@ -114,6 +114,12 @@
       "file": "file_ops_rm.llb.pb",
       "fixture": "file_ops_rm",
       "sha256": "785009191bda795dbb936ce1d49e1a79bfea6ecb3c8c924673fd34885ebe8461",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_rm_allow_not_found.llb.pb",
+      "fixture": "file_ops_rm_allow_not_found",
+      "sha256": "2f62d7266a493e66575b14dcaa5458fb2f41e5b5c50912b2c21bcd0c3eb926f1",
       "platform": "linux/amd64"
     },
     {

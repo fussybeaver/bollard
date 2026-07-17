@@ -29,6 +29,8 @@ const FILE_OPS_SYMLINK_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/file_ops_symlink.llb.pb");
 const FILE_OPS_COPY_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/file_ops_copy.llb.pb");
 const FILE_OPS_RM_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/file_ops_rm.llb.pb");
+const FILE_OPS_RM_ALLOW_NOT_FOUND_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/file_ops_rm_allow_not_found.llb.pb");
 const FILE_OPS_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/file_operations_chain.llb.pb");
 
@@ -391,7 +393,7 @@ fn assert_file_operations_export(fixture: &str, dest: &Path) -> Result<(), Error
                 target: "/app/config.toml".to_string(),
             })
         ),
-        "file_ops_copy" | "file_operations_chain" => {
+        "file_ops_copy" | "file_operations_chain" | "file_operations_chain_allow_not_found" => {
             assert_eq!(
                 tree.get(&PathBuf::from("app/config.toml.bak")),
                 Some(&ExportEntry::File {
@@ -400,11 +402,16 @@ fn assert_file_operations_export(fixture: &str, dest: &Path) -> Result<(), Error
                 }),
                 "missing copied file for {fixture}"
             );
-            if fixture == "file_operations_chain" {
+            if matches!(
+                fixture,
+                "file_operations_chain" | "file_operations_chain_allow_not_found"
+            ) {
                 assert_exported_absent(dest, "app/current-config");
             }
         }
-        "file_ops_rm" => assert_exported_absent(dest, "app/current-config"),
+        "file_ops_rm" | "file_ops_rm_allow_not_found" => {
+            assert_exported_absent(dest, "app/current-config")
+        }
         _ => {}
     }
     Ok(())
@@ -417,13 +424,22 @@ async fn llb_solve_golden_file_operations_test(docker: Docker) -> Result<(), Err
         ("file_ops_symlink", FILE_OPS_SYMLINK_GOLDEN),
         ("file_ops_copy", FILE_OPS_COPY_GOLDEN),
         ("file_ops_rm", FILE_OPS_RM_GOLDEN),
+        (
+            "file_ops_rm_allow_not_found",
+            FILE_OPS_RM_ALLOW_NOT_FOUND_GOLDEN,
+        ),
         ("file_operations_chain", FILE_OPS_GOLDEN),
     ];
     let mut outcomes = Vec::new();
 
     for (fixture, golden) in cases {
         let dest = tempfile::tempdir()?;
-        let container_name = format!("bollard_llb_file_ops_{}", fixture.replace('_', "-"));
+        let container_name = match fixture {
+            "file_ops_rm" | "file_ops_rm_allow_not_found" => {
+                "bollard_llb_file_ops_rm_semantics".to_string()
+            }
+            _ => format!("bollard_llb_file_ops_{}", fixture.replace('_', "-")),
+        };
         let outcome = match go_definition(golden) {
             Ok(definition) => {
                 match solve_to_dir(
@@ -529,6 +545,18 @@ async fn llb_solve_file_operations_test(docker: Docker) -> Result<(), Error> {
         res.is_err(),
         "expected scratch-based file operations to fail until Phase 5"
     );
+    Ok(())
+}
+
+async fn llb_solve_file_operations_allow_not_found_test(docker: Docker) -> Result<(), Error> {
+    let dest = tempfile::tempdir()?;
+    let def = file_operations_def_with_base(
+        bollard_llb::scratch().map_err(llb_err)?,
+        "/app/config.toml",
+        true,
+    )?;
+    solve_to_dir(&docker, def, dest.path(), HashMap::new(), None).await?;
+    assert_file_operations_export("file_operations_chain_allow_not_found", dest.path())?;
     Ok(())
 }
 
@@ -689,6 +717,12 @@ fn integration_test_llb_solve_scratch_mkfile() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_llb_solve_file_operations() {
     connect_to_docker_and_run!(llb_solve_file_operations_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_llb_solve_file_operations_allow_not_found() {
+    connect_to_docker_and_run!(llb_solve_file_operations_allow_not_found_test);
 }
 
 #[test]

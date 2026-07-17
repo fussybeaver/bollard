@@ -39,7 +39,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "phase5-secrets-1"
+const generatorVersion = "phase5-rm-1"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -102,6 +102,7 @@ func main() {
 		{"file_ops_symlink", fileOpsSymlink, defaultPlatform(), "linux/amd64"},
 		{"file_ops_copy", fileOpsCopy, defaultPlatform(), "linux/amd64"},
 		{"file_ops_rm", fileOpsRm, defaultPlatform(), "linux/amd64"},
+		{"file_ops_rm_allow_not_found", fileOpsRmAllowNotFound, defaultPlatform(), "linux/amd64"},
 		{"secret_file_default", secretFileDefault, defaultPlatform(), "linux/amd64"},
 		{"secret_file_optional", secretFileOptional, defaultPlatform(), "linux/amd64"},
 		{"secret_file_permissions", secretFilePermissions, defaultPlatform(), "linux/amd64"},
@@ -410,6 +411,11 @@ func fileOpsCopy() llb.State {
 func fileOpsRm() llb.State {
 	base := fileOpsSymlink()
 	return base.File(llb.Rm("/app/current-config"))
+}
+
+func fileOpsRmAllowNotFound() llb.State {
+	base := fileOpsSymlink()
+	return base.File(llb.Rm("/app/current-config", llb.WithAllowNotFound(true)))
 }
 
 func scratchDirect() llb.State {

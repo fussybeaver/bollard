@@ -8,6 +8,7 @@
 //! protobuf encoding. Image references and resolve-mode defaults are normalized
 //! by the Rust implementation before operation serialization.
 
+use bollard_buildkit_proto::pb;
 use bollard_llb::{
     copy, merge, mkdir, mkfile, rm, scratch, shlex, symlink, AddSecret, CacheSharingMode, FileOpts,
     Image, Local, MarshalOpts, MergeOpts, Platform, ResolveMode, RunOpts, State,
@@ -66,6 +67,42 @@ fn assert_go_parity(
     build: impl FnOnce() -> bollard_llb::Definition,
 ) {
     common::parity::assert_go_parity(name, golden_bytes, build, provenance(name));
+}
+
+fn rm_action(definition: &pb::Definition) -> pb::FileActionRm {
+    definition
+        .def
+        .iter()
+        .find_map(|bytes| {
+            let op = pb::Op::decode(bytes.as_slice()).ok()?;
+            let Some(pb::op::Op::File(file)) = op.op else {
+                return None;
+            };
+            file.actions
+                .into_iter()
+                .find_map(|action| match action.action {
+                    Some(pb::file_action::Action::Rm(rm)) => Some(rm),
+                    _ => None,
+                })
+        })
+        .expect("definition contains an rm action")
+}
+
+fn assert_rm_parity(
+    name: &'static str,
+    golden_bytes: &[u8],
+    build: impl FnOnce() -> bollard_llb::Definition,
+    expected_allow_not_found: bool,
+) {
+    let rust_rm = rm_action(&build().to_pb());
+    let go_definition = pb::Definition::decode(golden_bytes).expect("Go golden should decode");
+    let go_rm = rm_action(&go_definition);
+
+    assert_eq!(rust_rm, go_rm, "{name}: rm action");
+    assert_eq!(
+        rust_rm.allow_not_found, expected_allow_not_found,
+        "{name}: allow_not_found"
+    );
 }
 
 fn assert_secret_exec_parity(
@@ -484,6 +521,52 @@ fn parity_rm_wildcard() {
                 .marshal(MarshalOpts::linux_amd64())
                 .unwrap()
         },
+    );
+}
+
+fn parity_file_ops_rm_definition(allow_not_found: bool) -> bollard_llb::Definition {
+    let base = scratch().unwrap();
+    let base = base
+        .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
+        .unwrap();
+    let base = base
+        .file(
+            mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            FileOpts::new(),
+        )
+        .unwrap();
+    let base = base
+        .file(
+            symlink("/app/config.toml", "/app/current-config"),
+            FileOpts::new(),
+        )
+        .unwrap();
+    base.file(
+        rm("/app/current-config").with_allow_not_found(allow_not_found),
+        FileOpts::new(),
+    )
+    .unwrap()
+    .marshal(MarshalOpts::linux_amd64())
+    .unwrap()
+}
+
+#[test]
+fn parity_file_ops_rm() {
+    assert_rm_parity(
+        "file_ops_rm",
+        include_bytes!("../testdata/golden/file_ops_rm.llb.pb"),
+        || parity_file_ops_rm_definition(false),
+        false,
+    );
+}
+
+#[test]
+fn parity_file_ops_rm_allow_not_found() {
+    assert_rm_parity(
+        "file_ops_rm_allow_not_found",
+        include_bytes!("../testdata/golden/file_ops_rm_allow_not_found.llb.pb"),
+        || parity_file_ops_rm_definition(true),
+        true,
     );
 }
 
