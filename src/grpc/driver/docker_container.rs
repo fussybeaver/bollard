@@ -199,6 +199,16 @@ impl DockerContainerBuilder {
         self
     }
 
+    /// The Docker container name to use for this `Buildkit` instance.
+    ///
+    /// Setting a fixed name allows the same container (and its state volume) to
+    /// be reused across multiple solves, which is useful for cache-repeatability
+    /// tests. By default a random unique name is generated.
+    pub fn name(&mut self, name: &str) -> &mut DockerContainerBuilder {
+        self.inner.name = String::from(name);
+        self
+    }
+
     /// The cgroup to attach to - by default all `Buildkit` containers are placed under the same
     /// cgroup so that limits are applied across the whole host
     pub fn cgroup_parent(&mut self, cgroup_parent: &str) -> &mut DockerContainerBuilder {

@@ -36,12 +36,14 @@ use std::io::Write;
 use std::collections::HashMap;
 use std::env;
 use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
-use bollard_buildkit_proto::fsutil::types::Packet;
+use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
 use bollard_buildkit_proto::health::{HealthListRequest, HealthListResponse};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
@@ -307,6 +309,221 @@ impl FileSendPacketImpl {
         }
         Ok(base.join(p))
     }
+
+    /// Create parent directories for `path` without following symlinks.
+    ///
+    /// Returns the absolute target path. Any intermediate component that is a
+    /// symbolic link is rejected to prevent writes escaping the export root.
+    fn ensure_parent_dirs(base: &Path, path: &str) -> Result<PathBuf, Status> {
+        let target = Self::safe_path(base, path)?;
+        let relative_parent = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
+        let mut current = base.to_path_buf();
+        for component in relative_parent.components() {
+            current.push(component);
+            match current.symlink_metadata() {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(Status::invalid_argument(format!(
+                        "symlink component in export path: {path:?}"
+                    )));
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::create_dir(&current).map_err(|e| {
+                        Status::internal(format!("failed to create export directory: {e}"))
+                    })?;
+                }
+                Err(e) => return Err(Status::from_error(e.into())),
+            }
+        }
+        Ok(target)
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) -> Result<(), Status> {
+        let mut perms = std::fs::metadata(path)
+            .map_err(|e| Status::internal(format!("failed to read permissions: {e}")))?
+            .permissions();
+        perms.set_mode(mode & 0o777);
+        std::fs::set_permissions(path, perms)
+            .map_err(|e| Status::internal(format!("failed to set permissions: {e}")))
+    }
+
+    #[cfg(not(unix))]
+    fn set_mode(_path: &Path, _mode: u32) -> Result<(), Status> {
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn create_symlink(linkname: &str, target: &Path) -> Result<(), Status> {
+        std::os::unix::fs::symlink(linkname, target)
+            .map_err(|e| Status::internal(format!("failed to create symlink: {e}")))
+    }
+
+    #[cfg(not(unix))]
+    fn create_symlink(_linkname: &str, _target: &Path) -> Result<(), Status> {
+        Err(Status::unimplemented(
+            "symlink export is only supported on Unix",
+        ))
+    }
+}
+
+/// State machine for a single `diff_copy` file tree transfer.
+struct FileReceiveState {
+    base: PathBuf,
+    stats: HashMap<u32, Stat>,
+    received_all_stats: bool,
+    next_stat_id: u32,
+}
+
+impl FileReceiveState {
+    fn new(base: PathBuf) -> Self {
+        Self {
+            base,
+            stats: HashMap::new(),
+            received_all_stats: false,
+            next_stat_id: 0,
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.received_all_stats && self.stats.is_empty()
+    }
+
+    fn handle_packet(&mut self, packet: Packet) -> Result<Option<Packet>, Status> {
+        let packet_type = PacketType::try_from(packet.r#type)
+            .map_err(|_| Status::invalid_argument("unknown packet type"))?;
+        match packet_type {
+            PacketType::PacketStat => {
+                if let Some(stat) = packet.stat {
+                    let request_id = self.next_stat_id;
+                    let needs_data = self.receive_stat(&stat)?;
+                    self.next_stat_id += 1;
+                    if needs_data {
+                        self.stats.insert(request_id, stat);
+                        Ok(Some(Packet {
+                            r#type: PacketType::PacketReq.into(),
+                            stat: None,
+                            id: request_id,
+                            data: vec![],
+                        }))
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    self.received_all_stats = true;
+                    if self.is_complete() {
+                        Ok(Some(Packet {
+                            r#type: PacketType::PacketFin.into(),
+                            stat: None,
+                            id: 0,
+                            data: vec![],
+                        }))
+                    } else {
+                        Ok(None)
+                    }
+                }
+            }
+            PacketType::PacketReq => Err(Status::failed_precondition(
+                "server received a request packet",
+            )),
+            PacketType::PacketData => {
+                if packet.data.is_empty() {
+                    self.finish_file(packet.id)?;
+                    if self.is_complete() {
+                        return Ok(Some(Packet {
+                            r#type: PacketType::PacketFin.into(),
+                            stat: None,
+                            id: 0,
+                            data: vec![],
+                        }));
+                    }
+                    Ok(None)
+                } else {
+                    self.append_file(packet.id, &packet.data)?;
+                    Ok(None)
+                }
+            }
+            PacketType::PacketFin => Ok(None),
+            PacketType::PacketErr => {
+                let msg = String::from_utf8(packet.data)
+                    .unwrap_or_else(|_| String::from("invalid packet error encoding"));
+                Err(Status::unknown(format!("packet error: {msg}")))
+            }
+        }
+    }
+
+    fn receive_stat(&self, stat: &Stat) -> Result<bool, Status> {
+        let mode = fsutil::FileMode::from_bits_truncate(stat.mode);
+        let target = FileSendPacketImpl::ensure_parent_dirs(&self.base, &stat.path)?;
+
+        if mode.contains(fsutil::FileMode::Symlink) {
+            if stat.linkname.is_empty() {
+                return Err(Status::invalid_argument(format!(
+                    "symlink without target: {:?}",
+                    stat.path
+                )));
+            }
+            FileSendPacketImpl::create_symlink(&stat.linkname, &target)?;
+        } else if mode.contains(fsutil::FileMode::Dir) {
+            match target.symlink_metadata() {
+                Ok(meta) if meta.file_type().is_dir() => {}
+                Ok(_) => {
+                    return Err(Status::already_exists(format!(
+                        "export path is not a directory: {:?}",
+                        stat.path
+                    )));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::create_dir(&target).map_err(|e| {
+                        Status::internal(format!("failed to create directory: {e}"))
+                    })?;
+                }
+                Err(e) => return Err(Status::from_error(e.into())),
+            }
+            FileSendPacketImpl::set_mode(&target, stat.mode)?;
+        } else if !mode.intersects(fsutil::FileMode::Type) {
+            std::fs::File::create(&target)
+                .map_err(|e| Status::internal(format!("failed to create file: {e}")))?;
+        } else {
+            return Err(Status::unimplemented(format!(
+                "unsupported file type for path {:?}",
+                stat.path
+            )));
+        }
+
+        Ok(!mode.intersects(fsutil::FileMode::Type))
+    }
+
+    fn append_file(&self, id: u32, data: &[u8]) -> Result<(), Status> {
+        let stat = self
+            .stats
+            .get(&id)
+            .ok_or_else(|| Status::invalid_argument("data packet for unknown file"))?;
+        let file_path = FileSendPacketImpl::safe_path(&self.base, &stat.path)?;
+        if let Some(parent) = file_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Status::internal(format!("failed to create parent directory: {e}")))?;
+        }
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(&file_path)
+            .map_err(|e| Status::internal(format!("failed to open file for append: {e}")))?;
+        file.write_all(data)
+            .map_err(|e| Status::internal(format!("failed to write file data: {e}")))
+    }
+
+    fn finish_file(&mut self, id: u32) -> Result<(), Status> {
+        let stat = self
+            .stats
+            .remove(&id)
+            .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
+        let mode = fsutil::FileMode::from_bits_truncate(stat.mode);
+        if !mode.intersects(fsutil::FileMode::Type) {
+            let file_path = FileSendPacketImpl::safe_path(&self.base, &stat.path)?;
+            FileSendPacketImpl::set_mode(&file_path, stat.mode)?;
+        }
+        Ok(())
+    }
 }
 
 #[tonic::async_trait]
@@ -328,76 +545,16 @@ impl FileSendPacket for FileSendPacketImpl {
 
         // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
         let out_stream = async_stream::try_stream! {
-            let mut file_id = 0;
-            let mut stats = HashMap::new();
-            let mut received_all_stats = false;
+            let mut state = FileReceiveState::new(base_path);
 
             while let Some(packet) = in_stream.next().await {
                 let packet = packet.map_err(|e| Status::internal(format!("packet stream error: {e}")))?;
-                match PacketType::try_from(packet.r#type)
-                    .map_err(|_| Status::invalid_argument("unknown packet type"))? {
-                    PacketType::PacketStat => {
-                        if let Some(stat) = packet.stat {
-                            let target = Self::safe_path(&base_path, &stat.path)?;
-                            if fsutil::FileMode::Type.bits() & stat.mode == 0 {
-                                std::fs::File::create(&target)
-                                    .map_err(|e| Status::internal(format!("failed to create file: {e}")))?;
-                                stats.insert(file_id, stat);
-                            } else if fsutil::FileMode::Dir.bits() & stat.mode != 0 {
-                                std::fs::create_dir(&target)
-                                    .map_err(|e| Status::internal(format!("failed to create directory: {e}")))?;
-                            }
-                            file_id += 1;
-                        } else {
-                            received_all_stats = true;
-                            for id in stats.keys() {
-                                yield Packet {
-                                    r#type: PacketType::PacketReq.into(),
-                                    stat: None,
-                                    id: *id,
-                                    data: vec![]
-                                };
-                            }
-                        }
-                    }
-                    PacketType::PacketReq => {
-                        Err(Status::failed_precondition("server received a request packet"))?;
-                    }
-                    PacketType::PacketData => {
-                        if packet.data.is_empty() {
-                            // all data for file has been received
-                            stats.remove(&packet.id);
-                        } else {
-                            let stat = stats.get(&packet.id)
-                                .ok_or_else(|| Status::invalid_argument("data packet for unknown file"))?;
-                            let file_path = Self::safe_path(&base_path, &stat.path)?;
-                            if let Some(parent) = file_path.parent() {
-                                std::fs::create_dir_all(parent)
-                                    .map_err(|e| Status::internal(format!("failed to create parent directory: {e}")))?;
-                            }
-                            let mut file = OpenOptions::new()
-                                .append(true)
-                                .open(&file_path)
-                                .map_err(|e| Status::internal(format!("failed to open file for append: {e}")))?;
-                            file.write_all(&packet.data)
-                                .map_err(|e| Status::internal(format!("failed to write file data: {e}")))?;
-                        }
-
-                        if stats.is_empty() && received_all_stats {
-                            yield Packet {
-                                r#type: PacketType::PacketFin.into(),
-                                stat: None,
-                                id: 0,
-                                data: vec![]
-                            };
-                        }
-                    }
-                    PacketType::PacketFin => return,
-                    PacketType::PacketErr => {
-                        let msg = String::from_utf8(packet.data)
-                            .unwrap_or_else(|_| String::from("invalid packet error encoding"));
-                        Err(Status::unknown(format!("packet error: {msg}")))?;
-                    }
+                let sender_finished = packet.r#type == PacketType::PacketFin as i32;
+                if let Some(out) = state.handle_packet(packet)? {
+                    yield out;
+                }
+                if sender_finished {
+                    return;
                 }
             }
         };
@@ -1012,10 +1169,150 @@ pub(crate) fn new_id() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
+
+    use bollard_buildkit_proto::fsutil::types::packet::PacketType;
+    use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
+
+    use super::{fsutil, FileReceiveState, FileSendPacketImpl};
+
+    fn packet_stat(stat: Option<Stat>) -> Packet {
+        Packet {
+            r#type: PacketType::PacketStat.into(),
+            stat,
+            id: 0,
+            data: vec![],
+        }
+    }
+
+    fn packet_data(id: u32, data: &[u8]) -> Packet {
+        Packet {
+            r#type: PacketType::PacketData.into(),
+            stat: None,
+            id,
+            data: data.to_vec(),
+        }
+    }
+
+    fn stat(path: &str, mode: u32, linkname: &str) -> Stat {
+        Stat {
+            path: path.to_string(),
+            mode,
+            uid: 0,
+            gid: 0,
+            size: 0,
+            mod_time: 0,
+            linkname: linkname.to_string(),
+            devmajor: 0,
+            devminor: 0,
+            xattrs: BTreeMap::new(),
+        }
+    }
 
     #[test]
     fn test_new_id() {
         let s = super::new_id();
         assert_eq!(s.len(), 25);
+    }
+
+    #[test]
+    fn test_safe_path_rejects_parent_component() {
+        let base = Path::new("/out");
+        let res = FileSendPacketImpl::safe_path(base, "../escape");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_file_receive_state_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        let s = stat("hello", 0o644, "");
+        let req = state.handle_packet(packet_stat(Some(s))).unwrap();
+        assert_eq!(req.unwrap().r#type, PacketType::PacketReq as i32);
+        assert!(state.handle_packet(packet_stat(None)).unwrap().is_none());
+
+        assert!(state
+            .handle_packet(packet_data(0, b"world"))
+            .unwrap()
+            .is_none());
+        let fin = state.handle_packet(packet_data(0, b"")).unwrap();
+        assert_eq!(fin.unwrap().r#type, PacketType::PacketFin as i32);
+
+        let path = dir.path().join("hello");
+        assert!(path.is_file());
+        assert_eq!(std::fs::read(&path).unwrap(), b"world");
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o644);
+    }
+
+    #[test]
+    fn test_file_receive_state_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        let s = stat("empty", 0o640, "");
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(s)))
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketReq as i32
+        );
+        state.handle_packet(packet_stat(None)).unwrap();
+        let fin = state.handle_packet(packet_data(0, b"")).unwrap();
+        assert_eq!(fin.unwrap().r#type, PacketType::PacketFin as i32);
+
+        let path = dir.path().join("empty");
+        assert!(path.is_file());
+        assert!(std::fs::read(&path).unwrap().is_empty());
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o640);
+    }
+
+    #[test]
+    fn test_file_receive_state_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        let s = stat("app", fsutil::FileMode::Dir.bits() | 0o755, "");
+        state.handle_packet(packet_stat(Some(s))).unwrap();
+        let fin = state.handle_packet(packet_stat(None)).unwrap();
+        assert_eq!(fin.unwrap().r#type, PacketType::PacketFin as i32);
+
+        let path = dir.path().join("app");
+        assert!(path.is_dir());
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o755);
+    }
+
+    #[test]
+    fn test_file_receive_state_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        let s = stat("link", fsutil::FileMode::Symlink.bits() | 0o777, "/target");
+        state.handle_packet(packet_stat(Some(s))).unwrap();
+        let fin = state.handle_packet(packet_stat(None)).unwrap();
+        assert_eq!(fin.unwrap().r#type, PacketType::PacketFin as i32);
+
+        let path = dir.path().join("link");
+        assert!(path.is_symlink());
+        assert_eq!(
+            std::fs::read_link(&path).unwrap().to_str().unwrap(),
+            "/target"
+        );
+    }
+
+    #[test]
+    fn test_file_receive_state_symlink_traversal_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().to_path_buf();
+        std::os::unix::fs::symlink("/tmp", base.join("link")).unwrap();
+
+        let mut state = FileReceiveState::new(base);
+        let s = stat("link/foo", 0o644, "");
+        let err = state.handle_packet(packet_stat(Some(s))).unwrap_err();
+        assert!(err.message().contains("symlink component"));
     }
 }
