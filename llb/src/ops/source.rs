@@ -504,6 +504,14 @@ impl Local {
 
 impl Operation for Local {
     fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+        let mut attrs = self.attrs.clone();
+        let mut metadata = self.metadata.clone();
+        // BuildKit uses LocalUniqueID only as a fallback when no session ID
+        // is supplied. A session ID therefore suppresses the unique-id attr.
+        if attrs.contains_key(attr::LOCAL_SESSION_ID) {
+            attrs.remove(attr::LOCAL_UNIQUE_ID);
+            metadata.caps.remove(cap::CAP_SOURCE_LOCAL_UNIQUE);
+        }
         let pb_op = pb::Op {
             inputs: Vec::new(),
             platform: None,
@@ -512,14 +520,14 @@ impl Operation for Local {
             }),
             op: Some(pb::op::Op::Source(pb::SourceOp {
                 identifier: self.identifier.clone(),
-                attrs: self.attrs.clone(),
+                attrs,
             })),
         };
         let (digest, bytes) = encode_and_hash(&pb_op)?;
         Ok(ctx.insert_node(Node {
             bytes,
             digest,
-            metadata: self.metadata.clone(),
+            metadata,
         }))
     }
 }

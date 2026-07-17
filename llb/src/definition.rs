@@ -27,7 +27,8 @@ pub struct Definition {
     /// Per-vertex metadata keyed by op digest string.
     pub metadata: BTreeMap<String, pb::OpMetadata>,
 
-    /// Optional source mapping information. Currently unused in this crate.
+    /// Source mapping information for real vertices. Entries without explicit
+    /// user locations contain an empty [`pb::Locations`] value.
     pub source: Option<pb::Source>,
 
     /// Digest of the root (last) vertex.

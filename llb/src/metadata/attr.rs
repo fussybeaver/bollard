@@ -8,14 +8,14 @@
 
 /// `local.followpaths`
 pub const LOCAL_FOLLOW_PATHS: &str = "local.followpaths";
-/// `local.sessionid`
-pub const LOCAL_SESSION_ID: &str = "local.sessionid";
+/// `local.session`
+pub const LOCAL_SESSION_ID: &str = "local.session";
 /// `local.sharedkeyhint`
 pub const LOCAL_SHARED_KEY_HINT: &str = "local.sharedkeyhint";
-/// `local.uniquename`
-pub const LOCAL_UNIQUE_ID: &str = "local.uniquename";
-/// `local.includepatterns`
-pub const LOCAL_INCLUDE_PATTERNS: &str = "local.includepatterns";
+/// `local.unique`
+pub const LOCAL_UNIQUE_ID: &str = "local.unique";
+/// `local.includepattern`
+pub const LOCAL_INCLUDE_PATTERNS: &str = "local.includepattern";
 /// `local.excludepatterns`
 pub const LOCAL_EXCLUDE_PATTERNS: &str = "local.excludepatterns";
 

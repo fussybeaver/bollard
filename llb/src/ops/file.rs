@@ -544,41 +544,20 @@ fn build_pb_file_action(
     }
 }
 
-fn build_file_metadata(action: &FileAction, opts: &FileOpts) -> OpMetadata {
+fn build_file_metadata(_action: &FileAction, opts: &FileOpts) -> OpMetadata {
+    // The pinned Go oracle advertises file.base on these supported actions;
+    // action-specific caps are not present in its generated metadata.
     let mut metadata = OpMetadata::default();
     metadata.caps.insert(cap::CAP_FILE_BASE.to_string());
 
-    match action {
-        FileAction::Copy { info, .. } => {
-            if !info.exclude_patterns.is_empty() {
-                metadata
-                    .caps
-                    .insert(cap::CAP_FILE_COPY_INCLUDE_EXCLUDE_PATTERNS.to_string());
-            }
-        }
-        FileAction::Rm { allow_wildcard, .. } => {
-            if *allow_wildcard {
-                metadata.caps.insert(cap::CAP_FILE_RM_WILDCARD.to_string());
-            }
-        }
-        FileAction::Symlink { .. } => {
-            metadata
-                .caps
-                .insert(cap::CAP_FILE_SYMLINK_CREATE.to_string());
-        }
-        _ => {}
-    }
-
     if opts.ignore_cache {
         metadata.ignore_cache = true;
-        metadata.caps.insert(cap::CAP_META_IGNORE_CACHE.to_string());
     }
 
     if let Some(name) = &opts.custom_name {
         metadata
             .description
             .insert(attr::DESCRIPTION_NAME.to_string(), name.clone());
-        metadata.caps.insert(cap::CAP_META_DESCRIPTION.to_string());
     }
 
     metadata

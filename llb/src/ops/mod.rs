@@ -6,7 +6,7 @@ pub(crate) mod file;
 pub(crate) mod merge;
 pub(crate) mod source;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -280,16 +280,32 @@ impl Context {
     /// `root` is the digest of the wrapper vertex produced by
     /// [`append_wrapper`].
     pub(crate) fn finalize(self, root: Digest) -> Definition {
-        let def = self.nodes.values().map(|n| n.bytes.clone()).collect();
-        let metadata = self
-            .nodes
-            .into_iter()
-            .map(|(digest, node)| (digest.as_str().to_string(), node.metadata.into()))
-            .collect();
+        let mut locations = BTreeMap::new();
+        let mut def = Vec::with_capacity(self.nodes.len());
+        let mut metadata = BTreeMap::new();
+        for (digest, node) in self.nodes {
+            if digest != root {
+                // Go's source-map collector records every real vertex, even
+                // when it has no user-facing source locations. Keep the
+                // entries empty so the direct-solve boundary can remove them
+                // for older BuildKit daemons when necessary.
+                locations.insert(
+                    digest.as_str().to_string(),
+                    pb::Locations {
+                        locations: Vec::new(),
+                    },
+                );
+            }
+            def.push(node.bytes);
+            metadata.insert(digest.as_str().to_string(), node.metadata.into());
+        }
         Definition {
             def,
             metadata,
-            source: None,
+            source: Some(pb::Source {
+                locations,
+                infos: Vec::new(),
+            }),
             root,
         }
     }
@@ -334,6 +350,27 @@ mod tests {
         assert!(def.metadata.is_empty());
         assert!(def.source.is_none());
         assert!(def.root.as_str().is_empty());
+    }
+
+    #[test]
+    fn marshal_source_map_covers_real_vertices_not_wrapper() {
+        let state = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = state.marshal(MarshalOpts::default()).unwrap();
+        let source = def
+            .source
+            .as_ref()
+            .expect("non-empty definitions have source maps");
+
+        assert!(source.infos.is_empty());
+        assert_eq!(source.locations.len(), def.def.len() - 1);
+        for bytes in def.def.iter().take(def.def.len() - 1) {
+            assert!(source.locations.contains_key(sha256(bytes).as_str()));
+        }
+        assert!(!source.locations.contains_key(def.root.as_str()));
     }
 
     #[test]

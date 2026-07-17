@@ -557,14 +557,12 @@ fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
 
     if run.ignore_cache {
         metadata.ignore_cache = true;
-        metadata.caps.insert(cap::CAP_META_IGNORE_CACHE.to_string());
     }
 
     if let Some(name) = &run.custom_name {
         metadata
             .description
             .insert(attr::DESCRIPTION_NAME.to_string(), name.clone());
-        metadata.caps.insert(cap::CAP_META_DESCRIPTION.to_string());
     }
 
     metadata

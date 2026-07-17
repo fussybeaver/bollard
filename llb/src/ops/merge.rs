@@ -80,7 +80,6 @@ impl MergeOp {
             metadata
                 .description
                 .insert(attr::DESCRIPTION_NAME.to_string(), name);
-            metadata.caps.insert(cap::CAP_META_DESCRIPTION.to_string());
         }
 
         Ok(Self { inputs, metadata })
@@ -226,7 +225,7 @@ mod tests {
                 .get(crate::metadata::attr::DESCRIPTION_NAME),
             Some(&"merged".to_string())
         );
-        assert!(op
+        assert!(!op
             .metadata
             .caps
             .contains(crate::metadata::cap::CAP_META_DESCRIPTION));
