@@ -317,12 +317,18 @@ fn env_secret_def() -> Result<pb::Definition, Error> {
 fn merge_cache_def() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, merge, shlex, CacheSharingMode, MarshalOpts, MergeOpts, State};
     let a: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
-    let a = a.run(shlex("echo from-a > /a")).root().map_err(llb_err)?;
+    let a = a
+        .run(shlex("sh -c 'echo from-a > /a'"))
+        .root()
+        .map_err(llb_err)?;
     let b: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
-    let b = b.run(shlex("echo from-b > /b")).root().map_err(llb_err)?;
+    let b = b
+        .run(shlex("sh -c 'echo from-b > /b'"))
+        .root()
+        .map_err(llb_err)?;
     let merged = merge(vec![a, b], MergeOpts::new()).map_err(llb_err)?;
     Ok(merged
-        .run(shlex("cat /a /b > /result"))
+        .run(shlex("sh -c 'cat /a /b > /result'"))
         .add_mount_cache("/cache", "phase4-cache", CacheSharingMode::Shared)
         .root()
         .map_err(llb_err)?
@@ -529,21 +535,20 @@ async fn llb_solve_golden_file_operations_without_empty_locations_test(
 async fn llb_solve_scratch_mkfile_test(docker: Docker) -> Result<(), Error> {
     let dest = tempfile::tempdir()?;
     let def = scratch_mkfile_def()?;
-    let res = solve_to_dir(&docker, def, dest.path(), HashMap::new(), None).await;
-    assert!(
-        res.is_err(),
-        "expected Rust scratch:// definition to fail until Phase 5"
-    );
+    solve_to_dir(&docker, def, dest.path(), HashMap::new(), None).await?;
+    assert_exported_file(dest.path(), "hello", b"world", 0o644);
     Ok(())
 }
 
 async fn llb_solve_file_operations_test(docker: Docker) -> Result<(), Error> {
     let dest = tempfile::tempdir()?;
     let def = file_operations_def()?;
-    let res = solve_to_dir(&docker, def, dest.path(), HashMap::new(), None).await;
+    let error = solve_to_dir(&docker, def, dest.path(), HashMap::new(), None)
+        .await
+        .expect_err("expected default rm to return a structured solver error");
     assert!(
-        res.is_err(),
-        "expected scratch-based file operations to fail until Phase 5"
+        error.to_string().contains("stat /app/current-config"),
+        "expected a structured rm error, got: {error}"
     );
     Ok(())
 }
@@ -582,7 +587,10 @@ async fn llb_solve_file_secret_test(docker: Docker) -> Result<(), Error> {
     let def = file_secret_def()?;
     solve_to_dir(&docker, def, &out_dir, secrets, None).await?;
 
-    let expected = format!("{:x}  -\n", Sha256::digest(token.as_bytes()));
+    let expected = format!(
+        "{:x}  /run/secrets/token\n",
+        Sha256::digest(token.as_bytes())
+    );
     assert_exported_file(&out_dir, "derived", expected.as_bytes(), 0o644);
     assert_exported_absent(&out_dir, "run/secrets/token");
     assert_exported_absent(&out_dir, "token");

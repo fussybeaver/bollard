@@ -4,9 +4,9 @@
 //! using BuildKit v0.31.1. These tests now use a complete decoded-field
 //! comparator instead of only vertex counts and op-variant sequences.
 //!
-//! Remaining known differences vs Go are source-map population and wire-level
-//! protobuf encoding. Image references and resolve-mode defaults are normalized
-//! by the Rust implementation before operation serialization.
+//! Image references and resolve-mode defaults are normalized by the Rust
+//! implementation before operation serialization. Per-operation wire bytes are
+//! compared after decoded semantic parity is established.
 
 use bollard_buildkit_proto::pb;
 use bollard_llb::{
@@ -91,7 +91,7 @@ fn rm_action(definition: &pb::Definition) -> pb::FileActionRm {
 fn assert_rm_parity(
     name: &'static str,
     golden_bytes: &[u8],
-    build: impl FnOnce() -> bollard_llb::Definition,
+    build: impl Fn() -> bollard_llb::Definition,
     expected_allow_not_found: bool,
 ) {
     let rust_rm = rm_action(&build().to_pb());
@@ -103,12 +103,13 @@ fn assert_rm_parity(
         rust_rm.allow_not_found, expected_allow_not_found,
         "{name}: allow_not_found"
     );
+    common::parity::assert_go_parity(name, golden_bytes, build, provenance(name));
 }
 
 fn assert_secret_exec_parity(
     name: &'static str,
     golden_bytes: &[u8],
-    build: impl FnOnce() -> bollard_llb::Definition,
+    build: impl Fn() -> bollard_llb::Definition,
 ) {
     let rust_def = build().to_pb();
     let go_def = bollard_buildkit_proto::pb::Definition::decode(golden_bytes)
@@ -145,6 +146,7 @@ fn assert_secret_exec_parity(
         .expect("Rust exec metadata");
     let go_metadata = go_def.metadata.get(&go_digest).expect("Go exec metadata");
     assert_eq!(rust_metadata.caps, go_metadata.caps, "{name}: capabilities");
+    common::parity::assert_go_parity(name, golden_bytes, build, provenance(name));
 }
 
 #[test]
@@ -822,6 +824,7 @@ fn parity_wrapper_matches_go_shape() {
 
     let rust_wrapper_digest = common::parity::compute_digest(rust.def.last().unwrap());
     let go_wrapper_digest = common::parity::compute_digest(go.def.last().unwrap());
+    assert_eq!(rust.def.last(), go.def.last());
     let rust_metadata = rust.metadata.get(&rust_wrapper_digest).unwrap();
     let go_metadata = go.metadata.get(&go_wrapper_digest).unwrap();
     assert_eq!(rust_metadata.caps, go_metadata.caps);
