@@ -285,14 +285,29 @@ impl FileSend for FileSendImpl {
 #[derive(Clone, Debug)]
 pub(crate) struct FileSendPacketImpl {
     pub(crate) dest: PathBuf,
+    pub(crate) limits: FileTransferLimits,
 }
 
 impl FileSendPacketImpl {
     pub fn new(dest: &Path) -> Self {
+        Self::with_limits(dest, FileTransferLimits::default())
+    }
+
+    pub(crate) fn with_limits(dest: &Path, limits: FileTransferLimits) -> Self {
         Self {
             dest: dest.to_owned(),
+            limits,
         }
     }
+}
+
+/// Optional aggregate limits for a packet-based file transfer.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FileTransferLimits {
+    /// Maximum number of file-system entries accepted in one transfer. `None` disables the limit.
+    pub max_files: Option<u64>,
+    /// Maximum sum of declared entry sizes accepted in one transfer. `None` disables the limit.
+    pub max_bytes: Option<u64>,
 }
 
 impl FileSendPacketImpl {
@@ -370,18 +385,35 @@ impl FileSendPacketImpl {
 /// State machine for a single `diff_copy` file tree transfer.
 struct FileReceiveState {
     base: PathBuf,
-    stats: HashMap<u32, Stat>,
+    stats: HashMap<u32, PendingFile>,
     received_all_stats: bool,
+    received_fin: bool,
     next_stat_id: u32,
+    file_count: u64,
+    total_bytes: u64,
+    limits: FileTransferLimits,
+}
+
+struct PendingFile {
+    stat: Stat,
+    received_bytes: u64,
 }
 
 impl FileReceiveState {
     fn new(base: PathBuf) -> Self {
+        Self::with_limits(base, FileTransferLimits::default())
+    }
+
+    fn with_limits(base: PathBuf, limits: FileTransferLimits) -> Self {
         Self {
             base,
             stats: HashMap::new(),
             received_all_stats: false,
+            received_fin: false,
             next_stat_id: 0,
+            file_count: 0,
+            total_bytes: 0,
+            limits,
         }
     }
 
@@ -390,16 +422,36 @@ impl FileReceiveState {
     }
 
     fn handle_packet(&mut self, packet: Packet) -> Result<Option<Packet>, Status> {
+        if self.received_fin {
+            return Err(Status::failed_precondition(
+                "packet received after PACKET_FIN",
+            ));
+        }
+
         let packet_type = PacketType::try_from(packet.r#type)
             .map_err(|_| Status::invalid_argument("unknown packet type"))?;
         match packet_type {
             PacketType::PacketStat => {
                 if let Some(stat) = packet.stat {
+                    if self.received_all_stats {
+                        return Err(Status::failed_precondition(
+                            "file stat received after terminating stat packet",
+                        ));
+                    }
+                    let declared_bytes = self.validate_stat(&stat)?;
                     let request_id = self.next_stat_id;
                     let needs_data = self.receive_stat(&stat)?;
                     self.next_stat_id += 1;
+                    self.file_count += 1;
+                    self.total_bytes += declared_bytes;
                     if needs_data {
-                        self.stats.insert(request_id, stat);
+                        self.stats.insert(
+                            request_id,
+                            PendingFile {
+                                stat,
+                                received_bytes: 0,
+                            },
+                        );
                         Ok(Some(Packet {
                             r#type: PacketType::PacketReq.into(),
                             stat: None,
@@ -410,6 +462,11 @@ impl FileReceiveState {
                         Ok(None)
                     }
                 } else {
+                    if self.received_all_stats {
+                        return Err(Status::failed_precondition(
+                            "duplicate terminating stat packet",
+                        ));
+                    }
                     self.received_all_stats = true;
                     if self.is_complete() {
                         Ok(Some(Packet {
@@ -443,13 +500,45 @@ impl FileReceiveState {
                     Ok(None)
                 }
             }
-            PacketType::PacketFin => Ok(None),
+            PacketType::PacketFin => {
+                if !self.is_complete() {
+                    return Err(Status::failed_precondition(
+                        "file transfer finished before all files were received",
+                    ));
+                }
+                self.received_fin = true;
+                Ok(None)
+            }
             PacketType::PacketErr => {
                 let msg = String::from_utf8(packet.data)
                     .unwrap_or_else(|_| String::from("invalid packet error encoding"));
                 Err(Status::unknown(format!("packet error: {msg}")))
             }
         }
+    }
+
+    fn validate_stat(&self, stat: &Stat) -> Result<u64, Status> {
+        let declared_bytes = u64::try_from(stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if let Some(max_files) = self.limits.max_files {
+            if self.file_count >= max_files {
+                return Err(Status::resource_exhausted(
+                    "file transfer exceeds the maximum entry count",
+                ));
+            }
+        }
+        if let Some(max_bytes) = self.limits.max_bytes {
+            let total = self
+                .total_bytes
+                .checked_add(declared_bytes)
+                .ok_or_else(|| Status::resource_exhausted("file transfer byte count overflow"))?;
+            if total > max_bytes {
+                return Err(Status::resource_exhausted(
+                    "file transfer exceeds the maximum byte count",
+                ));
+            }
+        }
+        Ok(declared_bytes)
     }
 
     fn receive_stat(&self, stat: &Stat) -> Result<bool, Status> {
@@ -494,12 +583,25 @@ impl FileReceiveState {
         Ok(!mode.intersects(fsutil::FileMode::Type))
     }
 
-    fn append_file(&self, id: u32, data: &[u8]) -> Result<(), Status> {
-        let stat = self
+    fn append_file(&mut self, id: u32, data: &[u8]) -> Result<(), Status> {
+        let pending = self
             .stats
-            .get(&id)
+            .get_mut(&id)
             .ok_or_else(|| Status::invalid_argument("data packet for unknown file"))?;
-        let file_path = FileSendPacketImpl::safe_path(&self.base, &stat.path)?;
+        let data_len = u64::try_from(data.len())
+            .map_err(|_| Status::resource_exhausted("file packet size overflow"))?;
+        let received_bytes = pending
+            .received_bytes
+            .checked_add(data_len)
+            .ok_or_else(|| Status::resource_exhausted("file byte count overflow"))?;
+        let expected_bytes = u64::try_from(pending.stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if received_bytes > expected_bytes {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the declared file size",
+            ));
+        }
+        let file_path = FileSendPacketImpl::safe_path(&self.base, &pending.stat.path)?;
         if let Some(parent) = file_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| Status::internal(format!("failed to create parent directory: {e}")))?;
@@ -509,20 +611,44 @@ impl FileReceiveState {
             .open(&file_path)
             .map_err(|e| Status::internal(format!("failed to open file for append: {e}")))?;
         file.write_all(data)
-            .map_err(|e| Status::internal(format!("failed to write file data: {e}")))
+            .map_err(|e| Status::internal(format!("failed to write file data: {e}")))?;
+        pending.received_bytes = received_bytes;
+        Ok(())
     }
 
     fn finish_file(&mut self, id: u32) -> Result<(), Status> {
-        let stat = self
+        let pending = self
+            .stats
+            .get(&id)
+            .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
+        let expected_bytes = u64::try_from(pending.stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if pending.received_bytes != expected_bytes {
+            return Err(Status::invalid_argument(format!(
+                "file ended after {} of {} bytes",
+                pending.received_bytes, expected_bytes
+            )));
+        }
+        let pending = self
             .stats
             .remove(&id)
-            .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
-        let mode = fsutil::FileMode::from_bits_truncate(stat.mode);
+            .expect("pending file was checked above");
+        let mode = fsutil::FileMode::from_bits_truncate(pending.stat.mode);
         if !mode.intersects(fsutil::FileMode::Type) {
-            let file_path = FileSendPacketImpl::safe_path(&self.base, &stat.path)?;
-            FileSendPacketImpl::set_mode(&file_path, stat.mode)?;
+            let file_path = FileSendPacketImpl::safe_path(&self.base, &pending.stat.path)?;
+            FileSendPacketImpl::set_mode(&file_path, pending.stat.mode)?;
         }
         Ok(())
+    }
+
+    fn finish_stream(&self) -> Result<(), Status> {
+        if self.received_fin {
+            Ok(())
+        } else {
+            Err(Status::failed_precondition(
+                "file packet stream ended before PACKET_FIN",
+            ))
+        }
     }
 }
 
@@ -557,6 +683,8 @@ impl FileSendPacket for FileSendPacketImpl {
                     return;
                 }
             }
+
+            state.finish_stream()?;
         };
 
         Ok(Response::new(Box::pin(out_stream)))
@@ -1176,7 +1304,7 @@ mod tests {
     use bollard_buildkit_proto::fsutil::types::packet::PacketType;
     use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
 
-    use super::{fsutil, FileReceiveState, FileSendPacketImpl};
+    use super::{fsutil, FileReceiveState, FileSendPacketImpl, FileTransferLimits};
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
         Packet {
@@ -1229,7 +1357,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut state = FileReceiveState::new(dir.path().to_path_buf());
 
-        let s = stat("hello", 0o644, "");
+        let s = Stat {
+            size: 5,
+            ..stat("hello", 0o644, "")
+        };
         let req = state.handle_packet(packet_stat(Some(s))).unwrap();
         assert_eq!(req.unwrap().r#type, PacketType::PacketReq as i32);
         assert!(state.handle_packet(packet_stat(None)).unwrap().is_none());
@@ -1314,5 +1445,121 @@ mod tests {
         let s = stat("link/foo", 0o644, "");
         let err = state.handle_packet(packet_stat(Some(s))).unwrap_err();
         assert!(err.message().contains("symlink component"));
+    }
+
+    #[test]
+    fn test_file_receive_state_rejects_early_fin() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        state
+            .handle_packet(packet_stat(Some(stat("hello", 0o644, ""))))
+            .unwrap();
+        state.handle_packet(packet_stat(None)).unwrap();
+
+        let err = state
+            .handle_packet(Packet {
+                r#type: PacketType::PacketFin.into(),
+                stat: None,
+                id: 0,
+                data: vec![],
+            })
+            .unwrap_err();
+        assert!(err.message().contains("before all files were received"));
+    }
+
+    #[test]
+    fn test_file_receive_state_rejects_truncated_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        state
+            .handle_packet(packet_stat(Some(Stat {
+                size: 5,
+                ..stat("hello", 0o644, "")
+            })))
+            .unwrap();
+        state.handle_packet(packet_stat(None)).unwrap();
+        state.handle_packet(packet_data(0, b"hi")).unwrap();
+
+        let err = state.handle_packet(packet_data(0, b"")).unwrap_err();
+        assert!(err.message().contains("ended after 2 of 5 bytes"));
+    }
+
+    #[test]
+    fn test_file_receive_state_rejects_excess_file_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        state
+            .handle_packet(packet_stat(Some(Stat {
+                size: 3,
+                ..stat("hello", 0o644, "")
+            })))
+            .unwrap();
+        state.handle_packet(packet_stat(None)).unwrap();
+
+        let err = state.handle_packet(packet_data(0, b"more")).unwrap_err();
+        assert!(err.message().contains("exceeds the declared file size"));
+        assert!(std::fs::read(dir.path().join("hello")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_file_receive_state_rejects_stat_after_stat_terminator() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf());
+
+        state.handle_packet(packet_stat(None)).unwrap();
+        let err = state
+            .handle_packet(packet_stat(Some(stat("late", 0o644, ""))))
+            .unwrap_err();
+        assert!(err.message().contains("after terminating stat packet"));
+    }
+
+    #[test]
+    fn test_file_receive_state_rejects_unexpected_stream_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = FileReceiveState::new(dir.path().to_path_buf());
+
+        let err = state.finish_stream().unwrap_err();
+        assert!(err.message().contains("before PACKET_FIN"));
+    }
+
+    #[test]
+    fn test_file_receive_state_enforces_transfer_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::with_limits(
+            dir.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: Some(1),
+                max_bytes: Some(4),
+            },
+        );
+
+        state
+            .handle_packet(packet_stat(Some(Stat {
+                size: 4,
+                ..stat("first", 0o644, "")
+            })))
+            .unwrap();
+        let err = state
+            .handle_packet(packet_stat(Some(stat("second", 0o644, ""))))
+            .unwrap_err();
+        assert!(err.message().contains("maximum entry count"));
+
+        let mut state = FileReceiveState::with_limits(
+            dir.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: None,
+                max_bytes: Some(3),
+            },
+        );
+        let err = state
+            .handle_packet(packet_stat(Some(Stat {
+                size: 4,
+                ..stat("too-large", 0o644, "")
+            })))
+            .unwrap_err();
+        assert!(err.message().contains("maximum byte count"));
     }
 }

@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
+    time::Duration,
 };
 
 use bollard_buildkit_proto::moby::{
@@ -34,7 +35,7 @@ use super::{
     error::GrpcError,
     export::ImageExporterRequest,
     registry::ImageRegistryOutput,
-    GrpcServer,
+    FileTransferLimits, GrpcServer,
 };
 
 /// DEFAULT_MAX_SEND_MSG_SIZE defines the default maximum message size for
@@ -124,6 +125,12 @@ pub enum DefinitionExporter {
 /// Options for a direct LLB definition solve.
 #[derive(Debug, Clone, Default)]
 pub struct DefinitionSolveOptions {
+    /// Optional aggregate limits for packet-based file transfers.
+    pub file_transfer_limits: FileTransferLimits,
+    /// Maximum time allowed for each solve operation, including connection setup and teardown.
+    ///
+    /// When unset, no additional deadline is applied by the direct-definition driver.
+    pub timeout: Option<Duration>,
     /// Cache export entries.
     pub cache_to: Vec<CacheOptionsEntry>,
     /// Cache import entries.
@@ -323,6 +330,7 @@ pub(crate) async fn solve(
         solve_request,
         services,
         tear_down_handler,
+        None,
     )
     .await
 }
@@ -333,23 +341,34 @@ async fn execute_solve<D: Driver>(
     request: SolveRequest,
     services: Vec<GrpcServer>,
     tear_down_handler: Box<dyn DriverTearDownHandler>,
+    timeout: Option<Duration>,
 ) -> Result<(), GrpcError> {
-    let client_result = driver.grpc_handle(session_id, services).await;
+    let client_result = with_timeout(timeout, driver.grpc_handle(session_id, services)).await;
     let mut control_client = match client_result {
         Ok(client) => client
             .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
         Err(e) => {
-            let _ = tear_down_handler.tear_down().await;
+            let _ = with_timeout(timeout, tear_down_handler.tear_down()).await;
             return Err(e);
         }
     };
 
     debug!("sending solve request: {:#?}", request);
-    let solve_result = control_client.solve(request).await;
+    let mut solve_request = tonic::Request::new(request);
+    if let Some(timeout) = timeout {
+        solve_request.set_timeout(timeout);
+    }
+    let solve_result = with_timeout(timeout, async {
+        control_client
+            .solve(solve_request)
+            .await
+            .map_err(GrpcError::from)
+    })
+    .await;
     debug!("solve res: {:#?}", solve_result);
 
-    let teardown_result = tear_down_handler.tear_down().await;
+    let teardown_result = with_timeout(timeout, tear_down_handler.tear_down()).await;
 
     solve_result?;
     teardown_result
@@ -395,10 +414,12 @@ pub(crate) async fn solve_definition(
 
     match &exporter {
         DefinitionExporter::Local(path) => {
-            let filesend =
-                FileSendPacketServer::new(super::FileSendPacketImpl::new(path.as_path()))
-                    .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-                    .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+            let filesend = FileSendPacketServer::new(super::FileSendPacketImpl::with_limits(
+                path.as_path(),
+                options.file_transfer_limits,
+            ))
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
             services.push(GrpcServer::FileSendPacket(filesend));
         }
@@ -414,8 +435,21 @@ pub(crate) async fn solve_definition(
         solve_request,
         services,
         tear_down_handler,
+        options.timeout,
     )
     .await
+}
+
+async fn with_timeout<F, T>(timeout: Option<Duration>, future: F) -> Result<T, GrpcError>
+where
+    F: futures_core::Future<Output = Result<T, GrpcError>>,
+{
+    match timeout {
+        Some(timeout) => tokio::time::timeout(timeout, future).await.map_err(|_| {
+            GrpcError::from(tonic::Status::deadline_exceeded("operation timed out"))
+        })?,
+        None => future.await,
+    }
 }
 
 fn build_definition_solve_request(
@@ -515,6 +549,23 @@ mod tests {
             &'a self,
         ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + 'a>> {
             Box::pin(futures_util::future::ok(()))
+        }
+    }
+
+    struct HangingDriver;
+
+    impl Driver for HangingDriver {
+        async fn grpc_handle(
+            self,
+            _session_id: &str,
+            _services: Vec<GrpcServer>,
+        ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>
+        {
+            std::future::pending().await
+        }
+
+        fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
+            Box::new(NoopTearDownHandler)
         }
     }
 
@@ -711,8 +762,49 @@ mod tests {
         };
 
         let request = SolveRequest::default();
-        let result = execute_solve(driver, "session", request, vec![], Box::new(handler)).await;
+        let result =
+            execute_solve(driver, "session", request, vec![], Box::new(handler), None).await;
         assert!(result.is_err());
         assert!(*called.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn execute_solve_timeout_bounds_connection_and_teardown() {
+        let called = Arc::new(Mutex::new(false));
+        let handler = RecordingTearDownHandler {
+            called: called.clone(),
+        };
+
+        let result = execute_solve(
+            HangingDriver,
+            "session",
+            SolveRequest::default(),
+            vec![],
+            Box::new(handler),
+            Some(std::time::Duration::from_millis(1)),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(GrpcError::TonicStatus { err })
+                if err.code() == tonic::Code::DeadlineExceeded
+        ));
+        assert!(*called.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn with_timeout_returns_deadline_exceeded() {
+        let result = with_timeout(
+            Some(std::time::Duration::from_millis(1)),
+            std::future::pending::<Result<(), GrpcError>>(),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(GrpcError::TonicStatus { err })
+                if err.code() == tonic::Code::DeadlineExceeded
+        ));
     }
 }
