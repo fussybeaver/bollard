@@ -11,9 +11,15 @@ mod common;
 #[test]
 fn test_version_named_pipe() {
     rt_exec!(
-        Docker::connect_with_named_pipe_defaults()
-            .unwrap()
-            .version(),
+        async {
+            Docker::connect_with_named_pipe_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }
@@ -23,7 +29,15 @@ fn test_version_named_pipe() {
 #[allow(clippy::redundant_closure_call)]
 fn test_version_unix() {
     rt_exec!(
-        Docker::connect_with_unix_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_unix_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     )
 }
@@ -32,7 +46,15 @@ fn test_version_unix() {
 #[test]
 fn test_version_ssl() {
     rt_exec!(
-        Docker::connect_with_ssl_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_ssl_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     )
 }
@@ -42,12 +64,28 @@ fn test_version_ssl() {
 fn test_version_http() {
     #[cfg(unix)]
     rt_exec!(
-        Docker::connect_with_http_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_http_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     );
     #[cfg(windows)]
     rt_exec!(
-        Docker::connect_with_http_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_http_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }
@@ -56,7 +94,15 @@ fn test_version_http() {
 #[test]
 fn test_version_ssh() {
     rt_exec!(
-        Docker::connect_with_ssh_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_ssh_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     );
 }
@@ -66,7 +112,15 @@ fn test_version_ssh() {
 #[allow(clippy::redundant_closure_call)]
 fn test_version_podman() {
     rt_exec!(
-        Docker::connect_with_podman_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_podman_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     )
 }
@@ -115,12 +169,28 @@ fn test_downversioning() {
 fn test_connect_with_defaults() {
     #[cfg(unix)]
     rt_exec!(
-        Docker::connect_with_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "linux")
     );
     #[cfg(windows)]
     rt_exec!(
-        Docker::connect_with_defaults().unwrap().version(),
+        async {
+            Docker::connect_with_defaults()
+                .unwrap()
+                .negotiate_version()
+                .await
+                .unwrap()
+                .version()
+                .await
+        },
         |version: SystemVersion| assert_eq!(version.os.unwrap(), "windows")
     )
 }

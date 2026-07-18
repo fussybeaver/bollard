@@ -24,13 +24,14 @@ macro_rules! connect_to_docker_and_run {
     ($exec:expr) => {{
         let rt = Runtime::new().unwrap();
         #[cfg(all(unix, not(feature = "test_http"), not(feature = "test_ssl")))]
-        let fut = $exec(Docker::connect_with_unix_defaults().unwrap());
+        let docker = Docker::connect_with_unix_defaults().unwrap();
         #[cfg(all(feature = "test_http", not(feature = "test_ssl")))]
-        let fut = $exec(Docker::connect_with_http_defaults().unwrap());
+        let docker = Docker::connect_with_http_defaults().unwrap();
         #[cfg(feature = "test_ssl")]
-        let fut = $exec(Docker::connect_with_ssl_defaults().unwrap());
+        let docker = Docker::connect_with_ssl_defaults().unwrap();
         #[cfg(windows)]
-        let fut = $exec(Docker::connect_with_named_pipe_defaults().unwrap());
+        let docker = Docker::connect_with_named_pipe_defaults().unwrap();
+        let fut = async move { $exec(docker.negotiate_version().await.unwrap()).await };
         run_runtime(rt, fut);
     }};
 }
