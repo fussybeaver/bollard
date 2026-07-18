@@ -82,10 +82,9 @@ impl Image {
         Ok(self)
     }
 
-    /// Set the platform for the image source.
+    /// Set the platform for the image source and the state derived from it.
     pub fn with_platform(mut self, platform: Platform) -> Result<Self, LlbError> {
         self.platform = Some(platform);
-        self.metadata.caps.insert(cap::CAP_PLATFORM.to_string());
         Ok(self)
     }
 
@@ -553,7 +552,13 @@ pub fn scratch() -> Result<State, LlbError> {
 
 impl From<Image> for State {
     fn from(image: Image) -> Self {
-        State::new(OperationOutput::Owned(Arc::new(image)))
+        let platform = image.platform.clone();
+        State::with_constraints(
+            OperationOutput::Owned(Arc::new(image)),
+            platform.map_or_else(Default::default, |platform| {
+                crate::state::Constraints::default().with_platform(platform)
+            }),
+        )
     }
 }
 

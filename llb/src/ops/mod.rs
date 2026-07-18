@@ -212,13 +212,12 @@ impl Context {
     }
 
     /// Combine the active marshal-time platform with an operation's own
-    /// platform. The marshal-time platform overrides the operation's own
-    /// platform.
+    /// platform. Operation-local constraints override the marshal default.
     pub(crate) fn combined_platform(
         &self,
         operation_platform: Option<Platform>,
     ) -> Option<Platform> {
-        self.platform.clone().or(operation_platform)
+        operation_platform.or_else(|| self.platform.clone())
     }
 
     /// Append the synthetic root wrapper vertex.
@@ -781,11 +780,14 @@ mod tests {
     }
 
     #[test]
-    fn marshal_constraints_platform_used_when_opts_platform_none() {
+    fn marshal_state_platform_applies_to_subsequent_exec() {
         let s = image("alpine:latest")
             .unwrap()
             .with_platform(Platform::LINUX_ARM64.clone());
         let def = s
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
             .marshal(MarshalOpts {
                 platform: None,
                 worker_filters: Vec::new(),
@@ -793,20 +795,14 @@ mod tests {
             .unwrap();
         let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
             .expect("expected image source op");
-        assert_eq!(
-            image_op.platform,
-            Some(pb::Platform {
-                architecture: "arm64".to_string(),
-                os: "linux".to_string(),
-                variant: String::new(),
-                os_version: String::new(),
-                os_features: Vec::new(),
-            })
-        );
+        assert_eq!(image_op.platform, None);
+        let exec_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Exec(_)))
+            .expect("expected exec op");
+        assert_eq!(exec_op.platform, Some(Platform::LINUX_ARM64.clone().into()));
     }
 
     #[test]
-    fn marshal_opts_platform_overrides_constraints_platform() {
+    fn marshal_state_platform_overrides_marshal_platform() {
         let s = image("alpine:latest")
             .unwrap()
             .with_platform(Platform::LINUX_ARM64.clone());
@@ -823,6 +819,15 @@ mod tests {
                 os_features: Vec::new(),
             })
         );
+        let exec_op = s
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec_op = find_op_by_variant(&exec_op, |op| matches!(op, pb::op::Op::Exec(_)))
+            .expect("expected exec op");
+        assert_eq!(exec_op.platform, Some(Platform::LINUX_ARM64.clone().into()));
     }
 
     #[test]

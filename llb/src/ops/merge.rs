@@ -51,8 +51,15 @@ pub fn merge<I: IntoIterator<Item = State>>(
         0 => crate::scratch(),
         1 => Ok(inputs.into_iter().next().expect("one input")),
         _ => {
+            let constraints = inputs
+                .first()
+                .map(|state| state.constraints().clone())
+                .unwrap_or_default();
             let op = MergeOp::new(inputs, opts)?;
-            Ok(State::new(OperationOutput::Owned(std::sync::Arc::new(op))))
+            Ok(State::with_constraints(
+                OperationOutput::Owned(std::sync::Arc::new(op)),
+                constraints,
+            ))
         }
     }
 }
@@ -230,5 +237,38 @@ mod tests {
             .metadata
             .caps
             .contains(crate::metadata::cap::CAP_META_DESCRIPTION));
+    }
+
+    #[test]
+    fn merge_preserves_first_input_platform_for_following_exec() {
+        let arm = crate::image("alpine:latest")
+            .unwrap()
+            .with_platform(crate::Platform::LINUX_ARM64);
+        let merged = merge(
+            vec![arm, crate::image("busybox:latest").unwrap()],
+            MergeOpts::new(),
+        )
+        .unwrap()
+        .run(crate::shlex("echo hello"))
+        .root()
+        .unwrap();
+        let def = merged
+            .marshal(crate::state::MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| matches!(op.op, Some(pb::op::Op::Exec(_))))
+            .expect("expected exec op");
+        assert_eq!(exec.platform, Some(crate::Platform::LINUX_ARM64.into()));
+
+        let merge = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| matches!(op.op, Some(pb::op::Op::Merge(_))))
+            .expect("expected merge op");
+        assert_eq!(merge.platform, None);
     }
 }

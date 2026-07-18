@@ -22,15 +22,23 @@ pub struct State {
 
 impl State {
     pub(crate) fn new(output: OperationOutput) -> Self {
+        Self::with_constraints(output, Constraints::default())
+    }
+
+    pub(crate) fn with_constraints(output: OperationOutput, constraints: Constraints) -> Self {
         Self {
             output,
-            constraints: Constraints::default(),
+            constraints,
         }
     }
 
     /// Access the operation output backing this state.
     pub(crate) fn output(&self) -> &OperationOutput {
         &self.output
+    }
+
+    pub(crate) fn constraints(&self) -> &Constraints {
+        &self.constraints
     }
 
     /// Set the working directory for subsequent exec steps.
@@ -78,7 +86,8 @@ impl State {
             .unwrap_or_else(|| Platform::LINUX_AMD64.clone())
     }
 
-    /// Set the platform constraint for this state.
+    /// Set the platform constraint for operations subsequently created from
+    /// this state.
     pub fn with_platform(mut self, platform: Platform) -> Self {
         self.constraints.platform = Some(platform);
         self
@@ -94,10 +103,6 @@ impl State {
                 root: None,
             });
         }
-        let platform = opts
-            .platform
-            .clone()
-            .or_else(|| self.constraints.platform.clone());
         let worker_filters = if self.constraints.worker_filters.is_empty() {
             opts.worker_filters.clone()
         } else {
@@ -107,7 +112,9 @@ impl State {
                 .chain(self.constraints.worker_filters.iter().cloned())
                 .collect()
         };
-        let mut ctx = Context::new(platform, worker_filters);
+        // MarshalOpts supplies the graph-wide default. State-local platforms
+        // are carried by the operations created from this state instead.
+        let mut ctx = Context::new(opts.platform.clone(), worker_filters);
         let root_ref = ctx.register(&self.output)?;
         let wrapper_ref =
             ctx.append_wrapper(root_ref.clone(), self.constraints.custom_name.as_deref())?;
@@ -129,7 +136,8 @@ impl State {
     }
 }
 
-/// Constraints overlaid onto the root wrapper vertex at marshal time.
+/// Constraints carried by a state and applied to subsequently created
+/// operations.
 #[derive(Clone, Debug, Default)]
 pub struct Constraints {
     platform: Option<Platform>,
@@ -156,7 +164,8 @@ impl Constraints {
 /// Options passed to [`State::marshal`].
 #[derive(Clone, Debug)]
 pub struct MarshalOpts {
-    /// Platform constraint applied to real operation vertices.
+    /// Graph-wide default platform for real operation vertices without a
+    /// state-local platform.
     pub platform: Option<Platform>,
     /// Worker constraint filters applied to real operation vertices.
     pub worker_filters: Vec<String>,
