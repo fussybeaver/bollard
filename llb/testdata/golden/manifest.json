@@ -1,5 +1,5 @@
 {
-  "generator_version": "phase5-rm-1",
+  "generator_version": "phase5-differential-1",
   "buildkit_version": "v0.31.1",
   "fixtures": [
     {
@@ -186,6 +186,30 @@
       "file": "file_operations_chain.llb.pb",
       "fixture": "file_operations_chain",
       "sha256": "976847cc189a3ccd106ca05a082002c6abc4263525870e2b7845771376c2ad56",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_merge_alpine.llb.pb",
+      "fixture": "differential_merge_alpine",
+      "sha256": "faf4bbfcbb84d5b1b500513183d81f42b0b0ee1c61610b62d7f2ec323f5dadd3",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_file_secret.llb.pb",
+      "fixture": "differential_file_secret",
+      "sha256": "7d73f9f01b9fcf188d062f3b70a356d383b9dac4ff28ae2ee2f19569dbcc185e",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_env_secret.llb.pb",
+      "fixture": "differential_env_secret",
+      "sha256": "9e66ea3becee98686703ce48314d9d72395d35b6835898314a30a61f47119ae2",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_file_operations_allow_not_found.llb.pb",
+      "fixture": "differential_file_operations_allow_not_found",
+      "sha256": "9696a551b81745ecc9ad5c88999656588f9e187525ef35de63e7639b3c370d17",
       "platform": "linux/amd64"
     },
     {

@@ -39,7 +39,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "phase5-rm-1"
+const generatorVersion = "phase5-differential-1"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -114,6 +114,10 @@ func main() {
 		{"cache_mount_locked", cacheMountLocked, defaultPlatform(), "linux/amd64"},
 		{"multi_mount_ordering", multiMountOrdering, defaultPlatform(), "linux/amd64"},
 		{"file_operations_chain", fileOperationsChain, defaultPlatform(), "linux/amd64"},
+		{"differential_merge_alpine", differentialMergeAlpine, defaultPlatform(), "linux/amd64"},
+		{"differential_file_secret", differentialFileSecret, defaultPlatform(), "linux/amd64"},
+		{"differential_env_secret", differentialEnvSecret, defaultPlatform(), "linux/amd64"},
+		{"differential_file_operations_allow_not_found", differentialFileOperationsAllowNotFound, defaultPlatform(), "linux/amd64"},
 		{"scratch_direct", scratchDirect, defaultPlatform(), "linux/amd64"},
 		{"scratch_exec_root", scratchExecRoot, defaultPlatform(), "linux/amd64"},
 		{"scratch_bind_mount", scratchBindMount, defaultPlatform(), "linux/amd64"},
@@ -414,6 +418,37 @@ func fileOpsRm() llb.State {
 }
 
 func fileOpsRmAllowNotFound() llb.State {
+	base := fileOpsSymlink()
+	return base.File(llb.Rm("/app/current-config", llb.WithAllowNotFound(true)))
+}
+
+func differentialMergeAlpine() llb.State {
+	return llb.Merge([]llb.State{
+		llb.Image("alpine:latest"),
+		llb.Image("alpine:latest"),
+	}).Run(llb.Shlex("sh -c 'echo differential > /differential'"), llb.IgnoreCache).Root()
+}
+
+func differentialFileSecret() llb.State {
+	target := "/run/secrets/token"
+	return llb.Image("alpine:latest").
+		Run(
+			llb.Shlex("sh -c 'sha256sum /run/secrets/token > /derived'"),
+			llb.AddSecretWithDest("token", &target, llb.SecretID("token")),
+		).
+		Root()
+}
+
+func differentialEnvSecret() llb.State {
+	return llb.Image("alpine:latest").
+		Run(
+			llb.Shlex("sh -c 'printf %s \"$MY_SECRET\" | sha256sum > /derived'"),
+			llb.AddSecret("mysecret", llb.SecretID("mysecret"), llb.SecretAsEnv(true), llb.SecretAsEnvName("MY_SECRET")),
+		).
+		Root()
+}
+
+func differentialFileOperationsAllowNotFound() llb.State {
 	base := fileOpsSymlink()
 	return base.File(llb.Rm("/app/current-config", llb.WithAllowNotFound(true)))
 }

@@ -33,6 +33,14 @@ const FILE_OPS_RM_ALLOW_NOT_FOUND_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/file_ops_rm_allow_not_found.llb.pb");
 const FILE_OPS_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/file_operations_chain.llb.pb");
+const DIFFERENTIAL_MERGE_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_merge_alpine.llb.pb");
+const DIFFERENTIAL_FILE_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_secret.llb.pb");
+const DIFFERENTIAL_ENV_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_env_secret.llb.pb");
+const DIFFERENTIAL_FILE_OPS_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_operations_allow_not_found.llb.pb");
 
 #[derive(Debug, PartialEq)]
 enum ExportEntry {
@@ -212,6 +220,43 @@ fn image_exec_def() -> Result<pb::Definition, Error> {
         .to_pb())
 }
 
+fn differential_image_def() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, shlex, MarshalOpts, State};
+    let state: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
+    Ok(state
+        .run(shlex("echo hello"))
+        .root()
+        .map_err(llb_err)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_err)?
+        .to_pb())
+}
+
+fn differential_symlink_def() -> Result<pb::Definition, Error> {
+    use bollard_llb::{scratch, symlink, FileOpts, MarshalOpts};
+    Ok(scratch()
+        .map_err(llb_err)?
+        .file(symlink("/target", "/link"), FileOpts::new())
+        .map_err(llb_err)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_err)?
+        .to_pb())
+}
+
+fn differential_merge_def() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, merge, shlex, MarshalOpts, MergeOpts, State};
+    let a: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
+    let b: State = image(registry_image("alpine:latest")).map_err(llb_err)?;
+    Ok(merge(vec![a, b], MergeOpts::new())
+        .map_err(llb_err)?
+        .run(shlex("sh -c 'echo differential > /differential'"))
+        .root()
+        .map_err(llb_err)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_err)?
+        .to_pb())
+}
+
 fn file_operations_def() -> Result<pb::Definition, Error> {
     use bollard_llb::scratch;
     file_operations_def_with_base(scratch().map_err(llb_err)?, "/app/config.toml", false)
@@ -254,6 +299,38 @@ fn file_operations_def_with_base(
         )
         .map_err(llb_err)?;
     Ok(s.marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_err)?
+        .to_pb())
+}
+
+fn differential_file_operations_def() -> Result<pb::Definition, Error> {
+    use bollard_llb::{FileOpts, MarshalOpts};
+    let base = bollard_llb::scratch().map_err(llb_err)?;
+    let base = base
+        .file(
+            bollard_llb::mkdir("/app", 0o755).with_parents(true),
+            FileOpts::new(),
+        )
+        .map_err(llb_err)?;
+    let base = base
+        .file(
+            bollard_llb::mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            FileOpts::new(),
+        )
+        .map_err(llb_err)?;
+    let base = base
+        .file(
+            bollard_llb::symlink("/app/config.toml", "/app/current-config"),
+            FileOpts::new(),
+        )
+        .map_err(llb_err)?;
+    Ok(base
+        .file(
+            bollard_llb::rm("/app/current-config").with_allow_not_found(true),
+            FileOpts::new(),
+        )
+        .map_err(llb_err)?
+        .marshal(MarshalOpts::linux_amd64())
         .map_err(llb_err)?
         .to_pb())
 }
@@ -597,6 +674,89 @@ async fn llb_solve_file_secret_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+async fn llb_solve_go_rust_differential_test(docker: Docker) -> Result<(), Error> {
+    type DefinitionBuilder = fn() -> Result<pb::Definition, Error>;
+
+    let cases: [(&str, &[u8], DefinitionBuilder); 7] = [
+        ("mkfile", MKFILE_GOLDEN, scratch_mkfile_def),
+        ("symlink", SYMLINK_GOLDEN, differential_symlink_def),
+        ("image", IMAGE_GOLDEN, differential_image_def),
+        (
+            "merge_alpine",
+            DIFFERENTIAL_MERGE_GOLDEN,
+            differential_merge_def,
+        ),
+        (
+            "file_secret",
+            DIFFERENTIAL_FILE_SECRET_GOLDEN,
+            file_secret_def,
+        ),
+        ("env_secret", DIFFERENTIAL_ENV_SECRET_GOLDEN, env_secret_def),
+        (
+            "file_operations_allow_not_found",
+            DIFFERENTIAL_FILE_OPS_GOLDEN,
+            differential_file_operations_def,
+        ),
+    ];
+
+    let secret_dir = tempfile::tempdir()?;
+    let token_path = secret_dir.path().join("token");
+    std::fs::write(&token_path, "phase5-differential-secret")?;
+    std::env::set_var(
+        "PHASE5_DIFFERENTIAL_SECRET",
+        "phase5-differential-env-secret",
+    );
+
+    for (name, golden, rust_builder) in cases {
+        let mut secrets = HashMap::new();
+        if name == "file_secret" {
+            secrets.insert("token".to_string(), SecretSource::File(token_path.clone()));
+        } else if name == "env_secret" {
+            secrets.insert(
+                "mysecret".to_string(),
+                SecretSource::Env("PHASE5_DIFFERENTIAL_SECRET".to_string()),
+            );
+        }
+
+        let go_dest = tempfile::tempdir()?;
+        let rust_dest = tempfile::tempdir()?;
+        let go_definition = go_definition(golden)?;
+        let rust_definition = rust_builder()?;
+
+        solve_to_dir(
+            &docker,
+            go_definition,
+            go_dest.path(),
+            secrets.clone(),
+            Some(&format!("bollard_llb_phase5_go_{name}")),
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("{name}: Go definition solve failed: {error}")),
+        })?;
+        solve_to_dir(
+            &docker,
+            rust_definition,
+            rust_dest.path(),
+            secrets,
+            Some(&format!("bollard_llb_phase5_rust_{name}")),
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("{name}: Rust definition solve failed: {error}")),
+        })?;
+
+        let go_tree = read_export_tree(go_dest.path())?;
+        let rust_tree = read_export_tree(rust_dest.path())?;
+        assert_eq!(
+            go_tree, rust_tree,
+            "Go/Rust exported filesystem mismatch for {name}"
+        );
+    }
+
+    Ok(())
+}
+
 async fn llb_solve_env_secret_test(docker: Docker) -> Result<(), Error> {
     let dest = tempfile::tempdir()?;
     let secret_value = "phase4-env-secret";
@@ -743,6 +903,12 @@ fn integration_test_llb_solve_image_exec() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_llb_solve_file_secret() {
     connect_to_docker_and_run!(llb_solve_file_secret_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_llb_solve_go_rust_differential() {
+    connect_to_docker_and_run!(llb_solve_go_rust_differential_test);
 }
 
 #[test]
