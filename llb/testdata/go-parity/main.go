@@ -19,6 +19,7 @@ import (
 	"runtime/debug"
 
 	"github.com/moby/buildkit/client/llb"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // manifestEntry records one golden fixture and its content hash.
@@ -39,7 +40,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "phase5-differential-1"
+const generatorVersion = "phase5-platform-constraints-1"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -88,6 +89,10 @@ func main() {
 		{"image_resolve_prefer_local", imageResolvePreferLocal, defaultPlatform(), "linux/amd64"},
 		{"platform_arm64", imageRun, []llb.ConstraintsOpt{llb.LinuxArm64}, "linux/arm64"},
 		{"platform_arm_v7", imageRun, []llb.ConstraintsOpt{llb.LinuxArmhf}, "linux/arm/v7"},
+		{"platform_image_override", platformImageOverride, defaultPlatform(), "linux/amd64"},
+		{"platform_state_override", platformStateOverride, defaultPlatform(), "linux/amd64"},
+		{"platform_mixed", platformMixed, defaultPlatform(), "linux/amd64"},
+		{"platform_shared_subgraph", platformSharedSubgraph, defaultPlatform(), "linux/amd64"},
 		{"exec_default_meta", execDefaultMeta, defaultPlatform(), "linux/amd64"},
 		{"exec_custom_name_ignore_cache", execCustomNameIgnoreCache, defaultPlatform(), "linux/amd64"},
 		{"merge", merge, defaultPlatform(), "linux/amd64"},
@@ -221,6 +226,39 @@ func imageResolveForcePull() llb.State {
 func imageResolvePreferLocal() llb.State {
 	return llb.Image("alpine:latest", llb.ResolveModePreferLocal).
 		Run(llb.Shlex("echo hello")).
+		Root()
+}
+
+func platformImageOverride() llb.State {
+	return llb.Image("alpine:latest", llb.LinuxArm64).
+		Run(llb.Shlex("echo image override")).
+		Root()
+}
+
+func platformStateOverride() llb.State {
+	return llb.Image("alpine:latest").
+		Platform(ocispecs.Platform{OS: "linux", Architecture: "arm64"}).
+		Run(llb.Shlex("echo state override")).
+		Root()
+}
+
+func platformMixed() llb.State {
+	main := llb.Image("image1:latest").Run(llb.Shlex("cmd-main"))
+	sub := llb.Image("image2:latest", llb.LinuxArmel).Run(llb.Shlex("cmd-sub")).Root()
+	main.AddMount("/mnt", sub)
+	return main.Root()
+}
+
+func platformSharedSubgraph() llb.State {
+	shared := llb.Image("shared:latest", llb.LinuxArm64).
+		Run(llb.Shlex("cmd-shared")).
+		Root()
+	return llb.Image("main:latest").
+		Run(
+			llb.Shlex("cmd-main"),
+			llb.AddMount("/left", shared),
+			llb.AddMount("/right", shared),
+		).
 		Root()
 }
 

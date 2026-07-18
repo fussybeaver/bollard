@@ -457,6 +457,98 @@ fn parity_platform_arm_v7() {
 }
 
 #[test]
+fn parity_platform_image_override() {
+    assert_go_parity(
+        "platform_image_override",
+        include_bytes!("../testdata/golden/platform_image_override.llb.pb"),
+        || {
+            State::from(
+                Image::new("alpine:latest")
+                    .unwrap()
+                    .with_platform(Platform::LINUX_ARM64)
+                    .unwrap(),
+            )
+            .run(shlex("echo image override"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_platform_state_override() {
+    assert_go_parity(
+        "platform_state_override",
+        include_bytes!("../testdata/golden/platform_state_override.llb.pb"),
+        || {
+            alpine()
+                .with_platform(Platform::LINUX_ARM64)
+                .run(shlex("echo state override"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_platform_mixed() {
+    assert_go_parity(
+        "platform_mixed",
+        include_bytes!("../testdata/golden/platform_mixed.llb.pb"),
+        || {
+            let arm_v6 = Platform::new("linux", "arm").with_variant("v6");
+            let subgraph = State::from(
+                Image::new("image2:latest")
+                    .unwrap()
+                    .with_platform(arm_v6)
+                    .unwrap(),
+            )
+            .run(shlex("cmd-sub"))
+            .root()
+            .unwrap();
+            State::from(Image::new("image1:latest").unwrap())
+                .run(shlex("cmd-main"))
+                .add_mount("/mnt", subgraph)
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_platform_shared_subgraph() {
+    assert_go_parity(
+        "platform_shared_subgraph",
+        include_bytes!("../testdata/golden/platform_shared_subgraph.llb.pb"),
+        || {
+            let shared = State::from(
+                Image::new("shared:latest")
+                    .unwrap()
+                    .with_platform(Platform::LINUX_ARM64)
+                    .unwrap(),
+            )
+            .run(shlex("cmd-shared"))
+            .root()
+            .unwrap();
+            State::from(Image::new("main:latest").unwrap())
+                .run(shlex("cmd-main"))
+                .add_mount("/left", shared.clone())
+                .add_mount("/right", shared)
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
 fn parity_exec_default_meta() {
     assert_go_parity(
         "exec_default_meta",

@@ -1,5 +1,5 @@
 {
-  "generator_version": "phase5-differential-1",
+  "generator_version": "phase5-platform-constraints-1",
   "buildkit_version": "v0.31.1",
   "fixtures": [
     {
@@ -31,6 +31,30 @@
       "fixture": "platform_arm_v7",
       "sha256": "d631b61760488ef047e913ecefcc1b0cbb04447654fbc3027b36577e22dd6539",
       "platform": "linux/arm/v7"
+    },
+    {
+      "file": "platform_image_override.llb.pb",
+      "fixture": "platform_image_override",
+      "sha256": "84415668f89ccb29b022bec0386896b50200758c48f6ac40da3d1394b2cfa3d4",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_state_override.llb.pb",
+      "fixture": "platform_state_override",
+      "sha256": "5bd9607d65dd566445b1738353bdc07c609a10f0af797b08db11fcffb76f1b86",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_mixed.llb.pb",
+      "fixture": "platform_mixed",
+      "sha256": "0c605ecdd836144d60a766ecca2879664ac92ef412c1990c8cfaa0b80efb7b99",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_shared_subgraph.llb.pb",
+      "fixture": "platform_shared_subgraph",
+      "sha256": "e1c781c7134b47f8ba30aaf5a8e8f5db73b685edce95856090ff57fa83bd3d1b",
+      "platform": "linux/amd64"
     },
     {
       "file": "exec_default_meta.llb.pb",
