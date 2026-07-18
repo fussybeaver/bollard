@@ -76,22 +76,36 @@ fn test_version_podman() {
 fn test_downversioning() {
     let rt = Runtime::new().unwrap();
 
-    let docker = Docker::connect_with_unix(
-        "unix:///var/run/docker.sock",
-        120,
-        &ClientVersion {
-            major_version: 1,
-            minor_version: 24,
-        },
-    )
-    .unwrap();
-
     let fut = async move {
+        // Pin to the daemon's minimum supported API version, so that the pin
+        // is below the daemon's maximum on any engine.
+        let min_api_version = Docker::connect_with_unix_defaults()
+            .unwrap()
+            .negotiate_version()
+            .await
+            .unwrap()
+            .version()
+            .await
+            .unwrap()
+            .min_api_version
+            .unwrap();
+        let (major, minor) = min_api_version.split_once('.').unwrap();
+
+        let docker = Docker::connect_with_unix(
+            "unix:///var/run/docker.sock",
+            120,
+            &ClientVersion {
+                major_version: major.parse().unwrap(),
+                minor_version: minor.parse().unwrap(),
+            },
+        )
+        .unwrap();
+
         let docker = &docker.negotiate_version().await.unwrap();
 
         let _ = &docker.version().await.unwrap();
 
-        assert_eq!(docker.client_version().to_string(), "1.24".to_string());
+        assert_eq!(docker.client_version().to_string(), min_api_version);
     };
     rt.block_on(fut);
 }

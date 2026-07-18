@@ -1751,11 +1751,12 @@ impl Docker {
     ///     };
     /// ```
     pub async fn negotiate_version(self) -> Result<Self, Error> {
-        let req = self.build_request(
+        let req = self.build_versioned_request(
             "/version",
             Builder::new().method(Method::GET),
             None::<String>,
             Ok(BodyType::Left(Full::new(Bytes::new()))),
+            None,
         );
 
         let res = self
@@ -1844,12 +1845,30 @@ impl Docker {
     where
         O: Serialize,
     {
+        self.build_versioned_request(path, builder, query, payload, Some(self.client_version()))
+    }
+
+    /// Build a request with an explicit API version, or none at all. An unversioned
+    /// request is resolved against the daemon's default API version, which allows
+    /// [version negotiation](Docker::negotiate_version()) to succeed against daemons
+    /// that reject the client's default version as too new.
+    pub(crate) fn build_versioned_request<O>(
+        &self,
+        path: &str,
+        builder: Builder,
+        query: Option<O>,
+        payload: Result<BodyType, Error>,
+        client_version: Option<ClientVersion>,
+    ) -> Result<Request<BodyType>, Error>
+    where
+        O: Serialize,
+    {
         let uri = Uri::parse(
             &self.client_addr,
             &self.client_type,
             path,
             query,
-            &self.client_version(),
+            client_version.as_ref(),
         )?;
         let request_uri: hyper::Uri = uri.try_into()?;
         debug!("{}", request_uri);
