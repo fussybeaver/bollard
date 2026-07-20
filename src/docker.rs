@@ -1603,6 +1603,14 @@ impl Docker {
         }
     }
 
+    pub(crate) fn process_into_status(
+        &self,
+        req: Result<Request<BodyType>, Error>,
+    ) -> impl Future<Output = Result<StatusCode, Error>> {
+        let fut = self.process_request(req);
+        async move { Ok(fut.await?.status()) }
+    }
+
     pub(crate) fn process_into_body(
         &self,
         req: Result<Request<BodyType>, Error>,
