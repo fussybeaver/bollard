@@ -216,11 +216,6 @@ pub(crate) async fn solve(
     }
 
     let tear_down_handler = driver.get_tear_down_handler();
-    let mut control_client = driver
-        .grpc_handle(&session_id, services)
-        .await?
-        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
     let id = build_ref.unwrap_or_default();
 
@@ -240,7 +235,7 @@ pub(crate) async fn solve(
         frontend: String::from("dockerfile.v0"),
         frontend_attrs,
         frontend_inputs: HashMap::new(),
-        session: session_id,
+        session: session_id.clone(),
         exporters: vec![],
         internal: false,
         source_policy: None,
@@ -248,15 +243,326 @@ pub(crate) async fn solve(
         source_policy_session: String::new(),
     };
 
-    debug!("sending solve request: {:#?}", solve_request);
-    let res = control_client.solve(solve_request).await;
-    debug!("solve res: {:#?}", res);
+    execute_solve(
+        driver,
+        &session_id,
+        solve_request,
+        services,
+        tear_down_handler,
+    )
+    .await
+}
 
-    // clean up
+async fn execute_solve<D: Driver>(
+    driver: D,
+    session_id: &str,
+    request: SolveRequest,
+    services: Vec<GrpcServer>,
+    tear_down_handler: Box<dyn DriverTearDownHandler>,
+) -> Result<(), GrpcError> {
+    let mut control_client = match driver.grpc_handle(session_id, services).await {
+        Ok(client) => client
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
+        Err(error) => {
+            // A driver may have created resources before gRPC setup failed.
+            let _ = tear_down_handler.tear_down().await;
+            return Err(error);
+        }
+    };
 
-    tear_down_handler.tear_down().await?;
-    // tear_down?;
-    res?;
+    debug!("sending solve request: {:#?}", request);
+    let solve_result = control_client.solve(request).await.map_err(GrpcError::from);
+    debug!("solve res: {:#?}", solve_result);
 
-    Ok(())
+    let tear_down_result = tear_down_handler.tear_down().await;
+
+    // Preserve the original operation failure when cleanup also fails.
+    match solve_result {
+        Err(error) => Err(error),
+        Ok(_) => tear_down_result,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::SocketAddr,
+        pin::Pin,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
+
+    use bollard_buildkit_proto::moby::buildkit::v1::{
+        control_server::{Control, ControlServer},
+        BuildHistoryEvent, BuildHistoryRequest, BytesMessage, DiskUsageRequest, DiskUsageResponse,
+        InfoRequest, InfoResponse, ListWorkersRequest, ListWorkersResponse, PruneRequest,
+        SolveResponse, StatusRequest, StatusResponse, UpdateBuildHistoryRequest,
+        UpdateBuildHistoryResponse, UsageRecord,
+    };
+    use futures_util::stream::Empty;
+    use tokio::{net::TcpListener, sync::oneshot};
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::{
+        transport::{Channel, Endpoint, Server},
+        Request, Response, Status,
+    };
+
+    use super::*;
+
+    struct TestDriver {
+        endpoint: Endpoint,
+        setup_error: Option<Status>,
+    }
+
+    impl Driver for TestDriver {
+        async fn grpc_handle(
+            self,
+            session_id: &str,
+            _services: Vec<GrpcServer>,
+        ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>
+        {
+            if let Some(error) = self.setup_error {
+                return Err(error.into());
+            }
+
+            let interceptor = DriverInterceptor {
+                session_id: String::from(session_id),
+                metadata_grpc_method: Vec::new(),
+            };
+
+            let channel = self.endpoint.connect().await?;
+            Ok(ControlClient::with_interceptor(channel, interceptor))
+        }
+
+        fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
+            Box::new(TestTearDown::default())
+        }
+    }
+
+    #[derive(Default)]
+    struct TestTearDown {
+        calls: Arc<AtomicUsize>,
+        error: Option<Status>,
+    }
+
+    impl DriverTearDownHandler for TestTearDown {
+        fn tear_down<'a>(
+            &'a self,
+        ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let result = self
+                .error
+                .clone()
+                .map_or(Ok(()), |error| Err(GrpcError::from(error)));
+            Box::pin(std::future::ready(result))
+        }
+    }
+
+    struct TestControl {
+        solve_error: Option<Status>,
+    }
+
+    type EmptyUsageRecords = Empty<Result<UsageRecord, Status>>;
+    type EmptyStatusResponses = Empty<Result<StatusResponse, Status>>;
+    type EmptyBytesMessages = Empty<Result<BytesMessage, Status>>;
+    type EmptyBuildHistoryEvents = Empty<Result<BuildHistoryEvent, Status>>;
+
+    #[tonic::async_trait]
+    impl Control for TestControl {
+        type PruneStream = EmptyUsageRecords;
+        type StatusStream = EmptyStatusResponses;
+        type SessionStream = EmptyBytesMessages;
+        type ListenBuildHistoryStream = EmptyBuildHistoryEvents;
+
+        async fn disk_usage(
+            &self,
+            _request: Request<DiskUsageRequest>,
+        ) -> Result<Response<DiskUsageResponse>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn prune(
+            &self,
+            _request: Request<PruneRequest>,
+        ) -> Result<Response<Self::PruneStream>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn solve(
+            &self,
+            _request: Request<SolveRequest>,
+        ) -> Result<Response<SolveResponse>, Status> {
+            match &self.solve_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(Response::new(SolveResponse::default())),
+            }
+        }
+
+        async fn status(
+            &self,
+            _request: Request<StatusRequest>,
+        ) -> Result<Response<Self::StatusStream>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn session(
+            &self,
+            _request: Request<tonic::Streaming<BytesMessage>>,
+        ) -> Result<Response<Self::SessionStream>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn list_workers(
+            &self,
+            _request: Request<ListWorkersRequest>,
+        ) -> Result<Response<ListWorkersResponse>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn info(
+            &self,
+            _request: Request<InfoRequest>,
+        ) -> Result<Response<InfoResponse>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn listen_build_history(
+            &self,
+            _request: Request<BuildHistoryRequest>,
+        ) -> Result<Response<Self::ListenBuildHistoryStream>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+
+        async fn update_build_history(
+            &self,
+            _request: Request<UpdateBuildHistoryRequest>,
+        ) -> Result<Response<UpdateBuildHistoryResponse>, Status> {
+            Err(Status::unimplemented("test service"))
+        }
+    }
+
+    async fn start_test_server(
+        solve_error: Option<Status>,
+    ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+        let server = Server::builder()
+            .add_service(ControlServer::new(TestControl { solve_error }))
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+                let _ = shutdown_receiver.await;
+            });
+        let handle = tokio::spawn(async move {
+            server.await.unwrap();
+        });
+
+        (address, shutdown_sender, handle)
+    }
+
+    async fn stop_test_server(
+        shutdown_sender: oneshot::Sender<()>,
+        handle: tokio::task::JoinHandle<()>,
+    ) {
+        let _ = shutdown_sender.send(());
+        handle.await.unwrap();
+    }
+
+    fn test_driver(address: SocketAddr) -> TestDriver {
+        TestDriver {
+            endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
+            setup_error: None,
+        }
+    }
+
+    fn failing_test_driver() -> TestDriver {
+        TestDriver {
+            endpoint: Endpoint::from_static("http://127.0.0.1:1"),
+            setup_error: Some(Status::internal("grpc setup failed")),
+        }
+    }
+
+    fn teardown(calls: Arc<AtomicUsize>, error: Option<Status>) -> Box<dyn DriverTearDownHandler> {
+        Box::new(TestTearDown { calls, error })
+    }
+
+    fn status_code(result: Result<(), GrpcError>) -> tonic::Code {
+        match result {
+            Err(GrpcError::TonicStatus { err }) => err.code(),
+            other => panic!("expected tonic status error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_solve_tears_down_after_setup_failure() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = execute_solve(
+            failing_test_driver(),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), Some(Status::aborted("teardown failed"))),
+        )
+        .await;
+
+        assert_eq!(status_code(result), tonic::Code::Internal);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_solve_preserves_solve_failure_over_teardown_failure() {
+        let (address, shutdown_sender, handle) =
+            start_test_server(Some(Status::not_found("solve failed"))).await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = execute_solve(
+            test_driver(address),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), Some(Status::aborted("teardown failed"))),
+        )
+        .await;
+        stop_test_server(shutdown_sender, handle).await;
+
+        assert_eq!(status_code(result), tonic::Code::NotFound);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_solve_returns_teardown_failure_after_success() {
+        let (address, shutdown_sender, handle) = start_test_server(None).await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = execute_solve(
+            test_driver(address),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), Some(Status::aborted("teardown failed"))),
+        )
+        .await;
+        stop_test_server(shutdown_sender, handle).await;
+
+        assert_eq!(status_code(result), tonic::Code::Aborted);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_solve_succeeds_and_tears_down_once() {
+        let (address, shutdown_sender, handle) = start_test_server(None).await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = execute_solve(
+            test_driver(address),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), None),
+        )
+        .await;
+        stop_test_server(shutdown_sender, handle).await;
+
+        assert!(result.is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
 }
