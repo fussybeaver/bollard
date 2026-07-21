@@ -31,7 +31,7 @@ use crate::{
     grpc::{
         build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
         error::GrpcError,
-        io::GrpcFramedTransport,
+        io::GrpcTransport,
         registry::ImageRegistryOutput,
         BuildRef, GrpcServer,
     },
@@ -46,7 +46,7 @@ const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
 impl Service<tonic::transport::Uri> for DockerContainer {
-    type Response = GrpcFramedTransport;
+    type Response = GrpcTransport;
     type Error = GrpcError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -92,7 +92,10 @@ impl Service<tonic::transport::Uri> for DockerContainer {
             client.process_upgraded(req).await.map(|(read, write)| {
                 let output = Box::pin(read);
                 let input = Box::pin(write);
-                GrpcFramedTransport::new(output, input, capacity)
+                GrpcTransport {
+                    read: output,
+                    write: input,
+                }
             })
         };
 

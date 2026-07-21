@@ -17,7 +17,9 @@ use self::into_async_read::IntoAsyncRead;
 pub(crate) mod into_async_read;
 pub(crate) mod reader_stream;
 
-pub(crate) struct GrpcTransport {
+#[allow(missing_debug_implementations)]
+/// An unframed asynchronous transport for a BuildKit gRPC connection.
+pub struct GrpcTransport {
     pub(crate) read: Pin<Box<dyn AsyncRead + Send>>,
     pub(crate) write: Pin<Box<dyn AsyncWrite + Send>>,
 }
@@ -196,5 +198,34 @@ impl Write for GrpcFramedTransport {
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         tokio::io::AsyncWrite::poll_shutdown(self, cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::GrpcTransport;
+
+    #[tokio::test]
+    async fn grpc_transport_preserves_newline_and_binary_data() {
+        let expected = b"\0\0\0\0\0\0\0\x08payload\n\xff\x01\nlast".to_vec();
+        let (mut source, reader) = tokio::io::duplex(expected.len());
+        let payload = expected.clone();
+
+        let writer = tokio::spawn(async move {
+            source.write_all(&payload).await.unwrap();
+            source.shutdown().await.unwrap();
+        });
+
+        let mut transport = GrpcTransport {
+            read: Box::pin(reader),
+            write: Box::pin(tokio::io::sink()),
+        };
+        let mut actual = Vec::new();
+        transport.read_to_end(&mut actual).await.unwrap();
+
+        writer.await.unwrap();
+        assert_eq!(actual, expected);
     }
 }
