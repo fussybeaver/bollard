@@ -1544,10 +1544,14 @@ mod tests {
 
     use bollard_buildkit_proto::fsutil::types::packet::PacketType;
     use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
+    use bollard_buildkit_proto::moby::filesync::packet::file_send_client::FileSendClient;
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::transport::Server;
 
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
-        FileSendPacketImpl, MAX_FILE_SIZE,
+        FileSendPacketImpl, FileSendPacketServer, MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1592,6 +1596,34 @@ mod tests {
         }
     }
 
+    async fn start_file_send_server(
+        destination: std::path::PathBuf,
+    ) -> (
+        std::net::SocketAddr,
+        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+    ) {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = FileSendPacketServer::new(FileSendPacketImpl::new(&destination));
+        let task = tokio::spawn(async move {
+            Server::builder()
+                .add_service(server)
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+        });
+        (address, task)
+    }
+
+    fn transfer_sibling_names(root: &Path) -> Vec<String> {
+        std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".bollard-staging-") || name.contains(".bollard-backup-"))
+            .collect()
+    }
+
     #[test]
     fn test_new_id() {
         let s = super::new_id();
@@ -1603,6 +1635,123 @@ mod tests {
         for path in ["", ".", "..", "../escape", "/absolute", "foo/../bar"] {
             assert!(FileSendPacketImpl::validate_path(path).is_err(), "{path:?}");
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_replaces_destination_and_preserves_entries() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        fs::create_dir(&destination).await.unwrap();
+        fs::write(destination.join("sentinel"), b"old")
+            .await
+            .unwrap();
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let packets = vec![
+            packet_stat(Some(stat(
+                "subdir",
+                fsutil::FileMode::Dir.bits() | 0o750,
+                0,
+                "",
+            ))),
+            packet_stat(Some(stat("message", 0o640, 5, ""))),
+            packet_stat(Some(stat("empty", 0o600, 0, ""))),
+            packet_stat(Some(stat(
+                "link",
+                fsutil::FileMode::Symlink.bits() | 0o777,
+                0,
+                "message",
+            ))),
+            packet_stat(None),
+            packet_data(1, b"hello"),
+            packet_data(1, b""),
+            packet_data(2, b""),
+            packet_fin(),
+        ];
+        let response = client.diff_copy(tokio_stream::iter(packets)).await.unwrap();
+        let mut response_stream = response.into_inner();
+        let mut requests = Vec::new();
+        let mut sent_fin = false;
+        while let Some(packet) = response_stream.message().await.unwrap() {
+            if packet.r#type == PacketType::PacketReq as i32 {
+                requests.push(packet.id);
+            } else if packet.r#type == PacketType::PacketFin as i32 {
+                sent_fin = true;
+            }
+        }
+        assert_eq!(requests, vec![1, 2]);
+        assert!(sent_fin);
+        server_task.abort();
+        let _ = server_task.await;
+
+        assert!(!destination.join("sentinel").exists());
+        assert_eq!(
+            fs::read(destination.join("message")).await.unwrap(),
+            b"hello"
+        );
+        assert!(fs::read(destination.join("empty"))
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            fs::read_link(destination.join("link")).await.unwrap(),
+            Path::new("message")
+        );
+        assert!(transfer_sibling_names(root.path()).is_empty());
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                destination.join("message").metadata().unwrap().mode() & 0o777,
+                0o640
+            );
+            assert_eq!(
+                destination.join("empty").metadata().unwrap().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                destination.join("subdir").metadata().unwrap().mode() & 0o777,
+                0o750
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_cleans_staging_after_rejected_packet() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        fs::create_dir(&destination).await.unwrap();
+        fs::write(destination.join("sentinel"), b"old")
+            .await
+            .unwrap();
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let response = client
+            .diff_copy(tokio_stream::iter(vec![packet_stat(Some(stat(
+                "../escape",
+                0o600,
+                0,
+                "",
+            )))]))
+            .await
+            .unwrap();
+        let mut response_stream = response.into_inner();
+        let error = response_stream.message().await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        server_task.abort();
+        let _ = server_task.await;
+
+        assert_eq!(
+            fs::read(destination.join("sentinel")).await.unwrap(),
+            b"old"
+        );
+        assert!(transfer_sibling_names(root.path()).is_empty());
     }
 
     #[tokio::test]
