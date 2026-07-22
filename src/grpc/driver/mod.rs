@@ -1,4 +1,5 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::time::Duration;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use bollard_buildkit_proto::moby::{
     buildkit::{
@@ -9,7 +10,7 @@ use bollard_buildkit_proto::moby::{
     sshforward::v1::ssh_server::SshServer,
     upload::v1::upload_server::UploadServer,
 };
-use log::debug;
+use log::{debug, warn};
 // use tonic::service::Interceptor;
 use tonic::{
     codegen::InterceptedService, metadata::MetadataValue, service::Interceptor, transport::Channel,
@@ -38,6 +39,7 @@ const DEFAULT_MAX_SEND_MSG_SIZE: usize = 16 << 20;
 /// See https://github.com/containerd/containerd/blob/997f813b5cfdd7e120ee60d93b83ac6babbcfb1a/defaults/defaults.go#L20-L22
 /// Used by buildkit [here](https://github.com/moby/buildkit/blob/082e8d8cf3267ddd3a28de1e258eaec20ebe3bbe/cmd/buildkitd/main.go#L309)
 const DEFAULT_MAX_RECV_MSG_SIZE: usize = 16 << 20;
+const TEAR_DOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Buildkit Daemon driver opens a GRPC connection by connecting to a Buildkit Daemon over a TCP connection.
 pub mod buildkitd;
@@ -59,10 +61,80 @@ pub(crate) trait Driver {
     fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler>;
 }
 
-pub(crate) trait DriverTearDownHandler {
-    fn tear_down<'a>(
-        &'a self,
-    ) -> std::pin::Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + 'a>>;
+pub(crate) trait DriverTearDownHandler: Send + Sync {
+    fn tear_down(
+        &self,
+    ) -> std::pin::Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>>;
+}
+
+struct TearDownGuard {
+    handler: Arc<dyn DriverTearDownHandler>,
+    runtime: tokio::runtime::Handle,
+    task: Option<tokio::task::JoinHandle<Result<(), GrpcError>>>,
+    armed: bool,
+    started: bool,
+}
+
+impl TearDownGuard {
+    fn new(handler: Box<dyn DriverTearDownHandler>) -> Self {
+        Self {
+            handler: Arc::from(handler),
+            runtime: tokio::runtime::Handle::current(),
+            task: None,
+            armed: true,
+            started: false,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+
+    fn start(&mut self) {
+        if self.started {
+            return;
+        }
+
+        self.started = true;
+        let handler = Arc::clone(&self.handler);
+        self.task = Some(self.runtime.spawn(run_tear_down(handler)));
+    }
+
+    async fn tear_down(&mut self) -> Result<(), GrpcError> {
+        self.start();
+        self.task
+            .take()
+            .ok_or_else(|| GrpcError::TearDownTaskUnavailable)?
+            .await
+            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?
+    }
+}
+
+async fn run_tear_down(handler: Arc<dyn DriverTearDownHandler>) -> Result<(), GrpcError> {
+    tokio::time::timeout(TEAR_DOWN_TIMEOUT, handler.tear_down())
+        .await
+        .map_err(|_| {
+            GrpcError::from(tonic::Status::deadline_exceeded(
+                "driver teardown exceeded its timeout",
+            ))
+        })?
+}
+
+impl Drop for TearDownGuard {
+    fn drop(&mut self) {
+        if !self.armed || self.started {
+            // Dropping a JoinHandle detaches the task, allowing cleanup to finish after the
+            // solve future is cancelled or unwinds due to a panic.
+            return;
+        }
+
+        let handler = Arc::clone(&self.handler);
+        self.runtime.spawn(async move {
+            if let Err(error) = run_tear_down(handler).await {
+                warn!("failed to tear down BuildKit driver after cancellation: {error}");
+            }
+        });
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -260,13 +332,16 @@ async fn execute_solve<D: Driver>(
     services: Vec<GrpcServer>,
     tear_down_handler: Box<dyn DriverTearDownHandler>,
 ) -> Result<(), GrpcError> {
+    let mut tear_down_guard = TearDownGuard::new(tear_down_handler);
     let mut control_client = match driver.grpc_handle(session_id, services).await {
         Ok(client) => client
             .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
         Err(error) => {
             // A driver may have created resources before gRPC setup failed.
-            let _ = tear_down_handler.tear_down().await;
+            if let Err(teardown_error) = tear_down_guard.tear_down().await {
+                warn!("failed to tear down BuildKit driver after gRPC setup failure: {teardown_error}");
+            }
             return Err(error);
         }
     };
@@ -275,11 +350,16 @@ async fn execute_solve<D: Driver>(
     let solve_result = control_client.solve(request).await.map_err(GrpcError::from);
     debug!("solve res: {:#?}", solve_result);
 
-    let tear_down_result = tear_down_handler.tear_down().await;
+    let tear_down_result = tear_down_guard.tear_down().await;
 
     // Preserve the original operation failure when cleanup also fails.
     match solve_result {
-        Err(error) => Err(error),
+        Err(error) => {
+            if let Err(teardown_error) = tear_down_result {
+                warn!("failed to tear down BuildKit driver after solve failure: {teardown_error}");
+            }
+            Err(error)
+        }
         Ok(_) => tear_down_result,
     }
 }
@@ -302,7 +382,7 @@ mod tests {
         SolveResponse, StatusRequest, StatusResponse, UpdateBuildHistoryRequest,
         UpdateBuildHistoryResponse, UsageRecord,
     };
-    use futures_util::stream::Empty;
+    use futures_util::{stream::Empty, FutureExt};
     use tokio::{net::TcpListener, sync::oneshot};
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::{
@@ -315,6 +395,8 @@ mod tests {
     struct TestDriver {
         endpoint: Endpoint,
         setup_error: Option<Status>,
+        setup_pending: bool,
+        setup_panic: bool,
     }
 
     impl Driver for TestDriver {
@@ -326,6 +408,12 @@ mod tests {
         {
             if let Some(error) = self.setup_error {
                 return Err(error.into());
+            }
+            if self.setup_pending {
+                std::future::pending::<()>().await;
+            }
+            if self.setup_panic {
+                panic!("grpc setup panicked");
             }
 
             let interceptor = DriverInterceptor {
@@ -349,9 +437,10 @@ mod tests {
     }
 
     impl DriverTearDownHandler for TestTearDown {
-        fn tear_down<'a>(
-            &'a self,
-        ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + 'a>> {
+        fn tear_down(
+            &self,
+        ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>>
+        {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let result = self
                 .error
@@ -474,6 +563,8 @@ mod tests {
         TestDriver {
             endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
             setup_error: None,
+            setup_pending: false,
+            setup_panic: false,
         }
     }
 
@@ -481,6 +572,26 @@ mod tests {
         TestDriver {
             endpoint: Endpoint::from_static("http://127.0.0.1:1"),
             setup_error: Some(Status::internal("grpc setup failed")),
+            setup_pending: false,
+            setup_panic: false,
+        }
+    }
+
+    fn pending_test_driver() -> TestDriver {
+        TestDriver {
+            endpoint: Endpoint::from_static("http://127.0.0.1:1"),
+            setup_error: None,
+            setup_pending: true,
+            setup_panic: false,
+        }
+    }
+
+    fn panicking_test_driver() -> TestDriver {
+        TestDriver {
+            endpoint: Endpoint::from_static("http://127.0.0.1:1"),
+            setup_error: None,
+            setup_pending: false,
+            setup_panic: true,
         }
     }
 
@@ -563,6 +674,48 @@ mod tests {
         stop_test_server(shutdown_sender, handle).await;
 
         assert!(result.is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_solve_tears_down_after_cancellation() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let task = tokio::spawn(execute_solve(
+            pending_test_driver(),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), None),
+        ));
+
+        tokio::task::yield_now().await;
+        task.abort();
+        let _ = task.await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_solve_tears_down_after_panic() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = std::panic::AssertUnwindSafe(execute_solve(
+            panicking_test_driver(),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            teardown(calls.clone(), None),
+        ))
+        .catch_unwind()
+        .await;
+
+        assert!(result.is_err());
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
