@@ -869,7 +869,7 @@ impl FileSendPacket for FileSendPacketImpl {
         let out_stream = async_stream::try_stream! {
             debug!("starting FileSend packet export");
             let staging = prepare_staging_directory(&destination).await?;
-            let mut state = match FileReceiveState::new(staging.clone()).await {
+            let mut state = Some(match FileReceiveState::new(staging.clone()).await {
                 Ok(state) => state,
                 Err(error) => {
                     if let Err(cleanup_error) = remove_path(&staging).await {
@@ -878,51 +878,94 @@ impl FileSendPacket for FileSendPacketImpl {
                     Err::<FileReceiveState, Status>(error)?;
                     unreachable!();
                 }
-            };
+            });
 
-            let transfer_result = loop {
+            let mut receiver_sent_fin = false;
+            loop {
                 match in_stream.next().await {
                     Some(Ok(packet)) => {
-                        let sender_finished = packet.r#type == PacketType::PacketFin as i32;
-                        match state.handle_packet(packet).await {
-                            Ok(Some(out)) => yield out,
-                            Ok(None) => {}
-                            Err(error) => break Err(error),
+                        if receiver_sent_fin {
+                            if packet.r#type != PacketType::PacketFin as i32 {
+                                Err::<(), Status>(Status::failed_precondition(
+                                    "packet received after PACKET_FIN",
+                                    ))?;
+                            }
+                            break;
                         }
-                        if sender_finished {
-                            break state.finish_stream();
+
+                        let packet_result = state
+                            .as_mut()
+                            .expect("receiver state is present before PACKET_FIN")
+                            .handle_packet(packet)
+                            .await;
+                        match packet_result {
+                            Ok(Some(out)) => {
+                                if out.r#type == PacketType::PacketFin as i32 {
+                                    let completed_state = state
+                                        .take()
+                                        .expect("receiver state is present before finalization");
+                                    if let Err(error) = completed_state.finalize().await {
+                                        if let Err(cleanup_error) = remove_path(&staging).await {
+                                            warn!("failed to clean up unfinalized export: {cleanup_error}");
+                                        }
+                                        Err::<(), Status>(error)?;
+                                    }
+
+                                    if let Err(error) = publish_staging_directory(&staging, &destination).await {
+                                        if let Err(cleanup_error) = remove_path(&staging).await {
+                                            warn!("failed to clean up unpublished export: {cleanup_error}");
+                                        }
+                                        Err::<(), Status>(error)?;
+                                    }
+
+                                    receiver_sent_fin = true;
+                                    yield out;
+                                } else {
+                                    yield out;
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                if let Err(cleanup_error) = remove_path(&staging).await {
+                                    warn!("failed to clean up failed export: {cleanup_error}");
+                                }
+                                Err::<(), Status>(error)?;
+                            }
                         }
                     }
                     Some(Err(error)) => {
-                        break Err(Status::internal(format!("packet stream error: {error}")))
+                        if receiver_sent_fin {
+                            warn!("packet stream ended after export publish: {error}");
+                            break;
+                        }
+                        if let Err(cleanup_error) = remove_path(&staging).await {
+                            warn!("failed to clean up failed export: {cleanup_error}");
+                        }
+                        Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
                     }
-                    None => break state.finish_stream(),
+                    None => {
+                        if receiver_sent_fin {
+                            warn!("packet stream ended after export publish");
+                        } else {
+                            if let Err(cleanup_error) = remove_path(&staging).await {
+                                warn!("failed to clean up incomplete export: {cleanup_error}");
+                            }
+                            Err::<(), Status>(Status::failed_precondition(
+                                "file packet stream ended before PACKET_FIN",
+                            ))?;
+                        }
+                        break;
+                    }
                 }
-            };
-
-            if let Err(error) = transfer_result {
-                drop(state);
-                if let Err(cleanup_error) = remove_path(&staging).await {
-                    warn!("failed to clean up failed export: {cleanup_error}");
-                }
-                Err::<(), Status>(error)?;
-                unreachable!();
             }
 
-            if let Err(error) = state.finalize().await {
+            if !receiver_sent_fin {
                 if let Err(cleanup_error) = remove_path(&staging).await {
-                    warn!("failed to clean up unfinalized export: {cleanup_error}");
+                    warn!("failed to clean up incomplete export: {cleanup_error}");
                 }
-                Err::<(), Status>(error)?;
-                unreachable!();
-            }
-
-            if let Err(error) = publish_staging_directory(&staging, &destination).await {
-                if let Err(cleanup_error) = remove_path(&staging).await {
-                    warn!("failed to clean up unpublished export: {cleanup_error}");
-                }
-                Err::<(), Status>(error)?;
-                unreachable!();
+                Err::<(), Status>(Status::failed_precondition(
+                    "file packet stream ended before PACKET_FIN",
+                ))?;
             }
             info!("published FileSend packet export");
         };
@@ -1681,6 +1724,11 @@ mod tests {
                 requests.push(packet.id);
             } else if packet.r#type == PacketType::PacketFin as i32 {
                 sent_fin = true;
+                assert!(!destination.join("sentinel").exists());
+                assert_eq!(
+                    fs::read(destination.join("message")).await.unwrap(),
+                    b"hello"
+                );
             }
         }
         assert_eq!(requests, vec![1, 2]);
@@ -1717,6 +1765,40 @@ mod tests {
                 0o750
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_accepts_sender_eof_after_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let packets = vec![
+            packet_stat(Some(stat("message", 0o640, 5, ""))),
+            packet_stat(None),
+            packet_data(0, b"hello"),
+            packet_data(0, b""),
+        ];
+        let response = client.diff_copy(tokio_stream::iter(packets)).await.unwrap();
+        let mut response_stream = response.into_inner();
+        let mut sent_fin = false;
+        while let Some(packet) = response_stream.message().await.unwrap() {
+            if packet.r#type == PacketType::PacketFin as i32 {
+                sent_fin = true;
+                assert_eq!(
+                    fs::read(destination.join("message")).await.unwrap(),
+                    b"hello"
+                );
+            }
+        }
+
+        assert!(sent_fin);
+        assert!(transfer_sibling_names(root.path()).is_empty());
+        server_task.abort();
+        let _ = server_task.await;
     }
 
     #[tokio::test]
