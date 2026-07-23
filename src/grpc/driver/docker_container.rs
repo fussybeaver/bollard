@@ -9,8 +9,8 @@ use std::{
 
 use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
-    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountType,
-    SystemInfoCgroupDriverEnum,
+    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountType, RestartPolicy,
+    RestartPolicyNameEnum, SystemInfoCgroupDriverEnum,
 };
 use bytes::BytesMut;
 use futures_core::Future;
@@ -44,6 +44,32 @@ use super::{channel::BuildkitChannel, DriverInterceptor, ImageExporterEnum};
 pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
 const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
+const LABEL_MANAGED: &str = "com.github.fussybeaver.bollard.buildkit.managed";
+const LABEL_DRIVER: &str = "com.github.fussybeaver.bollard.buildkit.driver";
+const LABEL_LIFECYCLE_SCHEMA: &str = "com.github.fussybeaver.bollard.buildkit.lifecycle-schema";
+const LABEL_BUILDER_NAME: &str = "com.github.fussybeaver.bollard.buildkit.builder-name";
+const LABEL_STATE_VOLUME: &str = "com.github.fussybeaver.bollard.buildkit.state-volume";
+const LIFECYCLE_SCHEMA_VERSION: &str = "1";
+
+/// Controls the lifetime of a Docker container provisioned for BuildKit.
+///
+/// [`DockerContainerLifecycle::Persistent`] is the default. The stop and remove
+/// policies are retained for ephemeral workflows and will perform their complete
+/// cleanup as the lifecycle management API is expanded.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DockerContainerLifecycle {
+    /// Keep the BuildKit container and its state volume after a solve.
+    #[default]
+    Persistent,
+    /// Stop the BuildKit container after a solve while retaining its resources.
+    StopAfterSolve,
+    /// Remove the BuildKit container after a solve, optionally retaining state.
+    RemoveAfterSolve {
+        /// Keep the state volume when removing the container.
+        keep_state: bool,
+    },
+}
 
 impl Service<tonic::transport::Uri> for DockerContainer {
     type Response = GrpcFramedTransport;
@@ -129,7 +155,7 @@ pub struct DockerContainerBuilder {
 
 impl DockerContainerBuilder {
     /// Construct a new `DockerContainerBuilder` to build a [`DockerContainer`].
-    /// The docker context is torn down after solving a build.
+    /// The Docker container remains available after solving a build by default.
     ///
     /// # Arguments
     ///
@@ -145,14 +171,16 @@ impl DockerContainerBuilder {
                 cgroup_parent: None,
                 env: vec![],
                 args: vec![],
-                tear_down: true,
+                lifecycle: DockerContainerLifecycle::Persistent,
             },
         }
     }
 
-    /// Consume this builder to construct a [`DockerContainer`]
+    /// Consume this builder to construct a [`DockerContainer`].
     pub async fn bootstrap(mut self) -> Result<DockerContainer, GrpcError> {
         debug!("booting buildkit");
+
+        validate_container_name(&self.inner.name)?;
 
         if self.inner.net_mode.is_none() {
             self.network("host");
@@ -220,6 +248,26 @@ impl DockerContainerBuilder {
         self.inner.args.push(String::from(arg));
         self
     }
+
+    /// Set the stable name used for the BuildKit container and state volume.
+    ///
+    /// The name is validated when [`Self::bootstrap`] is called. If this method
+    /// is not used, a unique name is generated automatically.
+    pub fn name(&mut self, name: &str) -> &mut DockerContainerBuilder {
+        self.inner.name = String::from(name);
+        self
+    }
+
+    /// Set the lifecycle policy for the BuildKit container.
+    ///
+    /// The default policy is [`DockerContainerLifecycle::Persistent`].
+    pub fn lifecycle(
+        &mut self,
+        lifecycle: DockerContainerLifecycle,
+    ) -> &mut DockerContainerBuilder {
+        self.inner.lifecycle = lifecycle;
+        self
+    }
 }
 
 /// DockerContainer plumbing to communicate with `Buildkit` using an execution pipe.
@@ -239,7 +287,7 @@ pub struct DockerContainer {
     cgroup_parent: Option<String>,
     env: Vec<String>,
     args: Vec<String>,
-    tear_down: bool,
+    lifecycle: DockerContainerLifecycle,
 }
 
 impl super::Driver for DockerContainer {
@@ -258,13 +306,15 @@ impl super::Driver for DockerContainer {
     }
 
     fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
-        if self.tear_down {
-            Box::new(DockerContainerTearDownHandler {
-                name: String::from(&self.name),
-                docker: Docker::clone(&self.docker),
-            })
-        } else {
-            Box::new(NoopTearDownHandler {})
+        match self.lifecycle {
+            DockerContainerLifecycle::Persistent => Box::new(NoopTearDownHandler {}),
+            DockerContainerLifecycle::StopAfterSolve
+            | DockerContainerLifecycle::RemoveAfterSolve { .. } => {
+                Box::new(DockerContainerTearDownHandler {
+                    name: String::from(&self.name),
+                    docker: Docker::clone(&self.docker),
+                })
+            }
         }
     }
 }
@@ -274,6 +324,34 @@ impl DockerContainer {
     /// intend to run multiple instances building in parallel on the same host.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    fn state_volume_name(&self) -> String {
+        format!("{}_state", &self.name)
+    }
+
+    fn ownership_labels(&self) -> HashMap<String, String> {
+        HashMap::from([
+            (String::from(LABEL_MANAGED), String::from("true")),
+            (String::from(LABEL_DRIVER), String::from("docker-container")),
+            (
+                String::from(LABEL_LIFECYCLE_SCHEMA),
+                String::from(LIFECYCLE_SCHEMA_VERSION),
+            ),
+            (String::from(LABEL_BUILDER_NAME), self.name.clone()),
+            (String::from(LABEL_STATE_VOLUME), self.state_volume_name()),
+        ])
+    }
+
+    fn restart_policy(&self) -> Option<RestartPolicy> {
+        match self.lifecycle {
+            DockerContainerLifecycle::Persistent => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                ..Default::default()
+            }),
+            DockerContainerLifecycle::StopAfterSolve
+            | DockerContainerLifecycle::RemoveAfterSolve { .. } => None,
+        }
     }
 
     async fn create(&self) -> Result<(), GrpcError> {
@@ -334,7 +412,7 @@ impl DockerContainer {
             privileged: Some(true),
             mounts: Some(vec![Mount {
                 typ: Some(MountType::VOLUME),
-                source: Some(format!("{}_state", &self.name)),
+                source: Some(self.state_volume_name()),
                 target: Some(String::from(DEFAULT_STATE_DIR)),
                 ..Default::default()
             }]),
@@ -342,6 +420,7 @@ impl DockerContainer {
             network_mode,
             cgroup_parent,
             userns_mode,
+            restart_policy: self.restart_policy(),
             ..Default::default()
         };
 
@@ -350,6 +429,7 @@ impl DockerContainer {
             env: Some(Vec::clone(&self.env)),
             host_config: Some(host_config),
             cmd: Some(Vec::clone(&self.args)),
+            labels: Some(self.ownership_labels()),
             ..Default::default()
         };
 
@@ -423,6 +503,30 @@ impl DockerContainer {
             }
         }
     }
+}
+
+fn validate_container_name(name: &str) -> Result<(), GrpcError> {
+    if name.chars().count() < 2 {
+        return Err(tonic::Status::invalid_argument(format!(
+            "invalid Docker-container builder name `{name}`: expected [a-zA-Z0-9][a-zA-Z0-9_.-]+"
+        ))
+        .into());
+    }
+
+    let mut characters = name.chars();
+    let first = characters.next().expect("validated container name length");
+
+    if !first.is_ascii_alphanumeric()
+        || !characters
+            .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character))
+    {
+        return Err(tonic::Status::invalid_argument(format!(
+            "invalid Docker-container builder name `{name}`: expected [a-zA-Z0-9][a-zA-Z0-9_.-]+"
+        ))
+        .into());
+    }
+
+    Ok(())
 }
 
 struct DockerContainerTearDownHandler {
@@ -507,5 +611,118 @@ impl super::Image for DockerContainer {
             build_ref,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn builder() -> DockerContainerBuilder {
+        let docker = Docker::connect_with_http_defaults().unwrap();
+        DockerContainerBuilder::new(&docker)
+    }
+
+    #[test]
+    fn persistent_is_the_default_lifecycle() {
+        let builder = builder();
+
+        assert_eq!(
+            builder.inner.lifecycle,
+            DockerContainerLifecycle::Persistent
+        );
+    }
+
+    #[test]
+    fn lifecycle_policy_can_be_selected() {
+        let mut builder = builder();
+
+        builder.lifecycle(DockerContainerLifecycle::RemoveAfterSolve { keep_state: true });
+
+        assert_eq!(
+            builder.inner.lifecycle,
+            DockerContainerLifecycle::RemoveAfterSolve { keep_state: true }
+        );
+    }
+
+    #[test]
+    fn name_setter_updates_container_identity() {
+        let mut builder = builder();
+
+        builder.name("project-builder");
+
+        assert_eq!(builder.inner.name, "project-builder");
+        assert_eq!(builder.inner.state_volume_name(), "project-builder_state");
+    }
+
+    #[test]
+    fn valid_container_names_are_accepted() {
+        for name in ["ab", "project-builder", "A_b.c-1"] {
+            assert!(validate_container_name(name).is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn invalid_container_names_are_rejected() {
+        for name in [
+            "",
+            "a",
+            "-builder",
+            ".builder",
+            "builder/name",
+            "builder name",
+            "büilder",
+        ] {
+            assert!(validate_container_name(name).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn ownership_labels_identify_the_builder_and_state_volume() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        let labels = builder.inner.ownership_labels();
+
+        assert_eq!(labels.get(LABEL_MANAGED), Some(&String::from("true")));
+        assert_eq!(
+            labels.get(LABEL_DRIVER),
+            Some(&String::from("docker-container"))
+        );
+        assert_eq!(
+            labels.get(LABEL_LIFECYCLE_SCHEMA),
+            Some(&String::from(LIFECYCLE_SCHEMA_VERSION))
+        );
+        assert_eq!(
+            labels.get(LABEL_BUILDER_NAME),
+            Some(&String::from("project-builder"))
+        );
+        assert_eq!(
+            labels.get(LABEL_STATE_VOLUME),
+            Some(&String::from("project-builder_state"))
+        );
+    }
+
+    #[test]
+    fn persistent_builders_restart_unless_stopped() {
+        let builder = builder();
+
+        assert_eq!(
+            builder
+                .inner
+                .restart_policy()
+                .and_then(|policy| policy.name),
+            Some(RestartPolicyNameEnum::UNLESS_STOPPED)
+        );
+    }
+
+    #[test]
+    fn ephemeral_builders_do_not_restart_automatically() {
+        let mut builder = builder();
+
+        builder.lifecycle(DockerContainerLifecycle::StopAfterSolve);
+        assert!(builder.inner.restart_policy().is_none());
+
+        builder.lifecycle(DockerContainerLifecycle::RemoveAfterSolve { keep_state: false });
+        assert!(builder.inner.restart_policy().is_none());
     }
 }
