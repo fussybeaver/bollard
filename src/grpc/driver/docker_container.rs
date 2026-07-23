@@ -54,7 +54,6 @@ const LABEL_STATE_VOLUME: &str = "com.github.fussybeaver.bollard.buildkit.state-
 const LABEL_RESOURCE_ID: &str = "com.github.fussybeaver.bollard.buildkit.resource-id";
 const LIFECYCLE_SCHEMA_VERSION: &str = "1";
 const DOCKER_STOP_GRACE_PERIOD: u64 = 10;
-const DOCKER_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Controls the lifetime of a Docker container provisioned for BuildKit.
 ///
@@ -186,6 +185,9 @@ impl Service<tonic::transport::Uri> for DockerContainerConnector {
 /// a privileged Docker container and a dedicated state volume that remain after
 /// solves until explicitly stopped or removed. Select an ephemeral lifecycle when
 /// the daemon should not remain available after a solve.
+///
+/// Lifecycle operations use the Docker client's configured timeout by default.
+/// Override it with [`Self::timeout`] when a different lifecycle bound is needed.
 ///
 /// <div class="warning">
 ///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.
@@ -407,6 +409,17 @@ impl DockerContainerBuilder {
         self
     }
 
+    /// Set the timeout used by Docker-container lifecycle operations.
+    ///
+    /// The default is the timeout configured on the [`Docker`] client passed to
+    /// [`Self::new`]. This setting only changes the builder's cloned client and
+    /// does not modify the caller's client. It bounds Docker API and lifecycle
+    /// setup operations, not the duration of an active BuildKit solve.
+    pub fn timeout(&mut self, timeout: Duration) -> &mut DockerContainerBuilder {
+        self.inner.docker.set_timeout(timeout);
+        self
+    }
+
     /// Set the stable name used for the BuildKit container and state volume.
     ///
     /// The name is validated when [`Self::bootstrap`] is called. If this method
@@ -587,7 +600,13 @@ impl DockerContainer {
     }
 
     async fn desired_host_config(&self) -> Result<HostConfig, GrpcError> {
-        let info = self.docker.info().await?;
+        let info = docker_api_call(
+            &self.docker,
+            "inspect daemon",
+            &self.name,
+            self.docker.info(),
+        )
+        .await?;
         let cgroup_parent = match &info.cgroup_driver {
             Some(SystemInfoCgroupDriverEnum::CGROUPFS) => Some(
                 self.cgroup_parent
@@ -622,14 +641,18 @@ impl DockerContainer {
     }
 
     async fn create_volume(&self) -> Result<Volume, GrpcError> {
-        let volume = self
-            .docker
-            .create_volume(VolumeCreateRequest {
-                name: Some(self.state_volume_name()),
+        let volume_name = self.state_volume_name();
+        let volume = docker_api_call(
+            &self.docker,
+            "create volume",
+            &volume_name,
+            self.docker.create_volume(VolumeCreateRequest {
+                name: Some(volume_name.clone()),
                 labels: Some(self.ownership_labels()),
                 ..Default::default()
-            })
-            .await?;
+            }),
+        )
+        .await?;
         Ok(volume)
     }
 
@@ -649,10 +672,15 @@ impl DockerContainer {
                 .from_image(image_name)
                 .build();
 
-        self.docker
-            .create_image(Some(create_image_options), None, None)
-            .try_collect::<Vec<_>>()
-            .await?;
+        docker_api_call(
+            &self.docker,
+            "pull BuildKit image",
+            &self.name,
+            self.docker
+                .create_image(Some(create_image_options), None, None)
+                .try_collect::<Vec<_>>(),
+        )
+        .await?;
 
         debug!("creating container {}", &self.name);
 
@@ -670,20 +698,29 @@ impl DockerContainer {
             ..Default::default()
         };
 
-        self.docker
-            .create_container(Some(container_options), container_config)
-            .await?;
+        docker_api_call(
+            &self.docker,
+            "create container",
+            &self.name,
+            self.docker
+                .create_container(Some(container_options), container_config),
+        )
+        .await?;
 
         Ok(())
     }
 
     async fn start(&self) -> Result<(), GrpcError> {
-        self.docker
-            .start_container(
+        docker_api_call(
+            &self.docker,
+            "start container",
+            &self.name,
+            self.docker.start_container(
                 &self.name,
                 None::<crate::query_parameters::StartContainerOptions>,
-            )
-            .await?;
+            ),
+        )
+        .await?;
 
         Ok(())
     }
@@ -698,9 +735,11 @@ impl DockerContainer {
         let mut attempts = 1;
         let mut stdout = BytesMut::new();
         loop {
-            let exec = self
-                .docker
-                .create_exec(
+            let exec = docker_api_call(
+                &self.docker,
+                "create readiness exec",
+                &self.name,
+                self.docker.create_exec(
                     &self.name,
                     CreateExecOptions {
                         attach_stdout: Some(true),
@@ -708,21 +747,41 @@ impl DockerContainer {
                         cmd: Some(vec!["buildctl", "debug", "workers"]),
                         ..Default::default()
                     },
-                )
-                .await?
-                .id;
+                ),
+            )
+            .await?
+            .id;
 
             if let StartExecResults::Attached {
                 mut output,
                 input: _,
-            } = self.docker.start_exec(&exec, None).await?
+            } = docker_api_call(
+                &self.docker,
+                "start readiness exec",
+                &self.name,
+                self.docker.start_exec(&exec, None),
+            )
+            .await?
             {
-                while let Some(Ok(output)) = output.next().await {
-                    stdout.extend_from_slice(output.into_bytes().as_ref());
+                match tokio::time::timeout(self.docker.timeout(), async {
+                    while let Some(Ok(output)) = output.next().await {
+                        stdout.extend_from_slice(output.into_bytes().as_ref());
+                    }
+                })
+                .await
+                {
+                    Ok(()) => {}
+                    Err(_) => return Err(operation_timeout("readiness exec output", &self.name)),
                 }
             };
 
-            let inspect: ExecInspectResponse = self.docker.inspect_exec(&exec).await?;
+            let inspect: ExecInspectResponse = docker_api_call(
+                &self.docker,
+                "inspect readiness exec",
+                &self.name,
+                self.docker.inspect_exec(&exec),
+            )
+            .await?;
 
             match inspect {
                 ExecInspectResponse {
@@ -752,22 +811,25 @@ async fn inspect_container(
     docker: &Docker,
     name: &str,
 ) -> Result<Option<ContainerInspectResponse>, GrpcError> {
-    match docker.inspect_container(name, None).await {
+    match docker_api_call(
+        docker,
+        "inspect container",
+        name,
+        docker.inspect_container(name, None),
+    )
+    .await
+    {
         Ok(container) => Ok(Some(container)),
-        Err(crate::errors::Error::DockerResponseServerError {
-            status_code: 404, ..
-        }) => Ok(None),
-        Err(error) => Err(error.into()),
+        Err(error) if is_not_found_grpc(&error) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
 async fn inspect_volume(docker: &Docker, name: &str) -> Result<Option<Volume>, GrpcError> {
-    match docker.inspect_volume(name).await {
+    match docker_api_call(docker, "inspect volume", name, docker.inspect_volume(name)).await {
         Ok(volume) => Ok(Some(volume)),
-        Err(crate::errors::Error::DockerResponseServerError {
-            status_code: 404, ..
-        }) => Ok(None),
-        Err(error) => Err(error.into()),
+        Err(error) if is_not_found_grpc(&error) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -847,20 +909,25 @@ async fn stop_owned_container(
     }
 
     let container_id = container.id.as_deref().unwrap_or(name);
-    let stop = docker.stop_container(
-        container_id,
-        Some(
-            bollard_stubs::query_parameters::StopContainerOptionsBuilder::default()
-                .t(DOCKER_STOP_GRACE_PERIOD as i32)
-                .build(),
+    let stop = docker_api_call(
+        docker,
+        "stop container",
+        name,
+        docker.stop_container(
+            container_id,
+            Some(
+                bollard_stubs::query_parameters::StopContainerOptionsBuilder::default()
+                    .t(DOCKER_STOP_GRACE_PERIOD as i32)
+                    .build(),
+            ),
         ),
     );
 
-    match tokio::time::timeout(DOCKER_STOP_TIMEOUT, stop).await {
-        Ok(Ok(())) => Ok(StopResult::Stopped),
-        Ok(Err(error)) if is_not_found_docker(&error) => Ok(StopResult::Stopped),
-        Ok(Err(error)) => Err(error.into()),
-        Err(_) => Ok(StopResult::TimedOut),
+    match stop.await {
+        Ok(()) => Ok(StopResult::Stopped),
+        Err(error) if is_not_found_grpc(&error) => Ok(StopResult::Stopped),
+        Err(error) if is_operation_timeout(&error) => Ok(StopResult::TimedOut),
+        Err(error) => Err(error),
     }
 }
 
@@ -889,34 +956,43 @@ async fn remove_owned_resources(
             stop_owned_container(docker, name, container).await?,
             StopResult::TimedOut
         );
-        let remove = docker.remove_container(
-            &container_id,
-            Some(
-                bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
-                    .force(force)
-                    .build(),
+        let remove = docker_api_call(
+            docker,
+            "remove container",
+            name,
+            docker.remove_container(
+                &container_id,
+                Some(
+                    bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
+                        .force(force)
+                        .build(),
+                ),
             ),
         );
         match remove.await {
             Ok(()) => {}
-            Err(error) if is_not_found_docker(&error) => {}
-            Err(error) => return Err(error.into()),
+            Err(error) if is_not_found_grpc(&error) => {}
+            Err(error) => return Err(error),
         }
     }
 
     if volume.is_some() {
-        match docker
-            .remove_volume(
+        match docker_api_call(
+            docker,
+            "remove volume",
+            volume_name,
+            docker.remove_volume(
                 volume_name,
                 Some(
                     bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default().build(),
                 ),
-            )
-            .await
+            ),
+        )
+        .await
         {
             Ok(()) => {}
-            Err(error) if is_not_found_docker(&error) => {}
-            Err(error) => return Err(error.into()),
+            Err(error) if is_not_found_grpc(&error) => {}
+            Err(error) => return Err(error),
         }
     }
 
@@ -930,14 +1006,51 @@ fn operation_timeout(operation: &str, name: &str) -> GrpcError {
     }
 }
 
-fn is_not_found_docker(error: &crate::errors::Error) -> bool {
+async fn docker_api_call<T, F>(
+    docker: &Docker,
+    operation: &str,
+    name: &str,
+    future: F,
+) -> Result<T, GrpcError>
+where
+    F: Future<Output = Result<T, crate::errors::Error>>,
+{
+    docker_api_call_with_timeout(operation, name, docker.timeout(), future).await
+}
+
+async fn docker_api_call_with_timeout<T, F>(
+    operation: &str,
+    name: &str,
+    timeout: Duration,
+    future: F,
+) -> Result<T, GrpcError>
+where
+    F: Future<Output = Result<T, crate::errors::Error>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(crate::errors::Error::RequestTimeoutError)) => {
+            Err(operation_timeout(operation, name))
+        }
+        Ok(Err(error)) => Err(error.into()),
+        Err(_) => Err(operation_timeout(operation, name)),
+    }
+}
+
+fn is_not_found_grpc(error: &GrpcError) -> bool {
     matches!(
         error,
-        crate::errors::Error::DockerResponseServerError {
-            status_code: 404,
-            ..
+        GrpcError::DockerError {
+            err: crate::errors::Error::DockerResponseServerError {
+                status_code: 404,
+                ..
+            }
         }
     )
+}
+
+fn is_operation_timeout(error: &GrpcError) -> bool {
+    matches!(error, GrpcError::DockerContainerOperationTimeout { .. })
 }
 
 fn resource_conflict(resource: &str, name: &str, reason: impl Into<String>) -> GrpcError {
@@ -1191,16 +1304,20 @@ impl super::DriverTearDownHandler for BootstrapTearDownHandler {
                         .and_then(|labels| labels.get(LABEL_RESOURCE_ID))
                         == Some(&resource_id);
                     if owned {
-                        docker
-                            .remove_container(
+                        docker_api_call(
+                            &docker,
+                            "remove bootstrap container",
+                            &name,
+                            docker.remove_container(
                                 &name,
                                 Some(
                                     bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
                                         .force(true)
                                         .build(),
                                 ),
-                            )
-                            .await?;
+                            ),
+                        )
+                        .await?;
                     }
                 }
             }
@@ -1209,16 +1326,20 @@ impl super::DriverTearDownHandler for BootstrapTearDownHandler {
                 if let Some(volume) = inspect_volume(&docker, &volume_name).await? {
                     let owned = volume.labels.get(LABEL_RESOURCE_ID) == Some(&resource_id);
                     if owned {
-                        docker
-                            .remove_volume(
+                        docker_api_call(
+                            &docker,
+                            "remove bootstrap volume",
+                            &volume_name,
+                            docker.remove_volume(
                                 &volume_name,
                                 Some(
                                     bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default()
                                         .force(true)
                                         .build(),
                                 ),
-                            )
-                            .await?;
+                            ),
+                        )
+                        .await?;
                     }
                 }
             }
@@ -1412,6 +1533,66 @@ mod tests {
                 .keep_state(true)
                 .keep_state
         );
+    }
+
+    #[test]
+    fn timeout_inherits_from_docker_client() {
+        let docker = Docker::connect_with_http_defaults()
+            .unwrap()
+            .with_timeout(Duration::from_secs(7));
+        let builder = DockerContainerBuilder::new(&docker);
+
+        assert_eq!(builder.inner.docker.timeout(), Duration::from_secs(7));
+        assert_eq!(docker.timeout(), Duration::from_secs(7));
+    }
+
+    #[test]
+    fn timeout_override_only_changes_builder_client() {
+        let docker = Docker::connect_with_http_defaults()
+            .unwrap()
+            .with_timeout(Duration::from_secs(7));
+        let mut builder = DockerContainerBuilder::new(&docker);
+
+        builder.timeout(Duration::from_secs(3));
+
+        assert_eq!(builder.inner.docker.timeout(), Duration::from_secs(3));
+        assert_eq!(docker.timeout(), Duration::from_secs(7));
+    }
+
+    #[tokio::test]
+    async fn docker_api_calls_are_bounded() {
+        let error = docker_api_call_with_timeout(
+            "inspect container",
+            "project-builder",
+            Duration::from_millis(1),
+            async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                Ok::<(), crate::errors::Error>(())
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            GrpcError::DockerContainerOperationTimeout { operation, name }
+                if operation == "inspect container" && name == "project-builder"
+        ));
+
+        let error = docker_api_call_with_timeout(
+            "remove container",
+            "project-builder",
+            Duration::from_secs(1),
+            async { Err::<(), _>(crate::errors::Error::RequestTimeoutError) },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            GrpcError::DockerContainerOperationTimeout { operation, name }
+                if operation == "remove container" && name == "project-builder"
+        ));
     }
 
     #[test]
