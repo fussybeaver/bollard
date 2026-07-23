@@ -53,12 +53,14 @@ const LABEL_BUILDER_NAME: &str = "com.github.fussybeaver.bollard.buildkit.builde
 const LABEL_STATE_VOLUME: &str = "com.github.fussybeaver.bollard.buildkit.state-volume";
 const LABEL_RESOURCE_ID: &str = "com.github.fussybeaver.bollard.buildkit.resource-id";
 const LIFECYCLE_SCHEMA_VERSION: &str = "1";
+const DOCKER_STOP_GRACE_PERIOD: u64 = 10;
+const DOCKER_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Controls the lifetime of a Docker container provisioned for BuildKit.
 ///
-/// [`DockerContainerLifecycle::Persistent`] is the default. The stop and remove
-/// policies are retained for ephemeral workflows and will perform their complete
-/// cleanup as the lifecycle management API is expanded.
+/// [`DockerContainerLifecycle::Persistent`] is the default. Persistent builders
+/// remain available until callers explicitly invoke [`DockerContainer::stop`]
+/// or [`DockerContainer::remove`].
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DockerContainerLifecycle {
@@ -72,6 +74,25 @@ pub enum DockerContainerLifecycle {
         /// Keep the state volume when removing the container.
         keep_state: bool,
     },
+}
+
+/// Options for explicitly removing a Docker-container BuildKit builder.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DockerContainerRemoveOptions {
+    keep_state: bool,
+}
+
+impl DockerContainerRemoveOptions {
+    /// Construct options that remove the builder and its state volume.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Keep the state volume after removing the BuildKit container.
+    pub fn keep_state(mut self, keep_state: bool) -> Self {
+        self.keep_state = keep_state;
+        self
+    }
 }
 
 impl Service<tonic::transport::Uri> for DockerContainer {
@@ -436,11 +457,22 @@ impl super::Driver for DockerContainer {
     fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
         match self.lifecycle {
             DockerContainerLifecycle::Persistent => Box::new(NoopTearDownHandler {}),
-            DockerContainerLifecycle::StopAfterSolve
-            | DockerContainerLifecycle::RemoveAfterSolve { .. } => {
+            DockerContainerLifecycle::StopAfterSolve => Box::new(DockerContainerTearDownHandler {
+                name: String::from(&self.name),
+                volume_name: self.state_volume_name(),
+                resource_id: String::clone(&self.resource_id),
+                expected_labels: self.ownership_labels(),
+                docker: Docker::clone(&self.docker),
+                operation: DockerContainerTearDownOperation::Stop,
+            }),
+            DockerContainerLifecycle::RemoveAfterSolve { keep_state } => {
                 Box::new(DockerContainerTearDownHandler {
                     name: String::from(&self.name),
+                    volume_name: self.state_volume_name(),
+                    resource_id: String::clone(&self.resource_id),
+                    expected_labels: self.ownership_labels(),
                     docker: Docker::clone(&self.docker),
+                    operation: DockerContainerTearDownOperation::Remove { keep_state },
                 })
             }
         }
@@ -452,6 +484,44 @@ impl DockerContainer {
     /// intend to run multiple instances building in parallel on the same host.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Stop the managed BuildKit container without removing its resources.
+    ///
+    /// The operation is idempotent when the container is already stopped or
+    /// absent. A present container must still carry this driver's ownership
+    /// labels and resource identity.
+    pub async fn stop(&self) -> Result<(), GrpcError> {
+        let expected = self.ownership_labels();
+        let container =
+            inspect_owned_container(&self.docker, &self.name, &expected, &self.resource_id).await?;
+
+        let Some(container) = container else {
+            return Ok(());
+        };
+
+        match stop_owned_container(&self.docker, &self.name, container).await? {
+            StopResult::Stopped => Ok(()),
+            StopResult::TimedOut => Err(operation_timeout("stop", &self.name)),
+        }
+    }
+
+    /// Remove the managed BuildKit container and optionally its state volume.
+    ///
+    /// Removal is idempotent when the requested resources are already absent.
+    /// Ownership is validated before any resource is stopped or removed. The
+    /// container is stopped gracefully when necessary; a forced container
+    /// removal is used only when that bounded stop operation times out.
+    pub async fn remove(&self, options: DockerContainerRemoveOptions) -> Result<(), GrpcError> {
+        remove_owned_resources(
+            &self.docker,
+            &self.name,
+            &self.state_volume_name(),
+            &self.ownership_labels(),
+            &self.resource_id,
+            options.keep_state,
+        )
+        .await
     }
 
     fn state_volume_name(&self) -> String {
@@ -683,6 +753,175 @@ async fn inspect_volume(docker: &Docker, name: &str) -> Result<Option<Volume>, G
         }) => Ok(None),
         Err(error) => Err(error.into()),
     }
+}
+
+async fn inspect_owned_container(
+    docker: &Docker,
+    name: &str,
+    expected_labels: &HashMap<String, String>,
+    resource_id: &str,
+) -> Result<Option<ContainerInspectResponse>, GrpcError> {
+    let Some(container) = inspect_container(docker, name).await? else {
+        return Ok(None);
+    };
+
+    validate_owned_container(&container, name, expected_labels, resource_id)?;
+
+    Ok(Some(container))
+}
+
+fn validate_owned_container(
+    container: &ContainerInspectResponse,
+    name: &str,
+    expected_labels: &HashMap<String, String>,
+    resource_id: &str,
+) -> Result<(), GrpcError> {
+    let labels = container
+        .config
+        .as_ref()
+        .and_then(|config| config.labels.as_ref())
+        .ok_or_else(|| resource_conflict("container", name, "container labels are missing"))?;
+    if let Err(reason) = compatible_labels(labels, expected_labels, Some(resource_id)) {
+        return Err(resource_conflict("container", name, reason));
+    }
+
+    Ok(())
+}
+
+fn validate_owned_volume(
+    volume: &Volume,
+    name: &str,
+    expected_labels: &HashMap<String, String>,
+    resource_id: &str,
+) -> Result<(), GrpcError> {
+    if let Err(reason) = compatible_labels(&volume.labels, expected_labels, Some(resource_id)) {
+        return Err(resource_conflict("volume", name, reason));
+    }
+    if volume.driver != "local" {
+        return Err(resource_conflict(
+            "volume",
+            name,
+            format!("volume driver `{}` is not `local`", volume.driver),
+        ));
+    }
+
+    Ok(())
+}
+
+enum StopResult {
+    Stopped,
+    TimedOut,
+}
+
+async fn stop_owned_container(
+    docker: &Docker,
+    name: &str,
+    container: ContainerInspectResponse,
+) -> Result<StopResult, GrpcError> {
+    if matches!(
+        container.state.as_ref().and_then(|state| state.status),
+        Some(
+            ContainerStateStatusEnum::CREATED
+                | ContainerStateStatusEnum::EXITED
+                | ContainerStateStatusEnum::DEAD
+                | ContainerStateStatusEnum::REMOVING
+        )
+    ) {
+        return Ok(StopResult::Stopped);
+    }
+
+    let container_id = container.id.as_deref().unwrap_or(name);
+    let stop = docker.stop_container(
+        container_id,
+        Some(
+            bollard_stubs::query_parameters::StopContainerOptionsBuilder::default()
+                .t(DOCKER_STOP_GRACE_PERIOD as i32)
+                .build(),
+        ),
+    );
+
+    match tokio::time::timeout(DOCKER_STOP_TIMEOUT, stop).await {
+        Ok(Ok(())) => Ok(StopResult::Stopped),
+        Ok(Err(error)) if is_not_found_docker(&error) => Ok(StopResult::Stopped),
+        Ok(Err(error)) => Err(error.into()),
+        Err(_) => Ok(StopResult::TimedOut),
+    }
+}
+
+async fn remove_owned_resources(
+    docker: &Docker,
+    name: &str,
+    volume_name: &str,
+    expected_labels: &HashMap<String, String>,
+    resource_id: &str,
+    keep_state: bool,
+) -> Result<(), GrpcError> {
+    let container = inspect_owned_container(docker, name, expected_labels, resource_id).await?;
+    let volume = if keep_state {
+        None
+    } else {
+        let volume = inspect_volume(docker, volume_name).await?;
+        if let Some(volume) = &volume {
+            validate_owned_volume(volume, volume_name, expected_labels, resource_id)?;
+        }
+        volume
+    };
+
+    if let Some(container) = container {
+        let container_id = container.id.clone().unwrap_or_else(|| name.to_string());
+        let force = matches!(
+            stop_owned_container(docker, name, container).await?,
+            StopResult::TimedOut
+        );
+        let remove = docker.remove_container(
+            &container_id,
+            Some(
+                bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
+                    .force(force)
+                    .build(),
+            ),
+        );
+        match remove.await {
+            Ok(()) => {}
+            Err(error) if is_not_found_docker(&error) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    if volume.is_some() {
+        match docker
+            .remove_volume(
+                volume_name,
+                Some(
+                    bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default().build(),
+                ),
+            )
+            .await
+        {
+            Ok(()) => {}
+            Err(error) if is_not_found_docker(&error) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    Ok(())
+}
+
+fn operation_timeout(operation: &str, name: &str) -> GrpcError {
+    GrpcError::DockerContainerOperationTimeout {
+        operation: operation.to_string(),
+        name: name.to_string(),
+    }
+}
+
+fn is_not_found_docker(error: &crate::errors::Error) -> bool {
+    matches!(
+        error,
+        crate::errors::Error::DockerResponseServerError {
+            status_code: 404,
+            ..
+        }
+    )
 }
 
 fn resource_conflict(resource: &str, name: &str, reason: impl Into<String>) -> GrpcError {
@@ -999,21 +1238,56 @@ fn validate_container_name(name: &str) -> Result<(), GrpcError> {
 
 struct DockerContainerTearDownHandler {
     name: String,
+    volume_name: String,
+    resource_id: String,
+    expected_labels: HashMap<String, String>,
     docker: Docker,
+    operation: DockerContainerTearDownOperation,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DockerContainerTearDownOperation {
+    Stop,
+    Remove { keep_state: bool },
 }
 
 impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
     fn tear_down(&self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         let docker = Docker::clone(&self.docker);
         let name = String::clone(&self.name);
+        let volume_name = String::clone(&self.volume_name);
+        let resource_id = String::clone(&self.resource_id);
+        let expected_labels = self.expected_labels.clone();
+        let operation = self.operation;
         Box::pin(async move {
-            docker
-                .kill_container(
-                    &name,
-                    None::<bollard_stubs::query_parameters::KillContainerOptions>,
-                )
-                .map_err(GrpcError::from)
-                .await
+            match operation {
+                DockerContainerTearDownOperation::Stop => {
+                    let Some(container) =
+                        inspect_owned_container(&docker, &name, &expected_labels, &resource_id)
+                            .await?
+                    else {
+                        return Ok(());
+                    };
+                    if matches!(
+                        stop_owned_container(&docker, &name, container).await?,
+                        StopResult::TimedOut
+                    ) {
+                        return Err(operation_timeout("stop", &name));
+                    }
+                    Ok(())
+                }
+                DockerContainerTearDownOperation::Remove { keep_state } => {
+                    remove_owned_resources(
+                        &docker,
+                        &name,
+                        &volume_name,
+                        &expected_labels,
+                        &resource_id,
+                        keep_state,
+                    )
+                    .await
+                }
+            }
         })
     }
 }
@@ -1115,6 +1389,16 @@ mod tests {
     }
 
     #[test]
+    fn remove_options_delete_state_by_default() {
+        assert!(!DockerContainerRemoveOptions::new().keep_state);
+        assert!(
+            DockerContainerRemoveOptions::new()
+                .keep_state(true)
+                .keep_state
+        );
+    }
+
+    #[test]
     fn name_setter_updates_container_identity() {
         let mut builder = builder();
 
@@ -1199,6 +1483,57 @@ mod tests {
             compatible_volume(&builder.inner, &volume).unwrap(),
             builder.inner.resource_id
         );
+    }
+
+    #[test]
+    fn explicit_management_requires_matching_volume_identity() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        let mut labels = builder.inner.ownership_labels();
+        labels.insert(
+            String::from(LABEL_RESOURCE_ID),
+            String::from("different-resource"),
+        );
+        let volume = Volume {
+            name: builder.inner.state_volume_name(),
+            driver: String::from("local"),
+            labels,
+            ..Default::default()
+        };
+
+        assert!(validate_owned_volume(
+            &volume,
+            &volume.name,
+            &builder.inner.ownership_labels(),
+            &builder.inner.resource_id,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn explicit_management_requires_matching_container_identity() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        let mut labels = builder.inner.ownership_labels();
+        labels.insert(
+            String::from(LABEL_RESOURCE_ID),
+            String::from("different-resource"),
+        );
+        let container = ContainerInspectResponse {
+            config: Some(ContainerConfig {
+                labels: Some(labels),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert!(validate_owned_container(
+            &container,
+            &builder.inner.name,
+            &builder.inner.ownership_labels(),
+            &builder.inner.resource_id,
+        )
+        .is_err());
     }
 
     #[test]

@@ -15,6 +15,16 @@ pub enum GrpcError {
         /// The compatibility failure.
         reason: String,
     },
+    /// A Docker-container lifecycle operation exceeded its bounded timeout.
+    #[error(
+        "Docker-container lifecycle operation `{operation}` for `{name}` exceeded its timeout"
+    )]
+    DockerContainerOperationTimeout {
+        /// The lifecycle operation that timed out.
+        operation: String,
+        /// The Docker-container builder name.
+        name: String,
+    },
     /// The driver teardown task was unavailable when cleanup was requested.
     #[error("driver teardown task was unavailable")]
     TearDownTaskUnavailable,
