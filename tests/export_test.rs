@@ -105,8 +105,56 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "buildkit_providerless")]
+async fn persistent_builder_reuse_test(docker: Docker) -> Result<(), Error> {
+    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptions};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before the Unix epoch")
+        .as_nanos();
+    let name = format!("bollard_phase_b_{suffix}");
+    let volume_name = format!("{name}_state");
+
+    let result = async {
+        let mut first_builder = DockerContainerBuilder::new(&docker);
+        first_builder.name(&name);
+        let first = first_builder.bootstrap().await.unwrap();
+        let first_inspect = docker.inspect_container(first.name(), None).await?;
+        let first_id = first_inspect.id.clone();
+
+        let mut second_builder = DockerContainerBuilder::new(&docker);
+        second_builder.name(&name);
+        let second = second_builder.bootstrap().await.unwrap();
+        let second_inspect = docker.inspect_container(second.name(), None).await?;
+
+        assert_eq!(first_id, second_inspect.id);
+        assert_eq!(docker.inspect_volume(&volume_name).await?.name, volume_name);
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = docker
+        .remove_container(
+            &name,
+            Some(RemoveContainerOptionsBuilder::default().force(true).build()),
+        )
+        .await;
+    let _ = docker
+        .remove_volume(&volume_name, None::<RemoveVolumeOptions>)
+        .await;
+    result
+}
+
 #[test]
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_export_buildkit_oci() {
     connect_to_docker_and_run!(export_buildkit_oci_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_persistent_builder_reuse() {
+    connect_to_docker_and_run!(persistent_builder_reuse_test);
 }

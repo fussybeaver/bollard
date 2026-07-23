@@ -3,14 +3,16 @@
 use std::{
     collections::HashMap,
     pin::Pin,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
 
 use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
-    ContainerCreateBody, ExecInspectResponse, HostConfig, Mount, MountType, RestartPolicy,
-    RestartPolicyNameEnum, SystemInfoCgroupDriverEnum,
+    ContainerCreateBody, ContainerInspectResponse, ContainerStateStatusEnum, ExecInspectResponse,
+    HostConfig, Mount, MountType, RestartPolicy, RestartPolicyNameEnum, SystemInfoCgroupDriverEnum,
+    Volume, VolumeCreateRequest,
 };
 use bytes::BytesMut;
 use futures_core::Future;
@@ -49,6 +51,7 @@ const LABEL_DRIVER: &str = "com.github.fussybeaver.bollard.buildkit.driver";
 const LABEL_LIFECYCLE_SCHEMA: &str = "com.github.fussybeaver.bollard.buildkit.lifecycle-schema";
 const LABEL_BUILDER_NAME: &str = "com.github.fussybeaver.bollard.buildkit.builder-name";
 const LABEL_STATE_VOLUME: &str = "com.github.fussybeaver.bollard.buildkit.state-volume";
+const LABEL_RESOURCE_ID: &str = "com.github.fussybeaver.bollard.buildkit.resource-id";
 const LIFECYCLE_SCHEMA_VERSION: &str = "1";
 
 /// Controls the lifetime of a Docker container provisioned for BuildKit.
@@ -172,6 +175,7 @@ impl DockerContainerBuilder {
                 env: vec![],
                 args: vec![],
                 lifecycle: DockerContainerLifecycle::Persistent,
+                resource_id: crate::grpc::new_id(),
             },
         }
     }
@@ -186,18 +190,114 @@ impl DockerContainerBuilder {
             self.network("host");
         }
 
-        let tear_down_handler = Box::new(DockerContainerTearDownHandler {
+        let cleanup_state = Arc::new(Mutex::new(BootstrapCleanupState {
+            enabled: false,
+            container_created: false,
+            volume_created: false,
             name: String::from(&self.inner.name),
+            volume_name: self.inner.state_volume_name(),
+            resource_id: String::clone(&self.inner.resource_id),
+        }));
+        let tear_down_handler = Box::new(BootstrapTearDownHandler {
             docker: Docker::clone(&self.inner.docker),
+            state: Arc::clone(&cleanup_state),
         });
         let mut tear_down_guard = super::TearDownGuard::new(tear_down_handler);
 
-        self.inner.create().await?;
+        let host_config = self.inner.desired_host_config().await?;
+        let existing_container = inspect_container(&self.inner.docker, &self.inner.name).await?;
+        let existing_volume =
+            inspect_volume(&self.inner.docker, &self.inner.state_volume_name()).await?;
+
+        match (existing_container, existing_volume) {
+            (Some(container), Some(volume)) => {
+                let resource_id = compatible_volume(&self.inner, &volume)?;
+                compatible_container(&self.inner, &container, &host_config, &resource_id)?;
+                self.inner.resource_id = resource_id;
+
+                match container.state.and_then(|state| state.status) {
+                    Some(ContainerStateStatusEnum::RUNNING)
+                    | Some(ContainerStateStatusEnum::RESTARTING) => {}
+                    Some(ContainerStateStatusEnum::CREATED)
+                    | Some(ContainerStateStatusEnum::EXITED) => self.inner.start().await?,
+                    Some(status) => {
+                        return Err(resource_conflict(
+                            "container",
+                            &self.inner.name,
+                            format!("container is in unsupported state `{status}`"),
+                        ));
+                    }
+                    None => {
+                        return Err(resource_conflict(
+                            "container",
+                            &self.inner.name,
+                            "container state is unavailable",
+                        ));
+                    }
+                }
+            }
+            (None, Some(volume)) => {
+                self.inner.resource_id = compatible_volume(&self.inner, &volume)?;
+                update_cleanup_state(&cleanup_state, |state| {
+                    state.enabled = true;
+                    state.container_created = true;
+                    state.resource_id = String::clone(&self.inner.resource_id);
+                });
+                self.inner.create(&host_config).await?;
+            }
+            (Some(container), None) => {
+                if let Some(labels) = container
+                    .config
+                    .as_ref()
+                    .and_then(|config| config.labels.as_ref())
+                {
+                    if let Err(reason) =
+                        compatible_labels(labels, &self.inner.ownership_labels(), None)
+                    {
+                        return Err(resource_conflict("container", &self.inner.name, reason));
+                    }
+                } else {
+                    return Err(resource_conflict(
+                        "container",
+                        &self.inner.name,
+                        "container labels are missing",
+                    ));
+                }
+                return Err(resource_conflict(
+                    "volume",
+                    &self.inner.state_volume_name(),
+                    "managed container exists but its state volume is missing",
+                ));
+            }
+            (None, None) => {
+                update_cleanup_state(&cleanup_state, |state| {
+                    state.enabled = true;
+                    state.volume_created = true;
+                });
+                let volume = self.inner.create_volume().await?;
+                let resource_id = compatible_volume(&self.inner, &volume)?;
+                if resource_id != self.inner.resource_id {
+                    return Err(resource_conflict(
+                        "volume",
+                        &self.inner.state_volume_name(),
+                        "volume was created concurrently with a different resource identity",
+                    ));
+                }
+                update_cleanup_state(&cleanup_state, |state| state.container_created = true);
+                self.inner.create(&host_config).await?;
+            }
+        }
 
         debug!("starting container {}", &self.inner.name);
 
         let start_result: Result<(), GrpcError> = async {
-            self.inner.start().await?;
+            if !matches!(
+                self.inner.state().await?,
+                Some(ContainerStateStatusEnum::RUNNING)
+                    | Some(ContainerStateStatusEnum::RESTARTING)
+            ) {
+                self.inner.start().await?;
+            }
             self.inner.wait().await
         }
         .await;
@@ -288,6 +388,7 @@ pub struct DockerContainer {
     env: Vec<String>,
     args: Vec<String>,
     lifecycle: DockerContainerLifecycle,
+    resource_id: String,
 }
 
 impl super::Driver for DockerContainer {
@@ -340,6 +441,7 @@ impl DockerContainer {
             ),
             (String::from(LABEL_BUILDER_NAME), self.name.clone()),
             (String::from(LABEL_STATE_VOLUME), self.state_volume_name()),
+            (String::from(LABEL_RESOURCE_ID), self.resource_id.clone()),
         ])
     }
 
@@ -354,7 +456,71 @@ impl DockerContainer {
         }
     }
 
-    async fn create(&self) -> Result<(), GrpcError> {
+    #[cfg(test)]
+    fn desired_host_config_for_test(&self) -> HostConfig {
+        HostConfig {
+            privileged: Some(true),
+            mounts: Some(vec![Mount {
+                typ: Some(MountType::VOLUME),
+                source: Some(self.state_volume_name()),
+                target: Some(String::from(DEFAULT_STATE_DIR)),
+                ..Default::default()
+            }]),
+            init: Some(true),
+            network_mode: self.net_mode.clone(),
+            restart_policy: self.restart_policy(),
+            ..Default::default()
+        }
+    }
+
+    async fn desired_host_config(&self) -> Result<HostConfig, GrpcError> {
+        let info = self.docker.info().await?;
+        let cgroup_parent = match &info.cgroup_driver {
+            Some(SystemInfoCgroupDriverEnum::CGROUPFS) => Some(
+                self.cgroup_parent
+                    .clone()
+                    .unwrap_or_else(|| String::from("/docker/buildx")),
+            ),
+            _ => None,
+        };
+
+        let userns_mode = info.security_options.as_ref().and_then(|security_options| {
+            security_options
+                .iter()
+                .any(|option| option == "userns")
+                .then(|| String::from("host"))
+        });
+
+        Ok(HostConfig {
+            privileged: Some(true),
+            mounts: Some(vec![Mount {
+                typ: Some(MountType::VOLUME),
+                source: Some(self.state_volume_name()),
+                target: Some(String::from(DEFAULT_STATE_DIR)),
+                ..Default::default()
+            }]),
+            init: Some(true),
+            network_mode: self.net_mode.clone(),
+            cgroup_parent,
+            userns_mode,
+            restart_policy: self.restart_policy(),
+            ..Default::default()
+        })
+    }
+
+    async fn create_volume(&self) -> Result<Volume, GrpcError> {
+        let volume = self
+            .docker
+            .create_volume(VolumeCreateRequest {
+                name: Some(self.state_volume_name()),
+                labels: Some(self.ownership_labels()),
+                ..Default::default()
+            })
+            .await?;
+        Ok(volume)
+    }
+
+    async fn create(&self, host_config: &HostConfig) -> Result<(), GrpcError> {
         let image_name = if let Some(image) = &self.image {
             image
         } else {
@@ -382,52 +548,10 @@ impl DockerContainer {
                 .name(&self.name)
                 .build();
 
-        let info = self.docker.info().await?;
-        let cgroup_parent = match &info.cgroup_driver {
-            Some(SystemInfoCgroupDriverEnum::CGROUPFS) =>
-            // place all buildkit containers into this cgroup
-            {
-                Some(if let Some(cgroup_parent) = &self.cgroup_parent {
-                    String::clone(cgroup_parent)
-                } else {
-                    String::from("/docker/buildx")
-                })
-            }
-            _ => None,
-        };
-
-        let network_mode = self.net_mode.clone();
-
-        let userns_mode = if let Some(security_options) = &info.security_options {
-            if security_options.iter().any(|f| f == "userns") {
-                Some(String::from("host"))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let host_config = HostConfig {
-            privileged: Some(true),
-            mounts: Some(vec![Mount {
-                typ: Some(MountType::VOLUME),
-                source: Some(self.state_volume_name()),
-                target: Some(String::from(DEFAULT_STATE_DIR)),
-                ..Default::default()
-            }]),
-            init: Some(true),
-            network_mode,
-            cgroup_parent,
-            userns_mode,
-            restart_policy: self.restart_policy(),
-            ..Default::default()
-        };
-
         let container_config = ContainerCreateBody {
             image: Some(String::from(image_name)),
             env: Some(Vec::clone(&self.env)),
-            host_config: Some(host_config),
+            host_config: Some(host_config.clone()),
             cmd: Some(Vec::clone(&self.args)),
             labels: Some(self.ownership_labels()),
             ..Default::default()
@@ -449,6 +573,12 @@ impl DockerContainer {
             .await?;
 
         Ok(())
+    }
+
+    async fn state(&self) -> Result<Option<ContainerStateStatusEnum>, GrpcError> {
+        Ok(inspect_container(&self.docker, &self.name)
+            .await?
+            .and_then(|container| container.state.and_then(|state| state.status)))
     }
 
     async fn wait(&self) -> Result<(), GrpcError> {
@@ -502,6 +632,310 @@ impl DockerContainer {
                 }
             }
         }
+    }
+}
+
+async fn inspect_container(
+    docker: &Docker,
+    name: &str,
+) -> Result<Option<ContainerInspectResponse>, GrpcError> {
+    match docker.inspect_container(name, None).await {
+        Ok(container) => Ok(Some(container)),
+        Err(crate::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn inspect_volume(docker: &Docker, name: &str) -> Result<Option<Volume>, GrpcError> {
+    match docker.inspect_volume(name).await {
+        Ok(volume) => Ok(Some(volume)),
+        Err(crate::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn resource_conflict(resource: &str, name: &str, reason: impl Into<String>) -> GrpcError {
+    GrpcError::DockerContainerResourceConflict {
+        resource: resource.to_string(),
+        name: name.to_string(),
+        reason: reason.into(),
+    }
+}
+
+fn ownership_value<'a>(labels: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    labels.get(key).map(String::as_str)
+}
+
+fn compatible_labels(
+    labels: &HashMap<String, String>,
+    expected: &HashMap<String, String>,
+    resource_id: Option<&str>,
+) -> Result<(), String> {
+    for key in [
+        LABEL_MANAGED,
+        LABEL_DRIVER,
+        LABEL_LIFECYCLE_SCHEMA,
+        LABEL_BUILDER_NAME,
+        LABEL_STATE_VOLUME,
+    ] {
+        if ownership_value(labels, key) != expected.get(key).map(String::as_str) {
+            return Err(format!("ownership label `{key}` does not match"));
+        }
+    }
+
+    let actual_resource_id = ownership_value(labels, LABEL_RESOURCE_ID)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| String::from("resource ID label is missing"))?;
+    if let Some(resource_id) = resource_id {
+        if actual_resource_id != resource_id {
+            return Err(String::from("resource ID label does not match"));
+        }
+    }
+
+    Ok(())
+}
+
+fn compatible_volume(container: &DockerContainer, volume: &Volume) -> Result<String, GrpcError> {
+    let labels = &volume.labels;
+    if let Err(reason) = compatible_labels(labels, &container.ownership_labels(), None) {
+        return Err(resource_conflict("volume", &volume.name, reason));
+    }
+    if volume.driver != "local" {
+        return Err(resource_conflict(
+            "volume",
+            &volume.name,
+            format!("volume driver `{}` is not `local`", volume.driver),
+        ));
+    }
+
+    Ok(labels
+        .get(LABEL_RESOURCE_ID)
+        .expect("compatible_labels validated the resource ID")
+        .clone())
+}
+
+fn compatible_container(
+    container: &DockerContainer,
+    inspect: &ContainerInspectResponse,
+    host_config: &HostConfig,
+    resource_id: &str,
+) -> Result<(), GrpcError> {
+    let config = inspect.config.as_ref().ok_or_else(|| {
+        resource_conflict("container", &container.name, "container config is missing")
+    })?;
+    if let Err(reason) = compatible_labels(
+        config.labels.as_ref().ok_or_else(|| {
+            resource_conflict("container", &container.name, "container labels are missing")
+        })?,
+        &container.ownership_labels(),
+        Some(resource_id),
+    ) {
+        return Err(resource_conflict("container", &container.name, reason));
+    }
+
+    let expected_image = container.image.as_deref().unwrap_or(DEFAULT_IMAGE);
+    if config.image.as_deref() != Some(expected_image) {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "image reference does not match",
+        ));
+    }
+
+    if config.cmd.as_deref().unwrap_or_default() != container.args.as_slice() {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "BuildKit daemon arguments do not match",
+        ));
+    }
+
+    let existing_env = config.env.as_deref().unwrap_or_default();
+    for requested in &container.env {
+        if let Some((key, _)) = requested.split_once('=') {
+            if !existing_env.iter().any(|entry| entry == requested) {
+                return Err(resource_conflict(
+                    "container",
+                    &container.name,
+                    format!("environment override `{key}` does not match"),
+                ));
+            }
+        } else if existing_env.iter().any(|entry| {
+            entry
+                .split_once('=')
+                .is_some_and(|(key, _)| key == requested)
+        }) {
+            return Err(resource_conflict(
+                "container",
+                &container.name,
+                format!("environment variable `{requested}` was expected to be removed"),
+            ));
+        }
+    }
+
+    let existing_host_config = inspect.host_config.as_ref().ok_or_else(|| {
+        resource_conflict(
+            "container",
+            &container.name,
+            "host configuration is missing",
+        )
+    })?;
+    if existing_host_config.network_mode != host_config.network_mode
+        || existing_host_config.cgroup_parent != host_config.cgroup_parent
+        || existing_host_config.userns_mode != host_config.userns_mode
+    {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "host namespace configuration does not match",
+        ));
+    }
+    if existing_host_config.privileged != Some(true) || existing_host_config.init != Some(true) {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "container must be privileged and use init",
+        ));
+    }
+
+    let expected_restart = host_config
+        .restart_policy
+        .as_ref()
+        .and_then(|policy| policy.name);
+    let actual_restart = existing_host_config
+        .restart_policy
+        .as_ref()
+        .and_then(|policy| policy.name)
+        .filter(|policy| {
+            !matches!(
+                policy,
+                RestartPolicyNameEnum::EMPTY | RestartPolicyNameEnum::NO
+            )
+        });
+    if actual_restart != expected_restart {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "restart policy does not match",
+        ));
+    }
+
+    let matching_mounts = inspect
+        .mounts
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|mount| {
+            mount.typ.as_deref() == Some("volume")
+                && mount.name.as_deref() == Some(container.state_volume_name().as_str())
+                && mount.destination.as_deref() == Some(DEFAULT_STATE_DIR)
+                && mount.rw != Some(false)
+        })
+        .count();
+    if matching_mounts != 1 {
+        return Err(resource_conflict(
+            "container",
+            &container.name,
+            "state volume mount does not match",
+        ));
+    }
+
+    Ok(())
+}
+
+fn update_cleanup_state(
+    state: &Arc<Mutex<BootstrapCleanupState>>,
+    update: impl FnOnce(&mut BootstrapCleanupState),
+) {
+    if let Ok(mut state) = state.lock() {
+        update(&mut state);
+    }
+}
+
+#[derive(Debug)]
+struct BootstrapCleanupState {
+    enabled: bool,
+    container_created: bool,
+    volume_created: bool,
+    name: String,
+    volume_name: String,
+    resource_id: String,
+}
+
+struct BootstrapTearDownHandler {
+    docker: Docker,
+    state: Arc<Mutex<BootstrapCleanupState>>,
+}
+
+impl super::DriverTearDownHandler for BootstrapTearDownHandler {
+    fn tear_down(&self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + Send + 'static>> {
+        let docker = Docker::clone(&self.docker);
+        let state = Arc::clone(&self.state);
+        Box::pin(async move {
+            let (enabled, container_created, volume_created, name, volume_name, resource_id) = {
+                let state = state
+                    .lock()
+                    .map_err(|_| tonic::Status::internal("bootstrap cleanup state was poisoned"))?;
+                (
+                    state.enabled,
+                    state.container_created,
+                    state.volume_created,
+                    state.name.clone(),
+                    state.volume_name.clone(),
+                    state.resource_id.clone(),
+                )
+            };
+            if !enabled {
+                return Ok(());
+            }
+
+            if container_created {
+                if let Some(container) = inspect_container(&docker, &name).await? {
+                    let owned = container
+                        .config
+                        .as_ref()
+                        .and_then(|config| config.labels.as_ref())
+                        .and_then(|labels| labels.get(LABEL_RESOURCE_ID))
+                        == Some(&resource_id);
+                    if owned {
+                        docker
+                            .remove_container(
+                                &name,
+                                Some(
+                                    bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
+                                        .force(true)
+                                        .build(),
+                                ),
+                            )
+                            .await?;
+                    }
+                }
+            }
+
+            if volume_created {
+                if let Some(volume) = inspect_volume(&docker, &volume_name).await? {
+                    let owned = volume.labels.get(LABEL_RESOURCE_ID) == Some(&resource_id);
+                    if owned {
+                        docker
+                            .remove_volume(
+                                &volume_name,
+                                Some(
+                                    bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default()
+                                        .force(true)
+                                        .build(),
+                                ),
+                            )
+                            .await?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 
@@ -617,6 +1051,7 @@ impl super::Image for DockerContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bollard_stubs::models::{ContainerConfig, ContainerState, MountPoint};
 
     fn builder() -> DockerContainerBuilder {
         let docker = Docker::connect_with_http_defaults().unwrap();
@@ -700,6 +1135,107 @@ mod tests {
             labels.get(LABEL_STATE_VOLUME),
             Some(&String::from("project-builder_state"))
         );
+        assert_eq!(
+            labels.get(LABEL_RESOURCE_ID),
+            Some(&builder.inner.resource_id)
+        );
+    }
+
+    #[test]
+    fn compatible_labels_require_matching_resource_identity() {
+        let builder = builder();
+        let labels = builder.inner.ownership_labels();
+
+        assert!(compatible_labels(&labels, &labels, Some(&builder.inner.resource_id)).is_ok());
+        assert!(compatible_labels(&labels, &labels, Some("different-resource")).is_err());
+    }
+
+    #[test]
+    fn compatible_volume_requires_bollard_ownership() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        let volume = Volume {
+            name: builder.inner.state_volume_name(),
+            driver: String::from("local"),
+            labels: builder.inner.ownership_labels(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            compatible_volume(&builder.inner, &volume).unwrap(),
+            builder.inner.resource_id
+        );
+    }
+
+    #[test]
+    fn compatible_container_requires_the_expected_state_mount() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        builder.network("host");
+
+        let host_config = builder.inner.desired_host_config_for_test();
+        let inspect = ContainerInspectResponse {
+            state: Some(ContainerState {
+                status: Some(ContainerStateStatusEnum::RUNNING),
+                ..Default::default()
+            }),
+            host_config: Some(host_config.clone()),
+            config: Some(ContainerConfig {
+                image: Some(String::from(DEFAULT_IMAGE)),
+                cmd: Some(Vec::clone(&builder.inner.args)),
+                env: Some(Vec::clone(&builder.inner.env)),
+                labels: Some(builder.inner.ownership_labels()),
+                ..Default::default()
+            }),
+            mounts: Some(vec![MountPoint {
+                typ: Some(String::from("volume")),
+                name: Some(builder.inner.state_volume_name()),
+                destination: Some(String::from(DEFAULT_STATE_DIR)),
+                rw: Some(true),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        assert!(compatible_container(
+            &builder.inner,
+            &inspect,
+            &host_config,
+            &builder.inner.resource_id
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn incompatible_container_image_is_rejected() {
+        let mut builder = builder();
+        builder.name("project-builder");
+        let host_config = builder.inner.desired_host_config_for_test();
+        let inspect = ContainerInspectResponse {
+            host_config: Some(host_config.clone()),
+            config: Some(ContainerConfig {
+                image: Some(String::from("moby/buildkit:other")),
+                cmd: Some(Vec::clone(&builder.inner.args)),
+                labels: Some(builder.inner.ownership_labels()),
+                ..Default::default()
+            }),
+            mounts: Some(vec![MountPoint {
+                typ: Some(String::from("volume")),
+                name: Some(builder.inner.state_volume_name()),
+                destination: Some(String::from(DEFAULT_STATE_DIR)),
+                rw: Some(true),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        assert!(compatible_container(
+            &builder.inner,
+            &inspect,
+            &host_config,
+            &builder.inner.resource_id
+        )
+        .is_err());
     }
 
     #[test]

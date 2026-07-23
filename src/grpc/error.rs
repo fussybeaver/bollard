@@ -5,6 +5,16 @@ use std::num::TryFromIntError;
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
+    /// A Docker-container BuildKit resource exists but does not match the requested builder.
+    #[error("BuildKit Docker-container {resource} `{name}` is incompatible: {reason}")]
+    DockerContainerResourceConflict {
+        /// The conflicting resource kind.
+        resource: String,
+        /// The resource name.
+        name: String,
+        /// The compatibility failure.
+        reason: String,
+    },
     /// The driver teardown task was unavailable when cleanup was requested.
     #[error("driver teardown task was unavailable")]
     TearDownTaskUnavailable,
