@@ -84,7 +84,31 @@ impl Service<tonic::transport::Uri> for DockerContainer {
     }
 
     fn call(&mut self, _req: tonic::transport::Uri) -> Self::Future {
-        let client = Docker::clone(&self.docker);
+        DockerContainerConnector {
+            client: Docker::clone(&self.docker),
+            name: String::clone(&self.name),
+        }
+        .call(_req)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DockerContainerConnector {
+    client: Docker,
+    name: String,
+}
+
+impl Service<tonic::transport::Uri> for DockerContainerConnector {
+    type Response = GrpcFramedTransport;
+    type Error = GrpcError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _req: tonic::transport::Uri) -> Self::Future {
+        let client = Docker::clone(&self.client);
         let name = String::clone(&self.name);
 
         let fut = async move {
@@ -168,7 +192,6 @@ impl DockerContainerBuilder {
             inner: DockerContainer {
                 name: format!("bollard_buildkit_{}", crate::grpc::new_id()),
                 docker: Docker::clone(docker),
-                session_id: String::from(&crate::grpc::new_id()),
                 net_mode: None,
                 image: None,
                 cgroup_parent: None,
@@ -374,14 +397,15 @@ impl DockerContainerBuilder {
 /// Underneath, the `buildkit` CLI will open a stdin/stdout pipe, which we can hook into to call
 /// further GRPC methods.
 ///
-/// Construct a `DockerContainer` using a [`DockerContainerBuilder`].
+/// Construct a `DockerContainer` using a [`DockerContainerBuilder`]. A persistent driver can be
+/// borrowed for multiple solves; each solve opens a fresh Docker exec transport and BuildKit
+/// session while retaining the daemon and state volume.
 ///
 ///
 #[derive(Debug)]
 pub struct DockerContainer {
     name: String,
     docker: Docker,
-    session_id: String,
     net_mode: Option<String>,
     image: Option<String>,
     cgroup_parent: Option<String>,
@@ -393,12 +417,15 @@ pub struct DockerContainer {
 
 impl super::Driver for DockerContainer {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
         let channel = Endpoint::try_from("http://[::]:50051")?
-            .connect_with_connector(self)
+            .connect_with_connector(DockerContainerConnector {
+                client: Docker::clone(&self.docker),
+                name: String::clone(&self.name),
+            })
             .await?;
 
         let channel = BuildkitChannel::new(channel);
@@ -784,9 +811,12 @@ fn compatible_container(
             "host configuration is missing",
         )
     })?;
-    if existing_host_config.network_mode != host_config.network_mode
-        || existing_host_config.cgroup_parent != host_config.cgroup_parent
-        || existing_host_config.userns_mode != host_config.userns_mode
+    if normalized_host_config_value(existing_host_config.network_mode.as_ref())
+        != normalized_host_config_value(host_config.network_mode.as_ref())
+        || normalized_host_config_value(existing_host_config.cgroup_parent.as_ref())
+            != normalized_host_config_value(host_config.cgroup_parent.as_ref())
+        || normalized_host_config_value(existing_host_config.userns_mode.as_ref())
+            != normalized_host_config_value(host_config.userns_mode.as_ref())
     {
         return Err(resource_conflict(
             "container",
@@ -845,6 +875,10 @@ fn compatible_container(
     }
 
     Ok(())
+}
+
+fn normalized_host_config_value(value: Option<&String>) -> Option<&str> {
+    value.map(String::as_str).filter(|value| !value.is_empty())
 }
 
 fn update_cleanup_state(
@@ -996,7 +1030,7 @@ impl super::DriverTearDownHandler for NoopTearDownHandler {
 
 impl super::Export for DockerContainer {
     async fn export(
-        self,
+        &self,
         exporter_request: ImageExporterEnum,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -1025,7 +1059,7 @@ impl super::Export for DockerContainer {
 
 impl super::Image for DockerContainer {
     async fn registry(
-        self,
+        &self,
         output: ImageRegistryOutput,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -1174,12 +1208,15 @@ mod tests {
         builder.network("host");
 
         let host_config = builder.inner.desired_host_config_for_test();
+        let mut existing_host_config = host_config.clone();
+        existing_host_config.cgroup_parent = Some(String::new());
+        existing_host_config.userns_mode = Some(String::new());
         let inspect = ContainerInspectResponse {
             state: Some(ContainerState {
                 status: Some(ContainerStateStatusEnum::RUNNING),
                 ..Default::default()
             }),
-            host_config: Some(host_config.clone()),
+            host_config: Some(existing_host_config),
             config: Some(ContainerConfig {
                 image: Some(String::from(DEFAULT_IMAGE)),
                 cmd: Some(Vec::clone(&builder.inner.args)),

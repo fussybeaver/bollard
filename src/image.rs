@@ -899,7 +899,7 @@ impl Docker {
             services.push(crate::grpc::GrpcServer::Ssh(ssh));
         }
 
-        crate::grpc::driver::Driver::grpc_handle(driver, &id, services).await?;
+        crate::grpc::driver::Driver::grpc_handle(&driver, &id, services).await?;
 
         Ok(())
     }

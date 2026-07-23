@@ -87,7 +87,7 @@ async fn main() {
         creds_hsh.insert("localhost:5000", credentials);
 
         bollard::grpc::driver::Image::registry(
-            driver,
+            &driver,
             output,
             frontend_opts,
             load_input,

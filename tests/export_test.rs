@@ -68,7 +68,7 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Export::export(
-        driver,
+        &driver,
         bollard::grpc::driver::ImageExporterEnum::OCI(output),
         frontend_opts,
         load_input,
@@ -106,7 +106,7 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
 }
 
 #[cfg(feature = "buildkit_providerless")]
-async fn persistent_builder_reuse_test(docker: Docker) -> Result<(), Error> {
+async fn persistent_builder_multi_solve_test(docker: Docker) -> Result<(), Error> {
     use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -116,13 +116,48 @@ async fn persistent_builder_reuse_test(docker: Docker) -> Result<(), Error> {
         .as_nanos();
     let name = format!("bollard_phase_b_{suffix}");
     let volume_name = format!("{name}_state");
+    let first_output = std::path::PathBuf::from(format!("/tmp/{name}_first.tar"));
+    let second_output = std::path::PathBuf::from(format!("/tmp/{name}_second.tar"));
 
     let result = async {
+        let dockerfile = b"FROM scratch\n";
+        let mut header = tar::Header::new_gnu();
+        header.set_path("Dockerfile").unwrap();
+        header.set_size(dockerfile.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        let mut tar = tar::Builder::new(Vec::new());
+        tar.append(&header, dockerfile.as_slice()).unwrap();
+        let uncompressed = tar.into_inner().unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&uncompressed).unwrap();
+        let compressed = encoder.finish().unwrap();
+
         let mut first_builder = DockerContainerBuilder::new(&docker);
         first_builder.name(&name);
         let first = first_builder.bootstrap().await.unwrap();
         let first_inspect = docker.inspect_container(first.name(), None).await?;
         let first_id = first_inspect.id.clone();
+
+        for output_path in [&first_output, &second_output] {
+            let output = bollard::grpc::export::ImageExporterOutputBuilder::new(
+                "bollard-phase-c-scratch:latest",
+            )
+            .dest(output_path);
+            bollard::grpc::driver::Export::export(
+                &first,
+                bollard::grpc::driver::ImageExporterEnum::OCI(output),
+                bollard::grpc::build::ImageBuildFrontendOptions::default(),
+                bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(
+                    compressed.clone(),
+                )),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+            assert!(output_path.exists());
+        }
 
         let mut second_builder = DockerContainerBuilder::new(&docker);
         second_builder.name(&name);
@@ -144,6 +179,8 @@ async fn persistent_builder_reuse_test(docker: Docker) -> Result<(), Error> {
     let _ = docker
         .remove_volume(&volume_name, None::<RemoveVolumeOptions>)
         .await;
+    let _ = std::fs::remove_file(&first_output);
+    let _ = std::fs::remove_file(&second_output);
     result
 }
 
@@ -155,6 +192,6 @@ fn integration_test_export_buildkit_oci() {
 
 #[test]
 #[cfg(feature = "buildkit_providerless")]
-fn integration_test_persistent_builder_reuse() {
-    connect_to_docker_and_run!(persistent_builder_reuse_test);
+fn integration_test_persistent_builder_multi_solve() {
+    connect_to_docker_and_run!(persistent_builder_multi_solve_test);
 }

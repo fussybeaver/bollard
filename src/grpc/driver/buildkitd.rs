@@ -36,7 +36,7 @@ impl BuildkitDaemon {
 
 impl Driver for BuildkitDaemon {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<super::GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
@@ -63,7 +63,7 @@ impl DriverTearDownHandler for BuildkitDaemonTearDownHandler {
 
 impl super::Build for BuildkitDaemon {
     async fn docker_build(
-        self,
+        &self,
         name: &str,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -89,7 +89,7 @@ impl super::Build for BuildkitDaemon {
 
 impl super::Export for BuildkitDaemon {
     async fn export(
-        self,
+        &self,
         exporter_request: ImageExporterEnum,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -118,7 +118,7 @@ impl super::Export for BuildkitDaemon {
 
 impl super::Image for BuildkitDaemon {
     async fn registry(
-        self,
+        &self,
         output: ImageRegistryOutput,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,

@@ -733,7 +733,7 @@ COPY --from=builder1 /token /",
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -861,7 +861,7 @@ RUN touch bollard.txt
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -926,7 +926,7 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1050,7 +1050,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1176,7 +1176,7 @@ ENTRYPOINT ls buildkit-bollard.txt
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1275,7 +1275,7 @@ RUN touch bollard.txt
         bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,

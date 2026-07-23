@@ -61,7 +61,7 @@ async fn main() {
         creds_hsh.insert("localhost:5000", credentials);
 
         bollard::grpc::driver::Export::export(
-            driver,
+            &driver,
             bollard::grpc::driver::ImageExporterEnum::OCI(output),
             frontend_opts,
             load_input,

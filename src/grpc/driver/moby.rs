@@ -42,7 +42,7 @@ impl Moby {
 
 impl Driver for Moby {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
@@ -134,7 +134,7 @@ impl super::DriverTearDownHandler for MobyTearDownHandler {
 
 impl super::Build for Moby {
     async fn docker_build(
-        self,
+        &self,
         name: &str,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,

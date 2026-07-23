@@ -36,7 +36,7 @@ impl BuildkitChannel {
 
 impl super::Driver for BuildkitChannel {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<crate::grpc::GrpcServer>,
     ) -> Result<
@@ -52,7 +52,7 @@ impl super::Driver for BuildkitChannel {
             metadata_grpc_method,
         };
 
-        let mut control_client = ControlClient::with_interceptor(self.channel, interceptor);
+        let mut control_client = ControlClient::with_interceptor(self.channel.clone(), interceptor);
 
         let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
         let streamreader = ReaderStream::new(asyncreader);
