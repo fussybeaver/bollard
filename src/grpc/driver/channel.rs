@@ -99,9 +99,10 @@ impl super::Driver for BuildkitChannel {
 struct NoOpDriverTearDownHandler;
 
 impl super::DriverTearDownHandler for NoOpDriverTearDownHandler {
-    fn tear_down<'a>(
-        &'a self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), crate::grpc::error::GrpcError>> + 'a>> {
+    fn tear_down(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), crate::grpc::error::GrpcError>> + Send + 'static>>
+    {
         Box::pin(async { Ok(()) })
     }
 }

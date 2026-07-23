@@ -20,7 +20,7 @@ use http::{
     request::Builder,
     Method,
 };
-use log::{debug, info};
+use log::{debug, info, warn};
 use tonic::transport::Endpoint;
 use tonic::{codegen::InterceptedService, transport::Channel};
 use tower_service::Service;
@@ -158,26 +158,29 @@ impl DockerContainerBuilder {
             self.network("host");
         }
 
-        if let Err(crate::errors::Error::DockerResponseServerError {
-            status_code: 404,
-            message: _,
-        }) = self
-            .inner
-            .docker
-            .inspect_container(
-                &self.inner.name,
-                None::<bollard_stubs::query_parameters::InspectContainerOptions>,
-            )
-            .await
-        {
-            self.inner.create().await?
-        };
+        let tear_down_handler = Box::new(DockerContainerTearDownHandler {
+            name: String::from(&self.inner.name),
+            docker: Docker::clone(&self.inner.docker),
+        });
+        let mut tear_down_guard = super::TearDownGuard::new(tear_down_handler);
+
+        self.inner.create().await?;
 
         debug!("starting container {}", &self.inner.name);
 
-        self.inner.start().await?;
-        self.inner.wait().await?;
+        let start_result: Result<(), GrpcError> = async {
+            self.inner.start().await?;
+            self.inner.wait().await
+        }
+        .await;
+        if let Err(error) = start_result {
+            if let Err(teardown_error) = tear_down_guard.tear_down().await {
+                warn!("failed to tear down BuildKit container after bootstrap failure: {teardown_error}");
+            }
+            return Err(error);
+        }
 
+        tear_down_guard.disarm();
         Ok(self.inner)
     }
 
@@ -354,10 +357,6 @@ impl DockerContainer {
             .create_container(Some(container_options), container_config)
             .await?;
 
-        self.start().await?;
-
-        self.wait().await?;
-
         Ok(())
     }
 
@@ -432,11 +431,13 @@ struct DockerContainerTearDownHandler {
 }
 
 impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
-    fn tear_down<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + 'a>> {
-        Box::pin(async {
-            self.docker
+    fn tear_down(&self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + Send + 'static>> {
+        let docker = Docker::clone(&self.docker);
+        let name = String::clone(&self.name);
+        Box::pin(async move {
+            docker
                 .kill_container(
-                    &self.name,
+                    &name,
                     None::<bollard_stubs::query_parameters::KillContainerOptions>,
                 )
                 .map_err(GrpcError::from)
@@ -448,7 +449,9 @@ impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
 struct NoopTearDownHandler {}
 
 impl super::DriverTearDownHandler for NoopTearDownHandler {
-    fn tear_down(&self) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>>>> {
+    fn tear_down(
+        &self,
+    ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         Box::pin(futures_util::future::ok(()))
     }
 }

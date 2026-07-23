@@ -125,7 +125,9 @@ impl Driver for Moby {
 struct MobyTearDownHandler {}
 
 impl super::DriverTearDownHandler for MobyTearDownHandler {
-    fn tear_down(&self) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>>>> {
+    fn tear_down(
+        &self,
+    ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         Box::pin(futures_util::future::ok(()))
     }
 }
