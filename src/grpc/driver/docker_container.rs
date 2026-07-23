@@ -61,6 +61,10 @@ const DOCKER_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 /// [`DockerContainerLifecycle::Persistent`] is the default. Persistent builders
 /// remain available until callers explicitly invoke [`DockerContainer::stop`]
 /// or [`DockerContainer::remove`].
+///
+/// Select a policy with [`DockerContainerBuilder::lifecycle`]. Use a stable
+/// [`DockerContainerBuilder::name`] when the builder and its state volume should
+/// be reused across bootstrap calls.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DockerContainerLifecycle {
@@ -178,6 +182,11 @@ impl Service<tonic::transport::Uri> for DockerContainerConnector {
 /// [`crate::grpc::driver::Export::export`] or [`crate::grpc::driver::Image::registry`]
 /// functionality.
 ///
+/// Builders use [`DockerContainerLifecycle::Persistent`] by default. This creates
+/// a privileged Docker container and a dedicated state volume that remain after
+/// solves until explicitly stopped or removed. Select an ephemeral lifecycle when
+/// the daemon should not remain available after a solve.
+///
 /// <div class="warning">
 ///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.
 /// </div>
@@ -185,14 +194,19 @@ impl Service<tonic::transport::Uri> for DockerContainerConnector {
 /// ## Examples
 ///
 /// ```rust,no_run
-/// use bollard::grpc::driver::docker_container::DockerContainerBuilder;
+/// use bollard::grpc::driver::docker_container::{
+///     DockerContainerBuilder, DockerContainerLifecycle,
+/// };
 /// use bollard::Docker;
 ///
 /// // Use a connection function
 /// // let docker = Docker::connect_...;
 /// # let docker = Docker::connect_with_local_defaults().unwrap();
 ///
-/// let builder = DockerContainerBuilder::new(&docker);
+/// let mut builder = DockerContainerBuilder::new(&docker);
+/// builder
+///     .name("project-builder")
+///     .lifecycle(DockerContainerLifecycle::Persistent);
 ///
 /// ```
 ///
@@ -422,7 +436,9 @@ impl DockerContainerBuilder {
 /// borrowed for multiple solves; each solve opens a fresh Docker exec transport and BuildKit
 /// session while retaining the daemon and state volume.
 ///
-///
+/// The lifecycle policy is selected on [`DockerContainerBuilder`] before bootstrap.
+/// Persistent builders are reused by stable name and must be explicitly stopped or
+/// removed when their resources are no longer needed.
 #[derive(Debug)]
 pub struct DockerContainer {
     name: String,

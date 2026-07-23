@@ -9,10 +9,59 @@ use bollard::grpc::driver::docker_container::{
 use tokio::runtime::Runtime;
 
 use std::io::Write;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[macro_use]
 pub mod common;
 use crate::common::*;
+
+#[cfg(feature = "buildkit_providerless")]
+fn unique_builder_name(prefix: &str) -> String {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before the Unix epoch")
+        .as_nanos();
+    format!("{prefix}_{suffix}")
+}
+
+#[cfg(feature = "buildkit_providerless")]
+fn is_not_found(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::DockerResponseServerError {
+            status_code: 404,
+            ..
+        }
+    )
+}
+
+#[cfg(feature = "buildkit_providerless")]
+async fn cleanup_named_builder(docker: &Docker, name: &str, volume_name: &str) {
+    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
+
+    if let Err(error) = docker
+        .remove_container(
+            name,
+            Some(RemoveContainerOptionsBuilder::default().force(true).build()),
+        )
+        .await
+    {
+        if !is_not_found(&error) {
+            eprintln!("failed to clean up BuildKit container `{name}`: {error}");
+        }
+    }
+    if let Err(error) = docker
+        .remove_volume(
+            volume_name,
+            Some(RemoveVolumeOptionsBuilder::default().build()),
+        )
+        .await
+    {
+        if !is_not_found(&error) {
+            eprintln!("failed to clean up BuildKit volume `{volume_name}`: {error}");
+        }
+    }
+}
 
 async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
@@ -55,68 +104,76 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
     .annotation("exporter", "Bollard")
     .dest(dest_path);
 
-    let buildkit_builder = DockerContainerBuilder::new(&docker);
-    let driver = buildkit_builder.bootstrap().await.unwrap();
+    let name = unique_builder_name("bollard_phase_e_oci");
+    let volume_name = format!("{name}_state");
+    let result = async {
+        let mut buildkit_builder = DockerContainerBuilder::new(&docker);
+        buildkit_builder
+            .name(&name)
+            .lifecycle(DockerContainerLifecycle::RemoveAfterSolve { keep_state: false });
+        let driver = buildkit_builder
+            .bootstrap()
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+            })?;
 
-    let load_input =
-        bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
+        let load_input =
+            bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
 
-    let credentials = bollard::auth::DockerCredentials {
-        username: Some("bollard".to_string()),
-        password: std::env::var("REGISTRY_PASSWORD").ok(),
-        ..Default::default()
-    };
-    let mut creds_hsh = std::collections::HashMap::new();
-    creds_hsh.insert("localhost:5000", credentials);
+        let credentials = bollard::auth::DockerCredentials {
+            username: Some("bollard".to_string()),
+            password: std::env::var("REGISTRY_PASSWORD").ok(),
+            ..Default::default()
+        };
+        let mut creds_hsh = std::collections::HashMap::new();
+        creds_hsh.insert("localhost:5000", credentials);
 
-    let res = bollard::grpc::driver::Export::export(
-        &driver,
-        bollard::grpc::driver::ImageExporterEnum::OCI(output),
-        frontend_opts,
-        load_input,
-        Some(creds_hsh),
-        None,
-    )
+        bollard::grpc::driver::Export::export(
+            &driver,
+            bollard::grpc::driver::ImageExporterEnum::OCI(output),
+            frontend_opts,
+            load_input,
+            Some(creds_hsh),
+            None,
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit solve failed: {error}")),
+        })?;
+
+        assert!(dest_path.exists());
+
+        let oci_file = std::fs::File::open(dest_path)?;
+        let mut oci_archive = tar::Archive::new(oci_file);
+
+        let mut paths = vec![];
+        let iter = oci_archive.entries()?;
+        for entry in iter {
+            let entry = entry?;
+            let path = entry.path()?.display().to_string();
+            paths.push(path);
+        }
+
+        println!("{:#?}", &paths);
+
+        assert!(paths.contains(&String::from("blobs/")));
+        assert!(paths.contains(&String::from("blobs/sha256/")));
+        assert!(paths.contains(&String::from("index.json")));
+        assert!(paths.contains(&String::from("oci-layout")));
+        assert_eq!(paths.len(), 8);
+        Ok::<(), Error>(())
+    }
     .await;
 
-    assert!(res.is_ok());
-
-    assert!(dest_path.exists());
-
-    let oci_file = std::fs::File::open(dest_path)?;
-    let mut oci_archive = tar::Archive::new(oci_file);
-
-    let mut paths = vec![];
-
-    let iter = oci_archive.entries()?;
-    for entry in iter {
-        let entry = entry?;
-        let path = entry.path()?.display().to_string();
-        paths.push(path);
-    }
-
-    println!("{:#?}", &paths);
-
-    assert!(paths.contains(&String::from("blobs/")));
-    assert!(paths.contains(&String::from("blobs/sha256/")));
-    assert!(paths.contains(&String::from("index.json")));
-    assert!(paths.contains(&String::from("oci-layout")));
-
-    assert_eq!(paths.len(), 8);
-
-    Ok(())
+    cleanup_named_builder(&docker, &name, &volume_name).await;
+    let _ = std::fs::remove_file(dest_path);
+    result
 }
 
 #[cfg(feature = "buildkit_providerless")]
 async fn persistent_builder_multi_solve_test(docker: Docker) -> Result<(), Error> {
-    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptions};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before the Unix epoch")
-        .as_nanos();
-    let name = format!("bollard_phase_b_{suffix}");
+    let name = unique_builder_name("bollard_phase_e_multi");
     let volume_name = format!("{name}_state");
     let first_output = std::path::PathBuf::from(format!("/tmp/{name}_first.tar"));
     let second_output = std::path::PathBuf::from(format!("/tmp/{name}_second.tar"));
@@ -172,30 +229,173 @@ async fn persistent_builder_multi_solve_test(docker: Docker) -> Result<(), Error
     }
     .await;
 
-    let _ = docker
-        .remove_container(
-            &name,
-            Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-        )
-        .await;
-    let _ = docker
-        .remove_volume(&volume_name, None::<RemoveVolumeOptions>)
-        .await;
+    cleanup_named_builder(&docker, &name, &volume_name).await;
     let _ = std::fs::remove_file(&first_output);
     let _ = std::fs::remove_file(&second_output);
     result
 }
 
 #[cfg(feature = "buildkit_providerless")]
-async fn persistent_builder_management_test(docker: Docker) -> Result<(), Error> {
-    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
-    use std::time::{SystemTime, UNIX_EPOCH};
+fn oci_manifest_digest(path: &std::path::Path) -> Result<String, Error> {
+    use std::io::Read;
 
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before the Unix epoch")
-        .as_nanos();
-    let name = format!("bollard_phase_d_{suffix}");
+    let file = std::fs::File::open(path)?;
+    let mut archive = tar::Archive::new(file);
+    let mut index = String::new();
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        if entry.path()?.to_string_lossy() == "index.json" {
+            entry.read_to_string(&mut index)?;
+            break;
+        }
+    }
+
+    let index: serde_json::Value = serde_json::from_str(&index)?;
+    index
+        .get("manifests")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|manifests| manifests.first())
+        .and_then(|manifest| manifest.get("digest"))
+        .and_then(serde_json::Value::as_str)
+        .map(String::from)
+        .ok_or_else(|| Error::IOError {
+            err: std::io::Error::other("OCI index does not contain a manifest digest"),
+        })
+}
+
+#[cfg(feature = "buildkit_providerless")]
+async fn persistent_builder_cache_repeatability_test(docker: Docker) -> Result<(), Error> {
+    use bollard::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
+    use bollard::grpc::driver::{Export, ImageExporterEnum};
+    use bollard::grpc::export::ImageExporterOutputBuilder;
+
+    let name = unique_builder_name("bollard_phase_e_cache");
+    let volume_name = format!("{name}_state");
+    let output_root = tempfile::tempdir()?;
+    let first_output = output_root.path().join("first.tar");
+    let second_output = output_root.path().join("second.tar");
+    let dockerfile = "FROM localhost:5000/alpine\nRUN date +%s > /cache-proof\nFROM scratch\nCOPY --from=0 /cache-proof /cache-proof\n";
+
+    let result = async {
+        let mut header = tar::Header::new_gnu();
+        header.set_path("Dockerfile").unwrap();
+        header.set_size(dockerfile.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        let mut tar = tar::Builder::new(Vec::new());
+        tar.append(&header, dockerfile.as_bytes()).unwrap();
+        let uncompressed = tar.into_inner().unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&uncompressed).unwrap();
+        let input = bytes::Bytes::from(encoder.finish().unwrap());
+
+        let mut first_builder = DockerContainerBuilder::new(&docker);
+        first_builder.name(&name);
+        let first = first_builder
+            .bootstrap()
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("first BuildKit bootstrap failed: {error}")),
+            })?;
+        let first_id = docker
+            .inspect_container(first.name(), None)
+            .await?
+            .id
+            .expect("bootstrapped container has an ID");
+
+        let credentials = bollard::auth::DockerCredentials {
+            username: Some("bollard".to_string()),
+            password: std::env::var("REGISTRY_PASSWORD").ok(),
+            ..Default::default()
+        };
+        let mut credentials_by_host = std::collections::HashMap::new();
+        credentials_by_host.insert("localhost:5000", credentials);
+        Export::export(
+            &first,
+            ImageExporterEnum::OCI(
+                ImageExporterOutputBuilder::new("bollard-phase-e-cache:latest").dest(&first_output),
+            ),
+            ImageBuildFrontendOptions::builder().pull(true).build(),
+            ImageBuildLoadInput::Upload(input.clone()),
+            Some(credentials_by_host),
+            None,
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("first BuildKit solve failed: {error}")),
+        })?;
+        let first_digest = oci_manifest_digest(&first_output)?;
+
+        first
+            .remove(DockerContainerRemoveOptions::new().keep_state(true))
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("failed to remove first builder: {error}")),
+            })?;
+        assert!(docker.inspect_container(&name, None).await.is_err());
+        assert_eq!(docker.inspect_volume(&volume_name).await?.name, volume_name);
+
+        // If the RUN step executes again, its timestamp and resulting layer digest change.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let mut second_builder = DockerContainerBuilder::new(&docker);
+        second_builder.name(&name);
+        let second = second_builder
+            .bootstrap()
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("second BuildKit bootstrap failed: {error}")),
+            })?;
+        let second_id = docker
+            .inspect_container(second.name(), None)
+            .await?
+            .id
+            .expect("rebootstrapped container has an ID");
+        assert_ne!(first_id, second_id);
+
+        let credentials = bollard::auth::DockerCredentials {
+            username: Some("bollard".to_string()),
+            password: std::env::var("REGISTRY_PASSWORD").ok(),
+            ..Default::default()
+        };
+        let mut credentials_by_host = std::collections::HashMap::new();
+        credentials_by_host.insert("localhost:5000", credentials);
+        Export::export(
+            &second,
+            ImageExporterEnum::OCI(
+                ImageExporterOutputBuilder::new("bollard-phase-e-cache:latest")
+                    .dest(&second_output),
+            ),
+            ImageBuildFrontendOptions::builder().pull(true).build(),
+            ImageBuildLoadInput::Upload(input),
+            Some(credentials_by_host),
+            None,
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("second BuildKit solve failed: {error}")),
+        })?;
+        let second_digest = oci_manifest_digest(&second_output)?;
+        assert_eq!(first_digest, second_digest);
+
+        second
+            .remove(DockerContainerRemoveOptions::default())
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("failed to remove second builder: {error}")),
+            })?;
+        assert!(docker.inspect_volume(&volume_name).await.is_err());
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    cleanup_named_builder(&docker, &name, &volume_name).await;
+    result
+}
+
+#[cfg(feature = "buildkit_providerless")]
+async fn persistent_builder_management_test(docker: Docker) -> Result<(), Error> {
+    let name = unique_builder_name("bollard_phase_e_management");
     let volume_name = format!("{name}_state");
 
     let result = async {
@@ -257,18 +457,7 @@ async fn persistent_builder_management_test(docker: Docker) -> Result<(), Error>
     }
     .await;
 
-    let _ = docker
-        .remove_container(
-            &name,
-            Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-        )
-        .await;
-    let _ = docker
-        .remove_volume(
-            &volume_name,
-            Some(RemoveVolumeOptionsBuilder::default().build()),
-        )
-        .await;
+    cleanup_named_builder(&docker, &name, &volume_name).await;
     result
 }
 
@@ -277,16 +466,9 @@ async fn ephemeral_builder_cleanup_test(docker: Docker) -> Result<(), Error> {
     use bollard::grpc::build::{ImageBuildFrontendOptions, ImageBuildLoadInput};
     use bollard::grpc::driver::{Export, ImageExporterEnum};
     use bollard::grpc::export::ImageExporterOutputBuilder;
-    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before the Unix epoch")
-        .as_nanos();
-    let stop_name = format!("bollard_phase_d_stop_{suffix}");
-    let remove_name = format!("bollard_phase_d_remove_{suffix}");
-    let keep_name = format!("bollard_phase_d_keep_{suffix}");
+    let stop_name = unique_builder_name("bollard_phase_e_stop");
+    let remove_name = unique_builder_name("bollard_phase_e_remove");
+    let keep_name = unique_builder_name("bollard_phase_e_keep");
     let stop_volume = format!("{stop_name}_state");
     let remove_volume = format!("{remove_name}_state");
     let keep_volume = format!("{keep_name}_state");
@@ -386,15 +568,7 @@ async fn ephemeral_builder_cleanup_test(docker: Docker) -> Result<(), Error> {
         (&remove_name, &remove_volume),
         (&keep_name, &keep_volume),
     ] {
-        let _ = docker
-            .remove_container(
-                name,
-                Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-            )
-            .await;
-        let _ = docker
-            .remove_volume(volume, Some(RemoveVolumeOptionsBuilder::default().build()))
-            .await;
+        cleanup_named_builder(&docker, name, volume).await;
     }
     let _ = std::fs::remove_file(&stop_output);
     let _ = std::fs::remove_file(&remove_output);
@@ -418,6 +592,12 @@ fn integration_test_persistent_builder_multi_solve() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_persistent_builder_management() {
     connect_to_docker_and_run!(persistent_builder_management_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_persistent_builder_cache_repeatability() {
+    connect_to_docker_and_run!(persistent_builder_cache_repeatability_test);
 }
 
 #[test]

@@ -1,11 +1,13 @@
-//! Builds a container with a bunch of extra options for testing
+//! Exports an image using an ephemeral BuildKit builder.
 #![allow(unused_variables, unused_mut)]
 
 #[tokio::main]
 async fn main() {
     #[cfg(feature = "buildkit_providerless")]
     {
-        use bollard::grpc::driver::docker_container::DockerContainerBuilder;
+        use bollard::grpc::driver::docker_container::{
+            DockerContainerBuilder, DockerContainerLifecycle,
+        };
         use bollard::Docker;
         use std::io::Write;
 
@@ -46,6 +48,9 @@ async fn main() {
         .dest(std::path::Path::new("/tmp/oci-image.tar"));
 
         let mut buildkit_builder = DockerContainerBuilder::new(&docker);
+        buildkit_builder
+            .name("bollard-oci-export-buildkit-example")
+            .lifecycle(DockerContainerLifecycle::RemoveAfterSolve { keep_state: false });
         buildkit_builder.env("JAEGER_TRACE=localhost:6831");
         let driver = buildkit_builder.bootstrap().await.unwrap();
 

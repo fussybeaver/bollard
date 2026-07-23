@@ -1,4 +1,4 @@
-//! Builds a container with a bunch of extra options for testing
+//! Builds and pushes an image using a named persistent BuildKit builder.
 #![allow(unused_variables, unused_mut, unused_imports)]
 
 #[cfg(feature = "buildkit_providerless")]
@@ -70,8 +70,13 @@ async fn main() {
             ImageRegistryOutput::builder(&format!("{}/{}:latest", registry_addr, name)).consume();
 
         // let mut driver = bollard::grpc::driver::moby::Moby::new(&docker);
+        use bollard::grpc::driver::docker_container::DockerContainerLifecycle;
+
         let mut buildkit_builder =
             bollard::grpc::driver::docker_container::DockerContainerBuilder::new(&docker);
+        buildkit_builder
+            .name("bollard-buildkit-with-cache-example")
+            .lifecycle(DockerContainerLifecycle::Persistent);
         buildkit_builder.env("JAEGER_TRACE=localhost:6831");
         let driver = buildkit_builder.bootstrap().await.unwrap();
 
@@ -96,5 +101,9 @@ async fn main() {
         )
         .await
         .unwrap();
+
+        // Persistent builders retain their daemon and state volume until explicitly stopped or
+        // removed. Stop this example's daemon so rerunning it does not leave it active.
+        driver.stop().await.unwrap();
     }
 }
