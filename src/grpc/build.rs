@@ -98,6 +98,13 @@ impl ImageBuildSessionProviders {
         self.ssh = value;
         self
     }
+
+    /// Whether no providers are registered — no secrets and no ssh forwarding.
+    /// A build issued with an empty set has nothing to serve over its session,
+    /// so it need not be a BuildKit build.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.secrets.is_empty() && !self.ssh
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -732,6 +732,19 @@ impl Docker {
         let url = "/build";
         let options = options.into();
 
+        // Session providers are served over a BuildKit build's session; a
+        // classic (non-BuildKit) build has no session to call back over, so
+        // silently dropping them would be worse than refusing the build.
+        #[cfg(feature = "buildkit_providerless")]
+        if !providers.is_empty()
+            && options.version != crate::query_parameters::BuilderVersion::BuilderBuildKit
+        {
+            return stream::once(futures_util::future::err(
+                Error::MissingVersionBuildkitError {},
+            ))
+            .boxed();
+        }
+
         match (
             if cfg!(feature = "buildkit_providerless")
                 && options.version == crate::query_parameters::BuilderVersion::BuilderBuildKit
@@ -764,7 +777,16 @@ impl Docker {
 
                 let session = stream::once(
                     self.start_session(session_id, creds, outputs, providers)
-                        .map(|_| Either::Right(()))
+                        .map(|res| match res {
+                            Ok(()) => Either::Right(()),
+                            // Surface a session failure into the build stream
+                            // rather than dropping it — otherwise the build
+                            // just stalls or fails opaquely when a secret/ssh
+                            // provider can't be served.
+                            Err(err) => Either::Left(Err(Error::SessionBuildkitError {
+                                err: Box::new(err),
+                            })),
+                        })
                         .fuse(),
                 );
 
@@ -815,6 +837,7 @@ impl Docker {
                 res
             }
         })
+        .boxed()
     }
 
     #[cfg(feature = "buildkit_providerless")]
@@ -1294,6 +1317,38 @@ mod tests {
         assert!(matches!(
             result,
             Err(crate::errors::Error::DockerStreamError { error: _ })
+        ));
+    }
+
+    #[cfg(feature = "buildkit_providerless")]
+    #[tokio::test]
+    async fn session_providers_require_a_buildkit_build() {
+        use crate::grpc::build::{ImageBuildSessionProviders, SecretSource};
+
+        // No request is ever issued: an empty mock connector proves the build
+        // is refused up front rather than dropping the providers silently.
+        let connector = HostToReplyConnector::default();
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap();
+
+        let providers = ImageBuildSessionProviders::default()
+            .set_secret("token", &SecretSource::Env(String::from("MY_TOKEN")));
+
+        let result = docker
+            .build_image_with_session_providers(
+                // Default builder version is classic, not BuildKit.
+                BuildImageOptionsBuilder::default().session("s").build(),
+                None,
+                None,
+                providers,
+            )
+            .try_collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::errors::Error::MissingVersionBuildkitError {})
         ));
     }
 }
