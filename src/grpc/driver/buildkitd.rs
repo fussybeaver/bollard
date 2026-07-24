@@ -46,8 +46,8 @@ impl Driver for BuildkitDaemon {
         channel.grpc_handle(session_id, services).await
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
-        Box::new(BuildkitDaemonTearDownHandler {})
+    fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError> {
+        Ok(Box::new(BuildkitDaemonTearDownHandler {}))
     }
 }
 

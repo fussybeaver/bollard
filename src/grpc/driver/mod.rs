@@ -58,7 +58,7 @@ pub(crate) trait Driver {
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>;
-    fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler>;
+    fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
 }
 
 pub(crate) trait DriverTearDownHandler: Send + Sync {
@@ -287,7 +287,7 @@ pub(crate) async fn solve(
         services.push(GrpcServer::FileSend(filesend));
     }
 
-    let tear_down_handler = driver.get_tear_down_handler();
+    let tear_down_handler = driver.begin_solve()?;
 
     let id = build_ref.unwrap_or_default();
 
@@ -431,8 +431,8 @@ mod tests {
             Ok(ControlClient::with_interceptor(channel, interceptor))
         }
 
-        fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
-            Box::new(TestTearDown::default())
+        fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError> {
+            Ok(Box::new(TestTearDown::default()))
         }
     }
 

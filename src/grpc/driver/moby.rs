@@ -117,8 +117,8 @@ impl Driver for Moby {
         Ok(control_client)
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
-        Box::new(MobyTearDownHandler {})
+    fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
+        Ok(Box::new(MobyTearDownHandler {}))
     }
 }
 

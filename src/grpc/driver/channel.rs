@@ -16,6 +16,8 @@ use crate::grpc::{
     HealthServerImpl,
 };
 
+use crate::grpc::error::GrpcError;
+
 use super::DriverInterceptor;
 
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
@@ -89,9 +91,9 @@ impl super::Driver for BuildkitChannel {
         Ok(control_client)
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
+    fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
         // Teardown is handled by the caller
-        Box::new(NoOpDriverTearDownHandler)
+        Ok(Box::new(NoOpDriverTearDownHandler))
     }
 }
 

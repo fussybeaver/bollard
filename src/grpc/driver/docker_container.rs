@@ -3,7 +3,10 @@
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -52,6 +55,7 @@ const LABEL_LIFECYCLE_SCHEMA: &str = "com.github.fussybeaver.bollard.buildkit.li
 const LABEL_BUILDER_NAME: &str = "com.github.fussybeaver.bollard.buildkit.builder-name";
 const LABEL_STATE_VOLUME: &str = "com.github.fussybeaver.bollard.buildkit.state-volume";
 const LABEL_RESOURCE_ID: &str = "com.github.fussybeaver.bollard.buildkit.resource-id";
+const LABEL_BOOTSTRAP_ATTEMPT: &str = "com.github.fussybeaver.bollard.buildkit.bootstrap-attempt";
 const LIFECYCLE_SCHEMA_VERSION: &str = "1";
 const DOCKER_STOP_GRACE_PERIOD: u64 = 10;
 
@@ -63,16 +67,20 @@ const DOCKER_STOP_GRACE_PERIOD: u64 = 10;
 ///
 /// Select a policy with [`DockerContainerBuilder::lifecycle`]. Use a stable
 /// [`DockerContainerBuilder::name`] when the builder and its state volume should
-/// be reused across bootstrap calls.
+/// be reused across bootstrap calls. A name is required for any lifecycle that
+/// retains a container or state volume after the solve.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DockerContainerLifecycle {
-    /// Keep the BuildKit container and its state volume after a solve.
+    /// Keep the BuildKit container and its state volume after a solve. The
+    /// driver can be reused for concurrent solves.
     #[default]
     Persistent,
-    /// Stop the BuildKit container after a solve while retaining its resources.
+    /// Stop the BuildKit container after its one admitted solve while retaining
+    /// its resources.
     StopAfterSolve,
-    /// Remove the BuildKit container after a solve, optionally retaining state.
+    /// Remove the BuildKit container after its one admitted solve, optionally
+    /// retaining state.
     RemoveAfterSolve {
         /// Keep the state volume when removing the container.
         keep_state: bool,
@@ -236,6 +244,8 @@ impl DockerContainerBuilder {
                 args: vec![],
                 lifecycle: DockerContainerLifecycle::Persistent,
                 resource_id: crate::grpc::new_id(),
+                name_explicit: false,
+                solve_started: AtomicBool::new(false),
             },
         }
     }
@@ -245,6 +255,15 @@ impl DockerContainerBuilder {
         debug!("booting buildkit");
 
         validate_container_name(&self.inner.name)?;
+
+        if !self.inner.name_explicit && lifecycle_requires_explicit_name(self.inner.lifecycle) {
+            return Err(tonic::Status::invalid_argument(
+                "an explicit Docker-container builder name is required for a lifecycle that retains resources",
+            )
+            .into());
+        }
+
+        let bootstrap_attempt = crate::grpc::new_id();
 
         if self.inner.net_mode.is_none() {
             self.network("host");
@@ -257,6 +276,7 @@ impl DockerContainerBuilder {
             name: String::from(&self.inner.name),
             volume_name: self.inner.state_volume_name(),
             resource_id: String::clone(&self.inner.resource_id),
+            bootstrap_attempt: bootstrap_attempt.clone(),
         }));
         let tear_down_handler = Box::new(BootstrapTearDownHandler {
             docker: Docker::clone(&self.inner.docker),
@@ -265,9 +285,13 @@ impl DockerContainerBuilder {
         let mut tear_down_guard = super::TearDownGuard::new(tear_down_handler);
 
         let host_config = self.inner.desired_host_config().await?;
-        let existing_container = inspect_container(&self.inner.docker, &self.inner.name).await?;
-        let existing_volume =
-            inspect_volume(&self.inner.docker, &self.inner.state_volume_name()).await?;
+        let state_volume_name = self.inner.state_volume_name();
+        let (existing_container, existing_volume) = tokio::try_join!(
+            inspect_container(&self.inner.docker, &self.inner.name),
+            inspect_volume(&self.inner.docker, &state_volume_name),
+        )?;
+
+        let mut should_start = false;
 
         match (existing_container, existing_volume) {
             (Some(container), Some(volume)) => {
@@ -279,7 +303,7 @@ impl DockerContainerBuilder {
                     Some(ContainerStateStatusEnum::RUNNING)
                     | Some(ContainerStateStatusEnum::RESTARTING) => {}
                     Some(ContainerStateStatusEnum::CREATED)
-                    | Some(ContainerStateStatusEnum::EXITED) => self.inner.start().await?,
+                    | Some(ContainerStateStatusEnum::EXITED) => should_start = true,
                     Some(status) => {
                         return Err(resource_conflict(
                             "container",
@@ -302,8 +326,9 @@ impl DockerContainerBuilder {
                     state.enabled = true;
                     state.container_created = true;
                     state.resource_id = String::clone(&self.inner.resource_id);
-                });
-                self.inner.create(&host_config).await?;
+                })?;
+                self.inner.create(&host_config, &bootstrap_attempt).await?;
+                should_start = true;
             }
             (Some(container), None) => {
                 if let Some(labels) = container
@@ -333,7 +358,7 @@ impl DockerContainerBuilder {
                 update_cleanup_state(&cleanup_state, |state| {
                     state.enabled = true;
                     state.volume_created = true;
-                });
+                })?;
                 let volume = self.inner.create_volume().await?;
                 let resource_id = compatible_volume(&self.inner, &volume)?;
                 if resource_id != self.inner.resource_id {
@@ -343,19 +368,16 @@ impl DockerContainerBuilder {
                         "volume was created concurrently with a different resource identity",
                     ));
                 }
-                update_cleanup_state(&cleanup_state, |state| state.container_created = true);
-                self.inner.create(&host_config).await?;
+                update_cleanup_state(&cleanup_state, |state| state.container_created = true)?;
+                self.inner.create(&host_config, &bootstrap_attempt).await?;
+                should_start = true;
             }
         }
 
         debug!("starting container {}", &self.inner.name);
 
         let start_result: Result<(), GrpcError> = async {
-            if !matches!(
-                self.inner.state().await?,
-                Some(ContainerStateStatusEnum::RUNNING)
-                    | Some(ContainerStateStatusEnum::RESTARTING)
-            ) {
+            if should_start {
                 self.inner.start().await?;
             }
             self.inner.wait().await
@@ -422,10 +444,12 @@ impl DockerContainerBuilder {
 
     /// Set the stable name used for the BuildKit container and state volume.
     ///
-    /// The name is validated when [`Self::bootstrap`] is called. If this method
-    /// is not used, a unique name is generated automatically.
+    /// The name is validated when [`Self::bootstrap`] is called. An explicit name
+    /// is required when the selected lifecycle retains the container or volume.
+    /// A generated name is available only for fully ephemeral builders.
     pub fn name(&mut self, name: &str) -> &mut DockerContainerBuilder {
         self.inner.name = String::from(name);
+        self.inner.name_explicit = true;
         self
     }
 
@@ -439,6 +463,13 @@ impl DockerContainerBuilder {
         self.inner.lifecycle = lifecycle;
         self
     }
+}
+
+fn lifecycle_requires_explicit_name(lifecycle: DockerContainerLifecycle) -> bool {
+    !matches!(
+        lifecycle,
+        DockerContainerLifecycle::RemoveAfterSolve { keep_state: false }
+    )
 }
 
 /// DockerContainer plumbing to communicate with `Buildkit` using an execution pipe.
@@ -463,6 +494,8 @@ pub struct DockerContainer {
     args: Vec<String>,
     lifecycle: DockerContainerLifecycle,
     resource_id: String,
+    name_explicit: bool,
+    solve_started: AtomicBool,
 }
 
 impl super::Driver for DockerContainer {
@@ -483,32 +516,48 @@ impl super::Driver for DockerContainer {
         channel.grpc_handle(session_id, services).await
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
+    fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
         match self.lifecycle {
-            DockerContainerLifecycle::Persistent => Box::new(NoopTearDownHandler {}),
-            DockerContainerLifecycle::StopAfterSolve => Box::new(DockerContainerTearDownHandler {
-                name: String::from(&self.name),
-                volume_name: self.state_volume_name(),
-                resource_id: String::clone(&self.resource_id),
-                expected_labels: self.ownership_labels(),
-                docker: Docker::clone(&self.docker),
-                operation: DockerContainerTearDownOperation::Stop,
-            }),
-            DockerContainerLifecycle::RemoveAfterSolve { keep_state } => {
-                Box::new(DockerContainerTearDownHandler {
+            DockerContainerLifecycle::Persistent => Ok(Box::new(NoopTearDownHandler {})),
+            DockerContainerLifecycle::StopAfterSolve => {
+                self.admit_ephemeral_solve(Box::new(DockerContainerTearDownHandler {
+                    name: String::from(&self.name),
+                    volume_name: self.state_volume_name(),
+                    resource_id: String::clone(&self.resource_id),
+                    expected_labels: self.ownership_labels(),
+                    docker: Docker::clone(&self.docker),
+                    operation: DockerContainerTearDownOperation::Stop,
+                }))
+            }
+            DockerContainerLifecycle::RemoveAfterSolve { keep_state } => self
+                .admit_ephemeral_solve(Box::new(DockerContainerTearDownHandler {
                     name: String::from(&self.name),
                     volume_name: self.state_volume_name(),
                     resource_id: String::clone(&self.resource_id),
                     expected_labels: self.ownership_labels(),
                     docker: Docker::clone(&self.docker),
                     operation: DockerContainerTearDownOperation::Remove { keep_state },
-                })
-            }
+                })),
         }
     }
 }
 
 impl DockerContainer {
+    fn admit_ephemeral_solve(
+        &self,
+        handler: Box<dyn super::DriverTearDownHandler>,
+    ) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
+        self.solve_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| handler)
+            .map_err(|_| {
+                tonic::Status::failed_precondition(
+                    "this Docker-container driver has an ephemeral one-shot lifecycle and has already admitted a solve",
+                )
+                .into()
+            })
+    }
+
     /// Identifies the docker container name that runs `Buildkit`. This should be unique if you
     /// intend to run multiple instances building in parallel on the same host.
     pub fn name(&self) -> &str {
@@ -558,7 +607,11 @@ impl DockerContainer {
     }
 
     fn ownership_labels(&self) -> HashMap<String, String> {
-        HashMap::from([
+        self.ownership_labels_with_attempt("")
+    }
+
+    fn ownership_labels_with_attempt(&self, bootstrap_attempt: &str) -> HashMap<String, String> {
+        let mut labels = HashMap::from([
             (String::from(LABEL_MANAGED), String::from("true")),
             (String::from(LABEL_DRIVER), String::from("docker-container")),
             (
@@ -568,7 +621,14 @@ impl DockerContainer {
             (String::from(LABEL_BUILDER_NAME), self.name.clone()),
             (String::from(LABEL_STATE_VOLUME), self.state_volume_name()),
             (String::from(LABEL_RESOURCE_ID), self.resource_id.clone()),
-        ])
+        ]);
+        if !bootstrap_attempt.is_empty() {
+            labels.insert(
+                String::from(LABEL_BOOTSTRAP_ATTEMPT),
+                String::from(bootstrap_attempt),
+            );
+        }
+        labels
     }
 
     fn restart_policy(&self) -> Option<RestartPolicy> {
@@ -656,7 +716,11 @@ impl DockerContainer {
         Ok(volume)
     }
 
-    async fn create(&self, host_config: &HostConfig) -> Result<(), GrpcError> {
+    async fn create(
+        &self,
+        host_config: &HostConfig,
+        bootstrap_attempt: &str,
+    ) -> Result<(), GrpcError> {
         let image_name = if let Some(image) = &self.image {
             image
         } else {
@@ -694,7 +758,7 @@ impl DockerContainer {
             env: Some(Vec::clone(&self.env)),
             host_config: Some(host_config.clone()),
             cmd: Some(Vec::clone(&self.args)),
-            labels: Some(self.ownership_labels()),
+            labels: Some(self.ownership_labels_with_attempt(bootstrap_attempt)),
             ..Default::default()
         };
 
@@ -723,12 +787,6 @@ impl DockerContainer {
         .await?;
 
         Ok(())
-    }
-
-    async fn state(&self) -> Result<Option<ContainerStateStatusEnum>, GrpcError> {
-        Ok(inspect_container(&self.docker, &self.name)
-            .await?
-            .and_then(|container| container.state.and_then(|state| state.status)))
     }
 
     async fn wait(&self) -> Result<(), GrpcError> {
@@ -950,29 +1008,38 @@ async fn remove_owned_resources(
         volume
     };
 
+    let mut cleanup_error = None;
+
     if let Some(container) = container {
         let container_id = container.id.clone().unwrap_or_else(|| name.to_string());
-        let force = matches!(
-            stop_owned_container(docker, name, container).await?,
-            StopResult::TimedOut
-        );
-        let remove = docker_api_call(
-            docker,
-            "remove container",
-            name,
-            docker.remove_container(
-                &container_id,
-                Some(
-                    bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
-                        .force(force)
-                        .build(),
+        let force = match stop_owned_container(docker, name, container).await {
+            Ok(result) => matches!(result, StopResult::TimedOut),
+            Err(error) => {
+                remember_cleanup_error(&mut cleanup_error, error);
+                false
+            }
+        };
+
+        if cleanup_error.is_none() || force {
+            match docker_api_call(
+                docker,
+                "remove container",
+                name,
+                docker.remove_container(
+                    &container_id,
+                    Some(
+                        bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
+                            .force(force)
+                            .build(),
+                    ),
                 ),
-            ),
-        );
-        match remove.await {
-            Ok(()) => {}
-            Err(error) if is_not_found_grpc(&error) => {}
-            Err(error) => return Err(error),
+            )
+            .await
+            {
+                Ok(()) => {}
+                Err(error) if is_not_found_grpc(&error) => {}
+                Err(error) => remember_cleanup_error(&mut cleanup_error, error),
+            }
         }
     }
 
@@ -992,11 +1059,11 @@ async fn remove_owned_resources(
         {
             Ok(()) => {}
             Err(error) if is_not_found_grpc(&error) => {}
-            Err(error) => return Err(error),
+            Err(error) => remember_cleanup_error(&mut cleanup_error, error),
         }
     }
 
-    Ok(())
+    cleanup_error.map_or(Ok(()), Err)
 }
 
 fn operation_timeout(operation: &str, name: &str) -> GrpcError {
@@ -1252,9 +1319,17 @@ fn normalized_host_config_value(value: Option<&String>) -> Option<&str> {
 fn update_cleanup_state(
     state: &Arc<Mutex<BootstrapCleanupState>>,
     update: impl FnOnce(&mut BootstrapCleanupState),
-) {
-    if let Ok(mut state) = state.lock() {
-        update(&mut state);
+) -> Result<(), GrpcError> {
+    let mut state = state
+        .lock()
+        .map_err(|_| tonic::Status::internal("bootstrap cleanup state was poisoned"))?;
+    update(&mut state);
+    Ok(())
+}
+
+fn remember_cleanup_error(slot: &mut Option<GrpcError>, error: GrpcError) {
+    if slot.is_none() {
+        *slot = Some(error);
     }
 }
 
@@ -1266,6 +1341,7 @@ struct BootstrapCleanupState {
     name: String,
     volume_name: String,
     resource_id: String,
+    bootstrap_attempt: String,
 }
 
 struct BootstrapTearDownHandler {
@@ -1278,7 +1354,15 @@ impl super::DriverTearDownHandler for BootstrapTearDownHandler {
         let docker = Docker::clone(&self.docker);
         let state = Arc::clone(&self.state);
         Box::pin(async move {
-            let (enabled, container_created, volume_created, name, volume_name, resource_id) = {
+            let (
+                enabled,
+                container_created,
+                volume_created,
+                name,
+                volume_name,
+                resource_id,
+                bootstrap_attempt,
+            ) = {
                 let state = state
                     .lock()
                     .map_err(|_| tonic::Status::internal("bootstrap cleanup state was poisoned"))?;
@@ -1289,62 +1373,86 @@ impl super::DriverTearDownHandler for BootstrapTearDownHandler {
                     state.name.clone(),
                     state.volume_name.clone(),
                     state.resource_id.clone(),
+                    state.bootstrap_attempt.clone(),
                 )
             };
             if !enabled {
                 return Ok(());
             }
 
+            let mut cleanup_error = None;
+
             if container_created {
-                if let Some(container) = inspect_container(&docker, &name).await? {
-                    let owned = container
-                        .config
-                        .as_ref()
-                        .and_then(|config| config.labels.as_ref())
-                        .and_then(|labels| labels.get(LABEL_RESOURCE_ID))
-                        == Some(&resource_id);
-                    if owned {
-                        docker_api_call(
-                            &docker,
-                            "remove bootstrap container",
-                            &name,
-                            docker.remove_container(
+                match inspect_container(&docker, &name).await {
+                    Ok(Some(container)) => {
+                        let owned = container
+                            .config
+                            .as_ref()
+                            .and_then(|config| config.labels.as_ref())
+                            .is_some_and(|labels| {
+                                labels.get(LABEL_RESOURCE_ID) == Some(&resource_id)
+                                    && labels.get(LABEL_BOOTSTRAP_ATTEMPT)
+                                        == Some(&bootstrap_attempt)
+                            });
+                        if owned {
+                            if let Err(error) = docker_api_call(
+                                &docker,
+                                "remove bootstrap container",
                                 &name,
-                                Some(
-                                    bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
-                                        .force(true)
-                                        .build(),
+                                docker.remove_container(
+                                    &name,
+                                    Some(
+                                        bollard_stubs::query_parameters::RemoveContainerOptionsBuilder::default()
+                                            .force(true)
+                                            .build(),
+                                    ),
                                 ),
-                            ),
-                        )
-                        .await?;
+                            )
+                            .await
+                            {
+                                if !is_not_found_grpc(&error) {
+                                    remember_cleanup_error(&mut cleanup_error, error);
+                                }
+                            }
+                        }
                     }
+                    Ok(None) => {}
+                    Err(error) => remember_cleanup_error(&mut cleanup_error, error),
                 }
             }
 
             if volume_created {
-                if let Some(volume) = inspect_volume(&docker, &volume_name).await? {
-                    let owned = volume.labels.get(LABEL_RESOURCE_ID) == Some(&resource_id);
-                    if owned {
-                        docker_api_call(
-                            &docker,
-                            "remove bootstrap volume",
-                            &volume_name,
-                            docker.remove_volume(
+                match inspect_volume(&docker, &volume_name).await {
+                    Ok(Some(volume)) => {
+                        let owned = volume.labels.get(LABEL_RESOURCE_ID) == Some(&resource_id);
+                        if owned {
+                            if let Err(error) = docker_api_call(
+                                &docker,
+                                "remove bootstrap volume",
                                 &volume_name,
-                                Some(
-                                    bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default()
-                                        .force(true)
-                                        .build(),
+                                docker.remove_volume(
+                                    &volume_name,
+                                    Some(
+                                        bollard_stubs::query_parameters::RemoveVolumeOptionsBuilder::default()
+                                            .force(true)
+                                            .build(),
+                                    ),
                                 ),
-                            ),
-                        )
-                        .await?;
+                            )
+                            .await
+                            {
+                                if !is_not_found_grpc(&error) {
+                                    remember_cleanup_error(&mut cleanup_error, error);
+                                }
+                            }
+                        }
                     }
+                    Ok(None) => {}
+                    Err(error) => remember_cleanup_error(&mut cleanup_error, error),
                 }
             }
 
-            Ok(())
+            cleanup_error.map_or(Ok(()), Err)
         })
     }
 }
@@ -1496,6 +1604,7 @@ impl super::Image for DockerContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grpc::driver::Driver;
     use bollard_stubs::models::{ContainerConfig, ContainerState, MountPoint};
 
     fn builder() -> DockerContainerBuilder {
@@ -1523,6 +1632,39 @@ mod tests {
             builder.inner.lifecycle,
             DockerContainerLifecycle::RemoveAfterSolve { keep_state: true }
         );
+    }
+
+    #[test]
+    fn retained_lifecycles_require_explicit_names() {
+        assert!(lifecycle_requires_explicit_name(
+            DockerContainerLifecycle::Persistent
+        ));
+        assert!(lifecycle_requires_explicit_name(
+            DockerContainerLifecycle::StopAfterSolve
+        ));
+        assert!(lifecycle_requires_explicit_name(
+            DockerContainerLifecycle::RemoveAfterSolve { keep_state: true }
+        ));
+        assert!(!lifecycle_requires_explicit_name(
+            DockerContainerLifecycle::RemoveAfterSolve { keep_state: false }
+        ));
+    }
+
+    #[test]
+    fn ephemeral_lifecycle_admits_only_one_solve() {
+        let mut builder = builder();
+        builder.lifecycle(DockerContainerLifecycle::StopAfterSolve);
+
+        assert!(builder.inner.begin_solve().is_ok());
+        let error = match builder.inner.begin_solve() {
+            Ok(_) => panic!("ephemeral lifecycle admitted a second solve"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(
+            error,
+            GrpcError::TonicStatus { err } if err.code() == tonic::Code::FailedPrecondition
+        ));
     }
 
     #[test]
