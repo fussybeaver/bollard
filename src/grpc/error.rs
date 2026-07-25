@@ -5,6 +5,9 @@ use std::num::TryFromIntError;
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
+    /// The driver teardown task was unavailable when cleanup was requested.
+    #[error("driver teardown task was unavailable")]
+    TearDownTaskUnavailable,
     /// Generic error emitted by the bollard codebase.
     #[error(transparent)]
     DockerError {

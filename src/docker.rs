@@ -1844,7 +1844,7 @@ impl Docker {
             &self.client_version(),
         )?;
         let request_uri: hyper::Uri = uri.try_into()?;
-        debug!("{}", &request_uri);
+        debug!("{}", request_uri);
 
         let request = builder
             .uri(request_uri)
@@ -1937,13 +1937,22 @@ impl Docker {
         Ok(String::from_utf8_lossy(&body).to_string())
     }
 
+    /// Drain and discard a response body so the underlying connection can be
+    /// returned to hyper's pool for keep-alive reuse. A caller that only needs a
+    /// response's headers (e.g. [`Docker::ping_info`]) must still consume its
+    /// body, or the connection is dropped rather than pooled.
+    pub(crate) async fn discard_body(response: Response<Incoming>) -> Result<(), Error> {
+        response.into_body().collect().await?;
+        Ok(())
+    }
+
     async fn decode_response<T>(response: Response<Incoming>) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
         let bytes = response.into_body().collect().await?.to_bytes();
 
-        debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
+        debug!("Decoded into string: {}", String::from_utf8_lossy(&bytes));
 
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
             if e.is_data() || e.is_syntax() {

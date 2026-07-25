@@ -31,17 +31,17 @@ use crate::moby::filesync::v1::{
 };
 use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
-use std::io::Write;
-
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::OpenOptions;
+use std::ffi::OsString;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
-use bollard_buildkit_proto::fsutil::types::Packet;
+use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
 use bollard_buildkit_proto::health::{HealthListRequest, HealthListResponse};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::secrets_server::{Secrets, SecretsServer};
 use bollard_buildkit_proto::moby::buildkit::secrets::v1::{GetSecretRequest, GetSecretResponse};
@@ -59,7 +59,7 @@ use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use log::trace;
+use log::{debug, error, info, trace, warn};
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
 use ssh::SshAgentPacketDecoder;
@@ -70,6 +70,7 @@ use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use futures_util::{StreamExt, TryFutureExt};
+use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 
 use http::request::Builder;
@@ -291,6 +292,567 @@ impl FileSendPacketImpl {
             dest: dest.to_owned(),
         }
     }
+
+    fn validate_path(path: &str) -> Result<PathBuf, Status> {
+        let relative = Path::new(path);
+        if path.is_empty()
+            || path.len() > MAX_PATH_LENGTH
+            || path.contains('\0')
+            || !relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err(Status::invalid_argument(format!(
+                "invalid export path: {path:?}"
+            )));
+        }
+
+        Ok(relative.to_owned())
+    }
+
+    fn validate_linkname(linkname: &str) -> Result<(), Status> {
+        if linkname.is_empty() {
+            return Err(Status::invalid_argument("symlink without target"));
+        }
+        if linkname.len() > MAX_LINKNAME_LENGTH || linkname.contains('\0') {
+            return Err(Status::invalid_argument(
+                "symlink target is too long or invalid",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_stat(stat: &Stat) -> Result<(PathBuf, fsutil::FileMode), Status> {
+        let path = Self::validate_path(&stat.path)?;
+        if stat.size < 0 {
+            return Err(Status::invalid_argument("file stat has a negative size"));
+        }
+        if u64::try_from(stat.size).unwrap_or(u64::MAX) > MAX_FILE_SIZE {
+            return Err(Status::resource_exhausted("file exceeds the maximum size"));
+        }
+
+        let mode = fsutil::FileMode::from_bits_truncate(stat.mode);
+        let type_bits = stat.mode & fsutil::FileMode::Type.bits();
+        if type_bits.count_ones() > 1 {
+            return Err(Status::invalid_argument(
+                "file stat has conflicting file types",
+            ));
+        }
+        if mode.contains(fsutil::FileMode::Symlink) {
+            Self::validate_linkname(&stat.linkname)?;
+        } else if !mode.intersects(fsutil::FileMode::Type) && !stat.linkname.is_empty() {
+            return Err(Status::invalid_argument(
+                "regular file has an unexpected symlink target",
+            ));
+        }
+
+        Ok((path, mode))
+    }
+}
+
+const MAX_PATH_LENGTH: usize = 4096;
+const MAX_LINKNAME_LENGTH: usize = 4096;
+const MAX_FILE_COUNT: usize = 100_000;
+const MAX_PENDING_FILES: usize = 4096;
+const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_TOTAL_SIZE: u64 = 16 * 1024 * 1024 * 1024;
+
+struct FileReceiveState {
+    root: cap_std::fs::Dir,
+    stats: HashMap<u32, PendingFile>,
+    declared_paths: HashSet<PathBuf>,
+    directories: HashMap<PathBuf, (u32, cap_std::fs::Dir, OsString)>,
+    received_all_stats: bool,
+    received_fin: bool,
+    next_stat_id: u32,
+    file_count: usize,
+    total_size: u64,
+}
+
+struct PendingFile {
+    stat: Stat,
+    file: File,
+    received_bytes: u64,
+}
+
+impl FileReceiveState {
+    async fn new(base: PathBuf) -> Result<Self, Status> {
+        let root = tokio::task::spawn_blocking(move || {
+            cap_std::fs::Dir::open_ambient_dir(&base, cap_std::ambient_authority())
+        })
+        .await
+        .map_err(|error| {
+            Status::internal(format!(
+                "filesystem worker failed while opening export directory: {error}"
+            ))
+        })?;
+        let root = root.map_err(|error| {
+            Status::internal(format!("failed to open export directory: {error}"))
+        })?;
+
+        Ok(Self {
+            root,
+            stats: HashMap::new(),
+            declared_paths: HashSet::new(),
+            directories: HashMap::new(),
+            received_all_stats: false,
+            received_fin: false,
+            next_stat_id: 0,
+            file_count: 0,
+            total_size: 0,
+        })
+    }
+
+    fn is_complete(&self) -> bool {
+        self.received_all_stats && self.stats.is_empty()
+    }
+
+    async fn handle_packet(&mut self, packet: Packet) -> Result<Option<Packet>, Status> {
+        if self.received_fin {
+            return Err(Status::failed_precondition(
+                "packet received after PACKET_FIN",
+            ));
+        }
+
+        let packet_type = PacketType::try_from(packet.r#type)
+            .map_err(|_| Status::invalid_argument("unknown packet type"))?;
+
+        match packet_type {
+            PacketType::PacketStat => {
+                if let Some(stat) = packet.stat {
+                    if self.received_all_stats {
+                        return Err(Status::failed_precondition(
+                            "file stat received after terminating stat packet",
+                        ));
+                    }
+                    let request_id = self.next_stat_id;
+                    self.next_stat_id = self.next_stat_id.checked_add(1).ok_or_else(|| {
+                        Status::resource_exhausted("file stat request ID exhausted")
+                    })?;
+                    let needs_data = self.receive_stat(request_id, &stat).await?;
+
+                    if needs_data {
+                        Ok(Some(Packet {
+                            r#type: PacketType::PacketReq.into(),
+                            stat: None,
+                            id: request_id,
+                            data: vec![],
+                        }))
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    if self.received_all_stats {
+                        return Err(Status::failed_precondition(
+                            "duplicate terminating stat packet",
+                        ));
+                    }
+
+                    self.received_all_stats = true;
+                    if self.is_complete() {
+                        Ok(Some(Self::fin_packet()))
+                    } else {
+                        Ok(None)
+                    }
+                }
+            }
+            PacketType::PacketReq => Err(Status::failed_precondition(
+                "server received a request packet",
+            )),
+            PacketType::PacketData => {
+                if packet.data.is_empty() {
+                    self.finish_file(packet.id).await?;
+                    if self.is_complete() {
+                        Ok(Some(Self::fin_packet()))
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    self.append_file(packet.id, &packet.data).await?;
+                    Ok(None)
+                }
+            }
+            PacketType::PacketFin => {
+                if !self.is_complete() {
+                    return Err(Status::failed_precondition(
+                        "file transfer finished before all files were received",
+                    ));
+                }
+                self.received_fin = true;
+                Ok(None)
+            }
+            PacketType::PacketErr => {
+                let message = String::from_utf8_lossy(&packet.data);
+                Err(Status::unknown(format!("packet error: {message}")))
+            }
+        }
+    }
+
+    fn fin_packet() -> Packet {
+        Packet {
+            r#type: PacketType::PacketFin.into(),
+            stat: None,
+            id: 0,
+            data: vec![],
+        }
+    }
+
+    async fn ensure_parent_dirs(
+        &mut self,
+        path: &Path,
+    ) -> Result<(cap_std::fs::Dir, Vec<(PathBuf, cap_std::fs::Dir, OsString)>), Status> {
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        let root = self.root.try_clone().map_err(|error| {
+            Status::internal(format!("failed to retain export directory: {error}"))
+        })?;
+        let parent = parent.to_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let mut current = root;
+            let mut relative = PathBuf::new();
+            let mut created = Vec::new();
+
+            for component in parent.components() {
+                let name = component.as_os_str();
+                relative.push(name);
+                match current.open_dir(name) {
+                    Ok(next) => current = next,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let permission_parent = current.try_clone()?;
+                        let permission_name = name.to_owned();
+                        let mut builder = cap_std::fs::DirBuilder::new();
+                        #[cfg(unix)]
+                        {
+                            use cap_std::fs::DirBuilderExt;
+                            builder.mode(0o700);
+                        }
+                        current.create_dir_with(name, &builder).map_err(|error| {
+                            std::io::Error::new(
+                                error.kind(),
+                                format!("failed to create export directory: {error}"),
+                            )
+                        })?;
+                        current = current.open_dir(name)?;
+                        created.push((relative.clone(), permission_parent, permission_name));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+
+            Ok((current, created))
+        })
+        .await
+        .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+        .map_err(|error| Status::invalid_argument(format!("unsafe export path: {error}")))
+    }
+
+    async fn receive_stat(&mut self, request_id: u32, stat: &Stat) -> Result<bool, Status> {
+        if self.file_count >= MAX_FILE_COUNT {
+            return Err(Status::resource_exhausted("too many files in export"));
+        }
+        let (path, mode) = FileSendPacketImpl::validate_stat(stat)?;
+        if !self.declared_paths.insert(path.clone()) {
+            return Err(Status::already_exists(format!(
+                "duplicate export path: {:?}",
+                stat.path
+            )));
+        }
+
+        let size = u64::try_from(stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        self.total_size = self
+            .total_size
+            .checked_add(size)
+            .ok_or_else(|| Status::resource_exhausted("export size overflow"))?;
+        if self.total_size > MAX_TOTAL_SIZE {
+            return Err(Status::resource_exhausted(
+                "export exceeds the maximum size",
+            ));
+        }
+
+        let (parent, created) = self.ensure_parent_dirs(&path).await?;
+        for (directory, parent, name) in created {
+            self.directories
+                .entry(directory)
+                .or_insert((0o700, parent, name));
+        }
+
+        let name = path.file_name().ok_or_else(|| {
+            Status::invalid_argument(format!("export path has no filename: {:?}", stat.path))
+        })?;
+
+        if mode.contains(fsutil::FileMode::Symlink) {
+            #[cfg(unix)]
+            tokio::task::spawn_blocking({
+                let linkname = stat.linkname.clone();
+                let parent = parent.try_clone().map_err(|error| {
+                    Status::internal(format!("failed to retain export directory: {error}"))
+                })?;
+                let name = name.to_owned();
+                move || parent.symlink_contents(linkname, name)
+            })
+            .await
+            .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+            .map_err(|error| Status::internal(format!("failed to create symlink: {error}")))?;
+            #[cfg(not(unix))]
+            return Err(Status::unimplemented(
+                "symlink export is only supported on Unix",
+            ));
+            self.file_count += 1;
+            return Ok(false);
+        }
+
+        if mode.contains(fsutil::FileMode::Dir) {
+            let permission_parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let permission_name = name.to_owned();
+            let parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let name = name.to_owned();
+            let directory = tokio::task::spawn_blocking(move || match parent.open_dir(&name) {
+                Ok(directory) => Ok(directory),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let mut builder = cap_std::fs::DirBuilder::new();
+                    #[cfg(unix)]
+                    {
+                        use cap_std::fs::DirBuilderExt;
+                        builder.mode(0o700);
+                    }
+                    parent.create_dir_with(&name, &builder)?;
+                    parent.open_dir(&name)
+                }
+                Err(error) => Err(error),
+            })
+            .await
+            .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+            .map_err(|error| {
+                Status::already_exists(format!("cannot create export directory: {error}"))
+            })?;
+            drop(directory);
+            self.directories.insert(
+                path,
+                (stat.mode & 0o777, permission_parent, permission_name),
+            );
+            self.file_count += 1;
+            return Ok(false);
+        }
+
+        if mode.intersects(fsutil::FileMode::Type) {
+            return Err(Status::unimplemented(format!(
+                "unsupported file type for path {:?}",
+                stat.path
+            )));
+        }
+
+        if self.stats.len() >= MAX_PENDING_FILES {
+            return Err(Status::resource_exhausted(
+                "too many files are pending data",
+            ));
+        }
+
+        let parent = parent.try_clone().map_err(|error| {
+            Status::internal(format!("failed to retain export directory: {error}"))
+        })?;
+        let name = name.to_owned();
+        let file = tokio::task::spawn_blocking(move || {
+            let mut options = cap_std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use cap_std::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            parent
+                .open_with(&name, &options)
+                .map(|file| file.into_std())
+        })
+        .await
+        .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+        .map_err(|error| Status::already_exists(format!("cannot create export file: {error}")))?;
+
+        self.file_count += 1;
+        self.stats.insert(
+            request_id,
+            PendingFile {
+                stat: stat.clone(),
+                file: File::from_std(file),
+                received_bytes: 0,
+            },
+        );
+        Ok(true)
+    }
+
+    async fn append_file(&mut self, id: u32, data: &[u8]) -> Result<(), Status> {
+        let pending = self
+            .stats
+            .get_mut(&id)
+            .ok_or_else(|| Status::invalid_argument("data packet for unknown file"))?;
+        let data_len = u64::try_from(data.len())
+            .map_err(|_| Status::resource_exhausted("file packet size overflow"))?;
+        let received_bytes = pending
+            .received_bytes
+            .checked_add(data_len)
+            .ok_or_else(|| Status::resource_exhausted("file byte count overflow"))?;
+        let expected_bytes = u64::try_from(pending.stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if received_bytes > expected_bytes {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the declared file size",
+            ));
+        }
+        pending
+            .file
+            .write_all(data)
+            .await
+            .map_err(|error| Status::internal(format!("failed to write file data: {error}")))?;
+        pending.received_bytes = received_bytes;
+        Ok(())
+    }
+
+    async fn finish_file(&mut self, id: u32) -> Result<(), Status> {
+        let mut pending = self
+            .stats
+            .remove(&id)
+            .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
+        let expected_bytes = u64::try_from(pending.stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if pending.received_bytes != expected_bytes {
+            return Err(Status::invalid_argument(format!(
+                "file ended after {} of {} bytes",
+                pending.received_bytes, expected_bytes
+            )));
+        }
+
+        pending
+            .file
+            .flush()
+            .await
+            .map_err(|error| Status::internal(format!("failed to flush file data: {error}")))?;
+        #[cfg(unix)]
+        pending
+            .file
+            .set_permissions(std::fs::Permissions::from_mode(pending.stat.mode & 0o777))
+            .await
+            .map_err(|error| {
+                Status::internal(format!("failed to set file permissions: {error}"))
+            })?;
+        Ok(())
+    }
+
+    async fn finalize(mut self) -> Result<(), Status> {
+        if !self.is_complete() {
+            return Err(Status::failed_precondition(
+                "file transfer finalized before all files were received",
+            ));
+        }
+        self.stats.clear();
+        let directories: Vec<_> = self.directories.into_values().collect();
+        tokio::task::spawn_blocking(move || {
+            for (mode, parent, name) in directories {
+                #[cfg(unix)]
+                parent.set_permissions(
+                    name,
+                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(mode)),
+                )?;
+                #[cfg(not(unix))]
+                let _ = (parent, name, mode);
+            }
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+        .map_err(|error| Status::internal(format!("failed to set directory permissions: {error}")))
+    }
+
+    fn finish_stream(&self) -> Result<(), Status> {
+        if self.received_fin {
+            Ok(())
+        } else {
+            Err(Status::failed_precondition(
+                "file packet stream ended before PACKET_FIN",
+            ))
+        }
+    }
+}
+
+async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)
+        .await
+        .map_err(|error| Status::internal(format!("failed to create export parent: {error}")))?;
+    let name = destination
+        .file_name()
+        .ok_or_else(|| Status::invalid_argument("export destination has no filename"))?
+        .to_string_lossy();
+    let staging = parent.join(format!(".{name}.bollard-staging-{}", crate::grpc::new_id()));
+    fs::create_dir(&staging).await.map_err(|error| {
+        Status::internal(format!("failed to create staging directory: {error}"))
+    })?;
+    Ok(staging)
+}
+
+async fn remove_path(path: &Path) -> Result<(), Status> {
+    let metadata = match fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Status::internal(format!(
+                "failed to inspect cleanup path: {error}"
+            )))
+        }
+    };
+    let result = if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).await
+    } else {
+        fs::remove_file(path).await
+    };
+    result.map_err(|error| Status::internal(format!("failed to clean up export path: {error}")))
+}
+
+async fn publish_staging_directory(staging: &Path, destination: &Path) -> Result<(), Status> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .ok_or_else(|| Status::invalid_argument("export destination has no filename"))?
+        .to_string_lossy();
+    let backup = parent.join(format!(".{name}.bollard-backup-{}", crate::grpc::new_id()));
+    let destination_exists = match fs::symlink_metadata(destination).await {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            return Err(Status::internal(format!(
+                "failed to inspect export destination: {error}"
+            )))
+        }
+    };
+
+    if destination_exists {
+        fs::rename(destination, &backup).await.map_err(|error| {
+            Status::internal(format!("failed to stage existing export: {error}"))
+        })?;
+    }
+
+    if let Err(error) = fs::rename(staging, destination).await {
+        if destination_exists {
+            if let Err(rollback_error) = fs::rename(&backup, destination).await {
+                error!(
+                    "failed to publish export and roll back destination: publish={error}; rollback={rollback_error}"
+                );
+            }
+        }
+        return Err(Status::internal(format!(
+            "failed to publish export: {error}"
+        )));
+    }
+
+    if destination_exists {
+        if let Err(error) = remove_path(&backup).await {
+            warn!("published export but failed to remove backup: {error}");
+        }
+    }
+    Ok(())
 }
 
 #[tonic::async_trait]
@@ -300,74 +862,112 @@ impl FileSendPacket for FileSendPacketImpl {
         &self,
         request: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
-        let base_path = self.dest.clone();
-        std::fs::create_dir_all(&base_path).unwrap();
-        trace!(
-            "Protobuf FileSend (packet) diff_copy triggered: {:#?}",
-            request
-        );
-
+        let destination = self.dest.clone();
         let mut in_stream = request.into_inner();
 
         // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
         let out_stream = async_stream::try_stream! {
-            let mut file_id = 0;
-            let mut stats = HashMap::new();
-            let mut received_all_stats = false;
+            debug!("starting FileSend packet export");
+            let staging = prepare_staging_directory(&destination).await?;
+            let mut state = Some(match FileReceiveState::new(staging.clone()).await {
+                Ok(state) => state,
+                Err(error) => {
+                    if let Err(cleanup_error) = remove_path(&staging).await {
+                        warn!("failed to clean up staging directory: {cleanup_error}");
+                    }
+                    Err::<FileReceiveState, Status>(error)?;
+                    unreachable!();
+                }
+            });
 
-            while let Some(Ok(packet)) = in_stream.next().await {
-                match PacketType::try_from(packet.r#type) {
-                    Ok(PacketType::PacketStat) => {
-                        if let Some(stat) = packet.stat {
-                            if fsutil::FileMode::Type.bits() & stat.mode == 0 {
-                                std::fs::File::create(base_path.join(&stat.path)).unwrap();
-                                stats.insert(file_id, stat);
-                            } else if fsutil::FileMode::Dir.bits() & stat.mode != 0 {
-                                std::fs::create_dir(base_path.join(stat.path)).unwrap()
-                            };
-                            file_id += 1;
-                        } else {
-                            received_all_stats = true;
-                            for id in stats.keys() {
-                                yield Packet {
-                                    r#type: PacketType::PacketReq.into(),
-                                    stat: None,
-                                    id: *id,
-                                    data: vec![]
-                                };
+            let mut receiver_sent_fin = false;
+            loop {
+                match in_stream.next().await {
+                    Some(Ok(packet)) => {
+                        if receiver_sent_fin {
+                            if packet.r#type != PacketType::PacketFin as i32 {
+                                Err::<(), Status>(Status::failed_precondition(
+                                    "packet received after PACKET_FIN",
+                                    ))?;
+                            }
+                            break;
+                        }
+
+                        let packet_result = state
+                            .as_mut()
+                            .expect("receiver state is present before PACKET_FIN")
+                            .handle_packet(packet)
+                            .await;
+                        match packet_result {
+                            Ok(Some(out)) => {
+                                if out.r#type == PacketType::PacketFin as i32 {
+                                    let completed_state = state
+                                        .take()
+                                        .expect("receiver state is present before finalization");
+                                    if let Err(error) = completed_state.finalize().await {
+                                        if let Err(cleanup_error) = remove_path(&staging).await {
+                                            warn!("failed to clean up unfinalized export: {cleanup_error}");
+                                        }
+                                        Err::<(), Status>(error)?;
+                                    }
+
+                                    if let Err(error) = publish_staging_directory(&staging, &destination).await {
+                                        if let Err(cleanup_error) = remove_path(&staging).await {
+                                            warn!("failed to clean up unpublished export: {cleanup_error}");
+                                        }
+                                        Err::<(), Status>(error)?;
+                                    }
+
+                                    receiver_sent_fin = true;
+                                    yield out;
+                                } else {
+                                    yield out;
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                if let Err(cleanup_error) = remove_path(&staging).await {
+                                    warn!("failed to clean up failed export: {cleanup_error}");
+                                }
+                                Err::<(), Status>(error)?;
                             }
                         }
-                    },
-                    Ok(PacketType::PacketReq) => panic!("server should not request"),
-                    Ok(PacketType::PacketData) => {
-                        if packet.data.is_empty() {
-                            // all data for file has been received
-                            stats.remove(&packet.id);
+                    }
+                    Some(Err(error)) => {
+                        if receiver_sent_fin {
+                            warn!("packet stream ended after export publish: {error}");
+                            break;
+                        }
+                        if let Err(cleanup_error) = remove_path(&staging).await {
+                            warn!("failed to clean up failed export: {cleanup_error}");
+                        }
+                        Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
+                    }
+                    None => {
+                        if receiver_sent_fin {
+                            warn!("packet stream ended after export publish");
                         } else {
-                            let stat = stats.get(&packet.id).unwrap();
-                            let file_path = base_path.join(stat.path.clone());
-                            std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-                            let mut file = OpenOptions::new()
-                                .append(true)
-                                .open(file_path)
-                                .unwrap();
-                            file.write_all(packet.data.as_slice()).unwrap();
+                            if let Err(cleanup_error) = remove_path(&staging).await {
+                                warn!("failed to clean up incomplete export: {cleanup_error}");
+                            }
+                            Err::<(), Status>(Status::failed_precondition(
+                                "file packet stream ended before PACKET_FIN",
+                            ))?;
                         }
-
-                        if stats.is_empty() && received_all_stats {
-                            yield Packet {
-                                r#type: PacketType::PacketFin.into(),
-                                stat: None,
-                                id: 0,
-                                data: vec![]
-                            };
-                        }
-                    },
-                    Ok(PacketType::PacketFin) => return,
-                    Ok(PacketType::PacketErr) => panic!("{}", String::from_utf8(packet.data).unwrap()),
-                    Err(_) => panic!("unhandled packet type")
+                        break;
+                    }
                 }
             }
+
+            if !receiver_sent_fin {
+                if let Err(cleanup_error) = remove_path(&staging).await {
+                    warn!("failed to clean up incomplete export: {cleanup_error}");
+                }
+                Err::<(), Status>(Status::failed_precondition(
+                    "file packet stream ended before PACKET_FIN",
+                ))?;
+            }
+            info!("published FileSend packet export");
         };
 
         Ok(Response::new(Box::pin(out_stream)))
@@ -980,10 +1580,669 @@ pub(crate) fn new_id() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    #[cfg(unix)]
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
+
+    use bollard_buildkit_proto::fsutil::types::packet::PacketType;
+    use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
+    use bollard_buildkit_proto::moby::filesync::packet::file_send_client::FileSendClient;
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::transport::Server;
+
+    use super::{
+        fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
+        FileSendPacketImpl, FileSendPacketServer, MAX_FILE_SIZE,
+    };
+
+    fn packet_stat(stat: Option<Stat>) -> Packet {
+        Packet {
+            r#type: PacketType::PacketStat.into(),
+            stat,
+            id: 0,
+            data: vec![],
+        }
+    }
+
+    fn packet_data(id: u32, data: &[u8]) -> Packet {
+        Packet {
+            r#type: PacketType::PacketData.into(),
+            stat: None,
+            id,
+            data: data.to_vec(),
+        }
+    }
+
+    fn packet_fin() -> Packet {
+        Packet {
+            r#type: PacketType::PacketFin.into(),
+            stat: None,
+            id: 0,
+            data: vec![],
+        }
+    }
+
+    fn stat(path: &str, mode: u32, size: i64, linkname: &str) -> Stat {
+        Stat {
+            path: path.to_string(),
+            mode,
+            uid: 0,
+            gid: 0,
+            size,
+            mod_time: 0,
+            linkname: linkname.to_string(),
+            devmajor: 0,
+            devminor: 0,
+            xattrs: HashMap::new(),
+        }
+    }
+
+    async fn start_file_send_server(
+        destination: std::path::PathBuf,
+    ) -> (
+        std::net::SocketAddr,
+        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+    ) {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = FileSendPacketServer::new(FileSendPacketImpl::new(&destination));
+        let task = tokio::spawn(async move {
+            Server::builder()
+                .add_service(server)
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+        });
+        (address, task)
+    }
+
+    fn transfer_sibling_names(root: &Path) -> Vec<String> {
+        std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".bollard-staging-") || name.contains(".bollard-backup-"))
+            .collect()
+    }
 
     #[test]
     fn test_new_id() {
         let s = super::new_id();
         assert_eq!(s.len(), 25);
+    }
+
+    #[test]
+    fn test_safe_path_rejects_unsafe_components() {
+        for path in ["", ".", "..", "../escape", "/absolute", "foo/../bar"] {
+            assert!(FileSendPacketImpl::validate_path(path).is_err(), "{path:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_replaces_destination_and_preserves_entries() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        fs::create_dir(&destination).await.unwrap();
+        fs::write(destination.join("sentinel"), b"old")
+            .await
+            .unwrap();
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let packets = vec![
+            packet_stat(Some(stat(
+                "subdir",
+                fsutil::FileMode::Dir.bits() | 0o750,
+                0,
+                "",
+            ))),
+            packet_stat(Some(stat("message", 0o640, 5, ""))),
+            packet_stat(Some(stat("empty", 0o600, 0, ""))),
+            packet_stat(Some(stat(
+                "link",
+                fsutil::FileMode::Symlink.bits() | 0o777,
+                0,
+                "message",
+            ))),
+            packet_stat(None),
+            packet_data(1, b"hello"),
+            packet_data(1, b""),
+            packet_data(2, b""),
+            packet_fin(),
+        ];
+        let response = client.diff_copy(tokio_stream::iter(packets)).await.unwrap();
+        let mut response_stream = response.into_inner();
+        let mut requests = Vec::new();
+        let mut sent_fin = false;
+        while let Some(packet) = response_stream.message().await.unwrap() {
+            if packet.r#type == PacketType::PacketReq as i32 {
+                requests.push(packet.id);
+            } else if packet.r#type == PacketType::PacketFin as i32 {
+                sent_fin = true;
+                assert!(!destination.join("sentinel").exists());
+                assert_eq!(
+                    fs::read(destination.join("message")).await.unwrap(),
+                    b"hello"
+                );
+            }
+        }
+        assert_eq!(requests, vec![1, 2]);
+        assert!(sent_fin);
+        server_task.abort();
+        let _ = server_task.await;
+
+        assert!(!destination.join("sentinel").exists());
+        assert_eq!(
+            fs::read(destination.join("message")).await.unwrap(),
+            b"hello"
+        );
+        assert!(fs::read(destination.join("empty"))
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            fs::read_link(destination.join("link")).await.unwrap(),
+            Path::new("message")
+        );
+        assert!(transfer_sibling_names(root.path()).is_empty());
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                destination.join("message").metadata().unwrap().mode() & 0o777,
+                0o640
+            );
+            assert_eq!(
+                destination.join("empty").metadata().unwrap().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                destination.join("subdir").metadata().unwrap().mode() & 0o777,
+                0o750
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_accepts_sender_eof_after_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let packets = vec![
+            packet_stat(Some(stat("message", 0o640, 5, ""))),
+            packet_stat(None),
+            packet_data(0, b"hello"),
+            packet_data(0, b""),
+        ];
+        let response = client.diff_copy(tokio_stream::iter(packets)).await.unwrap();
+        let mut response_stream = response.into_inner();
+        let mut sent_fin = false;
+        while let Some(packet) = response_stream.message().await.unwrap() {
+            if packet.r#type == PacketType::PacketFin as i32 {
+                sent_fin = true;
+                assert_eq!(
+                    fs::read(destination.join("message")).await.unwrap(),
+                    b"hello"
+                );
+            }
+        }
+
+        assert!(sent_fin);
+        assert!(transfer_sibling_names(root.path()).is_empty());
+        server_task.abort();
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_cleans_staging_after_rejected_packet() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        fs::create_dir(&destination).await.unwrap();
+        fs::write(destination.join("sentinel"), b"old")
+            .await
+            .unwrap();
+
+        let (address, server_task) = start_file_send_server(destination.clone()).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let response = client
+            .diff_copy(tokio_stream::iter(vec![packet_stat(Some(stat(
+                "../escape",
+                0o600,
+                0,
+                "",
+            )))]))
+            .await
+            .unwrap();
+        let mut response_stream = response.into_inner();
+        let error = response_stream.message().await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        server_task.abort();
+        let _ = server_task.await;
+
+        assert_eq!(
+            fs::read(destination.join("sentinel")).await.unwrap(),
+            b"old"
+        );
+        assert!(transfer_sibling_names(root.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_duplicate_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("duplicate", 0o644, 0, ""))))
+            .await
+            .unwrap();
+        let error = state
+            .handle_packet(packet_stat(Some(stat("duplicate", 0o644, 0, ""))))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_oversized_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(packet_stat(Some(stat(
+                "oversized",
+                0o644,
+                (MAX_FILE_SIZE + 1) as i64,
+                "",
+            ))))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), tonic::Code::ResourceExhausted);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_uses_restrictive_initial_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("private", 0o644, 0, ""))))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::metadata(dir.path().join("private"))
+                .unwrap()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
+    #[tokio::test]
+    async fn test_publish_staging_directory_replaces_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        fs::create_dir(&destination).await.unwrap();
+        fs::write(destination.join("old"), b"old").await.unwrap();
+
+        let staging = prepare_staging_directory(&destination).await.unwrap();
+        fs::write(staging.join("new"), b"new").await.unwrap();
+        publish_staging_directory(&staging, &destination)
+            .await
+            .unwrap();
+
+        assert!(!destination.join("old").exists());
+        assert_eq!(fs::read(destination.join("new")).await.unwrap(), b"new");
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let request = state
+            .handle_packet(packet_stat(Some(stat("hello", 0o644, 5, ""))))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(request.r#type, PacketType::PacketReq as i32);
+        assert_eq!(request.id, 0);
+        assert!(state
+            .handle_packet(packet_stat(None))
+            .await
+            .unwrap()
+            .is_none());
+        assert!(state
+            .handle_packet(packet_data(0, b"world"))
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            state
+                .handle_packet(packet_data(0, b""))
+                .await
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketFin as i32
+        );
+
+        let path = dir.path().join("hello");
+        assert_eq!(std::fs::read(&path).unwrap(), b"world");
+        #[cfg(unix)]
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o644);
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(stat("empty", 0o640, 0, ""))))
+                .await
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketReq as i32
+        );
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        assert_eq!(
+            state
+                .handle_packet(packet_data(0, b""))
+                .await
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketFin as i32
+        );
+
+        let path = dir.path().join("empty");
+        assert!(std::fs::read(&path).unwrap().is_empty());
+        #[cfg(unix)]
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o640);
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_creates_nested_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("a/b/file", 0o600, 4, ""))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.handle_packet(packet_data(0, b"data")).await.unwrap();
+        state.handle_packet(packet_data(0, b"")).await.unwrap();
+
+        assert_eq!(std::fs::read(dir.path().join("a/b/file")).unwrap(), b"data");
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat(
+                "app",
+                fsutil::FileMode::Dir.bits() | 0o755,
+                0,
+                "",
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(None))
+                .await
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketFin as i32
+        );
+        state.finalize().await.unwrap();
+
+        let path = dir.path().join("app");
+        assert!(path.is_dir());
+        #[cfg(unix)]
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o755);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat(
+                "link",
+                fsutil::FileMode::Symlink.bits() | 0o777,
+                0,
+                "/target",
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(None))
+                .await
+                .unwrap()
+                .unwrap()
+                .r#type,
+            PacketType::PacketFin as i32
+        );
+
+        assert_eq!(
+            std::fs::read_link(dir.path().join("link")).unwrap(),
+            Path::new("/target")
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_intermediate_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink("/tmp", dir.path().join("link")).unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(packet_stat(Some(stat("link/file", 0o644, 1, ""))))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_final_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink("/tmp", dir.path().join("file")).unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(packet_stat(Some(stat("file", 0o644, 1, ""))))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_unsupported_file_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(packet_stat(Some(stat(
+                "pipe",
+                fsutil::FileMode::NamedPipe.bits(),
+                0,
+                "",
+            ))))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_truncated_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("hello", 0o644, 5, ""))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.handle_packet(packet_data(0, b"hi")).await.unwrap();
+
+        let error = state.handle_packet(packet_data(0, b"")).await.unwrap_err();
+        assert!(error.message().contains("ended after 2 of 5 bytes"));
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_excess_file_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("hello", 0o644, 3, ""))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+
+        let error = state
+            .handle_packet(packet_data(0, b"more"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::ResourceExhausted);
+        assert!(std::fs::read(dir.path().join("hello")).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_invalid_packet_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        assert!(state.handle_packet(packet_stat(None)).await.is_err());
+        assert!(state
+            .handle_packet(packet_stat(Some(stat("late", 0o644, 0, ""))))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_early_fin_and_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("hello", 0o644, 1, ""))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        assert!(state.handle_packet(packet_fin()).await.is_err());
+        assert!(state.finish_stream().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_packets_after_fin() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.handle_packet(packet_fin()).await.unwrap();
+        assert!(state.handle_packet(packet_stat(None)).await.is_err());
+        assert!(state.finish_stream().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_unknown_packets_and_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(Packet {
+                r#type: 99,
+                stat: None,
+                id: 0,
+                data: vec![],
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        assert!(state.handle_packet(packet_data(99, b"data")).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_rejects_negative_size_and_id_exhaustion() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        let error = state
+            .handle_packet(packet_stat(Some(stat("negative", 0o644, -1, ""))))
+            .await
+            .unwrap_err();
+        assert!(error.message().contains("negative size"));
+
+        state.next_stat_id = u32::MAX;
+        let error = state
+            .handle_packet(packet_stat(Some(stat("overflow", 0o644, 0, ""))))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::ResourceExhausted);
     }
 }
