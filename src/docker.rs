@@ -1844,7 +1844,7 @@ impl Docker {
             &self.client_version(),
         )?;
         let request_uri: hyper::Uri = uri.try_into()?;
-        debug!("{}", &request_uri);
+        debug!("{}", request_uri);
 
         let request = builder
             .uri(request_uri)
@@ -1943,7 +1943,7 @@ impl Docker {
     {
         let bytes = response.into_body().collect().await?.to_bytes();
 
-        debug!("Decoded into string: {}", &String::from_utf8_lossy(&bytes));
+        debug!("Decoded into string: {}", String::from_utf8_lossy(&bytes));
 
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
             if e.is_data() || e.is_syntax() {

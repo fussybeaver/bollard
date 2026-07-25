@@ -68,7 +68,7 @@ async fn events_test(docker: Docker) -> Result<(), Error> {
         .inspect(|&value| {
             println!("{value:?}");
         })
-        .any(|value| matches!(value, Results::EventsResults(EventMessage { typ: _, .. }))));
+        .any(|value| matches!(value, Results::EventsResults(EventMessage { .. }))));
 
     Ok(())
 }
