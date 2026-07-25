@@ -8,6 +8,7 @@ use std::path::Path;
 #[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -203,6 +204,10 @@ impl fmt::Debug for Transport {
 /// a higher client version is used than is compatible with the server. Beware also, that the
 /// docker server will return stubs for a higher version than the version set when communicating.
 ///
+/// A version passed to a `connect_with_*` constructor is sent as the `/vX.Y` request path prefix.
+/// The `*_defaults` constructors do not pass one, and their requests stay unversioned, so the daemon
+/// resolves them at its own default version.
+///
 /// See also [negotiate_version](Docker::negotiate_version()), and the `client_version` argument when instantiating the
 /// [Docker] client instance.
 pub struct ClientVersion {
@@ -259,6 +264,53 @@ impl From<&(AtomicUsize, AtomicUsize)> for ClientVersion {
     }
 }
 
+/// The API version a [`Docker`] client is set to, and whether it is pinned. Only a pinned
+/// version is sent to the daemon, as the `/vX.Y` request path prefix.
+#[derive(Debug)]
+pub(crate) struct ApiVersion {
+    version: (AtomicUsize, AtomicUsize),
+    pinned: AtomicBool,
+}
+
+impl ApiVersion {
+    fn pinned(client_version: &ClientVersion) -> Self {
+        Self {
+            version: (
+                AtomicUsize::new(client_version.major_version),
+                AtomicUsize::new(client_version.minor_version),
+            ),
+            pinned: AtomicBool::new(true),
+        }
+    }
+
+    fn client_version(&self) -> ClientVersion {
+        (&self.version).into()
+    }
+
+    fn pinned_version(&self) -> Option<ClientVersion> {
+        self.pinned
+            .load(Ordering::Relaxed)
+            .then(|| self.client_version())
+    }
+
+    fn unpin(&self) {
+        self.pinned.store(false, Ordering::Relaxed);
+    }
+
+    /// Downgrade to the daemon's version if the client is ahead of it, and pin the outcome.
+    fn negotiated(&self, server_version: &ClientVersion) {
+        if server_version < &self.client_version() {
+            self.version
+                .0
+                .store(server_version.major_version, Ordering::Relaxed);
+            self.version
+                .1
+                .store(server_version.minor_version, Ordering::Relaxed);
+        }
+        self.pinned.store(true, Ordering::Relaxed);
+    }
+}
+
 pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send + Sync>;
 
 /// ---
@@ -284,7 +336,7 @@ pub struct Docker {
     pub(crate) client_type: ClientType,
     pub(crate) client_addr: String,
     pub(crate) client_timeout: u64,
-    pub(crate) version: Arc<(AtomicUsize, AtomicUsize)>,
+    pub(crate) version: Arc<ApiVersion>,
     pub(crate) request_modifier: Option<RequestModifier>,
 }
 
@@ -462,6 +514,7 @@ impl Docker {
             DEFAULT_TIMEOUT,
             API_DEFAULT_VERSION,
         )
+        .map(Docker::unpin_version)
     }
 
     /// Connect using secure HTTPS.
@@ -567,10 +620,7 @@ impl Docker {
             client_type: ClientType::SSL,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -604,6 +654,7 @@ impl Docker {
     pub fn connect_with_http_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_TCP_ADDRESS.to_string());
         Docker::connect_with_http(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            .map(Docker::unpin_version)
     }
 
     /// Connect using unsecured HTTP.
@@ -647,10 +698,7 @@ impl Docker {
             client_type: ClientType::Http,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -726,10 +774,7 @@ impl Docker {
             client_type: ClientType::Custom { scheme },
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -766,6 +811,7 @@ impl Docker {
         let path = DEFAULT_NAMED_PIPE;
 
         Docker::connect_with_socket(path, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            .map(Docker::unpin_version)
     }
 
     /// Connect using a Unix socket or a Windows named pipe.
@@ -881,7 +927,7 @@ impl Docker {
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_host(host: &str) -> Result<Docker, Error> {
-        match host {
+        let docker = match host {
             #[cfg(all(feature = "pipe", unix))]
             h if h.starts_with("unix://") => {
                 Docker::connect_with_unix(h, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
@@ -907,7 +953,9 @@ impl Docker {
             _ => Err(UnsupportedURISchemeError {
                 uri: host.to_string(),
             }),
-        }
+        };
+
+        docker.map(Docker::unpin_version)
     }
 
     /// Connect to the named Docker context.
@@ -1011,6 +1059,7 @@ impl Docker {
             DEFAULT_SOCKET.to_string()
         };
         Docker::connect_with_unix(&path, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            .map(Docker::unpin_version)
     }
 
     /// Resolve the rootless Podman socket path for the current user.
@@ -1084,21 +1133,25 @@ impl Docker {
             .ok()
             .filter(|p| p.starts_with("unix://"))
         {
-            return Docker::connect_with_unix(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+            return Docker::connect_with_unix(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                .map(Docker::unpin_version);
         }
 
         // Probe for Podman rootless socket
         if let Some(sock) = Self::podman_rootless_socket_path() {
-            return Docker::connect_with_unix(&sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+            return Docker::connect_with_unix(&sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                .map(Docker::unpin_version);
         }
 
         // Probe for Podman system socket
         if let Some(sock) = Self::podman_system_socket_path() {
-            return Docker::connect_with_unix(sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION);
+            return Docker::connect_with_unix(sock, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+                .map(Docker::unpin_version);
         }
 
         // Fall back to default Docker socket
         Docker::connect_with_unix(DEFAULT_SOCKET, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            .map(Docker::unpin_version)
     }
 
     /// Connect using a Unix socket.
@@ -1143,10 +1196,7 @@ impl Docker {
             client_type: ClientType::Unix,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -1196,6 +1246,7 @@ impl Docker {
             DEFAULT_NAMED_PIPE.to_string()
         };
         Docker::connect_with_named_pipe(&path, DEFAULT_TIMEOUT, API_DEFAULT_VERSION)
+            .map(Docker::unpin_version)
     }
 
     /// Connect using a Windows Named Pipe.
@@ -1238,10 +1289,7 @@ impl Docker {
             client_type: ClientType::NamedPipe,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -1342,6 +1390,7 @@ impl Docker {
     pub fn connect_with_ssh_defaults() -> Result<Docker, Error> {
         let host = env::var("DOCKER_HOST").unwrap_or_else(|_| DEFAULT_SSH_ADDRESS.to_string());
         Docker::connect_with_ssh(&host, DEFAULT_TIMEOUT, API_DEFAULT_VERSION, None)
+            .map(Docker::unpin_version)
     }
 
     /// Connect using SSH.
@@ -1431,10 +1480,7 @@ impl Docker {
             client_type: ClientType::Ssh,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -1488,10 +1534,7 @@ impl Docker {
             client_type,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new((
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            )),
+            version: Arc::new(ApiVersion::pinned(client_version)),
             request_modifier: None,
         };
 
@@ -1734,11 +1777,21 @@ impl Docker {
 
     /// Return the currently set client version.
     pub fn client_version(&self) -> ClientVersion {
-        self.version.as_ref().into()
+        self.version.client_version()
+    }
+
+    /// For the `*_defaults` constructors, which supply [`API_DEFAULT_VERSION`] on the
+    /// caller's behalf: the caller pinned nothing, so requests stay unversioned.
+    fn unpin_version(self) -> Self {
+        self.version.unpin();
+        self
     }
 
     /// Check with the server for a supported version, and downgrade the client version if
     /// appropriate.
+    ///
+    /// The probe is sent unversioned, so it also reaches daemons that reject the client's
+    /// version as too new. The negotiated version is then sent with every request.
     ///
     /// # Examples:
     ///
@@ -1774,14 +1827,7 @@ impl Docker {
             return Err(APIVersionParseError {});
         };
 
-        if server_version < self.client_version() {
-            self.version
-                .0
-                .store(server_version.major_version, Ordering::Relaxed);
-            self.version
-                .1
-                .store(server_version.minor_version, Ordering::Relaxed);
-        }
+        self.version.negotiated(&server_version);
 
         Ok(self)
     }
@@ -1845,7 +1891,7 @@ impl Docker {
     where
         O: Serialize,
     {
-        self.build_versioned_request(path, builder, query, payload, Some(self.client_version()))
+        self.build_versioned_request(path, builder, query, payload, self.version.pinned_version())
     }
 
     /// Build a request with an explicit API version, or none at all. An unversioned
@@ -2310,6 +2356,82 @@ mod tests {
                 Error::DockerContextNotFoundError { name } => assert_eq!(name, "does-not-exist"),
                 other => panic!("expected DockerContextNotFoundError, got {other:?}"),
             }
+        }
+    }
+
+    #[cfg(feature = "http")]
+    mod api_version {
+        use super::*;
+
+        const V1_44: ClientVersion = ClientVersion {
+            major_version: 1,
+            minor_version: 44,
+        };
+
+        fn client(client_version: &ClientVersion) -> Docker {
+            Docker::connect_with_http("http://localhost:2375", 5, client_version).unwrap()
+        }
+
+        fn request_path(docker: &Docker) -> String {
+            docker
+                .build_request(
+                    "/containers/json",
+                    Builder::new().method(Method::GET),
+                    None::<String>,
+                    Ok(body_full(Bytes::new())),
+                )
+                .unwrap()
+                .uri()
+                .path()
+                .to_owned()
+        }
+
+        #[test]
+        fn pinned_version_is_sent() {
+            assert_eq!(request_path(&client(&V1_44)), "/v1.44/containers/json");
+        }
+
+        #[test]
+        fn pinned_default_version_is_sent() {
+            assert_eq!(
+                request_path(&client(API_DEFAULT_VERSION)),
+                format!("/v{API_DEFAULT_VERSION}/containers/json")
+            );
+        }
+
+        #[test]
+        fn defaults_constructor_pins_nothing() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let docker = Docker::connect_with_http_defaults().unwrap();
+
+            assert_eq!(docker.client_version(), *API_DEFAULT_VERSION);
+            assert_eq!(request_path(&docker), "/containers/json");
+        }
+
+        #[test]
+        fn negotiation_pins_the_downgraded_version() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let docker = Docker::connect_with_http_defaults().unwrap();
+            docker.version.negotiated(&V1_44);
+
+            assert_eq!(docker.client_version(), V1_44);
+            assert_eq!(request_path(&docker), "/v1.44/containers/json");
+        }
+
+        #[test]
+        fn negotiation_pins_the_version_it_keeps() {
+            let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
+            let docker = Docker::connect_with_http_defaults().unwrap();
+            docker.version.negotiated(&ClientVersion {
+                major_version: 1,
+                minor_version: 99,
+            });
+
+            assert_eq!(docker.client_version(), *API_DEFAULT_VERSION);
+            assert_eq!(
+                request_path(&docker),
+                format!("/v{API_DEFAULT_VERSION}/containers/json")
+            );
         }
     }
 }
