@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 while let Some(Ok(stats)) = stream.next().await {
                     println!(
                         "{} - {:?}: {:?} {:?}",
-                        container_id, &container.names, container.image, stats
+                        container_id, container.names, container.image, stats
                     );
                 }
             }
