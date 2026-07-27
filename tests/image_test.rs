@@ -513,7 +513,11 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
-    let id = "build_buildkit_image_test";
+    let id = if streaming_upload {
+        "build_buildkit_image_test_streaming"
+    } else {
+        "build_buildkit_image_test_buffered"
+    };
 
     let build = if streaming_upload {
         let payload = Box::new(compressed).leak();
