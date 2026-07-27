@@ -181,7 +181,7 @@ name = "bollard"
 version = "0.22.0"
 dependencies = [
  "async-stream",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bitflags",
  "bollard-buildkit-proto 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bollard-stubs 1.53.1-rc.29.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
