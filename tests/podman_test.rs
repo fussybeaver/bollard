@@ -23,6 +23,13 @@ mod podman_integration {
         };
 
         let rt = Runtime::new().unwrap();
+        let docker = match rt.block_on(docker.negotiate_version()) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("skipping: no Podman socket available ({e})");
+                return;
+            }
+        };
         let pong = rt.block_on(docker.ping());
         assert!(pong.is_ok(), "ping failed: {:?}", pong.err());
     }
@@ -61,6 +68,13 @@ mod podman_integration {
         };
 
         let rt = Runtime::new().unwrap();
+        let docker = match rt.block_on(docker.negotiate_version()) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("skipping: no Podman socket available ({e})");
+                return;
+            }
+        };
         let result = rt.block_on(docker.list_containers(Some(ListContainersOptions {
             all: true,
             ..Default::default()

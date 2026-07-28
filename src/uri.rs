@@ -27,21 +27,23 @@ impl<'a> Uri<'a> {
         client_type: &ClientType,
         path: &'a str,
         query: Option<O>,
-        client_version: &ClientVersion,
+        client_version: Option<&ClientVersion>,
     ) -> Result<Self, Error>
     where
         O: serde::ser::Serialize,
     {
-        let host_str = format!(
-            "{}://{}/v{}.{}{}",
+        let mut url = Url::parse(&format!(
+            "{}://{}",
             Uri::socket_scheme(client_type),
-            Uri::socket_host(socket, client_type),
-            client_version.major_version,
-            client_version.minor_version,
-            path
-        );
-        let mut url = Url::parse(host_str.as_ref())?;
-        url = url.join(path)?;
+            Uri::socket_host(socket, client_type)
+        ))?;
+        match client_version {
+            Some(version) => url.set_path(&format!(
+                "/v{}.{}{}",
+                version.major_version, version.minor_version, path
+            )),
+            None => url.set_path(path),
+        }
 
         if let Some(pairs) = query {
             trace!("pairs: {}", serde_json::to_string(&pairs)?);
@@ -94,5 +96,103 @@ impl<'a> Uri<'a> {
             ClientType::Ssh => "ssh",
             ClientType::Custom { scheme } => scheme.as_str(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VERSION: ClientVersion = ClientVersion {
+        major_version: 1,
+        minor_version: 53,
+    };
+
+    fn client_type() -> ClientType {
+        ClientType::Custom {
+            scheme: String::from("http"),
+        }
+    }
+
+    #[test]
+    fn parse_retains_api_version_prefix() {
+        let uri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            "/containers/json",
+            None::<String>,
+            Some(&VERSION),
+        )
+        .unwrap();
+        let uri: HyperUri = uri.try_into().unwrap();
+
+        assert_eq!(uri.path(), "/v1.53/containers/json");
+    }
+
+    #[test]
+    fn parse_appends_query_after_version_prefix() {
+        let query = std::collections::HashMap::from([("all", "true")]);
+        let uri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            "/containers/json",
+            Some(query),
+            Some(&VERSION),
+        )
+        .unwrap();
+        let uri: HyperUri = uri.try_into().unwrap();
+
+        assert_eq!(
+            uri.path_and_query().unwrap().as_str(),
+            "/v1.53/containers/json?all=true"
+        );
+    }
+
+    #[test]
+    fn parse_percent_encodes_path_segments() {
+        let uri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            "/containers/my container/json",
+            None::<String>,
+            Some(&VERSION),
+        )
+        .unwrap();
+        let uri: HyperUri = uri.try_into().unwrap();
+
+        assert_eq!(uri.path(), "/v1.53/containers/my%20container/json");
+    }
+
+    #[test]
+    fn parse_confines_delimiters_to_the_path() {
+        let uri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            "/containers/a?b#c/json",
+            None::<String>,
+            Some(&VERSION),
+        )
+        .unwrap();
+        let uri: HyperUri = uri.try_into().unwrap();
+
+        assert_eq!(
+            uri.path_and_query().unwrap().as_str(),
+            "/v1.53/containers/a%3Fb%23c/json"
+        );
+    }
+
+    #[test]
+    fn parse_without_version_omits_prefix() {
+        let uri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            "/version",
+            None::<String>,
+            None,
+        )
+        .unwrap();
+        let uri: HyperUri = uri.try_into().unwrap();
+
+        assert_eq!(uri.path(), "/version");
     }
 }

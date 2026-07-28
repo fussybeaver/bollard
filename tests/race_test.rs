@@ -43,7 +43,12 @@ async fn test_runtime_4() {
 }
 
 async fn run_test(count: usize) {
-    let docker = get_docker().unwrap();
+    let docker = get_docker()
+        .unwrap()
+        .clone()
+        .negotiate_version()
+        .await
+        .unwrap();
     for _ in 0..count {
         let _ = &docker
             .list_images(Some(ListImagesOptionsBuilder::default().all(true).build()))
