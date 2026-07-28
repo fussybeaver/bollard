@@ -7,7 +7,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use http::header::{CONNECTION, CONTENT_TYPE, UPGRADE};
 use http::request::Builder;
 use http_body_util::Full;
-use hyper::{body::Bytes, Method};
+use hyper::{body::Bytes, Method, StatusCode};
 use serde::Serialize;
 use serde_derive::Deserialize;
 use std::cmp::Eq;
@@ -88,6 +88,24 @@ impl fmt::Debug for AttachContainerResults {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AttachContainerResults")
     }
+}
+
+/// Result type for the [Start Container API](Docker::start_container())
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StartContainerResult {
+    /// The container was started by this request (HTTP status 204)
+    Started,
+    /// The container was already running when the request took effect (HTTP status 304)
+    AlreadyStarted,
+}
+
+/// Result type for the [Stop Container API](Docker::stop_container())
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StopContainerResult {
+    /// The container was stopped by this request (HTTP status 204)
+    Stopped,
+    /// The container was already stopped when the request took effect (HTTP status 304)
+    AlreadyStopped,
 }
 
 /// Result type for the [Logs API](Docker::logs())
@@ -323,7 +341,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - unit type `()`, wrapped in a Future.
+    ///  - a [Start Container Result](StartContainerResult), wrapped in a Future. Distinguishes
+    ///    whether the container was started by this request or was already running.
     ///
     /// # Examples
     ///
@@ -337,7 +356,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<crate::query_parameters::StartContainerOptions>,
-    ) -> Result<(), Error> {
+    ) -> Result<StartContainerResult, Error> {
         let url = format!("/containers/{container_name}/start");
 
         let req = self.build_request(
@@ -347,7 +366,10 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_unit(req).await
+        match self.process_into_status(req).await? {
+            StatusCode::NOT_MODIFIED => Ok(StartContainerResult::AlreadyStarted),
+            _ => Ok(StartContainerResult::Started),
+        }
     }
 
     /// ---
@@ -363,7 +385,8 @@ impl Docker {
     ///
     /// # Returns
     ///
-    ///  - unit type `()`, wrapped in a Future.
+    ///  - a [Stop Container Result](StopContainerResult), wrapped in a Future. Distinguishes
+    ///    whether the container was stopped by this request or was already stopped.
     ///
     /// # Examples
     ///
@@ -382,7 +405,7 @@ impl Docker {
         &self,
         container_name: &str,
         options: Option<crate::query_parameters::StopContainerOptions>,
-    ) -> Result<(), Error> {
+    ) -> Result<StopContainerResult, Error> {
         let url = format!("/containers/{container_name}/stop");
 
         let req = self.build_request(
@@ -392,7 +415,10 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_unit(req).await
+        match self.process_into_status(req).await? {
+            StatusCode::NOT_MODIFIED => Ok(StopContainerResult::AlreadyStopped),
+            _ => Ok(StopContainerResult::Stopped),
+        }
     }
 
     /// ---
