@@ -124,5 +124,9 @@ tower-service = { version = "0.3" }
 name = "websocket_attach"
 required-features = ["websocket"]
 
+[[example]]
+name = "build_buildkit_session_providers"
+required-features = ["buildkit"]
+
 [package.metadata.docs.rs]
 features = ["ssl", "ssh"]

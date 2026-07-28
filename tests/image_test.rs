@@ -513,10 +513,15 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
+    // A session id must be unique per build: the daemon can still have a prior
+    // build's session registered when the next one starts, so the streaming and
+    // non-streaming runs here can't share one id (the daemon rejects the second
+    // registration with a 400, which build_image now surfaces rather than
+    // silently swallowing).
     let id = if streaming_upload {
         "build_buildkit_image_test_streaming"
     } else {
-        "build_buildkit_image_test_buffered"
+        "build_buildkit_image_test"
     };
 
     let build = if streaming_upload {
