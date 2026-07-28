@@ -205,6 +205,12 @@ impl fmt::Debug for Transport {
 /// The `*_defaults` constructors do not pass one, and their requests stay unversioned, so the daemon
 /// resolves them at its own default version.
 ///
+/// Before version prefixes were restored, the version argument on explicit constructors was not
+/// reflected in request paths. Applications copied from older examples may therefore behave
+/// differently when connecting to daemons whose default API version is lower than the pinned
+/// version. Use a `*_defaults` constructor to preserve unversioned requests, or call and rebind
+/// [`Docker::negotiate_version`] to select a compatible version.
+///
 /// See also [negotiate_version](Docker::negotiate_version()), and the `client_version` argument when instantiating the
 /// [Docker] client instance.
 pub struct ClientVersion {
@@ -508,24 +514,25 @@ impl Docker {
     ///  - `ssl_cert`: the server certificate path.
     ///  - `ssl_ca`: the certificate chain path.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use std::path::Path;
     ///
     /// use futures_util::future::TryFutureExt;
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_ssl(
     ///     "tcp://localhost:2375/",
     ///     Path::new("/certs/key.pem"),
     ///     Path::new("/certs/cert.pem"),
     ///     Path::new("/certs/ca.pem"),
     ///     120,
-    ///     API_DEFAULT_VERSION).unwrap();
+    ///     &client_version).unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
@@ -645,17 +652,18 @@ impl Docker {
     ///
     ///  - `addr`: connection url including scheme and port.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures_util::future::TryFutureExt;
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_http(
-    ///                    "http://my-custom-docker-server:2735", 4, API_DEFAULT_VERSION)
+    ///                    "http://my-custom-docker-server:2735", 4, &client_version)
     ///                    .unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -697,12 +705,12 @@ impl Docker {
     ///
     ///  - `transport`: transport.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker, BollardRequest};
+    /// use bollard::{BollardRequest, ClientVersion, Docker};
     /// use futures_util::future::TryFutureExt;
     /// use futures_util::FutureExt;
     ///
@@ -713,6 +721,7 @@ impl Docker {
     ///
     /// let client = std::sync::Arc::new(client_builder.build(http_connector));
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_custom_transport(
     ///     move |req: BollardRequest| {
     ///         let client = std::sync::Arc::clone(&client);
@@ -730,7 +739,7 @@ impl Docker {
     ///     },
     ///     Some("http://my-custom-docker-server:2735"),
     ///     4,
-    ///     bollard::API_DEFAULT_VERSION,
+    ///     &client_version,
     /// ).unwrap();
     ///
     /// connection.ping()
@@ -802,16 +811,17 @@ impl Docker {
     ///
     ///  - `path`: connection unix socket path or windows named pipe path.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures_util::future::TryFutureExt;
     ///
-    /// let connection = Docker::connect_with_socket("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
+    /// let connection = Docker::connect_with_socket("/var/run/docker.sock", 120, &client_version).unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_socket(
@@ -883,7 +893,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::Docker;
     ///
     /// use futures_util::future::TryFutureExt;
     ///
@@ -901,7 +911,7 @@ impl Docker {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::Docker;
     ///
     /// use futures_util::future::TryFutureExt;
     ///
@@ -1142,16 +1152,17 @@ impl Docker {
     ///
     ///  - `addr`: connection socket path.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures_util::future::TryFutureExt;
     ///
-    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION).unwrap();
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
+    /// let connection = Docker::connect_with_unix("/var/run/docker.sock", 120, &client_version).unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     pub fn connect_with_unix(
@@ -1237,17 +1248,18 @@ impl Docker {
     ///
     ///  - `addr`: socket location.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures_util::future::TryFutureExt;
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_named_pipe(
-    ///     "//./pipe/docker_engine", 120, API_DEFAULT_VERSION).unwrap();
+    ///     "//./pipe/docker_engine", 120, &client_version).unwrap();
     /// connection.ping().map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     ///
     /// ```
@@ -1381,17 +1393,18 @@ impl Docker {
     ///
     ///  - `addr`: connection url including scheme and port.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures_util::future::TryFutureExt;
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_ssh(
-    ///                    "ssh://user@my-custom-docker-server", 4, API_DEFAULT_VERSION, None)
+    ///                    "ssh://user@my-custom-docker-server", 4, &client_version, None)
     ///                    .unwrap();
     /// connection.ping()
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
@@ -1416,13 +1429,13 @@ impl Docker {
     ///
     ///  - `addr`: connection url including scheme and port.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection.
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///  - `options`: custom SSH options configured via [`SshOptions`].
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use bollard::{API_DEFAULT_VERSION, Docker, SshOptions, KnownHosts};
+    /// use bollard::{ClientVersion, Docker, SshOptions, KnownHosts};
     /// use std::time::Duration;
     ///
     /// use futures_util::future::TryFutureExt;
@@ -1433,10 +1446,11 @@ impl Docker {
     ///     .with_connect_timeout(Duration::from_secs(10))
     ///     .with_known_hosts_check(KnownHosts::Accept);
     ///
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
     /// let connection = Docker::connect_with_ssh_options(
     ///     "ssh://user@my-custom-docker-server",
     ///     4,
-    ///     API_DEFAULT_VERSION,
+    ///     &client_version,
     ///     options
     /// ).unwrap();
     ///
@@ -1476,7 +1490,7 @@ impl Docker {
     ///  - `connector`: a `HostToReplyConnector` as defined in `yup_hyper_mock`
     ///  - `client_addr`: location to connect to.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
-    ///  - `client_version`: the client version to communicate with the server.
+    ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
     /// # Examples
     ///
@@ -1485,7 +1499,7 @@ impl Docker {
     /// # extern crate futures;
     /// # extern crate yup_hyper_mock;
     /// # fn main () {
-    /// use bollard::{API_DEFAULT_VERSION, Docker};
+    /// use bollard::{ClientVersion, Docker};
     ///
     /// use futures::future::Future;
     ///
@@ -1495,7 +1509,8 @@ impl Docker {
     ///   String::from("http://127.0.0.1"),
     ///   "HTTP/1.1 200 OK\r\nServer: mock1\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n".to_string()
     /// );
-    /// let connection = Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION).unwrap();
+    /// let client_version = ClientVersion { major_version: 1, minor_version: 44 };
+    /// let connection = Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, &client_version).unwrap();
     /// connection.ping()
     ///   .and_then(|_| Ok(println!("Connected!")));
     /// # }
