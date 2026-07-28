@@ -309,6 +309,10 @@ pub type RequestModifier = Arc<dyn Fn(BollardRequest) -> BollardRequest + Send +
 ///  - [`Docker::connect_with_ssh_defaults`] (requires `ssh` feature)
 ///  - [`Docker::connect_with_ssh`] (requires `ssh` feature)
 ///  - [`Docker::connect_with_ssh_options`] (requires `ssh` feature)
+///
+/// Cloning a client shares its transport but copies its configuration, including API version
+/// state. [`Docker::negotiate_version`] consumes one client and returns the negotiated client;
+/// existing clones are not changed.
 pub struct Docker {
     pub(crate) transport: Arc<Transport>,
     pub(crate) client_type: ClientType,
@@ -1766,7 +1770,8 @@ impl Docker {
     }
 
     /// Check with the server for a supported version, and downgrade the client version if
-    /// appropriate.
+    /// appropriate. This consumes the client and returns a new client with the negotiated state;
+    /// existing clones are unaffected.
     ///
     /// The probe is sent unversioned, so it also reaches daemons that reject the client's
     /// version as too new. The negotiated version is then sent with every request.
@@ -1774,12 +1779,14 @@ impl Docker {
     /// # Examples:
     ///
     /// ```rust,no_run
-    ///     use bollard::Docker;
+    /// use bollard::Docker;
     ///
-    ///     let docker = Docker::connect_with_http_defaults().unwrap();
-    ///     async move {
-    ///         &docker.negotiate_version().await.unwrap().version();
-    ///     };
+    /// # async fn example() -> Result<(), bollard::errors::Error> {
+    /// let docker = Docker::connect_with_http_defaults()?;
+    /// let docker = docker.negotiate_version().await?;
+    /// let _version = docker.version().await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn negotiate_version(mut self) -> Result<Self, Error> {
         let req = self.build_versioned_request(
@@ -2410,6 +2417,23 @@ mod tests {
                 request_path(&docker),
                 format!("/v{API_DEFAULT_VERSION}/containers/json")
             );
+        }
+
+        #[test]
+        fn clone_has_independent_api_version_state() {
+            let docker = client(&V1_44);
+            let mut clone = docker.clone();
+            let negotiated_version = ClientVersion {
+                major_version: 1,
+                minor_version: 30,
+            };
+
+            clone.version.negotiated(&negotiated_version);
+
+            assert_eq!(docker.client_version(), V1_44);
+            assert_eq!(request_path(&docker), "/v1.44/containers/json");
+            assert_eq!(clone.client_version(), negotiated_version);
+            assert_eq!(request_path(&clone), "/v1.30/containers/json");
         }
     }
 }
