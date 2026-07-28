@@ -8,9 +8,6 @@ use std::path::Path;
 #[cfg(feature = "ssl_providerless")]
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{cmp, env, fmt};
@@ -255,59 +252,40 @@ impl PartialOrd for ClientVersion {
     }
 }
 
-impl From<&(AtomicUsize, AtomicUsize)> for ClientVersion {
-    fn from(tpl: &(AtomicUsize, AtomicUsize)) -> ClientVersion {
-        ClientVersion {
-            major_version: tpl.0.load(Ordering::Relaxed),
-            minor_version: tpl.1.load(Ordering::Relaxed),
-        }
-    }
-}
-
 /// The API version a [`Docker`] client is set to, and whether it is pinned. Only a pinned
 /// version is sent to the daemon, as the `/vX.Y` request path prefix.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct ApiVersion {
-    version: (AtomicUsize, AtomicUsize),
-    pinned: AtomicBool,
+    version: ClientVersion,
+    pinned: bool,
 }
 
 impl ApiVersion {
     fn pinned(client_version: &ClientVersion) -> Self {
         Self {
-            version: (
-                AtomicUsize::new(client_version.major_version),
-                AtomicUsize::new(client_version.minor_version),
-            ),
-            pinned: AtomicBool::new(true),
+            version: *client_version,
+            pinned: true,
         }
     }
 
     fn client_version(&self) -> ClientVersion {
-        (&self.version).into()
+        self.version
     }
 
     fn pinned_version(&self) -> Option<ClientVersion> {
-        self.pinned
-            .load(Ordering::Relaxed)
-            .then(|| self.client_version())
+        self.pinned.then_some(self.version)
     }
 
-    fn unpin(&self) {
-        self.pinned.store(false, Ordering::Relaxed);
+    fn unpin(&mut self) {
+        self.pinned = false;
     }
 
     /// Downgrade to the daemon's version if the client is ahead of it, and pin the outcome.
-    fn negotiated(&self, server_version: &ClientVersion) {
-        if server_version < &self.client_version() {
-            self.version
-                .0
-                .store(server_version.major_version, Ordering::Relaxed);
-            self.version
-                .1
-                .store(server_version.minor_version, Ordering::Relaxed);
+    fn negotiated(&mut self, server_version: &ClientVersion) {
+        if server_version < &self.version {
+            self.version = *server_version;
         }
-        self.pinned.store(true, Ordering::Relaxed);
+        self.pinned = true;
     }
 }
 
@@ -336,7 +314,7 @@ pub struct Docker {
     pub(crate) client_type: ClientType,
     pub(crate) client_addr: String,
     pub(crate) client_timeout: u64,
-    pub(crate) version: Arc<ApiVersion>,
+    pub(crate) version: ApiVersion,
     pub(crate) request_modifier: Option<RequestModifier>,
 }
 
@@ -363,7 +341,7 @@ impl Clone for Docker {
             client_type: self.client_type.clone(),
             client_addr: self.client_addr.clone(),
             client_timeout: self.client_timeout,
-            version: self.version.clone(),
+            version: self.version,
             request_modifier: self.request_modifier.clone(),
         }
     }
@@ -620,7 +598,7 @@ impl Docker {
             client_type: ClientType::SSL,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -698,7 +676,7 @@ impl Docker {
             client_type: ClientType::Http,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -774,7 +752,7 @@ impl Docker {
             client_type: ClientType::Custom { scheme },
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -1196,7 +1174,7 @@ impl Docker {
             client_type: ClientType::Unix,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -1289,7 +1267,7 @@ impl Docker {
             client_type: ClientType::NamedPipe,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -1480,7 +1458,7 @@ impl Docker {
             client_type: ClientType::Ssh,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -1534,7 +1512,7 @@ impl Docker {
             client_type,
             client_addr,
             client_timeout: timeout,
-            version: Arc::new(ApiVersion::pinned(client_version)),
+            version: ApiVersion::pinned(client_version),
             request_modifier: None,
         };
 
@@ -1782,7 +1760,7 @@ impl Docker {
 
     /// For the `*_defaults` constructors, which supply [`API_DEFAULT_VERSION`] on the
     /// caller's behalf: the caller pinned nothing, so requests stay unversioned.
-    fn unpin_version(self) -> Self {
+    fn unpin_version(mut self) -> Self {
         self.version.unpin();
         self
     }
@@ -1803,7 +1781,7 @@ impl Docker {
     ///         &docker.negotiate_version().await.unwrap().version();
     ///     };
     /// ```
-    pub async fn negotiate_version(self) -> Result<Self, Error> {
+    pub async fn negotiate_version(mut self) -> Result<Self, Error> {
         let req = self.build_versioned_request(
             "/version",
             Builder::new().method(Method::GET),
@@ -2411,7 +2389,7 @@ mod tests {
         #[test]
         fn negotiation_pins_the_downgraded_version() {
             let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
-            let docker = Docker::connect_with_http_defaults().unwrap();
+            let mut docker = Docker::connect_with_http_defaults().unwrap();
             docker.version.negotiated(&V1_44);
 
             assert_eq!(docker.client_version(), V1_44);
@@ -2421,7 +2399,7 @@ mod tests {
         #[test]
         fn negotiation_pins_the_version_it_keeps() {
             let _lock = crate::test_lock::ENV_LOCK.lock().unwrap();
-            let docker = Docker::connect_with_http_defaults().unwrap();
+            let mut docker = Docker::connect_with_http_defaults().unwrap();
             docker.version.negotiated(&ClientVersion {
                 major_version: 1,
                 minor_version: 99,
