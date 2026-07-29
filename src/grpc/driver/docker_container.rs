@@ -1604,6 +1604,15 @@ impl super::Image for DockerContainer {
     }
 }
 
+impl super::SolveDefinition for DockerContainer {
+    async fn solve_definition(
+        &self,
+        request: super::DefinitionSolveRequest,
+    ) -> Result<(), GrpcError> {
+        super::solve_definition(self, request).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

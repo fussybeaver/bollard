@@ -284,12 +284,18 @@ impl FileSend for FileSendImpl {
 #[derive(Clone, Debug)]
 pub(crate) struct FileSendPacketImpl {
     pub(crate) dest: PathBuf,
+    pub(crate) limits: FileTransferLimits,
 }
 
 impl FileSendPacketImpl {
     pub fn new(dest: &Path) -> Self {
+        Self::with_limits(dest, FileTransferLimits::default())
+    }
+
+    pub(crate) fn with_limits(dest: &Path, limits: FileTransferLimits) -> Self {
         Self {
             dest: dest.to_owned(),
+            limits,
         }
     }
 
@@ -350,6 +356,15 @@ impl FileSendPacketImpl {
     }
 }
 
+/// Aggregate limits for one packet-based local export.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FileTransferLimits {
+    /// Maximum number of filesystem entries accepted in one transfer.
+    pub max_files: Option<u64>,
+    /// Maximum sum of declared entry sizes accepted in one transfer.
+    pub max_bytes: Option<u64>,
+}
+
 const MAX_PATH_LENGTH: usize = 4096;
 const MAX_LINKNAME_LENGTH: usize = 4096;
 const MAX_FILE_COUNT: usize = 100_000;
@@ -367,6 +382,7 @@ struct FileReceiveState {
     next_stat_id: u32,
     file_count: usize,
     total_size: u64,
+    limits: FileTransferLimits,
 }
 
 struct PendingFile {
@@ -377,6 +393,10 @@ struct PendingFile {
 
 impl FileReceiveState {
     async fn new(base: PathBuf) -> Result<Self, Status> {
+        Self::with_limits(base, FileTransferLimits::default()).await
+    }
+
+    async fn with_limits(base: PathBuf, limits: FileTransferLimits) -> Result<Self, Status> {
         let root = tokio::task::spawn_blocking(move || {
             cap_std::fs::Dir::open_ambient_dir(&base, cap_std::ambient_authority())
         })
@@ -400,6 +420,7 @@ impl FileReceiveState {
             next_stat_id: 0,
             file_count: 0,
             total_size: 0,
+            limits,
         })
     }
 
@@ -547,6 +568,26 @@ impl FileReceiveState {
     }
 
     async fn receive_stat(&mut self, request_id: u32, stat: &Stat) -> Result<bool, Status> {
+        let declared_size = u64::try_from(stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if let Some(max_files) = self.limits.max_files {
+            if self.file_count as u64 >= max_files {
+                return Err(Status::resource_exhausted(
+                    "file transfer exceeds the maximum entry count",
+                ));
+            }
+        }
+        if let Some(max_bytes) = self.limits.max_bytes {
+            let total = self
+                .total_size
+                .checked_add(declared_size)
+                .ok_or_else(|| Status::resource_exhausted("file transfer byte count overflow"))?;
+            if total > max_bytes {
+                return Err(Status::resource_exhausted(
+                    "file transfer exceeds the maximum byte count",
+                ));
+            }
+        }
         if self.file_count >= MAX_FILE_COUNT {
             return Err(Status::resource_exhausted("too many files in export"));
         }
@@ -558,11 +599,9 @@ impl FileReceiveState {
             )));
         }
 
-        let size = u64::try_from(stat.size)
-            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
         self.total_size = self
             .total_size
-            .checked_add(size)
+            .checked_add(declared_size)
             .ok_or_else(|| Status::resource_exhausted("export size overflow"))?;
         if self.total_size > MAX_TOTAL_SIZE {
             return Err(Status::resource_exhausted(
@@ -863,13 +902,14 @@ impl FileSendPacket for FileSendPacketImpl {
         request: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
         let destination = self.dest.clone();
+        let limits = self.limits;
         let mut in_stream = request.into_inner();
 
         // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
         let out_stream = async_stream::try_stream! {
             debug!("starting FileSend packet export");
             let staging = prepare_staging_directory(&destination).await?;
-            let mut state = Some(match FileReceiveState::new(staging.clone()).await {
+            let mut state = Some(match FileReceiveState::with_limits(staging.clone(), limits).await {
                 Ok(state) => state,
                 Err(error) => {
                     if let Err(cleanup_error) = remove_path(&staging).await {
@@ -1726,7 +1766,8 @@ mod tests {
     use super::build::ImageBuildSessionProviders;
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
-        FileSendPacketImpl, FileSendPacketServer, SshAgentSource, SshProvider, MAX_FILE_SIZE,
+        FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, SshAgentSource, SshProvider,
+        MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1810,6 +1851,45 @@ mod tests {
         for path in ["", ".", "..", "../escape", "/absolute", "foo/../bar"] {
             assert!(FileSendPacketImpl::validate_path(path).is_err(), "{path:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_enforces_transfer_limits() {
+        let root = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::with_limits(
+            root.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: Some(1),
+                max_bytes: Some(4),
+            },
+        )
+        .await
+        .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("first", 0o644, 4, ""))))
+            .await
+            .unwrap();
+        let error = state
+            .handle_packet(packet_stat(Some(stat("second", 0o644, 0, ""))))
+            .await
+            .unwrap_err();
+        assert!(error.message().contains("maximum entry count"));
+
+        let mut state = FileReceiveState::with_limits(
+            root.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: None,
+                max_bytes: Some(3),
+            },
+        )
+        .await
+        .unwrap();
+        let error = state
+            .handle_packet(packet_stat(Some(stat("too-large", 0o644, 4, ""))))
+            .await
+            .unwrap_err();
+        assert!(error.message().contains("maximum byte count"));
     }
 
     #[cfg(unix)]
