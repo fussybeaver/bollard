@@ -141,31 +141,24 @@ where
     type Item = T;
     type Error = Error;
 
-    // Docker streams whitespace-separated JSON values (progress messages are
-    // CRLF-terminated). Rather than split on '\n' and reason about the leftover
-    // bytes -- which mishandles a "\r\n" terminator that arrives split from its
-    // value across a read boundary, orphaning a lone '\r' that later surfaces as
-    // a spurious "bytes remaining on stream" (#560) -- parse one value at a time
-    // with serde's StreamDeserializer, which skips any inter-value whitespace
-    // ('\r', '\n', spaces, blank lines) for free.
+    // Parse one whitespace-separated JSON value at a time with serde's
+    // StreamDeserializer, which skips inter-value whitespace (Docker terminates
+    // progress messages with CRLF). Avoids the orphaned-'\r' "bytes remaining on
+    // stream" flake of the old '\n'-splitting decoder (#560).
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         decode_stream(src, false)
     }
 
-    // At EOF a trailing value need not be whitespace-terminated, so an
-    // incomplete-value error on the remainder is only a real truncation if
-    // non-whitespace bytes remain; pure trailing whitespace (e.g. a '\r' whose
-    // '\n' never arrived) is a clean end.
+    // At EOF a trailing value need not be whitespace-terminated: a partial value
+    // is a real truncation, but a whitespace-only remainder is a clean end.
     fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         decode_stream(src, true)
     }
 }
 
-/// Pulls the next whitespace-separated JSON value out of `src`. `result` is that
-/// value (`Some(Ok)`), a decode error (`Some(Err)`, which is `is_eof()` when the
-/// value is only partially buffered), or `None` when the buffer holds nothing
-/// but whitespace. `consumed` is how many bytes that step read: leading
-/// whitespace plus the value, with any trailing bytes left in place.
+/// Pulls the next whitespace-separated JSON value out of `src`, advancing past
+/// the value (and any preceding whitespace) and leaving trailing bytes in place.
+/// Returns `Ok(None)` when the buffer holds no complete value yet.
 fn decode_stream<T: DeserializeOwned>(src: &mut BytesMut, eof: bool) -> Result<Option<T>, Error> {
     let (result, consumed) = {
         let mut stream = serde_json::Deserializer::from_slice(src).into_iter::<T>();
@@ -184,18 +177,20 @@ fn decode_stream<T: DeserializeOwned>(src: &mut BytesMut, eof: bool) -> Result<O
             #[cfg(feature = "json_data_content")]
             contents: String::from_utf8_lossy(src).to_string(),
         }),
-        // Incomplete next value, or a whitespace-only buffer (StreamDeserializer
-        // yields None). Wait for more bytes; at EOF, pure trailing whitespace is
-        // a clean end and anything else is a real truncation.
-        Some(Err(_)) | None => {
-            if eof && !src.iter().all(|b| b.is_ascii_whitespace()) {
+        // A partial (non-whitespace) value: wait for more bytes, or error at EOF
+        // where it is a real truncation.
+        Some(Err(_)) => {
+            if eof {
                 return Err(Error::IOError {
                     err: std::io::Error::other("bytes remaining on stream"),
                 });
             }
-            if eof {
-                src.clear();
-            }
+            Ok(None)
+        }
+        // Only whitespace left (StreamDeserializer yields None): drop it so it is
+        // not rescanned on every call. A clean end at EOF.
+        None => {
+            src.clear();
             Ok(None)
         }
     }
