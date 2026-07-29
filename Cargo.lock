@@ -183,7 +183,7 @@ dependencies = [
  "async-stream",
  "base64 0.23.0",
  "bitflags",
- "bollard-buildkit-proto 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bollard-buildkit-proto 0.8.0",
  "bollard-stubs 1.53.1-rc.29.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
  "cap-std",
@@ -232,18 +232,6 @@ dependencies = [
 [[package]]
 name = "bollard-buildkit-proto"
 version = "0.8.0"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "ureq",
-]
-
-[[package]]
-name = "bollard-buildkit-proto"
-version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06961b3a889aadf51ad938dfcd07a29e49bd77c6e25ed8c1021764ea888ec7bd"
 dependencies = [
@@ -251,6 +239,18 @@ dependencies = [
  "prost-types",
  "tonic",
  "tonic-prost",
+ "ureq",
+]
+
+[[package]]
+name = "bollard-buildkit-proto"
+version = "0.9.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
  "ureq",
 ]
 
