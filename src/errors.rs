@@ -95,6 +95,15 @@ pub enum Error {
     /// Error emitted when a session is not provided to the buildkit engine
     #[error("Buildkit requires a builder version set")]
     MissingVersionBuildkitError {},
+    /// Error emitted when the buildkit session serving a build fails.
+    #[cfg(feature = "buildkit_providerless")]
+    #[error(transparent)]
+    SessionBuildkitError {
+        /// The underlying grpc/session error. Boxed to break the recursion
+        /// with [`crate::grpc::error::GrpcError::DockerError`], which wraps an
+        /// `Error` in turn.
+        err: Box<crate::grpc::error::GrpcError>,
+    },
     /// Error emitted when JSON fails to serialize.
     #[error(transparent)]
     JsonSerdeError {

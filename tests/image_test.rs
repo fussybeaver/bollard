@@ -22,6 +22,8 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::fs::{remove_file, File};
 use std::io::Write;
+#[cfg(all(unix, feature = "buildkit_providerless"))]
+use std::os::unix::fs::MetadataExt;
 
 #[macro_use]
 pub mod common;
@@ -511,7 +513,16 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
-    let id = "build_buildkit_image_test";
+    // A session id must be unique per build: the daemon can still have a prior
+    // build's session registered when the next one starts, so the streaming and
+    // non-streaming runs here can't share one id (the daemon rejects the second
+    // registration with a 400, which build_image now surfaces rather than
+    // silently swallowing).
+    let id = if streaming_upload {
+        "build_buildkit_image_test_streaming"
+    } else {
+        "build_buildkit_image_test"
+    };
 
     let build = if streaming_upload {
         let payload = Box::new(compressed).leak();
@@ -722,7 +733,7 @@ COPY --from=builder1 /token /",
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -850,7 +861,7 @@ RUN touch bollard.txt
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -915,7 +926,7 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1039,7 +1050,7 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1165,7 +1176,7 @@ ENTRYPOINT ls buildkit-bollard.txt
     creds_hsh.insert("localhost:5000", credentials);
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1264,7 +1275,7 @@ RUN touch bollard.txt
         bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
 
     let res = bollard::grpc::driver::Build::docker_build(
-        driver,
+        &driver,
         name,
         frontend_opts,
         load_input,
@@ -1389,12 +1400,19 @@ COPY --from=builder message-2.txt .
 
 #[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_outputs_local_test(docker: Docker) -> Result<(), Error> {
-    let dockerfile = String::from(
+    let symlink_commands = if cfg!(unix) {
+        "RUN ln -s message-1.txt /export/link && ln -s /message-1.txt /export/absolute-link"
+    } else {
+        ""
+    };
+    let dockerfile = format!(
         "FROM localhost:5000/alpine as builder
-RUN echo hello > message-1.txt
-RUN mkdir subfolder && echo world > subfolder/message-2.txt
-RUN touch empty.txt
-",
+RUN mkdir -p /export/subfolder && echo hello > /export/message-1.txt && echo world > /export/subfolder/message-2.txt && touch /export/empty.txt
+RUN chmod 0640 /export/message-1.txt && chmod 0600 /export/empty.txt && chmod 0750 /export/subfolder
+{symlink_commands}
+FROM scratch
+COPY --from=builder /export/ /
+"
     );
     let mut header = tar::Header::new_gnu();
     header.set_path("Dockerfile").unwrap();
@@ -1417,17 +1435,10 @@ RUN touch empty.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
-    let dest_path = std::path::Path::new("/tmp/buildkit-outputs");
-
-    // cleanup - usually for local testing, the grpc handler will overwrite
-    if dest_path.exists() {
-        if dest_path.is_file() {
-            std::fs::remove_file(dest_path).unwrap();
-        } else {
-            std::fs::remove_dir_all(dest_path).unwrap();
-        }
-    }
-    assert!(!dest_path.exists());
+    let output_root = tempfile::tempdir().map_err(|err| Error::IOError { err })?;
+    let dest_path = output_root.path().join("buildkit-outputs");
+    std::fs::create_dir(&dest_path).map_err(|err| Error::IOError { err })?;
+    std::fs::write(dest_path.join("sentinel"), b"old").map_err(|err| Error::IOError { err })?;
 
     let id = "build_buildkit_image_outputs_local_test";
     let build = &docker
@@ -1439,7 +1450,9 @@ RUN touch empty.txt
                 .version(BuilderVersion::BuilderBuildKit)
                 .rm(true)
                 .session(id)
-                .outputs(ImageBuildOutput::Local("/tmp/buildkit-outputs".to_string()))
+                .outputs(ImageBuildOutput::Local(
+                    dest_path.to_string_lossy().into_owned(),
+                ))
                 .build(),
             Some(creds_hsh),
             Some(http_body_util::Either::Left(Full::new(compressed.into()))),
@@ -1474,6 +1487,40 @@ RUN touch empty.txt
     assert_eq!(
         std::fs::read_to_string(dest_path.join("empty.txt")).unwrap(),
         String::from("")
+    );
+    assert!(!dest_path.join("sentinel").exists());
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            dest_path.join("message-1.txt").metadata().unwrap().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(
+            dest_path.join("empty.txt").metadata().unwrap().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            dest_path.join("subfolder").metadata().unwrap().mode() & 0o777,
+            0o750
+        );
+        assert_eq!(
+            std::fs::read_link(dest_path.join("link")).unwrap(),
+            std::path::Path::new("message-1.txt")
+        );
+        assert_eq!(
+            std::fs::read_link(dest_path.join("absolute-link")).unwrap(),
+            std::path::Path::new("/message-1.txt")
+        );
+    }
+    let transfer_artifacts = std::fs::read_dir(output_root.path())
+        .map_err(|err| Error::IOError { err })?
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".bollard-staging-") || name.contains(".bollard-backup-"))
+        .collect::<Vec<_>>();
+    assert!(
+        transfer_artifacts.is_empty(),
+        "leftover transfer artifacts: {transfer_artifacts:?}"
     );
 
     Ok(())

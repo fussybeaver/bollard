@@ -36,7 +36,7 @@ impl BuildkitDaemon {
 
 impl Driver for BuildkitDaemon {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<super::GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
@@ -46,22 +46,24 @@ impl Driver for BuildkitDaemon {
         channel.grpc_handle(session_id, services).await
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
-        Box::new(BuildkitDaemonTearDownHandler {})
+    fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError> {
+        Ok(Box::new(BuildkitDaemonTearDownHandler {}))
     }
 }
 
 struct BuildkitDaemonTearDownHandler {}
 
 impl DriverTearDownHandler for BuildkitDaemonTearDownHandler {
-    fn tear_down(&self) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>>>> {
+    fn tear_down(
+        &self,
+    ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         Box::pin(futures_util::future::ok(()))
     }
 }
 
 impl super::Build for BuildkitDaemon {
     async fn docker_build(
-        self,
+        &self,
         name: &str,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -87,7 +89,7 @@ impl super::Build for BuildkitDaemon {
 
 impl super::Export for BuildkitDaemon {
     async fn export(
-        self,
+        &self,
         exporter_request: ImageExporterEnum,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -116,7 +118,7 @@ impl super::Export for BuildkitDaemon {
 
 impl super::Image for BuildkitDaemon {
     async fn registry(
-        self,
+        &self,
         output: ImageRegistryOutput,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,

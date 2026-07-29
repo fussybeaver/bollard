@@ -1,6 +1,6 @@
 #![type_length_limit = "2097152"]
 
-use bollard::container::AttachContainerResults;
+use bollard::container::{AttachContainerResults, StartContainerResult, StopContainerResult};
 #[cfg(feature = "test_checkpoint")]
 use bollard::container::{
     CreateCheckpointOptions, DeleteCheckpointOptions, ListCheckpointsOptions,
@@ -345,6 +345,34 @@ async fn kill_container_test(docker: Docker) -> Result<(), Error> {
     let _ = &docker
         .remove_container("integration_test_kill_container", None)
         .await?;
+
+    Ok(())
+}
+
+async fn start_stop_container_test(docker: Docker) -> Result<(), Error> {
+    create_daemon(&docker, "integration_test_start_stop_container").await?;
+
+    let start_result = &docker
+        .start_container("integration_test_start_stop_container", None)
+        .await?;
+    assert_eq!(start_result, &StartContainerResult::AlreadyStarted);
+
+    let stop_result = &docker
+        .stop_container("integration_test_start_stop_container", None)
+        .await?;
+    assert_eq!(stop_result, &StopContainerResult::Stopped);
+
+    let stop_result = &docker
+        .stop_container("integration_test_start_stop_container", None)
+        .await?;
+    assert_eq!(stop_result, &StopContainerResult::AlreadyStopped);
+
+    let start_result = &docker
+        .start_container("integration_test_start_stop_container", None)
+        .await?;
+    assert_eq!(start_result, &StartContainerResult::Started);
+
+    kill_container(&docker, "integration_test_start_stop_container").await?;
 
     Ok(())
 }
@@ -953,6 +981,11 @@ fn integration_test_stats() {
 #[test]
 fn integration_test_kill_container() {
     connect_to_docker_and_run!(kill_container_test);
+}
+
+#[test]
+fn integration_test_start_stop_container() {
+    connect_to_docker_and_run!(start_stop_container_test);
 }
 
 // note: resource updating isn't supported on Windows
