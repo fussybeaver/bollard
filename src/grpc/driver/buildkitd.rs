@@ -140,3 +140,12 @@ impl super::Image for BuildkitDaemon {
         .await
     }
 }
+
+impl super::SolveDefinition for BuildkitDaemon {
+    async fn solve_definition(
+        &self,
+        request: super::DefinitionSolveRequest,
+    ) -> Result<(), GrpcError> {
+        super::solve_definition(self, request).await
+    }
+}
