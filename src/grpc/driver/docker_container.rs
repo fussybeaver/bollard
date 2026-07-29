@@ -32,6 +32,7 @@ use tower_service::Service;
 
 use crate::{
     auth::DockerCredentials,
+    container::StopContainerResult,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     grpc::{
         build::{ImageBuildFrontendOptions, ImageBuildLoadInput},
@@ -982,7 +983,9 @@ async fn stop_owned_container(
     );
 
     match stop.await {
-        Ok(()) => Ok(StopResult::Stopped),
+        Ok(StopContainerResult::Stopped | StopContainerResult::AlreadyStopped) => {
+            Ok(StopResult::Stopped)
+        }
         Err(error) if is_not_found_grpc(&error) => Ok(StopResult::Stopped),
         Err(error) if is_operation_timeout(&error) => Ok(StopResult::TimedOut),
         Err(error) => Err(error),
