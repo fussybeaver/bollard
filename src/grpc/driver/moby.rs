@@ -42,7 +42,7 @@ impl Moby {
 
 impl Driver for Moby {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
@@ -117,8 +117,8 @@ impl Driver for Moby {
         Ok(control_client)
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
-        Box::new(MobyTearDownHandler {})
+    fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
+        Ok(Box::new(MobyTearDownHandler {}))
     }
 }
 
@@ -134,7 +134,7 @@ impl super::DriverTearDownHandler for MobyTearDownHandler {
 
 impl super::Build for Moby {
     async fn docker_build(
-        self,
+        &self,
         name: &str,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,

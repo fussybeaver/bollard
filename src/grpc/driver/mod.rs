@@ -54,11 +54,11 @@ pub mod moby;
 
 pub(crate) trait Driver {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<GrpcServer>,
     ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>;
-    fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler>;
+    fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
 }
 
 pub(crate) trait DriverTearDownHandler: Send + Sync {
@@ -180,7 +180,7 @@ pub enum ImageExporterEnum {
 pub trait Export {
     /// Export the container to a tar
     async fn export(
-        self,
+        &self,
         exporter_request: ImageExporterEnum,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -193,7 +193,7 @@ pub trait Export {
 pub trait Build {
     /// Build a docker container without exporting
     async fn docker_build(
-        self,
+        &self,
         name: &str,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -206,7 +206,7 @@ pub trait Build {
 pub trait Image {
     /// Push a container build to the registry
     async fn registry(
-        self,
+        &self,
         output: ImageRegistryOutput,
         frontend_opts: ImageBuildFrontendOptions,
         load_input: ImageBuildLoadInput,
@@ -220,7 +220,7 @@ pub trait Image {
     reason = "The nature of this function requires many parameters, maybe we can eventually create a Request structure?"
 )]
 pub(crate) async fn solve(
-    driver: impl Driver,
+    driver: &impl Driver,
     exporter: &str,
     exporter_attrs: HashMap<String, String>,
     path: Option<PathBuf>,
@@ -287,7 +287,7 @@ pub(crate) async fn solve(
         services.push(GrpcServer::FileSend(filesend));
     }
 
-    let tear_down_handler = driver.get_tear_down_handler();
+    let tear_down_handler = driver.begin_solve()?;
 
     let id = build_ref.unwrap_or_default();
 
@@ -326,7 +326,7 @@ pub(crate) async fn solve(
 }
 
 async fn execute_solve<D: Driver>(
-    driver: D,
+    driver: &D,
     session_id: &str,
     request: SolveRequest,
     services: Vec<GrpcServer>,
@@ -371,7 +371,7 @@ mod tests {
         pin::Pin,
         sync::{
             atomic::{AtomicUsize, Ordering},
-            Arc,
+            Arc, Mutex,
         },
     };
 
@@ -397,17 +397,23 @@ mod tests {
         setup_error: Option<Status>,
         setup_pending: bool,
         setup_panic: bool,
+        session_ids: Arc<Mutex<Vec<String>>>,
     }
 
     impl Driver for TestDriver {
         async fn grpc_handle(
-            self,
+            &self,
             session_id: &str,
             _services: Vec<GrpcServer>,
         ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>
         {
-            if let Some(error) = self.setup_error {
-                return Err(error.into());
+            self.session_ids
+                .lock()
+                .expect("session IDs mutex is not poisoned")
+                .push(String::from(session_id));
+
+            if let Some(error) = &self.setup_error {
+                return Err(error.clone().into());
             }
             if self.setup_pending {
                 std::future::pending::<()>().await;
@@ -425,8 +431,8 @@ mod tests {
             Ok(ControlClient::with_interceptor(channel, interceptor))
         }
 
-        fn get_tear_down_handler(&self) -> Box<dyn DriverTearDownHandler> {
-            Box::new(TestTearDown::default())
+        fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError> {
+            Ok(Box::new(TestTearDown::default()))
         }
     }
 
@@ -565,6 +571,7 @@ mod tests {
             setup_error: None,
             setup_pending: false,
             setup_panic: false,
+            session_ids: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -574,6 +581,7 @@ mod tests {
             setup_error: Some(Status::internal("grpc setup failed")),
             setup_pending: false,
             setup_panic: false,
+            session_ids: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -583,6 +591,7 @@ mod tests {
             setup_error: None,
             setup_pending: true,
             setup_panic: false,
+            session_ids: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -592,6 +601,7 @@ mod tests {
             setup_error: None,
             setup_pending: false,
             setup_panic: true,
+            session_ids: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -610,7 +620,7 @@ mod tests {
     async fn execute_solve_tears_down_after_setup_failure() {
         let calls = Arc::new(AtomicUsize::new(0));
         let result = execute_solve(
-            failing_test_driver(),
+            &failing_test_driver(),
             "session",
             SolveRequest::default(),
             Vec::new(),
@@ -628,7 +638,7 @@ mod tests {
             start_test_server(Some(Status::not_found("solve failed"))).await;
         let calls = Arc::new(AtomicUsize::new(0));
         let result = execute_solve(
-            test_driver(address),
+            &test_driver(address),
             "session",
             SolveRequest::default(),
             Vec::new(),
@@ -646,7 +656,7 @@ mod tests {
         let (address, shutdown_sender, handle) = start_test_server(None).await;
         let calls = Arc::new(AtomicUsize::new(0));
         let result = execute_solve(
-            test_driver(address),
+            &test_driver(address),
             "session",
             SolveRequest::default(),
             Vec::new(),
@@ -664,7 +674,7 @@ mod tests {
         let (address, shutdown_sender, handle) = start_test_server(None).await;
         let calls = Arc::new(AtomicUsize::new(0));
         let result = execute_solve(
-            test_driver(address),
+            &test_driver(address),
             "session",
             SolveRequest::default(),
             Vec::new(),
@@ -678,19 +688,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn solve_reuses_a_driver_with_fresh_session_ids() {
+        let (address, shutdown_sender, handle) = start_test_server(None).await;
+        let driver = test_driver(address);
+        let session_ids = Arc::clone(&driver.session_ids);
+
+        for _ in 0..2 {
+            solve(
+                &driver,
+                "moby",
+                HashMap::new(),
+                None,
+                ImageBuildFrontendOptions::default(),
+                ImageBuildLoadInput::Upload(bytes::Bytes::new()),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        }
+
+        stop_test_server(shutdown_sender, handle).await;
+
+        let session_ids = session_ids
+            .lock()
+            .expect("session IDs mutex is not poisoned");
+        assert_eq!(session_ids.len(), 2);
+        assert_ne!(session_ids[0], session_ids[1]);
+    }
+
+    #[tokio::test]
     async fn execute_solve_tears_down_after_cancellation() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let task = tokio::spawn(execute_solve(
-            pending_test_driver(),
-            "session",
-            SolveRequest::default(),
-            Vec::new(),
-            teardown(calls.clone(), None),
-        ));
+        let driver = pending_test_driver();
+        let result = tokio::time::timeout(
+            Duration::from_millis(10),
+            execute_solve(
+                &driver,
+                "session",
+                SolveRequest::default(),
+                Vec::new(),
+                teardown(calls.clone(), None),
+            ),
+        )
+        .await;
 
-        tokio::task::yield_now().await;
-        task.abort();
-        let _ = task.await;
+        assert!(result.is_err());
         for _ in 0..10 {
             tokio::task::yield_now().await;
         }
@@ -702,7 +745,7 @@ mod tests {
     async fn execute_solve_tears_down_after_panic() {
         let calls = Arc::new(AtomicUsize::new(0));
         let result = std::panic::AssertUnwindSafe(execute_solve(
-            panicking_test_driver(),
+            &panicking_test_driver(),
             "session",
             SolveRequest::default(),
             Vec::new(),

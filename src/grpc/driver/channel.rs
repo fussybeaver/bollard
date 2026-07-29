@@ -16,6 +16,8 @@ use crate::grpc::{
     HealthServerImpl,
 };
 
+use crate::grpc::error::GrpcError;
+
 use super::DriverInterceptor;
 
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
@@ -36,7 +38,7 @@ impl BuildkitChannel {
 
 impl super::Driver for BuildkitChannel {
     async fn grpc_handle(
-        self,
+        &self,
         session_id: &str,
         services: Vec<crate::grpc::GrpcServer>,
     ) -> Result<
@@ -52,7 +54,7 @@ impl super::Driver for BuildkitChannel {
             metadata_grpc_method,
         };
 
-        let mut control_client = ControlClient::with_interceptor(self.channel, interceptor);
+        let mut control_client = ControlClient::with_interceptor(self.channel.clone(), interceptor);
 
         let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
         let streamreader = ReaderStream::new(asyncreader);
@@ -89,9 +91,9 @@ impl super::Driver for BuildkitChannel {
         Ok(control_client)
     }
 
-    fn get_tear_down_handler(&self) -> Box<dyn super::DriverTearDownHandler> {
+    fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
         // Teardown is handled by the caller
-        Box::new(NoOpDriverTearDownHandler)
+        Ok(Box::new(NoOpDriverTearDownHandler))
     }
 }
 

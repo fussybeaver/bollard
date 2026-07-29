@@ -68,6 +68,16 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
+      - run:
+          name: Clean up Bollard BuildKit resources
+          command: |
+            for container in $(docker ps -aq --filter label=com.github.fussybeaver.bollard.buildkit.managed=true); do
+              docker rm -f "$container" || true
+            done
+            for volume in $(docker volume ls -q --filter label=com.github.fussybeaver.bollard.buildkit.managed=true); do
+              docker volume rm "$volume" || true
+            done
+          when: always
   test_chrono:
     docker:
       - image: docker:29.3
