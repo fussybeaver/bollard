@@ -5,6 +5,16 @@ use std::num::TryFromIntError;
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
+    /// A named local source mount is invalid.
+    #[error("invalid local mount `{name}` at `{path}`: {reason}")]
+    InvalidLocalMount {
+        /// The BuildKit local source name.
+        name: String,
+        /// The requested mount path.
+        path: String,
+        /// The validation failure.
+        reason: String,
+    },
     /// A Docker-container BuildKit resource exists but does not match the requested builder.
     #[error("BuildKit Docker-container {resource} `{name}` is incompatible: {reason}")]
     DockerContainerResourceConflict {

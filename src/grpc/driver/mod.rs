@@ -8,6 +8,7 @@ use bollard_buildkit_proto::moby::{
     },
     filesync::{
         packet::file_send_server::FileSendServer as FileSendPacketServer,
+        packet::file_sync_server::FileSyncServer,
         v1::{auth_server::AuthServer, file_send_server::FileSendServer},
     },
     sshforward::v1::ssh_server::SshServer,
@@ -201,6 +202,7 @@ pub struct DefinitionSolveOptions {
     ssh: bool,
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
+    local_mounts: HashMap<String, PathBuf>,
 }
 
 /// Builder for direct LLB definition solve options.
@@ -260,6 +262,12 @@ impl DefinitionSolveOptionsBuilder {
     /// Set aggregate packet-export transfer limits.
     pub fn file_transfer_limits(mut self, limits: FileTransferLimits) -> Self {
         self.options.file_transfer_limits = limits;
+        self
+    }
+
+    /// Expose a host directory under a BuildKit `local://` source name.
+    pub fn local_mount(mut self, name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        self.options.local_mounts.insert(name.into(), path.into());
         self
     }
 
@@ -480,6 +488,12 @@ pub(crate) async fn solve_definition(
         build_ref,
     } = request;
 
+    let local_mounts = run_until(
+        deadline,
+        validate_local_mounts(options.local_mounts.clone()),
+    )
+    .await?;
+
     let mut auth_provider = super::AuthProvider::new();
     for (host, credentials) in options.credentials.clone() {
         auth_provider.set_docker_credentials(&host, credentials);
@@ -510,6 +524,13 @@ pub(crate) async fn solve_definition(
         }
     }
 
+    if !local_mounts.is_empty() {
+        let filesync = FileSyncServer::new(super::filesync::FileSyncImpl::new(local_mounts))
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+        services.push(GrpcServer::FileSync(filesync));
+    }
+
     let tear_down_handler = driver.begin_solve()?;
     let solve_request =
         build_definition_solve_request(definition, &exporter, &options, &session_id, build_ref);
@@ -523,6 +544,42 @@ pub(crate) async fn solve_definition(
         deadline,
     )
     .await
+}
+
+async fn validate_local_mounts(
+    mounts: HashMap<String, PathBuf>,
+) -> Result<HashMap<String, PathBuf>, GrpcError> {
+    tokio::task::spawn_blocking(move || {
+        mounts
+            .into_iter()
+            .map(|(name, path)| {
+                if name.is_empty() {
+                    return Err(GrpcError::InvalidLocalMount {
+                        name,
+                        path: path.display().to_string(),
+                        reason: String::from("mount name must not be empty"),
+                    });
+                }
+
+                let canonical =
+                    std::fs::canonicalize(&path).map_err(|error| GrpcError::InvalidLocalMount {
+                        name: name.clone(),
+                        path: path.display().to_string(),
+                        reason: format!("cannot canonicalize root: {error}"),
+                    })?;
+                if !canonical.is_dir() {
+                    return Err(GrpcError::InvalidLocalMount {
+                        name,
+                        path: canonical.display().to_string(),
+                        reason: String::from("mount root is not a directory"),
+                    });
+                }
+                Ok((name, canonical))
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| tonic::Status::internal(format!("local mount validation failed: {error}")))?
 }
 
 fn build_definition_solve_request(
@@ -678,6 +735,7 @@ mod tests {
         UpdateBuildHistoryResponse, UsageRecord,
     };
     use futures_util::{stream::Empty, FutureExt};
+    use tempfile::tempdir;
     use tokio::{net::TcpListener, sync::oneshot};
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::{
@@ -972,6 +1030,16 @@ mod tests {
         assert_eq!(options.file_transfer_limits.max_files, Some(2));
     }
 
+    #[test]
+    fn definition_options_store_local_mounts() {
+        let path = PathBuf::from("/tmp/context");
+        let options = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", path.clone())
+            .build();
+
+        assert_eq!(options.local_mounts.get("context"), Some(&path));
+    }
+
     #[tokio::test]
     async fn definition_solve_registers_shared_services_without_upload() {
         let driver = failing_test_driver();
@@ -993,6 +1061,49 @@ mod tests {
         assert!(names.iter().any(|name| name.contains("ForwardAgent")));
         assert!(names.iter().any(|name| name.contains("diffcopy")));
         assert!(!names.iter().any(|name| name.contains("upload")));
+    }
+
+    #[tokio::test]
+    async fn definition_solve_registers_filesync_for_local_mounts() {
+        let root = tempdir().expect("temporary local mount exists");
+        let driver = failing_test_driver();
+        let service_names = Arc::clone(&driver.service_names);
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition::default(),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        )
+        .with_options(
+            DefinitionSolveOptionsBuilder::new()
+                .local_mount("context", root.path())
+                .build(),
+        );
+
+        assert!(solve_definition(&driver, request).await.is_err());
+        let names = service_names.lock().unwrap();
+        assert!(names
+            .iter()
+            .any(|name| name == "/moby.filesync.v1.FileSync/diffcopy"));
+    }
+
+    #[tokio::test]
+    async fn definition_solve_rejects_invalid_local_mount_before_driver_setup() {
+        let driver = failing_test_driver();
+        let service_names = Arc::clone(&driver.service_names);
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition::default(),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        )
+        .with_options(
+            DefinitionSolveOptionsBuilder::new()
+                .local_mount("context", "/path/that/does/not/exist")
+                .build(),
+        );
+
+        let error = solve_definition(&driver, request)
+            .await
+            .expect_err("invalid local mount must fail");
+        assert!(error.to_string().contains("invalid local mount"));
+        assert!(service_names.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
