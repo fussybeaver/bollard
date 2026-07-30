@@ -78,16 +78,22 @@ struct TearDownGuard {
     handler: Arc<dyn DriverTearDownHandler>,
     runtime: tokio::runtime::Handle,
     task: Option<tokio::task::JoinHandle<Result<(), GrpcError>>>,
+    timeout: Duration,
     armed: bool,
     started: bool,
 }
 
 impl TearDownGuard {
     fn new(handler: Box<dyn DriverTearDownHandler>) -> Self {
+        Self::with_timeout(handler, TEAR_DOWN_TIMEOUT)
+    }
+
+    fn with_timeout(handler: Box<dyn DriverTearDownHandler>, timeout: Duration) -> Self {
         Self {
             handler: Arc::from(handler),
             runtime: tokio::runtime::Handle::current(),
             task: None,
+            timeout,
             armed: true,
             started: false,
         }
@@ -104,43 +110,62 @@ impl TearDownGuard {
 
         self.started = true;
         let handler = Arc::clone(&self.handler);
-        self.task = Some(self.runtime.spawn(run_tear_down(handler)));
+        self.task = Some(self.runtime.spawn(run_tear_down(handler, self.timeout)));
     }
 
     async fn tear_down(&mut self) -> Result<(), GrpcError> {
         self.start();
-        self.task
-            .take()
-            .ok_or_else(|| GrpcError::TearDownTaskUnavailable)?
-            .await
-            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?
+        let result = {
+            let task = self
+                .task
+                .as_mut()
+                .ok_or_else(|| GrpcError::TearDownTaskUnavailable)?;
+            task.await
+        };
+        self.task.take();
+        result.map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?
     }
 }
 
-async fn run_tear_down(handler: Arc<dyn DriverTearDownHandler>) -> Result<(), GrpcError> {
-    tokio::time::timeout(TEAR_DOWN_TIMEOUT, handler.tear_down())
-        .await
-        .map_err(|_| {
-            GrpcError::from(tonic::Status::deadline_exceeded(
+async fn run_tear_down(
+    handler: Arc<dyn DriverTearDownHandler>,
+    timeout: Duration,
+) -> Result<(), GrpcError> {
+    let mut task = tokio::spawn(async move { handler.tear_down().await });
+    match tokio::time::timeout(timeout, &mut task).await {
+        Ok(result) => result
+            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?,
+        Err(_) => {
+            task.abort();
+            let _ = task.await;
+            Err(GrpcError::from(tonic::Status::deadline_exceeded(
                 "driver teardown exceeded its timeout",
-            ))
-        })?
+            )))
+        }
+    }
 }
 
 impl Drop for TearDownGuard {
     fn drop(&mut self) {
-        if !self.armed || self.started {
-            // Dropping a JoinHandle detaches the task, allowing cleanup to finish after the
-            // solve future is cancelled or unwinds due to a panic.
+        if !self.armed {
             return;
         }
 
-        let handler = Arc::clone(&self.handler);
-        self.runtime.spawn(async move {
-            if let Err(error) = run_tear_down(handler).await {
-                warn!("failed to tear down BuildKit driver after cancellation: {error}");
-            }
-        });
+        if let Some(task) = self.task.take() {
+            self.runtime.spawn(async move {
+                if let Err(error) = task.await {
+                    warn!("failed to join BuildKit driver teardown after cancellation: {error}");
+                }
+            });
+        } else if !self.started {
+            let handler = Arc::clone(&self.handler);
+            let timeout = self.timeout;
+            self.runtime.spawn(async move {
+                if let Err(error) = run_tear_down(handler, timeout).await {
+                    warn!("failed to tear down BuildKit driver after cancellation: {error}");
+                }
+            });
+        }
     }
 }
 
@@ -278,6 +303,54 @@ pub struct DefinitionSolveRequest {
     pub exporter: DefinitionExporter,
     options: DefinitionSolveOptions,
     build_ref: Option<BuildRef>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SolveRequestSummary {
+    has_ref: bool,
+    has_session: bool,
+    has_definition: bool,
+    definition_ops: usize,
+    frontend_attrs: usize,
+    frontend_inputs: usize,
+    entitlements: usize,
+    exporters: usize,
+    cache_exports: usize,
+    cache_imports: usize,
+    has_source_policy: bool,
+    has_source_policy_session: bool,
+    internal: bool,
+    enable_session_exporter: bool,
+}
+
+impl From<&SolveRequest> for SolveRequestSummary {
+    fn from(request: &SolveRequest) -> Self {
+        Self {
+            has_ref: !request.r#ref.is_empty(),
+            has_session: !request.session.is_empty(),
+            has_definition: request.definition.is_some(),
+            definition_ops: request
+                .definition
+                .as_ref()
+                .map_or(0, |definition| definition.def.len()),
+            frontend_attrs: request.frontend_attrs.len(),
+            frontend_inputs: request.frontend_inputs.len(),
+            entitlements: request.entitlements.len(),
+            exporters: request.exporters.len(),
+            cache_exports: request
+                .cache
+                .as_ref()
+                .map_or(0, |cache| cache.exports.len()),
+            cache_imports: request
+                .cache
+                .as_ref()
+                .map_or(0, |cache| cache.imports.len()),
+            has_source_policy: request.source_policy.is_some(),
+            has_source_policy_session: !request.source_policy_session.is_empty(),
+            internal: request.internal,
+            enable_session_exporter: request.enable_session_exporter,
+        }
+    }
 }
 
 impl DefinitionSolveRequest {
@@ -594,17 +667,34 @@ async fn execute_solve<D: Driver>(
     tear_down_handler: Box<dyn DriverTearDownHandler>,
     deadline: Option<Instant>,
 ) -> Result<(), GrpcError> {
-    let mut tear_down_guard = TearDownGuard::new(tear_down_handler);
+    execute_solve_with_teardown_timeout(
+        driver,
+        session_id,
+        request,
+        services,
+        tear_down_handler,
+        deadline,
+        TEAR_DOWN_TIMEOUT,
+    )
+    .await
+}
+
+async fn execute_solve_with_teardown_timeout<D: Driver>(
+    driver: &D,
+    session_id: &str,
+    request: SolveRequest,
+    services: Vec<GrpcServer>,
+    tear_down_handler: Box<dyn DriverTearDownHandler>,
+    deadline: Option<Instant>,
+    teardown_timeout: Duration,
+) -> Result<(), GrpcError> {
+    let mut tear_down_guard = TearDownGuard::with_timeout(tear_down_handler, teardown_timeout);
     let mut control_client = match run_until(deadline, driver.grpc_handle(session_id, services))
         .await
     {
         Ok(client) => client
             .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
-        Err(error) if is_deadline_exceeded(&error) => {
-            drop(tear_down_guard);
-            return Err(error);
-        }
         Err(error) => {
             // A driver may have created resources before gRPC setup failed.
             if let Err(teardown_error) = tear_down_guard.tear_down().await {
@@ -614,7 +704,10 @@ async fn execute_solve<D: Driver>(
         }
     };
 
-    debug!("sending solve request: {:#?}", request);
+    debug!(
+        "sending solve request: {:?}",
+        SolveRequestSummary::from(&request)
+    );
     let solve_result = match run_until(
         deadline,
         control_client.solve(request).map_err(GrpcError::from),
@@ -622,13 +715,9 @@ async fn execute_solve<D: Driver>(
     .await
     {
         Ok(_) => Ok(()),
-        Err(error) if is_deadline_exceeded(&error) => {
-            drop(tear_down_guard);
-            return Err(error);
-        }
         Err(error) => Err(error),
     };
-    debug!("solve res: {:#?}", solve_result);
+    debug!("solve completed: success={}", solve_result.is_ok());
 
     let tear_down_result = tear_down_guard.tear_down().await;
 
@@ -659,20 +748,13 @@ where
     }
 }
 
-fn is_deadline_exceeded(error: &GrpcError) -> bool {
-    matches!(
-        error,
-        GrpcError::TonicStatus { err } if err.code() == tonic::Code::DeadlineExceeded
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
         net::SocketAddr,
         pin::Pin,
         sync::{
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, Mutex,
         },
     };
@@ -685,7 +767,10 @@ mod tests {
         UpdateBuildHistoryResponse, UsageRecord,
     };
     use futures_util::{stream::Empty, FutureExt};
-    use tokio::{net::TcpListener, sync::oneshot};
+    use tokio::{
+        net::TcpListener,
+        sync::{oneshot, Notify},
+    };
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::{
         transport::{Channel, Endpoint, Server},
@@ -747,6 +832,7 @@ mod tests {
     struct TestTearDown {
         calls: Arc<AtomicUsize>,
         error: Option<Status>,
+        started: Option<Arc<Notify>>,
     }
 
     impl DriverTearDownHandler for TestTearDown {
@@ -755,6 +841,9 @@ mod tests {
         ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>>
         {
             self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(started) = &self.started {
+                started.notify_one();
+            }
             let result = self
                 .error
                 .clone()
@@ -763,8 +852,41 @@ mod tests {
         }
     }
 
+    struct BlockingTearDown {
+        calls: Arc<AtomicUsize>,
+        started: Arc<Notify>,
+        cancelled: Arc<AtomicBool>,
+    }
+
+    impl DriverTearDownHandler for BlockingTearDown {
+        fn tear_down(
+            &self,
+        ) -> Pin<Box<dyn futures_core::Future<Output = Result<(), GrpcError>> + Send + 'static>>
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.started.notify_one();
+            let cancelled = Arc::clone(&self.cancelled);
+
+            struct CancellationFlag(Arc<AtomicBool>);
+
+            impl Drop for CancellationFlag {
+                fn drop(&mut self) {
+                    self.0.store(true, Ordering::SeqCst);
+                }
+            }
+
+            Box::pin(async move {
+                let _cancellation_flag = CancellationFlag(cancelled);
+                std::future::pending::<()>().await;
+                #[allow(unreachable_code)]
+                Ok(())
+            })
+        }
+    }
+
     struct TestControl {
         solve_error: Option<Status>,
+        solve_pending: bool,
     }
 
     type EmptyUsageRecords = Empty<Result<UsageRecord, Status>>;
@@ -797,6 +919,9 @@ mod tests {
             &self,
             _request: Request<SolveRequest>,
         ) -> Result<Response<SolveResponse>, Status> {
+            if self.solve_pending {
+                std::future::pending::<()>().await;
+            }
             match &self.solve_error {
                 Some(error) => Err(error.clone()),
                 None => Ok(Response::new(SolveResponse::default())),
@@ -849,11 +974,26 @@ mod tests {
     async fn start_test_server(
         solve_error: Option<Status>,
     ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+        start_test_server_with_pending(solve_error, false).await
+    }
+
+    async fn start_pending_solve_server(
+    ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+        start_test_server_with_pending(None, true).await
+    }
+
+    async fn start_test_server_with_pending(
+        solve_error: Option<Status>,
+        solve_pending: bool,
+    ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let server = Server::builder()
-            .add_service(ControlServer::new(TestControl { solve_error }))
+            .add_service(ControlServer::new(TestControl {
+                solve_error,
+                solve_pending,
+            }))
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
                 let _ = shutdown_receiver.await;
             });
@@ -917,7 +1057,34 @@ mod tests {
     }
 
     fn teardown(calls: Arc<AtomicUsize>, error: Option<Status>) -> Box<dyn DriverTearDownHandler> {
-        Box::new(TestTearDown { calls, error })
+        Box::new(TestTearDown {
+            calls,
+            error,
+            started: None,
+        })
+    }
+
+    fn teardown_with_started(
+        calls: Arc<AtomicUsize>,
+        started: Arc<Notify>,
+    ) -> Box<dyn DriverTearDownHandler> {
+        Box::new(TestTearDown {
+            calls,
+            error: None,
+            started: Some(started),
+        })
+    }
+
+    fn blocking_teardown(
+        calls: Arc<AtomicUsize>,
+        started: Arc<Notify>,
+        cancelled: Arc<AtomicBool>,
+    ) -> Box<dyn DriverTearDownHandler> {
+        Box::new(BlockingTearDown {
+            calls,
+            started,
+            cancelled,
+        })
     }
 
     fn status_code(result: Result<(), GrpcError>) -> tonic::Code {
@@ -949,6 +1116,33 @@ mod tests {
             Some(&String::from("/out"))
         );
         assert_eq!(request.session, "session-id");
+    }
+
+    #[test]
+    fn solve_request_summary_redacts_request_values() {
+        let mut request = SolveRequest {
+            r#ref: String::from("sensitive-build-reference"),
+            session: String::from("sensitive-session-id"),
+            definition: Some(bollard_buildkit_proto::pb::Definition {
+                def: vec![b"sensitive-definition-bytes".to_vec()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        request
+            .frontend_attrs
+            .insert(String::from("secret-path"), String::from("/private"));
+
+        let summary = SolveRequestSummary::from(&request);
+        let rendered = format!("{summary:?}");
+
+        assert_eq!(summary.definition_ops, 1);
+        assert_eq!(summary.frontend_attrs, 1);
+        assert!(!rendered.contains("sensitive-build-reference"));
+        assert!(!rendered.contains("sensitive-session-id"));
+        assert!(!rendered.contains("sensitive-definition-bytes"));
+        assert!(!rendered.contains("secret-path"));
+        assert!(!rendered.contains("/private"));
     }
 
     #[test]
@@ -1130,6 +1324,8 @@ mod tests {
     #[tokio::test]
     async fn execute_solve_tears_down_after_cancellation() {
         let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let notification = started.notified();
         let driver = pending_test_driver();
         let result = tokio::time::timeout(
             Duration::from_millis(10),
@@ -1138,59 +1334,108 @@ mod tests {
                 "session",
                 SolveRequest::default(),
                 Vec::new(),
-                teardown(calls.clone(), None),
+                teardown_with_started(calls.clone(), started.clone()),
                 None,
             ),
         )
         .await;
 
         assert!(result.is_err());
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
+        tokio::time::timeout(Duration::from_secs(1), notification)
+            .await
+            .expect("cancelled solve starts teardown");
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
-    async fn execute_solve_returns_deadline_and_detaches_teardown() {
+    async fn execute_solve_awaits_teardown_after_setup_timeout() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let result = execute_solve(
+        let started = Arc::new(Notify::new());
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let result = execute_solve_with_teardown_timeout(
             &pending_test_driver(),
             "session",
             SolveRequest::default(),
             Vec::new(),
-            teardown(calls.clone(), None),
+            blocking_teardown(calls.clone(), started, cancelled.clone()),
             Some(Instant::now() + Duration::from_millis(1)),
+            Duration::from_millis(5),
         )
         .await;
 
         assert_eq!(status_code(result), tonic::Code::DeadlineExceeded);
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cancelled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn execute_solve_awaits_teardown_after_solve_timeout() {
+        let (address, shutdown_sender, handle) = start_pending_solve_server().await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let result = execute_solve_with_teardown_timeout(
+            &test_driver(address),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            blocking_teardown(calls.clone(), started, cancelled.clone()),
+            Some(Instant::now() + Duration::from_millis(25)),
+            Duration::from_millis(5),
+        )
+        .await;
+        stop_test_server(shutdown_sender, handle).await;
+
+        assert_eq!(status_code(result), tonic::Code::DeadlineExceeded);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cancelled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn execute_solve_preserves_solve_error_over_teardown_timeout() {
+        let (address, shutdown_sender, handle) =
+            start_test_server(Some(Status::not_found("solve failed"))).await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let result = execute_solve_with_teardown_timeout(
+            &test_driver(address),
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            blocking_teardown(calls.clone(), started, cancelled.clone()),
+            None,
+            Duration::from_millis(5),
+        )
+        .await;
+        stop_test_server(shutdown_sender, handle).await;
+
+        assert_eq!(status_code(result), tonic::Code::NotFound);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cancelled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
     async fn execute_solve_tears_down_after_panic() {
         let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let notification = started.notified();
         let result = std::panic::AssertUnwindSafe(execute_solve(
             &panicking_test_driver(),
             "session",
             SolveRequest::default(),
             Vec::new(),
-            teardown(calls.clone(), None),
+            teardown_with_started(calls.clone(), started.clone()),
             None,
         ))
         .catch_unwind()
         .await;
 
         assert!(result.is_err());
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-
+        tokio::time::timeout(Duration::from_secs(1), notification)
+            .await
+            .expect("panicked solve starts teardown");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
