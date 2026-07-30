@@ -10,6 +10,8 @@ pub mod driver;
 pub mod error;
 /// End-user buildkit export functions
 pub mod export;
+#[cfg(test)]
+mod filesync;
 mod fsutil;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
