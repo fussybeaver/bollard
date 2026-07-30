@@ -47,6 +47,7 @@ pub(crate) const DEFAULT_MAX_SEND_MSG_SIZE: usize = 16 << 20;
 /// Used by buildkit [here](https://github.com/moby/buildkit/blob/082e8d8cf3267ddd3a28de1e258eaec20ebe3bbe/cmd/buildkitd/main.go#L309)
 pub(crate) const DEFAULT_MAX_RECV_MSG_SIZE: usize = 16 << 20;
 const TEAR_DOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_DEFINITION_SOLVE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// The Buildkit Daemon driver opens a GRPC connection by connecting to a Buildkit Daemon over a TCP connection.
 pub mod buildkitd;
@@ -217,7 +218,7 @@ pub enum DefinitionExporter {
 }
 
 /// Options for a direct LLB definition solve.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DefinitionSolveOptions {
     cache_to: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
     cache_from: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
@@ -226,6 +227,20 @@ pub struct DefinitionSolveOptions {
     ssh: bool,
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
+}
+
+impl Default for DefinitionSolveOptions {
+    fn default() -> Self {
+        Self {
+            cache_to: Vec::new(),
+            cache_from: Vec::new(),
+            credentials: HashMap::new(),
+            secrets: HashMap::new(),
+            ssh: false,
+            timeout: Some(DEFAULT_DEFINITION_SOLVE_TIMEOUT),
+            file_transfer_limits: FileTransferLimits::default(),
+        }
+    }
 }
 
 /// Builder for direct LLB definition solve options.
@@ -277,6 +292,8 @@ impl DefinitionSolveOptionsBuilder {
     }
 
     /// Set one wall-clock deadline for setup and the active solve.
+    ///
+    /// The default is ten minutes. Teardown has a separate bounded timeout.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.options.timeout = Some(timeout);
         self
@@ -551,7 +568,14 @@ pub(crate) async fn solve_definition(
     let deadline = request
         .options
         .timeout
-        .map(|timeout| Instant::now() + timeout);
+        .map(|timeout| {
+            Instant::now().checked_add(timeout).ok_or_else(|| {
+                GrpcError::from(tonic::Status::invalid_argument(
+                    "direct solve timeout is too large",
+                ))
+            })
+        })
+        .transpose()?;
 
     let DefinitionSolveRequest {
         definition,
@@ -615,14 +639,12 @@ fn build_definition_solve_request(
     normalize_empty_source_locations(&mut definition);
 
     let (exporter_type, exporter_attrs, exporters) = match exporter {
-        DefinitionExporter::Local(path) => {
-            let mut attrs = HashMap::new();
-            attrs.insert(String::from("dest"), path.to_string_lossy().to_string());
+        DefinitionExporter::Local(_) => {
             let exporters = vec![Exporter {
                 r#type: String::from("local"),
-                attrs: attrs.clone(),
+                attrs: HashMap::new(),
             }];
-            (String::from("local"), attrs, exporters)
+            (String::from("local"), HashMap::new(), exporters)
         }
     };
 
@@ -1109,12 +1131,11 @@ mod tests {
         assert!(request.frontend_attrs.is_empty());
         assert!(request.frontend_inputs.is_empty());
         assert_eq!(request.exporter_deprecated, "local");
+        assert!(request.exporter_attrs_deprecated.is_empty());
         assert_eq!(request.exporters.len(), 1);
         assert_eq!(request.exporters[0].r#type, "local");
-        assert_eq!(
-            request.exporters[0].attrs.get("dest"),
-            Some(&String::from("/out"))
-        );
+        assert!(request.exporters[0].attrs.is_empty());
+        assert!(!format!("{request:?}").contains("/out"));
         assert_eq!(request.session, "session-id");
     }
 
@@ -1171,6 +1192,35 @@ mod tests {
         assert!(options.ssh);
         assert_eq!(options.timeout, Some(Duration::from_secs(3)));
         assert_eq!(options.file_transfer_limits.max_files, Some(2));
+    }
+
+    #[test]
+    fn definition_options_have_a_bounded_default_timeout() {
+        assert_eq!(
+            DefinitionSolveOptions::default().timeout,
+            Some(DEFAULT_DEFINITION_SOLVE_TIMEOUT)
+        );
+    }
+
+    #[tokio::test]
+    async fn definition_solve_rejects_an_overflowing_timeout() {
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition::default(),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        )
+        .with_options(
+            DefinitionSolveOptionsBuilder::new()
+                .timeout(Duration::MAX)
+                .build(),
+        );
+
+        let error = solve_definition(&failing_test_driver(), request)
+            .await
+            .expect_err("an overflowing timeout must be rejected");
+        assert!(matches!(
+            error,
+            GrpcError::TonicStatus { err } if err.code() == tonic::Code::InvalidArgument
+        ));
     }
 
     #[tokio::test]
