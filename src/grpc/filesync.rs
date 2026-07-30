@@ -1,8 +1,8 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
     pin::Pin,
-    time::UNIX_EPOCH,
+    sync::{Arc, OnceLock},
 };
 
 use bollard_buildkit_proto::{
@@ -14,20 +14,21 @@ use futures_util::{stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
 #[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
+use cap_std::fs::MetadataExt as CapMetadataExt;
 
 const CHUNK_SIZE: usize = 32 * 1024;
 const MAX_ENTRIES: usize = 100_000;
+const MAX_PENDING_REQUESTS: usize = 64;
 const MAX_PATH_LENGTH: usize = 4096;
 const MAX_LINKNAME_LENGTH: usize = 4096;
 
 #[derive(Clone, Debug)]
 pub(crate) struct FileSyncImpl {
-    mounts: HashMap<String, PathBuf>,
+    mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
 }
 
 impl FileSyncImpl {
-    pub(crate) fn new(mounts: HashMap<String, PathBuf>) -> Self {
+    pub(crate) fn new(mounts: HashMap<String, Arc<cap_std::fs::Dir>>) -> Self {
         Self { mounts }
     }
 }
@@ -35,7 +36,7 @@ impl FileSyncImpl {
 #[derive(Debug)]
 struct SourceEntry {
     stat: Stat,
-    path: PathBuf,
+    relative: PathBuf,
     regular: bool,
 }
 
@@ -64,7 +65,10 @@ impl FileSync for FileSyncImpl {
     }
 }
 
-fn lookup_mount(mounts: &HashMap<String, PathBuf>, name: &str) -> Result<PathBuf, Status> {
+fn lookup_mount(
+    mounts: &HashMap<String, Arc<cap_std::fs::Dir>>,
+    name: &str,
+) -> Result<Arc<cap_std::fs::Dir>, Status> {
     mounts
         .get(name)
         .cloned()
@@ -72,7 +76,7 @@ fn lookup_mount(mounts: &HashMap<String, PathBuf>, name: &str) -> Result<PathBuf
 }
 
 fn transfer_stream<S>(
-    root: PathBuf,
+    root: Arc<cap_std::fs::Dir>,
     input: S,
 ) -> Pin<Box<dyn Stream<Item = Result<Packet, Status>> + Send>>
 where
@@ -80,14 +84,14 @@ where
 {
     let mut input = Box::pin(input);
     let output = async_stream::try_stream! {
-        let entries = collect_entries(root).await?;
+        let entries = collect_entries(Arc::clone(&root)).await?;
         let mut files = HashMap::new();
 
         for (id, entry) in entries.into_iter().enumerate() {
             let id = u32::try_from(id)
                 .map_err(|_| Status::resource_exhausted("too many local source entries"))?;
             if entry.regular {
-                files.insert(id, entry.path.clone());
+                files.insert(id, entry.relative);
             }
             yield Packet {
                 r#type: PacketType::PacketStat as i32,
@@ -104,30 +108,82 @@ where
             data: Vec::new(),
         };
 
+        let mut pending = VecDeque::new();
         loop {
-            let packet = input.next().await.ok_or_else(|| {
-                Status::failed_precondition("file sync stream ended before PACKET_FIN")
-            })??;
+            let packet = match pending.pop_front() {
+                Some(packet) => packet,
+                None => input.next().await.ok_or_else(|| {
+                    Status::failed_precondition("file sync stream ended before PACKET_FIN")
+                })??,
+            };
             let packet_type = PacketType::try_from(packet.r#type)
                 .map_err(|_| Status::invalid_argument("unknown FileSync packet type"))?;
             match packet_type {
                 PacketType::PacketReq => {
-                    let path = files.remove(&packet.id).ok_or_else(|| {
+                    let relative = files.remove(&packet.id).ok_or_else(|| {
                         Status::invalid_argument(format!(
                             "invalid or repeated file request {}",
                             packet.id
                         ))
                     })?;
-                    let mut file = tokio::fs::File::open(&path).await.map_err(|error| {
-                        Status::failed_precondition(format!("failed to open requested file: {error}"))
-                    })?;
+                    let mut file = open_requested_file(Arc::clone(&root), relative).await?;
                     let mut buffer = vec![0_u8; CHUNK_SIZE];
+                    let mut finish = false;
+
                     loop {
-                        let read = tokio::io::AsyncReadExt::read(&mut file, &mut buffer)
-                            .await
-                            .map_err(|error| {
-                                Status::internal(format!("failed to read requested file: {error}"))
-                            })?;
+                        let (incoming, read) = tokio::select! {
+                            incoming = input.next() => (Some(incoming), None),
+                            read = tokio::io::AsyncReadExt::read(&mut file, &mut buffer) => (None, Some(read)),
+                        };
+
+                        if let Some(incoming) = incoming {
+                            let incoming = incoming.ok_or_else(|| {
+                                Status::failed_precondition(
+                                    "file sync stream ended during file transfer",
+                                )
+                            })??;
+                            let incoming_type = match PacketType::try_from(incoming.r#type) {
+                                Ok(packet_type) => packet_type,
+                                Err(_) => Err::<PacketType, Status>(Status::invalid_argument(
+                                    "unknown FileSync packet type",
+                                ))?,
+                            };
+                            match incoming_type {
+                                PacketType::PacketReq => {
+                                    if files.remove(&incoming.id).is_none() {
+                                        Err::<(), Status>(Status::invalid_argument(format!(
+                                            "invalid or repeated file request {}",
+                                            incoming.id
+                                        )))?;
+                                    }
+                                    if pending.len() >= MAX_PENDING_REQUESTS {
+                                        Err::<(), Status>(Status::resource_exhausted(
+                                            "too many pending FileSync requests",
+                                        ))?;
+                                    }
+                                    pending.push_back(incoming);
+                                }
+                                PacketType::PacketFin => {
+                                    finish = true;
+                                    break;
+                                }
+                                PacketType::PacketErr => {
+                                    Err::<(), Status>(Status::aborted(
+                                        "BuildKit aborted the FileSync transfer",
+                                    ))?;
+                                }
+                                PacketType::PacketStat | PacketType::PacketData => {
+                                    Err::<(), Status>(Status::invalid_argument(
+                                        "unexpected packet type during file transfer",
+                                    ))?;
+                                }
+                            }
+                            continue;
+                        }
+
+                        let read = read.expect("FileSync read event is present").map_err(|error| {
+                            Status::internal(format!("failed to read requested file: {error}"))
+                        })?;
                         if read == 0 {
                             break;
                         }
@@ -138,6 +194,17 @@ where
                             data: buffer[..read].to_vec(),
                         };
                     }
+
+                    if finish {
+                        yield Packet {
+                            r#type: PacketType::PacketFin as i32,
+                            stat: None,
+                            id: 0,
+                            data: Vec::new(),
+                        };
+                        break;
+                    }
+
                     yield Packet {
                         r#type: PacketType::PacketData as i32,
                         stat: None,
@@ -178,6 +245,38 @@ where
         ]),
     });
     Box::pin(output)
+}
+
+async fn open_requested_file(
+    root: Arc<cap_std::fs::Dir>,
+    relative: PathBuf,
+) -> Result<tokio::fs::File, Status> {
+    let permit = filesystem_work_semaphore()
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| Status::internal("filesystem worker semaphore was closed"))?;
+    let file = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let file = root.open(&relative).map_err(|error| {
+            Status::failed_precondition(format!("failed to open requested file: {error}"))
+        })?;
+        if !file
+            .metadata()
+            .map_err(|error| {
+                Status::failed_precondition(format!("failed to stat requested file: {error}"))
+            })?
+            .is_file()
+        {
+            return Err(Status::failed_precondition(
+                "requested local source entry is no longer a regular file",
+            ));
+        }
+        Ok(file.into_std())
+    })
+    .await
+    .map_err(|error| Status::internal(format!("FileSync filesystem worker failed: {error}")))??;
+    Ok(tokio::fs::File::from_std(file))
 }
 
 fn metadata_value(
@@ -226,43 +325,47 @@ fn validate_options(metadata: &tonic::metadata::MetadataMap) -> Result<(), Statu
     Ok(())
 }
 
-async fn collect_entries(root: PathBuf) -> Result<Vec<SourceEntry>, Status> {
-    tokio::task::spawn_blocking(move || collect_entries_blocking(&root))
+async fn collect_entries(root: Arc<cap_std::fs::Dir>) -> Result<Vec<SourceEntry>, Status> {
+    let permit = filesystem_work_semaphore()
+        .clone()
+        .acquire_owned()
         .await
-        .map_err(|error| Status::internal(format!("FileSync filesystem worker failed: {error}")))?
+        .map_err(|_| Status::internal("filesystem worker semaphore was closed"))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        collect_entries_blocking(root)
+    })
+    .await
+    .map_err(|error| Status::internal(format!("FileSync filesystem worker failed: {error}")))?
 }
 
-fn collect_entries_blocking(root: &Path) -> Result<Vec<SourceEntry>, Status> {
+fn collect_entries_blocking(root: Arc<cap_std::fs::Dir>) -> Result<Vec<SourceEntry>, Status> {
     let mut entries = Vec::new();
-    let mut directories = vec![PathBuf::new()];
+    let mut directories = vec![(PathBuf::new(), root.try_clone().map_err(map_fs_error)?)];
 
-    while let Some(relative_dir) = directories.pop() {
-        let directory = root.join(&relative_dir);
-        let mut children = std::fs::read_dir(&directory)
-            .map_err(|error| Status::internal(format!("failed to read local source: {error}")))?
+    while let Some((relative_dir, directory)) = directories.pop() {
+        let mut children = directory
+            .entries()
+            .map_err(map_fs_error)?
             .map(|entry| {
-                let entry = entry.map_err(|error| {
-                    Status::internal(format!("failed to read local source entry: {error}"))
-                })?;
+                let entry = entry.map_err(map_fs_error)?;
                 let name = entry.file_name().into_string().map_err(|_| {
                     Status::invalid_argument("local source contains a non-UTF-8 filename")
                 })?;
-                Ok((name, entry.path()))
+                Ok((name, entry))
             })
             .collect::<Result<Vec<_>, Status>>()?;
         children.sort_by(|left, right| left.0.cmp(&right.0));
 
         let mut child_directories = Vec::new();
-        for (name, path) in children {
+        for (name, entry) in children {
             let relative = relative_dir.join(&name);
-            let metadata = std::fs::symlink_metadata(&path).map_err(|error| {
-                Status::internal(format!("failed to stat local source entry: {error}"))
-            })?;
-            let entry = source_entry(relative.clone(), path, metadata)?;
-            if entry.stat.mode & super::fsutil::FileMode::Dir.bits() != 0 {
-                child_directories.push(relative);
+            let metadata = entry.metadata().map_err(map_fs_error)?;
+            let source = source_entry(&directory, &name, relative.clone(), &metadata)?;
+            if metadata.is_dir() {
+                child_directories.push((relative, entry.open_dir().map_err(map_fs_error)?));
             }
-            entries.push(entry);
+            entries.push(source);
             if entries.len() > MAX_ENTRIES {
                 return Err(Status::resource_exhausted(
                     "local source has too many entries",
@@ -279,9 +382,10 @@ fn collect_entries_blocking(root: &Path) -> Result<Vec<SourceEntry>, Status> {
 }
 
 fn source_entry(
+    directory: &cap_std::fs::Dir,
+    name: &str,
     relative: PathBuf,
-    path: PathBuf,
-    metadata: std::fs::Metadata,
+    metadata: &cap_std::fs::Metadata,
 ) -> Result<SourceEntry, Status> {
     let wire_path = relative
         .to_str()
@@ -299,10 +403,11 @@ fn source_entry(
 
     let file_type = metadata.file_type();
     let (mode, regular, linkname) = if file_type.is_dir() {
-        (super::fsutil::FileMode::Dir.bits(), false, String::new())
+        (cap_file_mode_dir(), false, String::new())
     } else if file_type.is_symlink() {
-        let linkname = std::fs::read_link(&path)
-            .map_err(|error| Status::internal(format!("failed to read symlink: {error}")))?
+        let linkname = directory
+            .read_link_contents(name)
+            .map_err(map_fs_error)?
             .into_os_string()
             .into_string()
             .map_err(|_| Status::invalid_argument("local source contains a non-UTF-8 symlink"))?;
@@ -311,7 +416,7 @@ fn source_entry(
                 "local source contains an invalid symlink",
             ));
         }
-        (super::fsutil::FileMode::Symlink.bits(), false, linkname)
+        (cap_file_mode_symlink(), false, linkname)
     } else if file_type.is_file() {
         (0, true, String::new())
     } else {
@@ -320,20 +425,13 @@ fn source_entry(
         ));
     };
 
-    let permissions = permissions(&metadata);
-    let mod_time = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_nanos()).ok())
-        .unwrap_or(0);
-
+    let mod_time = modification_time(metadata);
     Ok(SourceEntry {
         stat: Stat {
             path: wire_path.replace(std::path::MAIN_SEPARATOR, "/"),
-            mode: mode | permissions,
-            uid: uid(&metadata),
-            gid: gid(&metadata),
+            mode: mode | permissions(metadata),
+            uid: uid(metadata),
+            gid: gid(metadata),
             size: if regular {
                 i64::try_from(metadata.len()).unwrap_or(i64::MAX)
             } else {
@@ -345,12 +443,24 @@ fn source_entry(
             devminor: 0,
             xattrs: HashMap::new(),
         },
-        path,
+        relative,
         regular,
     })
 }
 
-fn permissions(metadata: &std::fs::Metadata) -> u32 {
+fn map_fs_error(error: std::io::Error) -> Status {
+    Status::internal(format!("local source filesystem error: {error}"))
+}
+
+fn cap_file_mode_dir() -> u32 {
+    super::fsutil::FileMode::Dir.bits()
+}
+
+fn cap_file_mode_symlink() -> u32 {
+    super::fsutil::FileMode::Symlink.bits()
+}
+
+fn permissions(metadata: &cap_std::fs::Metadata) -> u32 {
     #[cfg(unix)]
     {
         metadata.mode() & 0o777
@@ -362,7 +472,7 @@ fn permissions(metadata: &std::fs::Metadata) -> u32 {
     }
 }
 
-fn uid(metadata: &std::fs::Metadata) -> u32 {
+fn uid(metadata: &cap_std::fs::Metadata) -> u32 {
     #[cfg(unix)]
     {
         metadata.uid()
@@ -374,7 +484,7 @@ fn uid(metadata: &std::fs::Metadata) -> u32 {
     }
 }
 
-fn gid(metadata: &std::fs::Metadata) -> u32 {
+fn gid(metadata: &cap_std::fs::Metadata) -> u32 {
     #[cfg(unix)]
     {
         metadata.gid()
@@ -386,6 +496,27 @@ fn gid(metadata: &std::fs::Metadata) -> u32 {
     }
 }
 
+fn modification_time(metadata: &cap_std::fs::Metadata) -> i64 {
+    #[cfg(unix)]
+    {
+        metadata
+            .mtime()
+            .checked_mul(1_000_000_000)
+            .and_then(|seconds| seconds.checked_add(metadata.mtime_nsec()))
+            .unwrap_or(0)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        0
+    }
+}
+
+fn filesystem_work_semaphore() -> &'static Arc<tokio::sync::Semaphore> {
+    static SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(8)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,7 +524,14 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
 
-    async fn run_protocol(root: PathBuf, requests: Vec<Packet>) -> Vec<Packet> {
+    fn open_mount(path: &Path) -> Arc<cap_std::fs::Dir> {
+        Arc::new(
+            cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority())
+                .expect("temporary mount opens"),
+        )
+    }
+
+    async fn run_protocol(root: Arc<cap_std::fs::Dir>, requests: Vec<Packet>) -> Vec<Packet> {
         let (sender, receiver) = mpsc::channel(8);
         for request in requests {
             sender
@@ -416,39 +554,74 @@ mod tests {
         tokio::fs::write(root.path().join("hello"), b"world")
             .await
             .expect("fixture is written");
+        let (sender, receiver) = mpsc::channel(8);
+        sender
+            .send(Packet {
+                r#type: PacketType::PacketReq as i32,
+                id: 0,
+                ..Default::default()
+            })
+            .await
+            .expect("request receiver is alive");
+        let mut output = transfer_stream(
+            open_mount(root.path()),
+            ReceiverStream::new(receiver).map(Ok),
+        );
 
-        let packets = run_protocol(
-            root.path().to_path_buf(),
-            vec![
-                Packet {
-                    r#type: PacketType::PacketReq as i32,
-                    id: 0,
-                    ..Default::default()
-                },
-                Packet {
-                    r#type: PacketType::PacketFin as i32,
-                    ..Default::default()
-                },
-            ],
-        )
-        .await;
-
-        assert_eq!(packets[0].r#type, PacketType::PacketStat as i32);
+        let stat = output
+            .next()
+            .await
+            .expect("stat exists")
+            .expect("stat succeeds");
+        assert_eq!(stat.r#type, PacketType::PacketStat as i32);
         assert_eq!(
-            packets[0].stat.as_ref().map(|stat| stat.path.as_str()),
+            stat.stat.as_ref().map(|stat| stat.path.as_str()),
             Some("hello")
         );
-        assert_eq!(packets[1].r#type, PacketType::PacketStat as i32);
-        assert!(packets[1].stat.is_none());
-        assert_eq!(packets[2].data, b"world");
-        assert!(packets[3].data.is_empty());
-        assert_eq!(packets[4].r#type, PacketType::PacketFin as i32);
+        let terminator = output
+            .next()
+            .await
+            .expect("stat terminator exists")
+            .expect("terminator succeeds");
+        assert!(terminator.stat.is_none());
+        assert_eq!(
+            output
+                .next()
+                .await
+                .expect("data exists")
+                .expect("data succeeds")
+                .data,
+            b"world"
+        );
+        assert!(output
+            .next()
+            .await
+            .expect("data terminator exists")
+            .expect("data terminator succeeds")
+            .data
+            .is_empty());
+        sender
+            .send(Packet {
+                r#type: PacketType::PacketFin as i32,
+                ..Default::default()
+            })
+            .await
+            .expect("request receiver is alive");
+        assert_eq!(
+            output
+                .next()
+                .await
+                .expect("fin exists")
+                .expect("fin succeeds")
+                .r#type,
+            PacketType::PacketFin as i32
+        );
     }
 
     #[tokio::test]
     async fn rejects_unknown_mounts() {
         let root = tempdir().expect("temporary directory is created");
-        let mounts = HashMap::from([(String::from("context"), root.path().to_owned())]);
+        let mounts = HashMap::from([(String::from("context"), open_mount(root.path()))]);
         let error = lookup_mount(&mounts, "missing").expect_err("unknown mount must fail");
         assert_eq!(error.code(), tonic::Code::NotFound);
     }
@@ -477,11 +650,73 @@ mod tests {
             .await
             .expect("request receiver is alive");
         let packets = transfer_stream(
-            root.path().to_owned(),
+            open_mount(root.path()),
             ReceiverStream::new(receiver).map(Ok),
         )
         .collect::<Vec<_>>()
         .await;
         assert!(packets.iter().any(|packet| packet.is_err()));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn does_not_follow_replaced_file_outside_mount() {
+        let root = tempdir().expect("temporary directory is created");
+        let outside = tempdir().expect("outside directory is created");
+        tokio::fs::write(root.path().join("hello"), b"safe")
+            .await
+            .expect("fixture is written");
+        tokio::fs::write(outside.path().join("secret"), b"secret")
+            .await
+            .expect("outside fixture is written");
+
+        let (sender, receiver) = mpsc::channel(8);
+        let mut output = transfer_stream(
+            open_mount(root.path()),
+            ReceiverStream::new(receiver).map(Ok),
+        );
+        assert_eq!(
+            output
+                .next()
+                .await
+                .expect("stat exists")
+                .expect("stat succeeds")
+                .stat
+                .unwrap()
+                .path,
+            "hello"
+        );
+        assert!(output
+            .next()
+            .await
+            .expect("stat terminator exists")
+            .expect("terminator succeeds")
+            .stat
+            .is_none());
+
+        std::fs::remove_file(root.path().join("hello")).expect("fixture is removed");
+        std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("hello"))
+            .expect("outside symlink is created");
+        sender
+            .send(Packet {
+                r#type: PacketType::PacketReq as i32,
+                id: 0,
+                ..Default::default()
+            })
+            .await
+            .expect("request receiver is alive");
+        let packets = output.collect::<Vec<_>>().await;
+        assert!(packets.iter().any(|packet| {
+            packet
+                .as_ref()
+                .ok()
+                .is_some_and(|packet| packet.r#type == PacketType::PacketErr as i32)
+        }));
+        assert!(!packets.iter().any(|packet| {
+            packet
+                .as_ref()
+                .ok()
+                .is_some_and(|packet| packet.data == b"secret")
+        }));
     }
 }

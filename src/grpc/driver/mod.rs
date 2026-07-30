@@ -1,5 +1,10 @@
 use std::time::Duration;
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, OnceLock},
+    time::Instant,
+};
 
 use bollard_buildkit_proto::moby::{
     buildkit::{
@@ -119,13 +124,14 @@ impl TearDownGuard {
 }
 
 async fn run_tear_down(handler: Arc<dyn DriverTearDownHandler>) -> Result<(), GrpcError> {
-    tokio::time::timeout(TEAR_DOWN_TIMEOUT, handler.tear_down())
-        .await
-        .map_err(|_| {
-            GrpcError::from(tonic::Status::deadline_exceeded(
-                "driver teardown exceeded its timeout",
-            ))
-        })?
+    let task = tokio::spawn(async move { handler.tear_down().await });
+    match tokio::time::timeout(TEAR_DOWN_TIMEOUT, task).await {
+        Ok(result) => result
+            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?,
+        Err(_) => Err(GrpcError::from(tonic::Status::deadline_exceeded(
+            "driver teardown exceeded its timeout; cleanup continues in background",
+        ))),
+    }
 }
 
 impl Drop for TearDownGuard {
@@ -548,8 +554,15 @@ pub(crate) async fn solve_definition(
 
 async fn validate_local_mounts(
     mounts: HashMap<String, PathBuf>,
-) -> Result<HashMap<String, PathBuf>, GrpcError> {
+) -> Result<HashMap<String, Arc<cap_std::fs::Dir>>, GrpcError> {
+    let permit = filesystem_work_semaphore()
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| tonic::Status::internal("filesystem worker semaphore was closed"))?;
+
     tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         mounts
             .into_iter()
             .map(|(name, path)| {
@@ -561,25 +574,23 @@ async fn validate_local_mounts(
                     });
                 }
 
-                let canonical =
-                    std::fs::canonicalize(&path).map_err(|error| GrpcError::InvalidLocalMount {
+                let root = cap_std::fs::Dir::open_ambient_dir(&path, cap_std::ambient_authority())
+                    .map_err(|error| GrpcError::InvalidLocalMount {
                         name: name.clone(),
                         path: path.display().to_string(),
-                        reason: format!("cannot canonicalize root: {error}"),
+                        reason: format!("cannot open directory root: {error}"),
                     })?;
-                if !canonical.is_dir() {
-                    return Err(GrpcError::InvalidLocalMount {
-                        name,
-                        path: canonical.display().to_string(),
-                        reason: String::from("mount root is not a directory"),
-                    });
-                }
-                Ok((name, canonical))
+                Ok((name, Arc::new(root)))
             })
             .collect()
     })
     .await
     .map_err(|error| tonic::Status::internal(format!("local mount validation failed: {error}")))?
+}
+
+fn filesystem_work_semaphore() -> &'static Arc<tokio::sync::Semaphore> {
+    static SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(8)))
 }
 
 fn build_definition_solve_request(
@@ -664,7 +675,16 @@ async fn execute_solve<D: Driver>(
         }
     };
 
-    debug!("sending solve request: {:#?}", request);
+    debug!(
+        "sending solve request: ref={:?}, session={}, frontend={:?}, has_definition={}, exporter_count={}, cache_export_count={}, cache_import_count={}",
+        request.r#ref,
+        request.session,
+        request.frontend,
+        request.definition.is_some(),
+        request.exporters.len(),
+        request.cache.as_ref().map_or(0, |cache| cache.exports.len()),
+        request.cache.as_ref().map_or(0, |cache| cache.imports.len()),
+    );
     let solve_result = match run_until(
         deadline,
         control_client.solve(request).map_err(GrpcError::from),
