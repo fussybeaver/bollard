@@ -2,7 +2,9 @@
 
 use bollard::errors::Error;
 use bollard::grpc::driver::docker_container::DockerContainerBuilder;
-use bollard::grpc::driver::{DefinitionExporter, DefinitionSolveRequest, SolveDefinition};
+use bollard::grpc::driver::{
+    DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
+};
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
 use prost::Message;
@@ -168,10 +170,17 @@ async fn local_source_filesync_red_baseline_test(docker: Docker) -> Result<(), E
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
         })?;
+        let options = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", source.path())
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("local mount setup failed: {error}")),
+            })?
+            .build();
         let request = DefinitionSolveRequest::new(
             local_source_fixture_definition(),
             DefinitionExporter::Local(output.path().to_path_buf()),
-        );
+        )
+        .with_options(options);
         SolveDefinition::solve_definition(&driver, request)
             .await
             .map_err(|error| Error::IOError {

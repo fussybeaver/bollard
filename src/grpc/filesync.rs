@@ -1,32 +1,95 @@
-use std::{collections::HashSet, pin::Pin};
+use std::{collections::HashMap, sync::Arc};
 
 use bollard_buildkit_proto::{
-    fsutil::types::{packet::PacketType, Packet, Stat},
-    moby::filesync::v1::file_sync_server::{FileSync, FileSyncServer},
+    fsutil::types::Packet, moby::filesync::v1::file_sync_server::FileSync,
 };
-use futures_core::Stream;
-use futures_util::stream;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status, Streaming};
 
+#[cfg(test)]
+use bollard_buildkit_proto::fsutil::types::{packet::PacketType, Stat};
+#[cfg(test)]
+use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
+
+#[derive(Clone)]
+pub(crate) struct FileSyncImpl {
+    mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
+}
+
+impl FileSyncImpl {
+    pub(crate) fn new(mounts: HashMap<String, Arc<cap_std::fs::Dir>>) -> Self {
+        Self { mounts }
+    }
+}
+
+impl std::fmt::Debug for FileSyncImpl {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FileSyncImpl")
+            .field("mounts", &self.mounts.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
+#[tonic::async_trait]
+impl FileSync for FileSyncImpl {
+    type DiffCopyStream = futures_util::stream::Empty<Result<Packet, Status>>;
+    type TarStreamStream = futures_util::stream::Empty<Result<Packet, Status>>;
+
+    async fn diff_copy(
+        &self,
+        _request: Request<Streaming<Packet>>,
+    ) -> Result<Response<Self::DiffCopyStream>, Status> {
+        Err(Status::unimplemented("FileSync sender is not implemented"))
+    }
+
+    async fn tar_stream(
+        &self,
+        _request: Request<Streaming<Packet>>,
+    ) -> Result<Response<Self::TarStreamStream>, Status> {
+        Err(Status::unimplemented(
+            "FileSync TarStream is not implemented",
+        ))
+    }
+}
+
+#[cfg(test)]
+use futures_core::Stream;
+#[cfg(test)]
+use futures_util::stream;
+#[cfg(test)]
+use std::{collections::HashSet, pin::Pin};
+#[cfg(test)]
+use tokio::sync::mpsc;
+#[cfg(test)]
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
+#[cfg(test)]
+use tonic::transport::Server;
+
+#[cfg(test)]
 pub(crate) const ENTRY_QUEUE_CAPACITY: usize = 128;
+#[cfg(test)]
 pub(crate) const FILE_JOB_QUEUE_CAPACITY: usize = 128;
+#[cfg(test)]
 pub(crate) const OUTPUT_QUEUE_CAPACITY: usize = 16;
+#[cfg(test)]
 pub(crate) const FILE_WORKER_COUNT: usize = 4;
+#[cfg(test)]
 pub(crate) const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
 
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ContractEntry {
     pub(crate) path: &'static str,
     pub(crate) regular: bool,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) struct PacketContract {
     entries: Vec<ContractEntry>,
 }
 
+#[cfg(test)]
 impl PacketContract {
     pub(crate) fn new(entries: impl IntoIterator<Item = ContractEntry>) -> Self {
         Self {
@@ -82,11 +145,13 @@ impl PacketContract {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct RequestLedger {
     available: HashSet<u32>,
 }
 
+#[cfg(test)]
 impl RequestLedger {
     pub(crate) fn new(contract: &PacketContract) -> Self {
         Self {
@@ -103,6 +168,7 @@ impl RequestLedger {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn stat_packet(path: &'static str) -> Packet {
     Packet {
         r#type: PacketType::PacketStat as i32,
@@ -114,6 +180,7 @@ pub(crate) fn stat_packet(path: &'static str) -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn stat_packet_without_entry() -> Packet {
     Packet {
         r#type: PacketType::PacketStat as i32,
@@ -121,6 +188,7 @@ pub(crate) fn stat_packet_without_entry() -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn request_packet(id: u32) -> Packet {
     Packet {
         r#type: PacketType::PacketReq as i32,
@@ -129,6 +197,7 @@ pub(crate) fn request_packet(id: u32) -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn data_packet(id: u32, data: impl Into<Vec<u8>>) -> Packet {
     Packet {
         r#type: PacketType::PacketData as i32,
@@ -138,6 +207,7 @@ pub(crate) fn data_packet(id: u32, data: impl Into<Vec<u8>>) -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn fin_packet() -> Packet {
     Packet {
         r#type: PacketType::PacketFin as i32,
@@ -145,6 +215,7 @@ pub(crate) fn fin_packet() -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn err_packet(message: impl Into<Vec<u8>>) -> Packet {
     Packet {
         r#type: PacketType::PacketErr as i32,
@@ -153,6 +224,7 @@ pub(crate) fn err_packet(message: impl Into<Vec<u8>>) -> Packet {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn collect_file_data(packets: &[Packet], id: u32) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
     let mut terminated = false;
@@ -180,11 +252,13 @@ pub(crate) fn collect_file_data(packets: &[Packet], id: u32) -> Result<Vec<u8>, 
     }
 }
 
+#[cfg(test)]
 pub(crate) struct ScriptedPeer {
     requests: mpsc::Sender<Packet>,
     responses: Pin<Box<dyn Stream<Item = Result<Packet, Status>> + Send>>,
 }
 
+#[cfg(test)]
 impl ScriptedPeer {
     pub(crate) fn new(
         responses: impl Stream<Item = Result<Packet, Status>> + Send + 'static,
@@ -216,9 +290,11 @@ impl ScriptedPeer {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
 struct UnimplementedFileSync;
 
+#[cfg(test)]
 #[tonic::async_trait]
 impl FileSync for UnimplementedFileSync {
     type DiffCopyStream = stream::Empty<Result<Packet, Status>>;
@@ -241,6 +317,7 @@ impl FileSync for UnimplementedFileSync {
     }
 }
 
+#[cfg(test)]
 async fn start_unimplemented_server() -> (
     std::net::SocketAddr,
     tokio::sync::oneshot::Sender<()>,
@@ -262,6 +339,7 @@ async fn start_unimplemented_server() -> (
     (address, shutdown_sender, server_task)
 }
 
+#[cfg(test)]
 async fn red_baseline_stream() -> Result<tonic::Streaming<Packet>, Status> {
     let (address, shutdown_sender, server_task) = start_unimplemented_server().await;
     let mut client =
