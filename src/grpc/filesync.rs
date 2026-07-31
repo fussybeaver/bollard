@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
+    panic::AssertUnwindSafe,
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
@@ -11,7 +12,10 @@ use bollard_buildkit_proto::{
     moby::filesync::v1::file_sync_server::FileSync,
 };
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
+use tokio::io::AsyncReadExt;
+use tokio::sync::{mpsc, Mutex};
+use tokio_util::sync::CancellationToken;
 use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 
 #[cfg(unix)]
@@ -27,6 +31,15 @@ const MAX_ENTRIES: usize = 100_000;
 const MAX_PATH_LENGTH: usize = 4096;
 const MAX_LINKNAME_LENGTH: usize = 4096;
 const ENTRY_QUEUE_CAPACITY: usize = 128;
+const FILE_JOB_QUEUE_CAPACITY: usize = 128;
+const OUTPUT_QUEUE_CAPACITY: usize = 16;
+const FILE_WORKER_COUNT: usize = 4;
+const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
+
+type EntryReceiver = tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>;
+type JobSender = tokio::sync::mpsc::Sender<FileJob>;
+type OutputReceiver = tokio::sync::mpsc::Receiver<Result<Packet, Status>>;
+type FileSyncStart = (FileSyncSession, EntryReceiver, JobSender, OutputReceiver);
 
 #[cfg(test)]
 use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
@@ -44,6 +57,137 @@ struct SourceEntry {
     relative: PathBuf,
 }
 
+#[derive(Clone, Debug)]
+struct FileJob {
+    id: u32,
+    relative: PathBuf,
+}
+
+#[derive(Debug)]
+struct FileTarget {
+    regular: bool,
+    relative: PathBuf,
+}
+
+struct FileSyncSession {
+    cancellation: CancellationToken,
+    scanner: Option<tokio::task::JoinHandle<()>>,
+    workers: tokio::task::JoinSet<()>,
+}
+
+impl Drop for FileSyncSession {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(scanner) = self.scanner.take() {
+            scanner.abort();
+        }
+        self.workers.abort_all();
+    }
+}
+
+impl FileSyncSession {
+    fn start(
+        root: Arc<cap_std::fs::Dir>,
+        selection: ScanSelection,
+        test_panic_worker: bool,
+        test_delay_scan: bool,
+    ) -> FileSyncStart {
+        let cancellation = CancellationToken::new();
+        let scanner_root = root.clone();
+        let (entries_sender, entries_receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
+        let (jobs_sender, jobs_receiver) = mpsc::channel(FILE_JOB_QUEUE_CAPACITY);
+        let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
+        let scanner_cancellation = cancellation.clone();
+        let scanner = tokio::task::spawn_blocking(move || {
+            let result = scan_entries_with_selection(
+                scanner_root,
+                entries_sender.clone(),
+                selection,
+                scanner_cancellation,
+                test_delay_scan,
+            );
+            if let Err(error) = result {
+                let _ = entries_sender.blocking_send(Err(error));
+            }
+        });
+
+        let jobs_receiver = Arc::new(Mutex::new(jobs_receiver));
+        let mut workers = tokio::task::JoinSet::new();
+        for _ in 0..FILE_WORKER_COUNT {
+            let worker_jobs = Arc::clone(&jobs_receiver);
+            let worker_output = output_sender.clone();
+            let worker_root = root.clone();
+            let worker_cancellation = cancellation.clone();
+            workers.spawn(async move {
+                let result = AssertUnwindSafe(async {
+                    worker_loop(
+                        worker_root,
+                        worker_jobs,
+                        worker_output.clone(),
+                        worker_cancellation,
+                        test_panic_worker,
+                    )
+                    .await;
+                })
+                .catch_unwind()
+                .await;
+                if result.is_err() {
+                    let _ = worker_output
+                        .send(Err(Status::internal("FileSync worker panicked")))
+                        .await;
+                }
+            });
+        }
+        drop(output_sender);
+
+        (
+            Self {
+                cancellation,
+                scanner: Some(scanner),
+                workers,
+            },
+            entries_receiver,
+            jobs_sender,
+            output_receiver,
+        )
+    }
+
+    async fn shutdown(
+        &mut self,
+        entries: &mut tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>,
+        jobs: &mut Option<tokio::sync::mpsc::Sender<FileJob>>,
+        output: &mut tokio::sync::mpsc::Receiver<Result<Packet, Status>>,
+    ) -> Result<(), Status> {
+        self.cancellation.cancel();
+        entries.close();
+        output.close();
+        jobs.take();
+
+        if let Some(scanner) = self.scanner.take() {
+            scanner.await.map_err(|error| {
+                Status::internal(format!("FileSync scanner task failed: {error}"))
+            })?;
+        }
+        self.workers.abort_all();
+        while let Some(result) = self.workers.join_next().await {
+            if let Err(error) = result {
+                if !error.is_cancelled() {
+                    return Err(Status::internal(format!(
+                        "FileSync worker task failed: {error}"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+enum ScanSelection {
+    All,
+    Paths(Vec<PathBuf>),
+}
+
 struct ScanFrame {
     relative: PathBuf,
     directory: cap_std::fs::Dir,
@@ -54,6 +198,40 @@ struct ScanFrame {
 enum SessionEvent {
     Entry(Option<Result<SourceEntry, Status>>),
     Packet(Option<Result<Packet, Status>>),
+    Output(Option<Result<Packet, Status>>),
+    Job(Result<FileJob, FileJob>),
+}
+
+async fn next_session_event(
+    entries: &mut tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>,
+    input: &mut Pin<Box<Streaming<Packet>>>,
+    output: &mut tokio::sync::mpsc::Receiver<Result<Packet, Status>>,
+    jobs: Option<&tokio::sync::mpsc::Sender<FileJob>>,
+    queued_job: Option<&FileJob>,
+    enumeration_finished: bool,
+) -> SessionEvent {
+    if let (Some(sender), Some(job)) = (jobs, queued_job) {
+        let job = job.clone();
+        let sent_job = job.clone();
+        tokio::select! {
+            biased;
+            result = sender.send(job) => {
+                match result {
+                    Ok(()) => SessionEvent::Job(Ok(sent_job)),
+                    Err(error) => SessionEvent::Job(Err(error.0)),
+                }
+            }
+            event = entries.recv(), if !enumeration_finished => SessionEvent::Entry(event),
+            packet = output.recv() => SessionEvent::Output(packet),
+        }
+    } else {
+        tokio::select! {
+            biased;
+            packet = input.next() => SessionEvent::Packet(packet),
+            event = entries.recv(), if !enumeration_finished => SessionEvent::Entry(event),
+            packet = output.recv() => SessionEvent::Output(packet),
+        }
+    }
 }
 
 impl FileSyncImpl {
@@ -82,61 +260,59 @@ impl FileSync for FileSyncImpl {
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
         let name = mount_name(request.metadata())?;
         let root = lookup_mount(&self.mounts, &name)?;
-        validate_options(request.metadata())?;
-
-        let (entries_sender, mut entries_receiver) =
-            tokio::sync::mpsc::channel(ENTRY_QUEUE_CAPACITY);
-        let mut scanner = Some(tokio::task::spawn_blocking(move || {
-            let result = scan_entries(root, entries_sender.clone());
-            if let Err(error) = result {
-                let _ = entries_sender.blocking_send(Err(error));
-            }
-        }));
+        let selection = scan_selection(request.metadata())?;
+        #[cfg(test)]
+        let test_panic_worker = request.metadata().contains_key("x-test-panic-worker");
+        #[cfg(not(test))]
+        let test_panic_worker = false;
+        #[cfg(test)]
+        let test_delay_scan = request.metadata().contains_key("x-test-delay-scan");
+        #[cfg(not(test))]
+        let test_delay_scan = false;
+        let (mut session, mut entries_receiver, jobs_sender, mut output_receiver) =
+            FileSyncSession::start(root, selection, test_panic_worker, test_delay_scan);
+        let mut jobs_sender = Some(jobs_sender);
         let mut input = Box::pin(request.into_inner());
 
-        let output = async_stream::try_stream! {
+        let output = async_stream::stream! {
+            let mut positions = HashMap::<u32, FileTarget>::new();
+            let mut pending_jobs = HashMap::<u32, ()>::new();
+            let mut queued_job = None::<FileJob>;
             let mut enumeration_finished = false;
+            let mut fin_requested = false;
+
+            macro_rules! fail {
+                ($error:expr) => {{
+                    let error = $error;
+                    yield Ok(error_packet(&error));
+                    let _ = session
+                        .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                        .await;
+                    yield Err(error);
+                    break;
+                }};
+            }
 
             loop {
-                if enumeration_finished {
-                    let packet = input.next().await.ok_or_else(|| {
-                        Status::failed_precondition(
-                            "FileSync stream ended before PACKET_FIN",
-                        )
-                    })??;
-                    match PacketType::try_from(packet.r#type)
-                        .map_err(|_| Status::invalid_argument("unknown FileSync packet type"))?
-                    {
-                        PacketType::PacketFin => {
-                            yield fin_response_packet();
-                            break;
-                        }
-                        PacketType::PacketErr => {
-                            Err::<(), Status>(Status::aborted(
-                                "BuildKit aborted the FileSync transfer",
-                            ))?;
-                        }
-                        PacketType::PacketReq => {
-                            let error = Status::unimplemented(
-                                "FileSync file requests are not implemented",
-                            );
-                            yield error_packet(&error);
-                            Err::<(), Status>(error)?;
-                        }
-                        PacketType::PacketStat | PacketType::PacketData => {
-                            Err::<(), Status>(Status::invalid_argument(
-                                "unexpected packet type from FileSync receiver",
-                            ))?;
-                        }
-                    }
-                    continue;
-                }
-
-                let event = tokio::select! {
-                    event = entries_receiver.recv() => SessionEvent::Entry(event),
-                    packet = input.next() => SessionEvent::Packet(packet),
-                };
+                let event = next_session_event(
+                    &mut entries_receiver,
+                    &mut input,
+                    &mut output_receiver,
+                    jobs_sender.as_ref(),
+                    queued_job.as_ref(),
+                    enumeration_finished,
+                ).await;
                 match event {
+                    SessionEvent::Job(job) => match job {
+                        Ok(job) => {
+                            queued_job = None;
+                            pending_jobs.insert(job.id, ());
+                        }
+                        Err(job) => fail!(Status::internal(format!(
+                            "FileSync file-job queue closed for request {}",
+                            job.id
+                        ))),
+                    },
                     SessionEvent::Entry(event) => match event {
                         Some(Ok(entry)) => {
                             let SourceEntry {
@@ -145,60 +321,135 @@ impl FileSync for FileSyncImpl {
                                 regular,
                                 relative,
                             } = entry;
-                            let _ = (position, regular, relative);
-                                yield stat_entry_packet(stat);
+                            positions.insert(position, FileTarget { regular, relative });
+                            yield Ok(stat_entry_packet(stat));
                         }
                         Some(Err(error)) => {
-                            yield error_packet(&error);
-                            Err::<(), Status>(error)?;
+                            fail!(error);
                         }
                         None => {
-                            if let Some(scanner) = scanner.take() {
+                            if let Some(scanner) = session.scanner.take() {
                                 if let Err(join_error) = scanner.await {
-                                    let error = Status::internal(format!(
+                                    fail!(Status::internal(format!(
                                         "FileSync scanner task failed: {join_error}"
-                                    ));
-                                    yield error_packet(&error);
-                                    Err::<(), Status>(error)?;
+                                    )));
                                 }
                             }
-                            yield stat_terminator();
+                            yield Ok(stat_terminator());
                             enumeration_finished = true;
+                            if fin_requested && pending_jobs.is_empty() {
+                                yield Ok(fin_response_packet());
+                                match session
+                                    .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                                    .await
+                                {
+                                    Ok(()) => break,
+                                    Err(error) => fail!(error),
+                                }
+                            }
                         }
                     },
                     SessionEvent::Packet(packet) => {
-                        let packet = packet.ok_or_else(|| {
-                            Status::failed_precondition(
+                        let packet = match packet {
+                            Some(Ok(packet)) => packet,
+                            Some(Err(error)) => fail!(error),
+                            None => fail!(Status::failed_precondition(
                                 "FileSync stream ended before PACKET_FIN",
-                            )
-                        })??;
-                        let packet_type = PacketType::try_from(packet.r#type)
-                            .map_err(|_| Status::invalid_argument("unknown FileSync packet type"))?;
+                            )),
+                        };
+                        let packet_type = match PacketType::try_from(packet.r#type) {
+                            Ok(packet_type) => packet_type,
+                            Err(_) => fail!(Status::invalid_argument(
+                                "unknown FileSync packet type",
+                            )),
+                        };
                         match packet_type {
                             PacketType::PacketErr => {
-                                Err::<(), Status>(Status::aborted(
+                                fail!(Status::aborted(
                                     "BuildKit aborted the FileSync transfer",
-                                ))?;
+                                ));
                             }
                             PacketType::PacketReq => {
-                                let error = Status::unimplemented(
-                                    "FileSync file requests are not implemented",
-                                );
-                                yield error_packet(&error);
-                                Err::<(), Status>(error)?;
+                                if fin_requested {
+                                    fail!(Status::failed_precondition(
+                                        "FileSync received PACKET_REQ after PACKET_FIN",
+                                    ));
+                                }
+                                let target = positions.remove(&packet.id).ok_or_else(|| {
+                                    Status::invalid_argument("invalid or repeated FileSync request ID")
+                                });
+                                let target = match target {
+                                    Ok(target) if target.regular => target,
+                                    Ok(_) => {
+                                        fail!(Status::invalid_argument(
+                                            "FileSync request does not identify a regular file",
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        fail!(error);
+                                    }
+                                };
+                                let job = FileJob {
+                                    id: packet.id,
+                                    relative: target.relative,
+                                };
+                                if jobs_sender.is_some() {
+                                    queued_job = Some(job);
+                                } else {
+                                    fail!(Status::failed_precondition(
+                                        "FileSync session is shutting down",
+                                    ));
+                                }
                             }
                             PacketType::PacketFin => {
-                                Err::<(), Status>(Status::failed_precondition(
-                                    "FileSync received PACKET_FIN before STAT termination",
-                                ))?;
+                                if !enumeration_finished {
+                                    fail!(Status::failed_precondition(
+                                        "FileSync received PACKET_FIN before STAT termination",
+                                    ));
+                                }
+                                fin_requested = true;
+                                if pending_jobs.is_empty() {
+                                    yield Ok(fin_response_packet());
+                                    match session
+                                        .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                                        .await
+                                    {
+                                        Ok(()) => break,
+                                        Err(error) => fail!(error),
+                                    }
+                                }
                             }
                             PacketType::PacketStat | PacketType::PacketData => {
-                                Err::<(), Status>(Status::invalid_argument(
+                                fail!(Status::invalid_argument(
                                     "unexpected packet type from FileSync receiver",
-                                ))?;
+                                ));
                             }
                         }
                     }
+                    SessionEvent::Output(output) => match output {
+                        Some(Ok(packet)) => {
+                            let eof = packet.r#type == PacketType::PacketData as i32
+                                && packet.data.is_empty();
+                            if eof && pending_jobs.remove(&packet.id).is_none() {
+                                fail!(Status::internal(
+                                    "FileSync worker emitted an unexpected EOF",
+                                ));
+                            }
+                            yield Ok(packet);
+                            if fin_requested && enumeration_finished && pending_jobs.is_empty() {
+                                yield Ok(fin_response_packet());
+                                match session
+                                    .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                                    .await
+                                {
+                                    Ok(()) => break,
+                                    Err(error) => fail!(error),
+                                }
+                            }
+                        }
+                        Some(Err(error)) => fail!(error),
+                        None => fail!(Status::internal("FileSync output channel closed")),
+                    },
                 }
             }
         };
@@ -213,6 +464,135 @@ impl FileSync for FileSyncImpl {
         Err(Status::unimplemented(
             "FileSync TarStream is not implemented",
         ))
+    }
+}
+
+async fn worker_loop(
+    root: Arc<cap_std::fs::Dir>,
+    jobs: Arc<Mutex<tokio::sync::mpsc::Receiver<FileJob>>>,
+    output: tokio::sync::mpsc::Sender<Result<Packet, Status>>,
+    cancellation: CancellationToken,
+    test_panic_worker: bool,
+) {
+    loop {
+        let job = {
+            let mut jobs = jobs.lock().await;
+            jobs.recv().await
+        };
+        let Some(job) = job else { return };
+        if cancellation.is_cancelled() {
+            return;
+        }
+        if test_panic_worker {
+            panic!("injected FileSync worker panic");
+        }
+
+        let file = match open_regular_file(root.clone(), job.relative.clone()).await {
+            Ok(file) => file,
+            Err(error) => {
+                let _ = output.send(Err(error)).await;
+                return;
+            }
+        };
+        let mut file = file;
+        let mut buffer = vec![0_u8; FILE_READ_BUFFER_SIZE];
+        loop {
+            if cancellation.is_cancelled() {
+                return;
+            }
+            let count = match file.read(&mut buffer).await {
+                Ok(count) => count,
+                Err(error) => {
+                    let _ = output
+                        .send(Err(Status::internal(format!(
+                            "failed to read local source file {:?}: {error}",
+                            job.relative
+                        ))))
+                        .await;
+                    return;
+                }
+            };
+            if count == 0 {
+                if output
+                    .send(Ok(file_data_packet(job.id, Vec::new())))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                break;
+            }
+            if output
+                .send(Ok(file_data_packet(job.id, buffer[..count].to_vec())))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+    }
+}
+
+async fn open_regular_file(
+    root: Arc<cap_std::fs::Dir>,
+    relative: PathBuf,
+) -> Result<tokio::fs::File, Status> {
+    let file = tokio::task::spawn_blocking(move || {
+        let file = root
+            .open(&relative)
+            .map_err(|error| filesystem_error("open", &relative, error))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| filesystem_error("stat", &relative, error))?;
+        if !metadata.file_type().is_file() {
+            return Err(Status::invalid_argument(format!(
+                "FileSync request is no longer a regular file: {relative:?}"
+            )));
+        }
+        Ok(file.into_std())
+    })
+    .await
+    .map_err(|error| Status::internal(format!("FileSync file worker failed: {error}")))??;
+    Ok(tokio::fs::File::from_std(file))
+}
+
+fn scan_selection(metadata: &MetadataMap) -> Result<ScanSelection, Status> {
+    validate_options(metadata)?;
+    let mut paths = Vec::new();
+    for value in metadata.get_all(FOLLOW_PATHS_METADATA).iter() {
+        let value = value
+            .to_str()
+            .map_err(|_| Status::invalid_argument("invalid followpaths metadata"))?;
+        if value == "." {
+            return Ok(ScanSelection::All);
+        }
+        let path = PathBuf::from(value);
+        if value.is_empty()
+            || path.is_absolute()
+            || path
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+            || value.contains('*')
+            || value.contains('?')
+            || value.contains('[')
+        {
+            return Err(Status::unimplemented(
+                "FileSync followpaths must be literal relative paths",
+            ));
+        }
+        if path.to_str().is_none() || path.as_os_str().len() > MAX_PATH_LENGTH {
+            return Err(Status::invalid_argument(
+                "invalid FileSync followpaths path",
+            ));
+        }
+        paths.push(path);
+    }
+    if paths.is_empty() {
+        Ok(ScanSelection::All)
+    } else {
+        paths.sort_unstable();
+        paths.dedup();
+        Ok(ScanSelection::Paths(paths))
     }
 }
 
@@ -254,9 +634,9 @@ fn validate_options(metadata: &MetadataMap) -> Result<(), Status> {
         let value = value
             .to_str()
             .map_err(|_| Status::invalid_argument("invalid followpaths metadata"))?;
-        if value != "." {
+        if value.contains('*') || value.contains('?') || value.contains('[') {
             return Err(Status::unimplemented(
-                "literal FileSync followpaths are not implemented",
+                "wildcard FileSync followpaths are not implemented",
             ));
         }
     }
@@ -267,9 +647,26 @@ fn scan_entries(
     root: Arc<cap_std::fs::Dir>,
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
 ) -> Result<(), Status> {
+    scan_entries_with_selection(
+        root,
+        sender,
+        ScanSelection::All,
+        CancellationToken::new(),
+        false,
+    )
+}
+
+fn scan_entries_with_selection(
+    root: Arc<cap_std::fs::Dir>,
+    sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+    selection: ScanSelection,
+    cancellation: CancellationToken,
+    delay_scan: bool,
+) -> Result<(), Status> {
     let root = root.try_clone().map_err(|error| {
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
+    let selection = resolve_selection(&root, selection)?;
     let names = sorted_names(&root)?;
     let mut frames = vec![ScanFrame {
         relative: PathBuf::new(),
@@ -280,6 +677,12 @@ fn scan_entries(
     let mut position = 0_u32;
 
     while let Some(mut frame) = frames.pop() {
+        if delay_scan {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        if cancellation.is_cancelled() {
+            return Ok(());
+        }
         let Some(name) = frame.names.get(frame.next_name).cloned() else {
             continue;
         };
@@ -290,6 +693,24 @@ fn scan_entries(
             .directory
             .symlink_metadata(&name)
             .map_err(|error| filesystem_error("stat", &relative, error))?;
+        if !entry_is_selected(&relative, &metadata, &selection) {
+            if metadata.file_type().is_dir() && entry_is_ancestor(&relative, &selection) {
+                let directory = frame
+                    .directory
+                    .open_dir(&name)
+                    .map_err(|error| filesystem_error("open directory", &relative, error))?;
+                frames.push(frame);
+                frames.push(ScanFrame {
+                    relative,
+                    names: sorted_names(&directory)?,
+                    directory,
+                    next_name: 0,
+                });
+            } else {
+                frames.push(frame);
+            }
+            continue;
+        }
         let (stat, regular) = source_stat(&frame.directory, &name, &relative, &metadata)?;
         if position as usize >= MAX_ENTRIES {
             return Err(Status::resource_exhausted(
@@ -315,16 +736,20 @@ fn scan_entries(
 
         let file_type = metadata.file_type();
         let child = if file_type.is_dir() {
-            let directory = frame
-                .directory
-                .open_dir(&name)
-                .map_err(|error| filesystem_error("open directory", &relative, error))?;
-            Some(ScanFrame {
-                relative,
-                names: sorted_names(&directory)?,
-                directory,
-                next_name: 0,
-            })
+            if !entry_is_ancestor_or_selected_directory(&relative, &metadata, &selection) {
+                None
+            } else {
+                let directory = frame
+                    .directory
+                    .open_dir(&name)
+                    .map_err(|error| filesystem_error("open directory", &relative, error))?;
+                Some(ScanFrame {
+                    relative,
+                    names: sorted_names(&directory)?,
+                    directory,
+                    next_name: 0,
+                })
+            }
         } else {
             None
         };
@@ -336,6 +761,61 @@ fn scan_entries(
     }
 
     Ok(())
+}
+
+fn resolve_selection(
+    root: &cap_std::fs::Dir,
+    selection: ScanSelection,
+) -> Result<ScanSelection, Status> {
+    let ScanSelection::Paths(paths) = selection else {
+        return Ok(ScanSelection::All);
+    };
+    let mut existing = Vec::new();
+    for path in paths {
+        match root.symlink_metadata(&path) {
+            Ok(_) => existing.push(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(filesystem_error("stat", &path, error)),
+        }
+    }
+    Ok(ScanSelection::Paths(existing))
+}
+
+fn path_is_prefix(prefix: &Path, path: &Path) -> bool {
+    prefix == path
+        || prefix
+            .components()
+            .zip(path.components())
+            .all(|(a, b)| a == b)
+            && prefix.components().count() <= path.components().count()
+}
+
+fn entry_is_ancestor(path: &Path, selection: &ScanSelection) -> bool {
+    match selection {
+        ScanSelection::All => true,
+        ScanSelection::Paths(paths) => paths.iter().any(|selected| path_is_prefix(path, selected)),
+    }
+}
+
+fn entry_is_selected(
+    path: &Path,
+    _metadata: &cap_std::fs::Metadata,
+    selection: &ScanSelection,
+) -> bool {
+    match selection {
+        ScanSelection::All => true,
+        ScanSelection::Paths(paths) => paths.iter().any(|selected| {
+            path == selected || path_is_prefix(selected, path) || path_is_prefix(path, selected)
+        }),
+    }
+}
+
+fn entry_is_ancestor_or_selected_directory(
+    path: &Path,
+    metadata: &cap_std::fs::Metadata,
+    selection: &ScanSelection,
+) -> bool {
+    metadata.file_type().is_dir() && entry_is_ancestor(path, selection)
 }
 
 fn sorted_names(directory: &cap_std::fs::Dir) -> Result<Vec<OsString>, Status> {
@@ -504,6 +984,15 @@ fn fin_response_packet() -> Packet {
     }
 }
 
+fn file_data_packet(id: u32, data: Vec<u8>) -> Packet {
+    Packet {
+        r#type: PacketType::PacketData as i32,
+        id,
+        data,
+        ..Default::default()
+    }
+}
+
 fn error_packet(error: &Status) -> Packet {
     Packet {
         r#type: PacketType::PacketErr as i32,
@@ -517,20 +1006,9 @@ use futures_util::stream;
 #[cfg(test)]
 use std::collections::HashSet;
 #[cfg(test)]
-use tokio::sync::mpsc;
-#[cfg(test)]
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 #[cfg(test)]
 use tonic::transport::Server;
-
-#[cfg(test)]
-pub(crate) const FILE_JOB_QUEUE_CAPACITY: usize = 128;
-#[cfg(test)]
-pub(crate) const OUTPUT_QUEUE_CAPACITY: usize = 16;
-#[cfg(test)]
-pub(crate) const FILE_WORKER_COUNT: usize = 4;
-#[cfg(test)]
-pub(crate) const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
 
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -655,12 +1133,7 @@ pub(crate) fn request_packet(id: u32) -> Packet {
 
 #[cfg(test)]
 pub(crate) fn data_packet(id: u32, data: impl Into<Vec<u8>>) -> Packet {
-    Packet {
-        r#type: PacketType::PacketData as i32,
-        id,
-        data: data.into(),
-        ..Default::default()
-    }
+    file_data_packet(id, data.into())
 }
 
 #[cfg(test)]
@@ -747,74 +1220,6 @@ impl ScriptedPeer {
 }
 
 #[cfg(test)]
-#[derive(Debug, Default)]
-struct UnimplementedFileSync;
-
-#[cfg(test)]
-#[tonic::async_trait]
-impl FileSync for UnimplementedFileSync {
-    type DiffCopyStream = stream::Empty<Result<Packet, Status>>;
-    type TarStreamStream = stream::Empty<Result<Packet, Status>>;
-
-    async fn diff_copy(
-        &self,
-        _request: Request<Streaming<Packet>>,
-    ) -> Result<Response<Self::DiffCopyStream>, Status> {
-        Err(Status::unimplemented("FileSync sender is not implemented"))
-    }
-
-    async fn tar_stream(
-        &self,
-        _request: Request<Streaming<Packet>>,
-    ) -> Result<Response<Self::TarStreamStream>, Status> {
-        Err(Status::unimplemented(
-            "FileSync TarStream is not implemented",
-        ))
-    }
-}
-
-#[cfg(test)]
-async fn start_unimplemented_server() -> (
-    std::net::SocketAddr,
-    tokio::sync::oneshot::Sender<()>,
-    tokio::task::JoinHandle<()>,
-) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("FileSync test listener binds");
-    let address = listener.local_addr().expect("FileSync test address exists");
-    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let server = Server::builder()
-        .add_service(FileSyncServer::new(UnimplementedFileSync))
-        .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
-            let _ = shutdown_receiver.await;
-        });
-    let server_task = tokio::spawn(async move {
-        let _ = server.await;
-    });
-    (address, shutdown_sender, server_task)
-}
-
-#[cfg(test)]
-async fn red_baseline_stream() -> Result<tonic::Streaming<Packet>, Status> {
-    let (address, shutdown_sender, server_task) = start_unimplemented_server().await;
-    let mut client =
-        bollard_buildkit_proto::moby::filesync::v1::file_sync_client::FileSyncClient::connect(
-            format!("http://{address}"),
-        )
-        .await
-        .map_err(|error| Status::unknown(error.to_string()))?;
-    let (_peer, requests) = ScriptedPeer::new(stream::empty());
-    let result = client
-        .diff_copy(requests)
-        .await
-        .map(|response| response.into_inner());
-    let _ = shutdown_sender.send(());
-    let _ = server_task.await;
-    result
-}
-
-#[cfg(test)]
 async fn start_filesync_server(
     root: Arc<cap_std::fs::Dir>,
 ) -> (
@@ -837,6 +1242,97 @@ async fn start_filesync_server(
         let _ = server.await;
     });
     (address, shutdown_sender, server_task)
+}
+
+#[cfg(test)]
+async fn open_filesync_transfer(
+    root: Arc<cap_std::fs::Dir>,
+) -> (
+    mpsc::Sender<Packet>,
+    Streaming<Packet>,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    open_filesync_transfer_with_controls(root, false, false).await
+}
+
+#[cfg(test)]
+async fn open_filesync_transfer_with_controls(
+    root: Arc<cap_std::fs::Dir>,
+    panic_worker: bool,
+    delay_scan: bool,
+) -> (
+    mpsc::Sender<Packet>,
+    Streaming<Packet>,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (address, shutdown_sender, server_task) = start_filesync_server(root).await;
+    let mut client =
+        bollard_buildkit_proto::moby::filesync::v1::file_sync_client::FileSyncClient::connect(
+            format!("http://{address}"),
+        )
+        .await
+        .expect("FileSync client connects");
+    let (sender, receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
+    let mut request = Request::new(ReceiverStream::new(receiver));
+    request.metadata_mut().insert(
+        DIR_NAME_METADATA,
+        tonic::metadata::MetadataValue::try_from("context").expect("metadata value is valid"),
+    );
+    if panic_worker {
+        request.metadata_mut().insert(
+            "x-test-panic-worker",
+            tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
+        );
+    }
+    if delay_scan {
+        request.metadata_mut().insert(
+            "x-test-delay-scan",
+            tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
+        );
+    }
+    let responses = client
+        .diff_copy(request)
+        .await
+        .expect("DiffCopy starts")
+        .into_inner();
+    (sender, responses, shutdown_sender, server_task)
+}
+
+#[cfg(test)]
+async fn read_stat_terminator(responses: &mut Streaming<Packet>) -> Vec<Packet> {
+    let mut packets = Vec::new();
+    loop {
+        let packet = responses
+            .message()
+            .await
+            .expect("STAT response succeeds")
+            .expect("STAT response exists");
+        assert_eq!(packet.r#type, PacketType::PacketStat as i32);
+        let done = packet.stat.is_none();
+        packets.push(packet);
+        if done {
+            return packets;
+        }
+    }
+}
+
+#[cfg(test)]
+async fn expect_protocol_error(responses: &mut Streaming<Packet>) -> tonic::Status {
+    loop {
+        let packet = responses
+            .message()
+            .await
+            .expect("FileSync error packet succeeds")
+            .expect("FileSync error packet exists");
+        if packet.r#type == PacketType::PacketErr as i32 {
+            return responses
+                .message()
+                .await
+                .expect_err("FileSync stream returns its protocol error");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1023,6 +1519,44 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn scanner_applies_literal_followpaths_with_ancestors() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("a")).expect("a directory is created");
+        std::fs::create_dir(root.path().join("b")).expect("b directory is created");
+        std::fs::write(root.path().join("a/input"), b"source").expect("input is created");
+        std::fs::write(root.path().join("b/other"), b"other").expect("other is created");
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            FOLLOW_PATHS_METADATA,
+            tonic::metadata::MetadataValue::try_from("a/input")
+                .expect("follow path metadata is valid"),
+        );
+        let selection = scan_selection(&metadata).expect("follow path is accepted");
+        let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
+        let scanner = tokio::task::spawn_blocking({
+            let root = open_mount(root.path());
+            move || {
+                scan_entries_with_selection(
+                    root,
+                    sender,
+                    selection,
+                    CancellationToken::new(),
+                    false,
+                )
+            }
+        });
+        let mut paths = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            paths.push(event.expect("selected scan succeeds").stat.path);
+        }
+        scanner
+            .await
+            .expect("selected scanner joins")
+            .expect("selected scanner succeeds");
+        assert_eq!(paths, ["a", "a/input"]);
+    }
+
     #[test]
     fn scanner_rejects_unsupported_options_and_long_paths() {
         let mut metadata = MetadataMap::new();
@@ -1115,7 +1649,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_streams_stats_and_fails_closed_on_requests() {
+    async fn diff_copy_streams_stats_and_transfers_requested_files() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("input"), b"source").expect("source file is created");
         let (address, shutdown_sender, server_task) =
@@ -1157,17 +1691,29 @@ mod tests {
             .send(request_packet(0))
             .await
             .expect("request channel remains open");
-        let error_packet = responses
+        let data = responses
             .message()
             .await
-            .expect("protocol error packet succeeds")
-            .expect("protocol error packet exists");
-        assert_eq!(error_packet.r#type, PacketType::PacketErr as i32);
-        let error = responses
+            .expect("DATA response succeeds")
+            .expect("DATA response exists");
+        assert_eq!(data, data_packet(0, b"source".to_vec()));
+        let eof = responses
             .message()
             .await
-            .expect_err("REQ ends the FileSync stream");
-        assert_eq!(error.code(), tonic::Code::Unimplemented);
+            .expect("DATA EOF succeeds")
+            .expect("DATA EOF exists");
+        assert_eq!(eof, data_packet(0, Vec::new()));
+        sender
+            .send(fin_packet())
+            .await
+            .expect("FIN request is accepted");
+        let fin = responses
+            .message()
+            .await
+            .expect("FIN response succeeds")
+            .expect("FIN response exists");
+        assert_eq!(fin.r#type, PacketType::PacketFin as i32);
+        assert!(responses.message().await.expect("stream closes").is_none());
 
         drop(sender);
         let _ = shutdown_sender.send(());
@@ -1175,89 +1721,328 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "removed when the FileSync coordinator is implemented"]
-    async fn diff_copy_red_baseline_accepts_pipelined_requests() {
-        let _ = request_packet(1);
-        let _ = request_packet(3);
-        let _ = red_baseline_stream()
-            .await
-            .expect("FileSync sender accepts pipelined requests");
+    async fn diff_copy_accepts_pipelined_requests() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"a").expect("a is created");
+        std::fs::write(root.path().join("b"), b"b").expect("b is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        let stats = read_stat_terminator(&mut responses).await;
+        assert_eq!(stats.len(), 3);
+        sender.send(request_packet(0)).await.expect("request sends");
+        sender.send(request_packet(1)).await.expect("request sends");
+        sender.send(fin_packet()).await.expect("FIN sends");
+        let mut data = Vec::new();
+        let mut eof = HashSet::new();
+        while eof.len() < 2 {
+            let packet = responses
+                .message()
+                .await
+                .expect("DATA succeeds")
+                .expect("DATA exists");
+            assert_eq!(packet.r#type, PacketType::PacketData as i32);
+            if packet.data.is_empty() {
+                eof.insert(packet.id);
+            } else {
+                data.push(packet);
+            }
+        }
+        assert_eq!(data.len(), 2);
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
     }
 
     #[tokio::test]
-    #[ignore = "removed when the FileSync coordinator is implemented"]
-    async fn diff_copy_red_baseline_reports_protocol_errors() {
-        let _ = err_packet("peer failure");
-        let _ = fin_packet();
-        let _ = red_baseline_stream()
+    async fn diff_copy_reports_peer_protocol_errors() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender
+            .send(err_packet("peer failure"))
             .await
-            .expect("FileSync sender reports protocol errors");
+            .expect("ERR sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::Aborted
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
     }
 
-    macro_rules! red_protocol_test {
-        ($name:ident, $expectation:literal) => {
-            #[tokio::test]
-            #[ignore = "removed when the FileSync coordinator is implemented"]
-            async fn $name() {
-                let _ = red_baseline_stream().await.expect($expectation);
+    #[tokio::test]
+    async fn diff_copy_streams_data_and_fin() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, b"source".to_vec())
+        );
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, Vec::new())
+        );
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_terminates_empty_files() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("empty"), b"").expect("empty file is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, Vec::new())
+        );
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_preserves_each_file_data_order() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), vec![b'a'; FILE_READ_BUFFER_SIZE * 2])
+            .expect("a is created");
+        std::fs::write(root.path().join("b"), vec![b'b'; FILE_READ_BUFFER_SIZE * 2])
+            .expect("b is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        sender.send(request_packet(1)).await.expect("request sends");
+        sender.send(fin_packet()).await.expect("FIN sends");
+        let mut packets = Vec::new();
+        let mut eof = HashSet::new();
+        while eof.len() < 2 {
+            let packet = responses.message().await.unwrap().unwrap();
+            if packet.data.is_empty() {
+                eof.insert(packet.id);
             }
-        };
+            packets.push(packet);
+        }
+        assert_eq!(
+            collect_file_data(&packets, 0).unwrap(),
+            vec![b'a'; FILE_READ_BUFFER_SIZE * 2]
+        );
+        assert_eq!(
+            collect_file_data(&packets, 1).unwrap(),
+            vec![b'b'; FILE_READ_BUFFER_SIZE * 2]
+        );
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
     }
 
-    red_protocol_test!(
-        diff_copy_red_baseline_streams_data_and_fin,
-        "FileSync sender streams DATA and FIN"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_terminates_empty_files,
-        "FileSync sender terminates empty files"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_interleaves_file_data,
-        "FileSync sender interleaves file DATA"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_rejects_duplicate_requests,
-        "FileSync sender rejects duplicate requests"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_rejects_unknown_requests,
-        "FileSync sender rejects unknown requests"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_rejects_unexpected_packets,
-        "FileSync sender rejects unexpected packets"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_rejects_early_fin,
-        "FileSync sender rejects early FIN"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_rejects_input_eof,
-        "FileSync sender rejects input EOF before FIN"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_handles_peer_errors,
-        "FileSync sender handles peer errors"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_waits_for_accepted_jobs,
-        "FileSync sender waits for accepted jobs"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_cancels_owned_tasks,
-        "FileSync sender cancels owned tasks"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_reports_worker_errors,
-        "FileSync sender reports worker errors"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_reports_worker_panics,
-        "FileSync sender reports worker panics"
-    );
-    red_protocol_test!(
-        diff_copy_red_baseline_applies_output_backpressure,
-        "FileSync sender applies output backpressure"
-    );
+    #[tokio::test]
+    async fn diff_copy_rejects_duplicate_and_unknown_requests() {
+        for duplicate in [true, false] {
+            let root = tempdir().expect("temporary directory is created");
+            std::fs::write(root.path().join("input"), b"source").expect("source is created");
+            let (sender, mut responses, shutdown, server) =
+                open_filesync_transfer(open_mount(root.path())).await;
+            read_stat_terminator(&mut responses).await;
+            sender
+                .send(request_packet(if duplicate { 0 } else { 99 }))
+                .await
+                .expect("request sends");
+            if duplicate {
+                let _ = responses.message().await.unwrap().unwrap();
+                sender
+                    .send(request_packet(0))
+                    .await
+                    .expect("duplicate sends");
+            }
+            assert_eq!(
+                expect_protocol_error(&mut responses).await.code(),
+                tonic::Code::InvalidArgument
+            );
+            let _ = shutdown.send(());
+            let _ = server.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_unexpected_packets() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender
+            .send(data_packet(0, b"unexpected".to_vec()))
+            .await
+            .expect("packet sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::InvalidArgument
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_early_fin() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer_with_controls(open_mount(root.path()), false, true).await;
+        let first = responses.message().await.unwrap().unwrap();
+        assert_eq!(first.r#type, PacketType::PacketStat as i32);
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::FailedPrecondition
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_input_eof_before_fin() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        drop(sender);
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::FailedPrecondition
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_waits_for_accepted_jobs_before_fin() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        sender.send(fin_packet()).await.expect("FIN sends");
+        let data = responses.message().await.unwrap().unwrap();
+        assert_eq!(data.r#type, PacketType::PacketData as i32);
+        assert!(!data.data.is_empty());
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, Vec::new())
+        );
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_cancels_owned_tasks_when_response_is_dropped() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        let _ = responses.message().await;
+        drop(sender);
+        drop(responses);
+        let _ = shutdown.send(());
+        tokio::time::timeout(std::time::Duration::from_secs(1), server)
+            .await
+            .expect("FileSync server shuts down after cancellation")
+            .expect("FileSync server joins");
+    }
+
+    #[tokio::test]
+    async fn diff_copy_reports_worker_errors() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        std::fs::remove_file(root.path().join("input")).expect("source is removed");
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::Internal
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_reports_worker_panics() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer_with_controls(open_mount(root.path()), true, false).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::Internal
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_applies_output_backpressure() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(
+            root.path().join("input"),
+            vec![b'x'; FILE_READ_BUFFER_SIZE * 32],
+        )
+        .expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        sender.send(fin_packet()).await.expect("FIN sends");
+        let mut packets = Vec::new();
+        loop {
+            let packet = responses.message().await.unwrap().unwrap();
+            let done = packet.r#type == PacketType::PacketData as i32 && packet.data.is_empty();
+            packets.push(packet);
+            if done {
+                break;
+            }
+        }
+        assert_eq!(
+            collect_file_data(&packets, 0).unwrap().len(),
+            FILE_READ_BUFFER_SIZE * 32
+        );
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
 }

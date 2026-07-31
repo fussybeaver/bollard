@@ -154,7 +154,7 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
     result
 }
 
-async fn local_source_filesync_red_baseline_test(docker: Docker) -> Result<(), Error> {
+async fn local_source_filesync_test(docker: Docker) -> Result<(), Error> {
     let name = format!("bollard_llb_gate_f_{}", unique_builder_name());
     let volume_name = format!("{name}_state");
     let source = tempfile::tempdir()?;
@@ -186,6 +186,16 @@ async fn local_source_filesync_red_baseline_test(docker: Docker) -> Result<(), E
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("local source solve failed: {error}")),
             })?;
+        assert_eq!(
+            std::fs::read(output.path().join("nested/input.txt"))?,
+            b"local source"
+        );
+        assert!(output.path().join("nested").is_dir());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::read_link(output.path().join("link"))?,
+            std::path::Path::new("nested/input.txt")
+        );
         Ok::<(), Error>(())
     }
     .await;
@@ -220,9 +230,8 @@ fn integration_test_direct_definition_solve() {
 
 #[test]
 #[cfg(feature = "buildkit_providerless")]
-#[ignore = "removed when local source FileSync transfer is implemented"]
-fn integration_test_local_source_filesync_red_baseline() {
-    connect_to_docker_and_run!(local_source_filesync_red_baseline_test);
+fn integration_test_local_source_filesync() {
+    connect_to_docker_and_run!(local_source_filesync_test);
 }
 
 #[test]
