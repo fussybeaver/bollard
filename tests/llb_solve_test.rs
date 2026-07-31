@@ -220,7 +220,7 @@ fn integration_test_direct_definition_solve() {
 
 #[test]
 #[cfg(feature = "buildkit_providerless")]
-#[ignore = "removed when local source FileSync is implemented"]
+#[ignore = "removed when local source FileSync transfer is implemented"]
 fn integration_test_local_source_filesync_red_baseline() {
     connect_to_docker_and_run!(local_source_filesync_red_baseline_test);
 }
