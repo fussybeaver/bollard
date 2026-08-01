@@ -1375,6 +1375,9 @@ mod tests {
         assert!(names.iter().any(|name| name.contains("ForwardAgent")));
         assert!(names.iter().any(|name| name.contains("diffcopy")));
         assert!(!names.iter().any(|name| name.contains("upload")));
+        assert!(!names
+            .iter()
+            .any(|name| name == "/moby.filesync.v1.FileSync/DiffCopy"));
     }
 
     #[tokio::test]
