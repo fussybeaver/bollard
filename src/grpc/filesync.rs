@@ -72,6 +72,27 @@ struct FileTarget {
     relative: PathBuf,
 }
 
+/// Test-only fault-injection switches for exercising panic and race paths
+/// through the real FileSync wire protocol. Always all-off in production:
+/// `diff_copy` only parses them from request metadata under `cfg(test)`.
+#[derive(Clone, Copy, Debug, Default)]
+struct FaultInjection {
+    panic_worker: bool,
+    delay_scan: bool,
+    panic_scanner: bool,
+}
+
+impl FaultInjection {
+    #[cfg(test)]
+    fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
+        Self {
+            panic_worker: metadata.contains_key("x-test-panic-worker"),
+            delay_scan: metadata.contains_key("x-test-delay-scan"),
+            panic_scanner: metadata.contains_key("x-test-panic-scanner"),
+        }
+    }
+}
+
 struct FileSyncSession {
     cancellation: CancellationToken,
     scanner: Option<tokio::task::JoinHandle<()>>,
@@ -92,9 +113,7 @@ impl FileSyncSession {
     fn start(
         root: Arc<cap_std::fs::Dir>,
         selection: ScanSelection,
-        test_panic_worker: bool,
-        test_delay_scan: bool,
-        test_panic_scanner: bool,
+        faults: FaultInjection,
     ) -> FileSyncStart {
         let cancellation = CancellationToken::new();
         let scanner_root = root.clone();
@@ -103,7 +122,7 @@ impl FileSyncSession {
         let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
         let scanner_cancellation = cancellation.clone();
         let scanner = tokio::task::spawn_blocking(move || {
-            if test_panic_scanner {
+            if faults.panic_scanner {
                 panic!("injected FileSync scanner panic");
             }
             let result = scan_entries_with_selection(
@@ -111,7 +130,7 @@ impl FileSyncSession {
                 entries_sender.clone(),
                 selection,
                 scanner_cancellation,
-                test_delay_scan,
+                faults,
             );
             if let Err(error) = result {
                 let _ = entries_sender.blocking_send(Err(error));
@@ -132,7 +151,7 @@ impl FileSyncSession {
                         worker_jobs,
                         worker_output.clone(),
                         worker_cancellation,
-                        test_panic_worker,
+                        faults,
                     )
                     .await;
                 })
@@ -307,25 +326,11 @@ impl FileSync for FileSyncImpl {
         let root = lookup_mount(&self.mounts, &name)?;
         let selection = scan_selection(request.metadata())?;
         #[cfg(test)]
-        let test_panic_worker = request.metadata().contains_key("x-test-panic-worker");
+        let faults = FaultInjection::from_metadata(request.metadata());
         #[cfg(not(test))]
-        let test_panic_worker = false;
-        #[cfg(test)]
-        let test_delay_scan = request.metadata().contains_key("x-test-delay-scan");
-        #[cfg(not(test))]
-        let test_delay_scan = false;
-        #[cfg(test)]
-        let test_panic_scanner = request.metadata().contains_key("x-test-panic-scanner");
-        #[cfg(not(test))]
-        let test_panic_scanner = false;
+        let faults = FaultInjection::default();
         let (mut session, mut entries_receiver, jobs_sender, mut output_receiver) =
-            FileSyncSession::start(
-                root,
-                selection,
-                test_panic_worker,
-                test_delay_scan,
-                test_panic_scanner,
-            );
+            FileSyncSession::start(root, selection, faults);
         let mut jobs_sender = Some(jobs_sender);
         let mut input = Box::pin(request.into_inner());
 
@@ -532,7 +537,7 @@ async fn worker_loop(
     jobs: Arc<Mutex<tokio::sync::mpsc::Receiver<FileJob>>>,
     output: tokio::sync::mpsc::Sender<Result<Packet, Status>>,
     cancellation: CancellationToken,
-    test_panic_worker: bool,
+    faults: FaultInjection,
 ) {
     loop {
         let job = {
@@ -543,7 +548,7 @@ async fn worker_loop(
         if cancellation.is_cancelled() {
             return;
         }
-        if test_panic_worker {
+        if faults.panic_worker {
             panic!("injected FileSync worker panic");
         }
 
@@ -714,7 +719,7 @@ fn scan_entries(
         sender,
         ScanSelection::All,
         CancellationToken::new(),
-        false,
+        FaultInjection::default(),
     )
 }
 
@@ -723,7 +728,7 @@ fn scan_entries_with_selection(
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
     selection: ScanSelection,
     cancellation: CancellationToken,
-    delay_scan: bool,
+    faults: FaultInjection,
 ) -> Result<(), Status> {
     let root = root.try_clone().map_err(|error| {
         Status::internal(format!("failed to retain local source root: {error}"))
@@ -740,7 +745,7 @@ fn scan_entries_with_selection(
     let mut position = 0_u32;
 
     while let Some(mut frame) = frames.pop() {
-        if delay_scan {
+        if faults.delay_scan {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         if cancellation.is_cancelled() {
@@ -1340,30 +1345,14 @@ async fn open_filesync_transfer(
     tokio::sync::oneshot::Sender<()>,
     tokio::task::JoinHandle<()>,
 ) {
-    open_filesync_transfer_with_controls(root, false, false).await
-}
-
-#[cfg(test)]
-async fn open_filesync_transfer_with_controls(
-    root: Arc<cap_std::fs::Dir>,
-    panic_worker: bool,
-    delay_scan: bool,
-) -> (
-    mpsc::Sender<Packet>,
-    Streaming<Packet>,
-    tokio::sync::oneshot::Sender<()>,
-    tokio::task::JoinHandle<()>,
-) {
-    open_filesync_transfer_with_metadata(root, "context", panic_worker, delay_scan, false).await
+    open_filesync_transfer_with_metadata(root, "context", FaultInjection::default()).await
 }
 
 #[cfg(test)]
 async fn open_filesync_transfer_with_metadata(
     root: Arc<cap_std::fs::Dir>,
     dir_name: &str,
-    panic_worker: bool,
-    delay_scan: bool,
-    panic_scanner: bool,
+    faults: FaultInjection,
 ) -> (
     mpsc::Sender<Packet>,
     Streaming<Packet>,
@@ -1373,9 +1362,7 @@ async fn open_filesync_transfer_with_metadata(
     open_filesync_transfer_from_mounts(
         HashMap::from([(String::from("context"), root)]),
         dir_name,
-        panic_worker,
-        delay_scan,
-        panic_scanner,
+        faults,
     )
     .await
 }
@@ -1384,9 +1371,7 @@ async fn open_filesync_transfer_with_metadata(
 async fn open_filesync_transfer_from_mounts(
     mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
     dir_name: &str,
-    panic_worker: bool,
-    delay_scan: bool,
-    panic_scanner: bool,
+    faults: FaultInjection,
 ) -> (
     mpsc::Sender<Packet>,
     Streaming<Packet>,
@@ -1406,19 +1391,19 @@ async fn open_filesync_transfer_from_mounts(
         DIR_NAME_METADATA,
         tonic::metadata::MetadataValue::try_from(dir_name).expect("metadata value is valid"),
     );
-    if panic_worker {
+    if faults.panic_worker {
         request.metadata_mut().insert(
             "x-test-panic-worker",
             tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
         );
     }
-    if delay_scan {
+    if faults.delay_scan {
         request.metadata_mut().insert(
             "x-test-delay-scan",
             tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
         );
     }
-    if panic_scanner {
+    if faults.panic_scanner {
         request.metadata_mut().insert(
             "x-test-panic-scanner",
             tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
@@ -1678,7 +1663,7 @@ mod tests {
                     sender,
                     selection,
                     CancellationToken::new(),
-                    false,
+                    FaultInjection::default(),
                 )
             }
         });
@@ -2086,8 +2071,15 @@ mod tests {
     async fn diff_copy_rejects_early_fin() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), false, true).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
         let first = responses.message().await.unwrap().unwrap();
         assert_eq!(first.r#type, PacketType::PacketStat as i32);
         sender.send(fin_packet()).await.expect("FIN sends");
@@ -2176,8 +2168,15 @@ mod tests {
     async fn diff_copy_reports_worker_panics() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), true, false).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                panic_worker: true,
+                ..Default::default()
+            },
+        )
+        .await;
         read_stat_terminator(&mut responses).await;
         sender.send(request_packet(0)).await.expect("request sends");
         assert_eq!(
@@ -2212,9 +2211,10 @@ mod tests {
         let (_sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
             open_mount(root.path()),
             "context",
-            false,
-            false,
-            true,
+            FaultInjection {
+                panic_scanner: true,
+                ..Default::default()
+            },
         )
         .await;
         assert_eq!(
@@ -2334,8 +2334,15 @@ mod tests {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("a"), b"a").expect("a is created");
         std::fs::write(root.path().join("b"), b"b").expect("b is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), false, true).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
         let first = responses
             .message()
             .await
@@ -2521,8 +2528,15 @@ mod tests {
             std::fs::write(root.path().join(format!("entry-{index}")), b"entry")
                 .expect("entry is created");
         }
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), false, true).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
         let _ = responses.message().await;
         drop(sender);
         drop(responses);
