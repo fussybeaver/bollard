@@ -1098,6 +1098,10 @@ impl FileSendPacket for FileSendPacketImpl {
                             }
                             Ok(None) => {}
                             Err(error) => {
+                                // Close the staging directory handles before
+                                // removal; Windows cannot delete a directory
+                                // while a handle to it is open.
+                                drop(state.take());
                                 if let Err(cleanup_error) = staging_guard.cleanup().await {
                                     warn!("failed to clean up failed export: {cleanup_error}");
                                 }
@@ -1110,6 +1114,10 @@ impl FileSendPacket for FileSendPacketImpl {
                             warn!("packet stream ended after export publish: {error}");
                             break;
                         }
+                        // Close the staging directory handles before removal;
+                        // Windows cannot delete a directory while a handle to
+                        // it is open.
+                        drop(state.take());
                         if let Err(cleanup_error) = staging_guard.cleanup().await {
                             warn!("failed to clean up failed export: {cleanup_error}");
                         }
@@ -1119,6 +1127,10 @@ impl FileSendPacket for FileSendPacketImpl {
                         if receiver_sent_fin {
                             warn!("packet stream ended after export publish");
                         } else {
+                            // Close the staging directory handles before
+                            // removal; Windows cannot delete a directory while
+                            // a handle to it is open.
+                            drop(state.take());
                             if let Err(cleanup_error) = staging_guard.cleanup().await {
                                 warn!("failed to clean up incomplete export: {cleanup_error}");
                             }
@@ -1132,6 +1144,9 @@ impl FileSendPacket for FileSendPacketImpl {
             }
 
             if !receiver_sent_fin {
+                // Close the staging directory handles before removal; Windows
+                // cannot delete a directory while a handle to it is open.
+                drop(state.take());
                 if let Err(cleanup_error) = staging_guard.cleanup().await {
                     warn!("failed to clean up incomplete export: {cleanup_error}");
                 }
