@@ -70,6 +70,15 @@ fn source_operation(identifier: impl Into<String>) -> (Vec<u8>, String) {
 }
 
 fn local_source_copy_definition(name: &str, destination: &str) -> pb::Definition {
+    local_source_copy_definition_with_patterns(name, destination, &[], &[])
+}
+
+fn local_source_copy_definition_with_patterns(
+    name: &str,
+    destination: &str,
+    include_patterns: &[&str],
+    exclude_patterns: &[&str],
+) -> pb::Definition {
     let (source_bytes, source_digest) = source_operation(format!("local://{name}"));
     let copy = pb::FileActionCopy {
         src: String::from("/"),
@@ -83,8 +92,14 @@ fn local_source_copy_definition(name: &str, destination: &str) -> pb::Definition
         allow_wildcard: false,
         allow_empty_wildcard: false,
         timestamp: -1,
-        include_patterns: Vec::new(),
-        exclude_patterns: Vec::new(),
+        include_patterns: include_patterns
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        exclude_patterns: exclude_patterns
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
         always_replace_existing_dest_paths: false,
         mode_str: String::new(),
         required_paths: Vec::new(),
@@ -221,6 +236,7 @@ fn create_application_fixture() -> Result<tempfile::TempDir, Error> {
     std::fs::write(source.path().join("nested/input.txt"), b"local source")?;
     std::fs::write(source.path().join("empty.txt"), [])?;
     std::fs::write(source.path().join("mode.txt"), b"mode")?;
+    std::fs::write(source.path().join("café.txt"), b"unicode")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::{symlink, PermissionsExt};
@@ -510,6 +526,66 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
     result
 }
 
+async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Error> {
+    let name = unique_builder_name();
+    let volume_name = format!("{name}_state");
+    let source = create_application_fixture()?;
+    let output = tempfile::tempdir()?;
+    let encoded_output = tempfile::tempdir()?;
+
+    let result = async {
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+        let request = DefinitionSolveRequest::new(
+            local_source_copy_definition_with_patterns(
+                "context",
+                "/",
+                &["**/*.txt"],
+                &["nested/input.txt"],
+            ),
+            DefinitionExporter::Local(output.path().to_path_buf()),
+        )
+        .with_options(local_source_options("context", source.path(), None)?);
+        SolveDefinition::solve_definition(&driver, request)
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("filtered local source solve failed: {error}")),
+            })?;
+
+        let entries = relative_entries(output.path())?;
+        let expected = BTreeSet::from([
+            PathBuf::from("café.txt"),
+            PathBuf::from("empty.txt"),
+            PathBuf::from("mode.txt"),
+        ]);
+        assert_eq!(entries, expected);
+        assert_eq!(std::fs::read(output.path().join("café.txt"))?, b"unicode");
+
+        let request = DefinitionSolveRequest::new(
+            local_source_copy_definition_with_patterns("context", "/", &["café.txt"], &[]),
+            DefinitionExporter::Local(encoded_output.path().to_path_buf()),
+        )
+        .with_options(local_source_options("context", source.path(), None)?);
+        SolveDefinition::solve_definition(&driver, request)
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("encoded local source solve failed: {error}")),
+            })?;
+        assert_eq!(
+            relative_entries(encoded_output.path())?,
+            BTreeSet::from([PathBuf::from("café.txt")])
+        );
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
+}
+
 async fn local_source_cache_repeatability_test(docker: Docker) -> Result<(), Error> {
     let name = unique_builder_name();
     let volume_name = format!("{name}_state");
@@ -675,6 +751,12 @@ fn integration_test_local_source_filesync() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_local_source_cache_repeatability() {
     connect_to_docker_and_run!(local_source_cache_repeatability_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_local_source_filter_and_metadata() {
+    connect_to_docker_and_run!(local_source_filter_and_metadata_test);
 }
 
 #[test]
