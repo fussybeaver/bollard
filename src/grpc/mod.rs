@@ -2012,7 +2012,7 @@ mod tests {
             fs::read_link(destination.join("link")).await.unwrap(),
             Path::new("message")
         );
-        wait_for_staging_siblings(root.path(), false).await;
+        assert!(transfer_sibling_names(root.path()).is_empty());
         #[cfg(unix)]
         {
             assert_eq!(
@@ -2059,7 +2059,7 @@ mod tests {
         }
 
         assert!(sent_fin);
-        wait_for_staging_siblings(root.path(), false).await;
+        assert!(transfer_sibling_names(root.path()).is_empty());
         server_task.abort();
         let _ = server_task.await;
     }
@@ -2096,7 +2096,7 @@ mod tests {
             fs::read(destination.join("sentinel")).await.unwrap(),
             b"old"
         );
-        wait_for_staging_siblings(root.path(), false).await;
+        assert!(transfer_sibling_names(root.path()).is_empty());
     }
 
     #[tokio::test]
