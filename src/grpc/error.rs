@@ -35,8 +35,8 @@ pub enum GrpcError {
         /// The Docker-container builder name.
         name: String,
     },
-    /// The driver teardown task was unavailable when cleanup was requested.
-    #[error("driver teardown task was unavailable")]
+    /// The driver teardown already ran when cleanup was requested again.
+    #[error("driver teardown was already completed")]
     TearDownTaskUnavailable,
     /// Generic error emitted by the bollard codebase.
     #[error(transparent)]
