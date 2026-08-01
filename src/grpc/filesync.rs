@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use bollard_buildkit_proto::{
@@ -35,6 +36,7 @@ const FILE_JOB_QUEUE_CAPACITY: usize = 128;
 const OUTPUT_QUEUE_CAPACITY: usize = 16;
 const FILE_WORKER_COUNT: usize = 4;
 const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
+const FILESYNC_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 type EntryReceiver = tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>;
 type JobSender = tokio::sync::mpsc::Sender<FileJob>;
@@ -163,22 +165,44 @@ impl FileSyncSession {
         output.close();
         jobs.take();
 
-        if let Some(scanner) = self.scanner.take() {
-            scanner.await.map_err(|error| {
-                Status::internal(format!("FileSync scanner task failed: {error}"))
-            })?;
-        }
-        self.workers.abort_all();
-        while let Some(result) = self.workers.join_next().await {
-            if let Err(error) = result {
-                if !error.is_cancelled() {
-                    return Err(Status::internal(format!(
-                        "FileSync worker task failed: {error}"
-                    )));
+        let result = tokio::time::timeout(FILESYNC_SHUTDOWN_TIMEOUT, async {
+            let scanner_result = if let Some(scanner) = self.scanner.as_mut() {
+                scanner.await.map_err(|error| {
+                    Status::internal(format!("FileSync scanner task failed: {error}"))
+                })
+            } else {
+                Ok(())
+            };
+            self.scanner.take();
+
+            self.workers.abort_all();
+            let mut worker_error = None;
+            while let Some(result) = self.workers.join_next().await {
+                if let Err(error) = result {
+                    if !error.is_cancelled() && worker_error.is_none() {
+                        worker_error = Some(Status::internal(format!(
+                            "FileSync worker task failed: {error}"
+                        )));
+                    }
                 }
             }
+            scanner_result?;
+            worker_error.map_or(Ok(()), Err)
+        })
+        .await;
+
+        match result {
+            Ok(result) => result,
+            Err(_) => {
+                if let Some(scanner) = self.scanner.as_ref() {
+                    scanner.abort();
+                }
+                self.workers.abort_all();
+                Err(Status::deadline_exceeded(
+                    "FileSync session cleanup exceeded its timeout",
+                ))
+            }
         }
-        Ok(())
     }
 }
 
@@ -193,6 +217,22 @@ struct ScanFrame {
     directory: cap_std::fs::Dir,
     names: Vec<OsString>,
     next_name: usize,
+}
+
+struct ScanBudget {
+    inspected: usize,
+}
+
+impl ScanBudget {
+    fn inspect(&mut self) -> Result<(), Status> {
+        if self.inspected >= MAX_ENTRIES {
+            return Err(Status::resource_exhausted(
+                "local source has too many entries",
+            ));
+        }
+        self.inspected += 1;
+        Ok(())
+    }
 }
 
 enum SessionEvent {
@@ -667,7 +707,8 @@ fn scan_entries_with_selection(
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
     let selection = resolve_selection(&root, selection)?;
-    let names = sorted_names(&root)?;
+    let mut budget = ScanBudget { inspected: 0 };
+    let names = sorted_names(&root, &mut budget)?;
     let mut frames = vec![ScanFrame {
         relative: PathBuf::new(),
         directory: root,
@@ -702,7 +743,7 @@ fn scan_entries_with_selection(
                 frames.push(frame);
                 frames.push(ScanFrame {
                     relative,
-                    names: sorted_names(&directory)?,
+                    names: sorted_names(&directory, &mut budget)?,
                     directory,
                     next_name: 0,
                 });
@@ -745,7 +786,7 @@ fn scan_entries_with_selection(
                     .map_err(|error| filesystem_error("open directory", &relative, error))?;
                 Some(ScanFrame {
                     relative,
-                    names: sorted_names(&directory)?,
+                    names: sorted_names(&directory, &mut budget)?,
                     directory,
                     next_name: 0,
                 })
@@ -815,21 +856,35 @@ fn entry_is_ancestor_or_selected_directory(
     metadata: &cap_std::fs::Metadata,
     selection: &ScanSelection,
 ) -> bool {
-    metadata.file_type().is_dir() && entry_is_ancestor(path, selection)
+    metadata.file_type().is_dir()
+        && match selection {
+            ScanSelection::All => true,
+            ScanSelection::Paths(paths) => paths
+                .iter()
+                .any(|selected| path_is_prefix(path, selected) || path_is_prefix(selected, path)),
+        }
 }
 
-fn sorted_names(directory: &cap_std::fs::Dir) -> Result<Vec<OsString>, Status> {
+fn sorted_names(
+    directory: &cap_std::fs::Dir,
+    budget: &mut ScanBudget,
+) -> Result<Vec<OsString>, Status> {
     let mut names = directory
         .entries()
         .map_err(|error| {
             Status::internal(format!("failed to read local source directory: {error}"))
         })?
         .map(|entry| {
-            entry.map(|entry| entry.file_name()).map_err(|error| {
-                Status::internal(format!("failed to read local source entry: {error}"))
-            })
+            entry
+                .map(|entry| {
+                    budget.inspect()?;
+                    Ok(entry.file_name())
+                })
+                .map_err(|error| {
+                    Status::internal(format!("failed to read local source entry: {error}"))
+                })?
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, Status>>()?;
     names.sort_unstable();
     Ok(names)
 }
@@ -1524,13 +1579,13 @@ mod tests {
         let root = tempdir().expect("temporary directory is created");
         std::fs::create_dir(root.path().join("a")).expect("a directory is created");
         std::fs::create_dir(root.path().join("b")).expect("b directory is created");
-        std::fs::write(root.path().join("a/input"), b"source").expect("input is created");
+        std::fs::create_dir(root.path().join("a/subdir")).expect("subdir is created");
+        std::fs::write(root.path().join("a/subdir/input"), b"source").expect("input is created");
         std::fs::write(root.path().join("b/other"), b"other").expect("other is created");
         let mut metadata = MetadataMap::new();
         metadata.insert(
             FOLLOW_PATHS_METADATA,
-            tonic::metadata::MetadataValue::try_from("a/input")
-                .expect("follow path metadata is valid"),
+            tonic::metadata::MetadataValue::try_from("a").expect("follow path metadata is valid"),
         );
         let selection = scan_selection(&metadata).expect("follow path is accepted");
         let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
@@ -1554,7 +1609,24 @@ mod tests {
             .await
             .expect("selected scanner joins")
             .expect("selected scanner succeeds");
-        assert_eq!(paths, ["a", "a/input"]);
+        assert_eq!(paths, ["a", "a/subdir", "a/subdir/input"]);
+    }
+
+    #[test]
+    fn scanner_bounds_directory_entry_collection() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"a").expect("a is created");
+        std::fs::write(root.path().join("b"), b"b").expect("b is created");
+        let directory = open_mount(root.path());
+        let mut budget = ScanBudget {
+            inspected: MAX_ENTRIES - 1,
+        };
+        assert_eq!(
+            sorted_names(&directory, &mut budget)
+                .expect_err("directory budget is enforced")
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
     }
 
     #[test]
