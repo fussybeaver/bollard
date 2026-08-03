@@ -207,6 +207,7 @@ mod tests {
         let matcher = matcher(&["foo*", "!foo/bar"]);
         assert!(matcher.matches_or_parent("foo"));
         assert!(!matcher.matches_or_parent("foo/bar"));
+        assert!(!matcher.matches_or_parent("foo/bar/x"));
         assert!(matcher.matches_or_parent("foo/other"));
     }
 

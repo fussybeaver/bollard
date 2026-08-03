@@ -208,11 +208,19 @@ pub enum ImageExporterEnum {
 }
 
 /// Exporter selection for a direct LLB definition solve.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum DefinitionExporter {
     /// Export the solved filesystem into a local directory.
     Local(PathBuf),
+}
+
+impl std::fmt::Debug for DefinitionExporter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
+        }
+    }
 }
 
 /// Options for a direct LLB definition solve.
@@ -376,7 +384,7 @@ impl DefinitionSolveOptionsBuilder {
 }
 
 /// A direct-definition solve request.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DefinitionSolveRequest {
     /// The pre-built LLB definition to solve.
     pub definition: bollard_buildkit_proto::pb::Definition,
@@ -384,6 +392,20 @@ pub struct DefinitionSolveRequest {
     pub exporter: DefinitionExporter,
     options: DefinitionSolveOptions,
     build_ref: Option<BuildRef>,
+}
+
+impl std::fmt::Debug for DefinitionSolveRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DefinitionSolveRequest")
+            .field("definition_ops", &self.definition.def.len())
+            .field("definition_metadata", &self.definition.metadata.len())
+            .field("has_source", &self.definition.source.is_some())
+            .field("exporter", &self.exporter)
+            .field("options", &self.options)
+            .field("has_build_ref", &self.build_ref.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1284,6 +1306,27 @@ mod tests {
         assert!(!rendered.contains("registry.example"));
         assert!(rendered.contains("credential_count: 1"));
         assert!(rendered.contains("secret_count: 1"));
+    }
+
+    #[test]
+    fn definition_solve_request_debug_redacts_definition_and_export_path() {
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition {
+                def: vec![b"embedded command and environment".to_vec()],
+                metadata: [(String::from("private-metadata"), Default::default())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
+            DefinitionExporter::Local(PathBuf::from("/private/export")),
+        );
+
+        let rendered = format!("{request:?}");
+        assert!(!rendered.contains("embedded command"));
+        assert!(!rendered.contains("private-metadata"));
+        assert!(!rendered.contains("/private/export"));
+        assert!(rendered.contains("definition_ops: 1"));
+        assert!(rendered.contains("definition_metadata: 1"));
     }
 
     #[test]
