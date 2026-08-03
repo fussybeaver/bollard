@@ -580,3 +580,148 @@ mod json {
 
 #[cfg(feature = "dump_json")]
 pub use json::dump_json;
+
+#[cfg(test)]
+mod tests {
+    use bollard_buildkit_proto::pb;
+    use prost::Message;
+
+    use super::*;
+    use crate::state::MarshalOpts;
+    use crate::{copy, image, merge, mkdir, mkfile, scratch, shlex};
+
+    fn sample_def() -> Definition {
+        image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap()
+    }
+
+    #[test]
+    fn write_to_matches_into_bytes() {
+        let def = sample_def();
+        let mut writer = Vec::new();
+        def.write_to(&mut writer).unwrap();
+        assert_eq!(writer, def.into_bytes().unwrap());
+    }
+
+    #[test]
+    fn write_to_round_trips() {
+        let def = sample_def();
+        let mut writer = Vec::new();
+        def.write_to(&mut writer).unwrap();
+        let decoded = pb::Definition::decode(writer.as_slice()).unwrap();
+        assert_eq!(decoded.def.len(), def.def.len());
+    }
+
+    #[test]
+    fn dump_text_renders_vertices() {
+        let def = sample_def();
+        let mut out = Vec::new();
+        dump_text(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("source"));
+        assert!(text.contains("exec"));
+        assert!(text.contains("wrapper"));
+        assert!(text.contains("docker-image://docker.io/library/alpine:latest"));
+    }
+
+    #[test]
+    fn dump_text_renders_merge_and_file() {
+        let def = merge(
+            vec![
+                image("alpine:latest").unwrap(),
+                scratch()
+                    .unwrap()
+                    .file(
+                        mkdir("/tmp", 0o755).with_parents(true),
+                        crate::FileOpts::new(),
+                    )
+                    .unwrap(),
+            ],
+            crate::MergeOpts::new(),
+        )
+        .unwrap()
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        let mut out = Vec::new();
+        dump_text(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("merge"));
+        assert!(text.contains("file"));
+        assert!(text.contains("mkdir"));
+    }
+
+    #[test]
+    fn dump_text_renders_copy() {
+        let def = image("alpine:latest")
+            .unwrap()
+            .file(
+                copy(image("busybox:latest").unwrap(), "/src", "/dst").with_create_dest_path(true),
+                crate::FileOpts::new(),
+            )
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        let mut out = Vec::new();
+        dump_text(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("file"));
+        assert!(text.contains("copy"));
+    }
+
+    #[test]
+    fn dump_text_renders_mkfile() {
+        let def = scratch()
+            .unwrap()
+            .file(mkfile("/hello", 0o644, b"world"), crate::FileOpts::new())
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        let mut out = Vec::new();
+        dump_text(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("mkfile"));
+        assert!(text.contains("/hello"));
+    }
+
+    #[cfg(feature = "dump_json")]
+    #[test]
+    fn dump_json_produces_valid_lines() {
+        let def = sample_def();
+        let mut out = Vec::new();
+        dump_json(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = text.trim().lines().collect();
+        assert_eq!(lines.len(), def.def.len());
+        for line in lines {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(value.get("Op").is_some());
+            assert!(value.get("Digest").is_some());
+            assert!(value.get("OpMetadata").is_some());
+        }
+    }
+
+    #[cfg(feature = "dump_json")]
+    #[test]
+    fn dump_json_matches_def_count() {
+        let def = merge(
+            vec![
+                image("alpine:latest").unwrap(),
+                image("busybox:latest").unwrap(),
+            ],
+            crate::MergeOpts::new(),
+        )
+        .unwrap()
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        let mut out = Vec::new();
+        dump_json(&def, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = text.trim().lines().collect();
+        assert_eq!(lines.len(), 4); // 2 sources + merge + wrapper
+    }
+}
