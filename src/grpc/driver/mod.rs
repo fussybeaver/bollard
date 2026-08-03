@@ -345,6 +345,10 @@ impl DefinitionSolveOptionsBuilder {
     }
 
     /// Expose a host directory under a BuildKit `local://` source name.
+    ///
+    /// On Windows, local-source paths remain subject to the host's long-path
+    /// configuration and the underlying filesystem runtime. Enable Windows
+    /// long-path support when exposing deeply nested directories.
     pub fn local_mount(
         mut self,
         name: impl Into<String>,
