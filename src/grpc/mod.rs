@@ -905,19 +905,22 @@ impl StagingGuard {
     }
 
     async fn cleanup(&mut self) -> Result<(), Status> {
-        if let Some(staging) = self.staging.take() {
-            remove_path(&staging).await
-        } else {
-            Ok(())
-        }
+        let Some(staging) = self.staging.clone() else {
+            return Ok(());
+        };
+        remove_path(&staging).await?;
+        self.staging = None;
+        Ok(())
     }
 
     async fn publish(&mut self, destination: &Path) -> Result<(), Status> {
         let staging = self
             .staging
-            .take()
+            .as_ref()
             .expect("staging guard owns a path before publication");
-        publish_staging_directory(&staging, destination).await
+        publish_staging_directory(staging, destination).await?;
+        self.staging = None;
+        Ok(())
     }
 }
 
@@ -1769,7 +1772,7 @@ pub(crate) fn new_id() -> String {
 mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::{collections::HashMap, time::Duration};
 
     use bollard_buildkit_proto::fsutil::types::packet::PacketType;
@@ -1781,7 +1784,7 @@ mod tests {
 
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
-        FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, MAX_FILE_SIZE,
+        FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, StagingGuard, MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1876,6 +1879,17 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("staging cleanup did not finish after runtime shutdown");
+    }
+
+    #[tokio::test]
+    async fn staging_guard_retains_path_after_cleanup_failure() {
+        let staging = PathBuf::from("invalid\0staging");
+        let mut guard = StagingGuard {
+            staging: Some(staging.clone()),
+        };
+
+        assert!(guard.cleanup().await.is_err());
+        assert_eq!(guard.staging.as_ref(), Some(&staging));
     }
 
     async fn wait_for_staging_siblings(root: &Path, expected: bool) {
