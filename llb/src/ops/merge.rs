@@ -248,7 +248,7 @@ mod tests {
             MergeOpts::new(),
         )
         .unwrap()
-        .run(crate::shlex("echo hello"))
+        .run(crate::shlex("echo hello").unwrap())
         .root()
         .unwrap();
         let def = merged

@@ -41,3 +41,26 @@ impl From<OpMetadata> for pb::OpMetadata {
         }
     }
 }
+
+impl OpMetadata {
+    /// Merge metadata from a later vertex that has the same content digest.
+    ///
+    /// Operation bytes are deduplicated by digest, but BuildKit still merges
+    /// metadata from every occurrence of that digest.
+    pub(crate) fn merge_from(&mut self, other: &Self) {
+        self.ignore_cache |= other.ignore_cache;
+        self.description.extend(
+            other
+                .description
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        if other.export_cache.is_some() {
+            self.export_cache = other.export_cache;
+        }
+        if other.progress_group.is_some() {
+            self.progress_group = other.progress_group.clone();
+        }
+        self.caps.extend(other.caps.iter().cloned());
+    }
+}
