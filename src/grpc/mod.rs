@@ -33,6 +33,8 @@ use crate::moby::filesync::v1::{
 };
 use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
+#[cfg(unix)]
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
@@ -41,6 +43,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+#[cfg(unix)]
+use xattr::FileExt;
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
 use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
@@ -388,11 +392,41 @@ const MAX_PENDING_FILES: usize = 4096;
 const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_TOTAL_SIZE: u64 = 16 * 1024 * 1024 * 1024;
 
+#[cfg(unix)]
+fn apply_xattrs(
+    parent: &cap_std::fs::Dir,
+    name: &std::ffi::OsStr,
+    xattrs: &HashMap<String, Vec<u8>>,
+) -> std::io::Result<()> {
+    if xattrs.is_empty() {
+        return Ok(());
+    }
+
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = parent.open_with(name, &options)?.into_std();
+    for (name, value) in xattrs {
+        file.set_xattr(name, value)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_xattrs_to_file(
+    file: &std::fs::File,
+    xattrs: &HashMap<String, Vec<u8>>,
+) -> std::io::Result<()> {
+    for (name, value) in xattrs {
+        file.set_xattr(name, value)?;
+    }
+    Ok(())
+}
+
 struct FileReceiveState {
     root: cap_std::fs::Dir,
     stats: HashMap<u32, PendingFile>,
     declared_paths: HashSet<PathBuf>,
-    directories: HashMap<PathBuf, (u32, cap_std::fs::Dir, OsString)>,
+    directories: HashMap<PathBuf, PendingDirectory>,
     received_all_stats: bool,
     received_fin: bool,
     next_stat_id: u32,
@@ -405,6 +439,14 @@ struct PendingFile {
     stat: Stat,
     file: File,
     received_bytes: u64,
+}
+
+struct PendingDirectory {
+    mode: u32,
+    parent: cap_std::fs::Dir,
+    name: OsString,
+    #[cfg(unix)]
+    xattrs: HashMap<String, Vec<u8>>,
 }
 
 impl FileReceiveState {
@@ -631,7 +673,13 @@ impl FileReceiveState {
         for (directory, parent, name) in created {
             self.directories
                 .entry(directory)
-                .or_insert((0o700, parent, name));
+                .or_insert(PendingDirectory {
+                    mode: 0o700,
+                    parent,
+                    name,
+                    #[cfg(unix)]
+                    xattrs: HashMap::new(),
+                });
         }
 
         let name = path.file_name().ok_or_else(|| {
@@ -694,7 +742,13 @@ impl FileReceiveState {
             drop(directory);
             self.directories.insert(
                 path,
-                (stat.mode & 0o777, permission_parent, permission_name),
+                PendingDirectory {
+                    mode: stat.mode & 0o777,
+                    parent: permission_parent,
+                    name: permission_name,
+                    #[cfg(unix)]
+                    xattrs: stat.xattrs.clone(),
+                },
             );
             self.file_count += 1;
             return Ok(false);
@@ -722,13 +776,24 @@ impl FileReceiveState {
                     "hardlink target is not a regular file",
                 ));
             }
+            #[cfg(unix)]
+            let xattr_parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
             let name = name.to_owned();
-            tokio::task::spawn_blocking(move || root.hard_link(&target, &parent, &name))
+            let hardlink_name = name.clone();
+            tokio::task::spawn_blocking(move || root.hard_link(&target, &parent, &hardlink_name))
                 .await
                 .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
                 .map_err(|error| {
                     Status::invalid_argument(format!("failed to create hardlink: {error}"))
                 })?;
+            #[cfg(unix)]
+            apply_xattrs(&xattr_parent, &name, &stat.xattrs).map_err(|error| {
+                Status::internal(format!(
+                    "failed to set hardlink extended attributes: {error}"
+                ))
+            })?;
             self.file_count += 1;
             return Ok(false);
         }
@@ -825,13 +890,16 @@ impl FileReceiveState {
             .await
             .map_err(|error| Status::internal(format!("failed to flush file data: {error}")))?;
         #[cfg(unix)]
-        pending
-            .file
-            .set_permissions(std::fs::Permissions::from_mode(pending.stat.mode & 0o777))
-            .await
-            .map_err(|error| {
-                Status::internal(format!("failed to set file permissions: {error}"))
+        {
+            let file = pending.file.into_std().await;
+            apply_xattrs_to_file(&file, &pending.stat.xattrs).map_err(|error| {
+                Status::internal(format!("failed to set file extended attributes: {error}"))
             })?;
+            file.set_permissions(std::fs::Permissions::from_mode(pending.stat.mode & 0o777))
+                .map_err(|error| {
+                    Status::internal(format!("failed to set file permissions: {error}"))
+                })?;
+        }
         Ok(())
     }
 
@@ -844,14 +912,18 @@ impl FileReceiveState {
         self.stats.clear();
         let directories: Vec<_> = self.directories.into_values().collect();
         tokio::task::spawn_blocking(move || {
-            for (mode, parent, name) in directories {
+            for directory in directories {
                 #[cfg(unix)]
-                parent.set_permissions(
-                    name,
-                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(mode)),
+                apply_xattrs(&directory.parent, &directory.name, &directory.xattrs)?;
+                #[cfg(unix)]
+                directory.parent.set_permissions(
+                    &directory.name,
+                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(
+                        directory.mode,
+                    )),
                 )?;
                 #[cfg(not(unix))]
-                let _ = (parent, name, mode);
+                let _ = directory;
             }
             Ok::<(), std::io::Error>(())
         })
@@ -1829,6 +1901,22 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    fn stat_with_xattrs(
+        path: &str,
+        mode: u32,
+        size: i64,
+        linkname: &str,
+        xattrs: &[(&str, &[u8])],
+    ) -> Stat {
+        let mut stat = stat(path, mode, size, linkname);
+        stat.xattrs = xattrs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_vec()))
+            .collect();
+        stat
+    }
+
     async fn start_file_send_server(
         destination: std::path::PathBuf,
     ) -> (
@@ -2225,6 +2313,55 @@ mod tests {
         let second = std::fs::metadata(dir.path().join("second")).unwrap();
         assert_eq!(first.ino(), second.ino());
         assert_eq!(std::fs::read(dir.path().join("second")).unwrap(), b"hello");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_restores_xattrs() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let directory_mode = fsutil::FileMode::Dir.bits() | 0o755;
+
+        state
+            .handle_packet(packet_stat(Some(stat_with_xattrs(
+                "nested",
+                directory_mode,
+                0,
+                "",
+                &[("user.directory", b"value")],
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(stat_with_xattrs(
+                    "nested/file",
+                    0o644,
+                    5,
+                    "",
+                    &[("user.file", b"value")],
+                ))))
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            1
+        );
+        state.handle_packet(packet_data(1, b"hello")).await.unwrap();
+        state.handle_packet(packet_data(1, &[])).await.unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.finalize().await.unwrap();
+
+        assert_eq!(
+            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
     }
 
     #[tokio::test]

@@ -2016,6 +2016,39 @@ mod tests {
             .all(|entry| entry.stat.path.len() <= MAX_PATH_LENGTH));
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn scanner_maps_windows_metadata_contract() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory is created");
+        std::fs::write(root.path().join("nested/input.txt"), b"source")
+            .expect("source file is created");
+
+        let entries = scan_fixture(open_mount(root.path())).await;
+        assert!(entries.iter().all(|entry| !entry.stat.path.contains('\\')));
+
+        let directory = entries
+            .iter()
+            .find(|entry| entry.stat.path == "nested")
+            .expect("nested directory stat exists");
+        assert_ne!(
+            directory.stat.mode & super::super::fsutil::FileMode::Dir.bits(),
+            0
+        );
+        assert_eq!(directory.stat.mode & 0o777, 0o755);
+        assert_eq!(directory.stat.uid, 0);
+        assert_eq!(directory.stat.gid, 0);
+
+        let file = entries
+            .iter()
+            .find(|entry| entry.stat.path == "nested/input.txt")
+            .expect("nested file stat exists");
+        assert_eq!(file.stat.mode & 0o777, 0o755);
+        assert_eq!(file.stat.uid, 0);
+        assert_eq!(file.stat.gid, 0);
+        assert!(file.stat.mod_time > 0);
+    }
+
     #[tokio::test]
     async fn scanner_emits_regular_and_symlink_metadata() {
         let root = tempdir().expect("temporary directory is created");
