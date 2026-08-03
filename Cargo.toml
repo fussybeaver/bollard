@@ -16,6 +16,7 @@ members = [
   "codegen/swagger",
   "codegen/proto",
   "codegen/proto/xtask",
+  "llb",
   "."
 ]
 
