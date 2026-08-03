@@ -36,6 +36,15 @@ pub enum LlbError {
         reference: String,
     },
 
+    /// A shell command could not be split into arguments.
+    #[error("invalid shell command at byte {position}: {kind}")]
+    InvalidShell {
+        /// Byte offset of the unmatched quote or trailing escape.
+        position: usize,
+        /// Description of the unterminated shell construct.
+        kind: &'static str,
+    },
+
     /// An I/O error occurred while writing the LLB dump.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

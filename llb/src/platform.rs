@@ -29,10 +29,12 @@ pub struct Platform {
 impl Platform {
     /// Create a new platform with the given OS and architecture.
     pub fn new<OS: Into<String>, ARCH: Into<String>>(os: OS, architecture: ARCH) -> Self {
+        let os = normalize_os(&os.into());
+        let (architecture, variant) = normalize_architecture(&architecture.into(), None);
         Self {
-            os: Cow::Owned(os.into()),
-            architecture: Cow::Owned(architecture.into()),
-            variant: None,
+            os: Cow::Owned(os),
+            architecture: Cow::Owned(architecture),
+            variant: variant.map(Cow::Owned),
             os_version: None,
             os_features: Vec::new(),
         }
@@ -40,7 +42,10 @@ impl Platform {
 
     /// Set the CPU variant.
     pub fn with_variant<S: Into<String>>(mut self, variant: S) -> Self {
-        self.variant = Some(Cow::Owned(variant.into()));
+        let (architecture, variant) =
+            normalize_architecture(self.architecture.as_ref(), Some(variant.into().as_str()));
+        self.architecture = Cow::Owned(architecture);
+        self.variant = variant.map(Cow::Owned);
         self
     }
 
@@ -111,6 +116,64 @@ impl Platform {
     };
 }
 
+fn normalize_os(os: &str) -> String {
+    match os.to_ascii_lowercase().as_str() {
+        "macos" => "darwin".to_string(),
+        normalized => normalized.to_string(),
+    }
+}
+
+fn normalize_architecture(architecture: &str, variant: Option<&str>) -> (String, Option<String>) {
+    let mut architecture = architecture.to_ascii_lowercase();
+    let mut variant = variant.map(str::to_ascii_lowercase);
+
+    match architecture.as_str() {
+        "i386" => {
+            architecture = "386".to_string();
+            variant = None;
+        }
+        "x86_64" | "x86-64" | "amd64" => {
+            architecture = "amd64".to_string();
+            if variant.as_deref() == Some("v1") {
+                variant = None;
+            }
+        }
+        "aarch64" | "arm64" => {
+            architecture = "arm64".to_string();
+            if matches!(variant.as_deref(), Some("8" | "v8" | "v8.0")) {
+                variant = None;
+            } else if matches!(variant.as_deref(), Some("9" | "9.0" | "v9.0")) {
+                variant = Some("v9".to_string());
+            }
+        }
+        "armhf" => {
+            architecture = "arm".to_string();
+            variant = Some("v7".to_string());
+        }
+        "armel" => {
+            architecture = "arm".to_string();
+            variant = Some("v6".to_string());
+        }
+        "arm" => match variant.as_deref() {
+            None | Some("") | Some("7") => variant = Some("v7".to_string()),
+            Some("5") | Some("6") | Some("8") => {
+                variant = Some(format!("v{}", variant.as_deref().unwrap()))
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    (architecture, variant)
+}
+
+fn valid_component(component: &str) -> bool {
+    !component.is_empty()
+        && component
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
 impl Default for Platform {
     fn default() -> Self {
         Self::LINUX_AMD64.clone()
@@ -133,8 +196,15 @@ impl FromStr for Platform {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('/').collect();
         match parts.len() {
-            2 => Ok(Platform::new(parts[0], parts[1])),
-            3 => Ok(Platform::new(parts[0], parts[1]).with_variant(parts[2])),
+            2 if valid_component(parts[0]) && valid_component(parts[1]) => {
+                Ok(Platform::new(parts[0], parts[1]))
+            }
+            3 if valid_component(parts[0])
+                && valid_component(parts[1])
+                && valid_component(parts[2]) =>
+            {
+                Ok(Platform::new(parts[0], parts[1]).with_variant(parts[2]))
+            }
             _ => Err(LlbError::InvalidReference {
                 reference: s.to_string(),
             }),
@@ -144,10 +214,13 @@ impl FromStr for Platform {
 
 impl From<Platform> for pb::Platform {
     fn from(p: Platform) -> Self {
+        let os = normalize_os(p.os.as_ref());
+        let (architecture, variant) =
+            normalize_architecture(p.architecture.as_ref(), p.variant.as_deref());
         Self {
-            architecture: p.architecture.into_owned(),
-            os: p.os.into_owned(),
-            variant: p.variant.map(Cow::into_owned).unwrap_or_default(),
+            architecture,
+            os,
+            variant: variant.unwrap_or_default(),
             os_version: p.os_version.map(Cow::into_owned).unwrap_or_default(),
             os_features: p.os_features,
         }
@@ -185,6 +258,30 @@ mod tests {
     fn parse_invalid_fails() {
         assert!("linux".parse::<Platform>().is_err());
         assert!("linux/amd64/extra/junk".parse::<Platform>().is_err());
+        assert!("/amd64".parse::<Platform>().is_err());
+        assert!("linux/".parse::<Platform>().is_err());
+        assert!("linux//v7".parse::<Platform>().is_err());
+        assert!("linux/amd64/".parse::<Platform>().is_err());
+    }
+
+    #[test]
+    fn parse_normalizes_containerd_aliases() {
+        assert_eq!(
+            "Linux/X86_64".parse::<Platform>().unwrap().to_string(),
+            "linux/amd64"
+        );
+        assert_eq!(
+            "linux/aarch64".parse::<Platform>().unwrap().to_string(),
+            "linux/arm64"
+        );
+        assert_eq!(
+            "linux/armhf".parse::<Platform>().unwrap().to_string(),
+            "linux/arm/v7"
+        );
+        assert_eq!(
+            "macos/amd64".parse::<Platform>().unwrap().to_string(),
+            "darwin/amd64"
+        );
     }
 
     #[test]

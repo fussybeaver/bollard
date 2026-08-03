@@ -593,7 +593,7 @@ mod tests {
     fn sample_def() -> Definition {
         image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap()
             .marshal(MarshalOpts::default())
