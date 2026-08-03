@@ -318,3 +318,535 @@ fn operation_identity_key(op: &dyn Operation) -> usize {
     let ptr: *const dyn Operation = op;
     ptr as *const () as usize
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use bollard_buildkit_proto::pb;
+    use prost::Message;
+
+    use super::*;
+    use crate::image;
+    use crate::marshal::sha256;
+    use crate::merge;
+    use crate::metadata::cap;
+    use crate::platform::Platform;
+    use crate::scratch;
+    use crate::shlex;
+    use crate::state::MarshalOpts;
+
+    #[test]
+    fn context_starts_empty() {
+        let ctx = Context::new(None, Vec::new());
+        assert!(ctx.nodes().is_empty());
+    }
+
+    #[test]
+    fn marshal_scratch_direct_is_empty() {
+        let def = scratch().unwrap().marshal(MarshalOpts::default()).unwrap();
+        assert!(def.def.is_empty());
+        assert!(def.metadata.is_empty());
+        assert!(def.source.is_none());
+        assert_eq!(def.root, None);
+    }
+
+    #[test]
+    fn marshal_source_map_covers_real_vertices_not_wrapper() {
+        let state = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = state.marshal(MarshalOpts::default()).unwrap();
+        let source = def
+            .source
+            .as_ref()
+            .expect("non-empty definitions have source maps");
+
+        assert!(source.infos.is_empty());
+        assert_eq!(source.locations.len(), def.def.len() - 1);
+        for bytes in def.def.iter().take(def.def.len() - 1) {
+            assert!(source.locations.contains_key(sha256(bytes).as_str()));
+        }
+        let head = def.root.as_ref().expect("non-empty definition has a head");
+        assert!(source.locations.contains_key(head.as_str()));
+        let wrapper_digest = sha256(def.def.last().expect("definition has wrapper"));
+        assert!(!source.locations.contains_key(wrapper_digest.as_str()));
+    }
+
+    #[test]
+    fn marshal_dedup_identical_images() {
+        let root = image("alpine:latest").unwrap();
+        let def = root.marshal(MarshalOpts::default()).unwrap();
+        assert_eq!(def.def.len(), 2);
+
+        let dup = merge(
+            vec![
+                image("alpine:latest").unwrap(),
+                image("alpine:latest").unwrap(),
+            ],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap();
+        let def = dup.marshal(MarshalOpts::default()).unwrap();
+        assert_eq!(def.def.len(), 3);
+    }
+
+    #[test]
+    fn marshal_dedup_identical_exec_ops() {
+        let base = image("alpine:latest").unwrap();
+        let a = base.clone().run(shlex("echo hello")).root().unwrap();
+        let b = base.run(shlex("echo hello")).root().unwrap();
+        let def = merge(vec![a, b], crate::ops::merge::MergeOpts::new())
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        assert_eq!(def.def.len(), 4);
+    }
+
+    #[test]
+    fn marshal_dedup_identical_file_ops() {
+        let base = scratch().unwrap();
+        let a = base
+            .clone()
+            .file(
+                crate::mkdir("/tmp", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .unwrap();
+        let b = base
+            .file(
+                crate::mkdir("/tmp", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .unwrap();
+        let def = merge(vec![a, b], crate::ops::merge::MergeOpts::new())
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        assert_eq!(def.def.len(), 3);
+    }
+
+    #[test]
+    fn marshal_dedup_shared_subgraph() {
+        let alpine = image("alpine:latest").unwrap();
+        let branch_a = alpine.clone().run(shlex("echo a")).root().unwrap();
+        let branch_b = alpine.run(shlex("echo b")).root().unwrap();
+        let def = merge(
+            vec![branch_a, branch_b],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap()
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        assert_eq!(def.def.len(), 5);
+    }
+
+    #[test]
+    fn marshal_dedup_count_exact() {
+        let def = merge(
+            vec![
+                image("alpine:latest").unwrap(),
+                image("busybox:latest").unwrap(),
+                image("alpine:latest").unwrap(),
+            ],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap()
+        .marshal(MarshalOpts::default())
+        .unwrap();
+        assert_eq!(def.def.len(), 4);
+    }
+
+    #[test]
+    fn marshal_topological_order() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    #[test]
+    fn marshal_topological_order_deep_chain() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo 1"))
+            .root()
+            .unwrap()
+            .run(shlex("echo 2"))
+            .root()
+            .unwrap()
+            .run(shlex("echo 3"))
+            .root()
+            .unwrap()
+            .run(shlex("echo 4"))
+            .root()
+            .unwrap()
+            .run(shlex("echo 5"))
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    #[test]
+    fn marshal_topological_order_diamond() {
+        let alpine = image("alpine:latest").unwrap();
+        let branch_a = alpine.clone().run(shlex("echo a")).root().unwrap();
+        let branch_b = alpine.run(shlex("echo b")).root().unwrap();
+        let s = merge(
+            vec![branch_a, branch_b],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    #[test]
+    fn marshal_topological_order_merge_with_file_ops() {
+        let image_branch = image("alpine:latest")
+            .unwrap()
+            .file(
+                crate::mkdir("/app", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let scratch_branch = scratch()
+            .unwrap()
+            .file(crate::mkfile("/tmp", 0o644, b"x"), crate::FileOpts::new())
+            .unwrap();
+        let s = merge(
+            vec![image_branch, scratch_branch],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert_topological_order(&def);
+    }
+
+    fn assert_topological_order(def: &Definition) {
+        let mut seen: HashSet<String> = HashSet::new();
+        for bytes in &def.def {
+            let op = pb::Op::decode(bytes.as_slice()).unwrap();
+            for input in &op.inputs {
+                if input.index < 0 {
+                    continue;
+                }
+                assert!(
+                    seen.contains(&input.digest),
+                    "input {} referenced before it was defined",
+                    input.digest
+                );
+            }
+            let dgst = sha256(bytes).to_string();
+            seen.insert(dgst);
+        }
+    }
+
+    fn find_op_by_variant<F>(def: &Definition, mut predicate: F) -> Option<pb::Op>
+    where
+        F: FnMut(&pb::op::Op) -> bool,
+    {
+        def.def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| op.op.as_ref().is_some_and(&mut predicate))
+    }
+
+    #[test]
+    fn marshal_wrapper_is_no_variant() {
+        let s = image("alpine:latest").unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let wrapper_bytes = def.def.last().expect("definition is non-empty");
+        let wrapper_op = pb::Op::decode(wrapper_bytes.as_slice()).unwrap();
+        assert!(wrapper_op.op.is_none());
+        assert_eq!(wrapper_op.inputs.len(), 1);
+        assert_eq!(wrapper_op.platform, None);
+        assert_eq!(wrapper_op.constraints, None);
+
+        let wrapper_md = def
+            .metadata
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
+            .expect("root has metadata");
+        assert!(wrapper_md.caps.contains_key(cap::CAP_CONSTRAINTS));
+        assert!(wrapper_md.caps.contains_key(cap::CAP_PLATFORM));
+    }
+
+    #[test]
+    fn marshal_round_trip_stable() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_round_trip_multi_step() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo one"))
+            .root()
+            .unwrap()
+            .run(shlex("echo two"))
+            .root()
+            .unwrap()
+            .run(shlex("echo three"))
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_round_trip_merge_exec() {
+        let merged = merge(
+            vec![
+                image("alpine:latest").unwrap(),
+                image("busybox:latest").unwrap(),
+            ],
+            crate::ops::merge::MergeOpts::new(),
+        )
+        .unwrap();
+        let s = merged.run(shlex("echo hello")).root().unwrap();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_round_trip_file_chain() {
+        use crate::{mkdir, mkfile};
+        let s = scratch()
+            .unwrap()
+            .file(
+                mkdir("/app", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
+            .unwrap()
+            .file(
+                mkfile("/app/hello", 0o644, b"world"),
+                crate::FileOpts::new(),
+            )
+            .unwrap();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let bytes_a = def.into_bytes().unwrap();
+
+        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
+        let mut bytes_b = Vec::new();
+        pb_def.encode(&mut bytes_b).unwrap();
+        assert_eq!(bytes_a, bytes_b);
+    }
+
+    #[test]
+    fn marshal_full_chain() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        assert!(!def.def.is_empty());
+
+        let wrapper = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
+        let head = def.root.as_ref().expect("non-empty definition has a head");
+        assert_eq!(wrapper.inputs[0].digest, head.as_str());
+        assert_ne!(head.as_str(), sha256(def.def.last().unwrap()).as_str());
+    }
+
+    #[test]
+    fn marshal_propagates_meta_caps_to_wrapper() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .with_custom_name("hello")
+            .root()
+            .unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let wrapper_md = def
+            .metadata
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
+            .expect("root has metadata");
+        assert!(wrapper_md.caps.contains_key(cap::CAP_META_DESCRIPTION));
+    }
+
+    #[test]
+    fn marshal_image_op_platform_default_is_linux_amd64() {
+        let s = image("alpine:latest").unwrap();
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(
+            image_op.platform,
+            Some(pb::Platform {
+                architecture: "amd64".to_string(),
+                os: "linux".to_string(),
+                variant: String::new(),
+                os_version: String::new(),
+                os_features: Vec::new(),
+            })
+        );
+        assert!(image_op.constraints.is_some());
+    }
+
+    #[test]
+    fn marshal_image_op_platform_none_when_opts_explicitly_none() {
+        let s = image("alpine:latest").unwrap();
+        let def = s
+            .marshal(MarshalOpts {
+                platform: None,
+                worker_filters: Vec::new(),
+            })
+            .unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(image_op.platform, None);
+    }
+
+    #[test]
+    fn marshal_image_op_platform_linux_amd64() {
+        let s = image("alpine:latest").unwrap();
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(
+            image_op.platform,
+            Some(pb::Platform {
+                architecture: "amd64".to_string(),
+                os: "linux".to_string(),
+                variant: String::new(),
+                os_version: String::new(),
+                os_features: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn marshal_definition_digest_differs_with_platform() {
+        let s = image("alpine:latest").unwrap();
+        let def_default = s.marshal(MarshalOpts::default()).unwrap();
+        let def_arm64 = s
+            .marshal(MarshalOpts::default().with_platform(Platform::LINUX_ARM64.clone()))
+            .unwrap();
+        assert_ne!(def_default.root, def_arm64.root);
+    }
+
+    #[test]
+    fn marshal_state_custom_name_in_wrapper_metadata() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .with_custom_name("root wrapper name");
+        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let wrapper_md = def
+            .metadata
+            .get(sha256(def.def.last().expect("definition has wrapper")).as_str())
+            .expect("root has metadata");
+        assert_eq!(
+            wrapper_md.description.get(attr::DESCRIPTION_NAME),
+            Some(&"root wrapper name".to_string())
+        );
+        assert!(wrapper_md.caps.contains_key(cap::CAP_META_DESCRIPTION));
+    }
+
+    #[test]
+    fn marshal_state_platform_applies_to_subsequent_exec() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .with_platform(Platform::LINUX_ARM64.clone());
+        let def = s
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts {
+                platform: None,
+                worker_filters: Vec::new(),
+            })
+            .unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(image_op.platform, None);
+        let exec_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Exec(_)))
+            .expect("expected exec op");
+        assert_eq!(exec_op.platform, Some(Platform::LINUX_ARM64.clone().into()));
+    }
+
+    #[test]
+    fn marshal_state_platform_overrides_marshal_platform() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .with_platform(Platform::LINUX_ARM64.clone());
+        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
+            .expect("expected image source op");
+        assert_eq!(
+            image_op.platform,
+            Some(pb::Platform {
+                architecture: "amd64".to_string(),
+                os: "linux".to_string(),
+                variant: String::new(),
+                os_version: String::new(),
+                os_features: Vec::new(),
+            })
+        );
+        let exec_op = s
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec_op = find_op_by_variant(&exec_op, |op| matches!(op, pb::op::Op::Exec(_)))
+            .expect("expected exec op");
+        assert_eq!(exec_op.platform, Some(Platform::LINUX_ARM64.clone().into()));
+    }
+
+    #[test]
+    fn marshal_worker_constraints_on_real_ops() {
+        let s = image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo hello"))
+            .root()
+            .unwrap();
+        let def = s
+            .marshal(MarshalOpts::default().with_worker_filter("foo"))
+            .unwrap();
+        for bytes in &def.def {
+            let op = pb::Op::decode(bytes.as_slice()).unwrap();
+            if op.op.is_some() {
+                let constraints = op
+                    .constraints
+                    .as_ref()
+                    .expect("real operation should have worker constraints");
+                assert_eq!(constraints.filter, vec!["foo"]);
+            } else {
+                assert!(
+                    op.constraints.is_none(),
+                    "wrapper should have no constraints"
+                );
+            }
+        }
+    }
+}

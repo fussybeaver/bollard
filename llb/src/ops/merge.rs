@@ -136,3 +136,138 @@ impl Operation for MergeOp {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use prost::Message;
+
+    use super::*;
+
+    #[test]
+    fn merge_zero_inputs_is_scratch() {
+        let s = merge(Vec::<State>::new(), MergeOpts::new()).unwrap();
+        assert!(s.output().is_empty());
+        assert!(crate::scratch().unwrap().output().is_empty());
+    }
+
+    fn merge_digest(images: Vec<State>) -> String {
+        let s = merge(images, MergeOpts::new()).unwrap();
+        s.marshal(crate::state::MarshalOpts::default())
+            .unwrap()
+            .root
+            .expect("non-empty merge has a real head")
+            .to_string()
+    }
+
+    #[test]
+    fn merge_one_input_returns_input() {
+        let img = crate::image("alpine:latest").unwrap();
+        let s = merge(vec![img.clone()], MergeOpts::new()).unwrap();
+        assert_eq!(
+            s.marshal(crate::state::MarshalOpts::default())
+                .unwrap()
+                .root,
+            img.marshal(crate::state::MarshalOpts::default())
+                .unwrap()
+                .root
+        );
+    }
+
+    #[test]
+    fn mergeop_digest_stable() {
+        let a = merge_digest(vec![
+            crate::image("alpine:latest").unwrap(),
+            crate::image("busybox:latest").unwrap(),
+        ]);
+        let b = merge_digest(vec![
+            crate::image("alpine:latest").unwrap(),
+            crate::image("busybox:latest").unwrap(),
+        ]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn mergeop_has_two_inputs() {
+        let op = MergeOp::new(
+            vec![
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
+            ],
+            MergeOpts::new(),
+        )
+        .unwrap();
+        assert_eq!(op.inputs.len(), 2);
+    }
+
+    #[test]
+    fn mergeop_variant_is_merge() {
+        let op = MergeOp::new(
+            vec![
+                crate::image("alpine:latest").unwrap(),
+                crate::image("busybox:latest").unwrap(),
+            ],
+            MergeOpts::new(),
+        )
+        .unwrap();
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert!(
+            matches!(pb_op.op, Some(pb::op::Op::Merge(_))),
+            "expected Merge variant"
+        );
+    }
+
+    #[test]
+    fn mergeop_custom_name_metadata() {
+        let op = MergeOp::new(
+            vec![crate::image("alpine:latest").unwrap()],
+            MergeOpts::new().with_custom_name("merged"),
+        )
+        .unwrap();
+        assert_eq!(
+            op.metadata
+                .description
+                .get(crate::metadata::attr::DESCRIPTION_NAME),
+            Some(&"merged".to_string())
+        );
+        assert!(!op
+            .metadata
+            .caps
+            .contains(crate::metadata::cap::CAP_META_DESCRIPTION));
+    }
+
+    #[test]
+    fn merge_preserves_first_input_platform_for_following_exec() {
+        let arm = crate::image("alpine:latest")
+            .unwrap()
+            .with_platform(crate::Platform::LINUX_ARM64);
+        let merged = merge(
+            vec![arm, crate::image("busybox:latest").unwrap()],
+            MergeOpts::new(),
+        )
+        .unwrap()
+        .run(crate::shlex("echo hello"))
+        .root()
+        .unwrap();
+        let def = merged
+            .marshal(crate::state::MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| matches!(op.op, Some(pb::op::Op::Exec(_))))
+            .expect("expected exec op");
+        assert_eq!(exec.platform, Some(crate::Platform::LINUX_ARM64.into()));
+
+        let merge = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find(|op| matches!(op.op, Some(pb::op::Op::Merge(_))))
+            .expect("expected merge op");
+        assert_eq!(merge.platform, None);
+    }
+}
