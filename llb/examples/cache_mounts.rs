@@ -15,7 +15,7 @@ use bollard_llb::{image, shlex, CacheSharingMode};
 fn main() {
     let st = image("alpine:latest")
         .unwrap()
-        .run(shlex("apk add --no-cache curl git jq"))
+        .run(shlex("apk add --no-cache curl git jq").unwrap())
         .with_custom_name("install packages with cached apk")
         .add_mount_cache("/var/cache/apk", "apk-cache", CacheSharingMode::Shared)
         .root()
@@ -24,7 +24,7 @@ fn main() {
     let st = st
         .run(shlex(
             r#"sh -c "echo 'build artifact' > /tmp/build-cache/result.txt && cat /tmp/build-cache/result.txt""#,
-        ))
+        ).unwrap())
         .with_custom_name("build step with private cache")
         .add_mount_cache(
             "/tmp/build-cache",
@@ -37,7 +37,7 @@ fn main() {
     let st = st
         .run(shlex(
             r#"sh -c "echo 'writing to locked cache' > /tmp/locked/state.txt && cat /tmp/locked/state.txt""#,
-        ))
+        ).unwrap())
         .with_custom_name("finalize with locked cache")
         .add_mount_cache("/tmp/locked", "locked-state", CacheSharingMode::Locked)
         .root()
