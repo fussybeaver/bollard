@@ -113,6 +113,8 @@ impl Drop for FileSyncSession {
     fn drop(&mut self) {
         self.cancellation.cancel();
         if let Some(scanner) = self.scanner.take() {
+            // A running spawn_blocking task cannot be aborted; the scanner
+            // observes cancellation while collecting directory entries.
             scanner.abort();
         }
         self.workers.abort_all();
@@ -869,7 +871,7 @@ fn resolve_follow_components(
         };
         let directory = match directory {
             Ok(directory) => directory,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if is_followpath_not_found(&error) => return Ok(()),
             Err(error) => {
                 return Err(filesystem_error(
                     "open followpaths directory",
@@ -890,7 +892,10 @@ fn resolve_follow_components(
         }
         names.sort_unstable();
         for name in names {
-            let Some(name) = name.to_str() else { continue };
+            let Some(name) = name.to_str() else {
+                log::debug!("skipping non-UTF-8 followpath entry: {name:?}");
+                continue;
+            };
             if component_pattern.matches(name) {
                 resolve_follow_entry(
                     root,
@@ -933,7 +938,7 @@ fn resolve_follow_entry(
     let next = current.join(name);
     let metadata = match root.symlink_metadata(&next) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if is_followpath_not_found(&error) => return Ok(()),
         Err(error) => return Err(filesystem_error("stat followpaths entry", &next, error)),
     };
     let next_string = path_string(&next)?;
@@ -1113,11 +1118,12 @@ fn scan_entries(
     root: Arc<cap_std::fs::Dir>,
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
 ) -> Result<(), Status> {
+    let cancellation = CancellationToken::new();
     scan_entries_with_selection(
         root,
         sender,
         ScanSelection::All,
-        CancellationToken::new(),
+        cancellation,
         FaultInjection::default(),
     )
 }
@@ -1133,7 +1139,7 @@ fn scan_entries_with_selection(
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
     let mut budget = ScanBudget { inspected: 0 };
-    let names = sorted_names(&root, &mut budget)?;
+    let names = sorted_names(&root, &mut budget, &cancellation)?;
     let mut frames = vec![ScanFrame {
         relative: PathBuf::new(),
         directory: root,
@@ -1186,7 +1192,7 @@ fn scan_entries_with_selection(
                 frames.push(frame);
                 frames.push(ScanFrame {
                     relative,
-                    names: sorted_names(&directory, &mut budget)?,
+                    names: sorted_names(&directory, &mut budget, &cancellation)?,
                     directory,
                     next_name: 0,
                     pending: true,
@@ -1232,7 +1238,7 @@ fn scan_entries_with_selection(
                 .map_err(|error| filesystem_error("open directory", &relative, error))?;
             Some(ScanFrame {
                 relative,
-                names: sorted_names(&directory, &mut budget)?,
+                names: sorted_names(&directory, &mut budget, &cancellation)?,
                 directory,
                 next_name: 0,
                 pending: false,
@@ -1283,23 +1289,21 @@ fn emit_source_entry(
 fn sorted_names(
     directory: &cap_std::fs::Dir,
     budget: &mut ScanBudget,
+    cancellation: &CancellationToken,
 ) -> Result<Vec<OsString>, Status> {
-    let mut names = directory
-        .entries()
-        .map_err(|error| {
-            Status::internal(format!("failed to read local source directory: {error}"))
-        })?
-        .map(|entry| {
-            entry
-                .map(|entry| {
-                    budget.inspect()?;
-                    Ok(entry.file_name())
-                })
-                .map_err(|error| {
-                    Status::internal(format!("failed to read local source entry: {error}"))
-                })?
-        })
-        .collect::<Result<Vec<_>, Status>>()?;
+    let mut names = Vec::new();
+    for entry in directory.entries().map_err(|error| {
+        Status::internal(format!("failed to read local source directory: {error}"))
+    })? {
+        if cancellation.is_cancelled() {
+            return Ok(names);
+        }
+        let entry = entry.map_err(|error| {
+            Status::internal(format!("failed to read local source entry: {error}"))
+        })?;
+        budget.inspect()?;
+        names.push(entry.file_name());
+    }
     names.sort_unstable();
     Ok(names)
 }
@@ -2326,8 +2330,9 @@ mod tests {
         let mut budget = ScanBudget {
             inspected: MAX_ENTRIES - 1,
         };
+        let cancellation = CancellationToken::new();
         assert_eq!(
-            sorted_names(&directory, &mut budget)
+            sorted_names(&directory, &mut budget, &cancellation)
                 .expect_err("directory budget is enforced")
                 .code(),
             tonic::Code::ResourceExhausted
