@@ -49,7 +49,7 @@ impl State {
 
     /// Add an environment variable for subsequent exec steps.
     pub fn add_env<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        self.constraints.env.push((key.into(), value.into()));
+        replace_env(&mut self.constraints.env, key.into(), value.into());
         self
     }
 
@@ -93,6 +93,12 @@ impl State {
         self
     }
 
+    /// Add a worker constraint filter for operations created from this state.
+    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
+        self.constraints.worker_filters.push(filter.into());
+        self
+    }
+
     /// Marshal this state into a [`Definition`].
     pub fn marshal(&self, opts: MarshalOpts) -> Result<Definition, LlbError> {
         if self.output.is_empty() {
@@ -103,15 +109,13 @@ impl State {
                 root: None,
             });
         }
-        let worker_filters = if self.constraints.worker_filters.is_empty() {
-            opts.worker_filters.clone()
-        } else {
-            opts.worker_filters
-                .iter()
-                .cloned()
-                .chain(self.constraints.worker_filters.iter().cloned())
-                .collect()
-        };
+        let worker_filters = self
+            .constraints
+            .worker_filters
+            .iter()
+            .cloned()
+            .chain(opts.worker_filters.iter().cloned())
+            .collect();
         // MarshalOpts supplies the graph-wide default. State-local platforms
         // are carried by the operations created from this state instead.
         let mut ctx = Context::new(opts.platform.clone(), worker_filters);
@@ -324,7 +328,7 @@ impl RunOpts {
 
     /// Add an environment variable.
     pub fn with_env<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        self.env.push((key.into(), value.into()));
+        replace_env(&mut self.env, key.into(), value.into());
         self
     }
 
@@ -362,6 +366,17 @@ impl RunOpts {
     pub fn with_secret(mut self, opts: impl Into<AddSecret>) -> Self {
         self.secrets.push(opts.into());
         self
+    }
+}
+
+fn replace_env(env: &mut Vec<(String, String)>, key: String, value: String) {
+    if let Some((_, existing_value)) = env
+        .iter_mut()
+        .find(|(existing_key, _)| existing_key.as_str() == key)
+    {
+        *existing_value = value;
+    } else {
+        env.push((key, value));
     }
 }
 
