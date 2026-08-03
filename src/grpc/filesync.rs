@@ -803,8 +803,7 @@ fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec
         if path == "." {
             return Ok(vec![String::from(".")]);
         }
-        budget.resolve(Path::new(path))?;
-        resolved.push(path.clone());
+        resolved.push(budget.resolve(Path::new(path))?);
         let components = path.split('/').map(str::to_owned).collect::<Vec<_>>();
         if components.len() > MAX_FOLLOW_DEPTH {
             return Err(Status::resource_exhausted(
@@ -823,7 +822,17 @@ fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec
     }
     resolved.sort_unstable();
     resolved.dedup();
-    Ok(resolved)
+    let mut deduped = Vec::with_capacity(resolved.len());
+    for path in resolved {
+        if deduped.last().is_some_and(|parent: &String| {
+            path.strip_prefix(parent)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        }) {
+            continue;
+        }
+        deduped.push(path);
+    }
+    Ok(deduped)
 }
 
 fn resolve_follow_components(
@@ -981,16 +990,40 @@ fn normalize_follow_target(parent: &Path, link: &Path) -> Option<PathBuf> {
     for component in link.components() {
         match component {
             std::path::Component::RootDir | std::path::Component::CurDir => {}
+            // Match fsutil's filepath.Join(root, target) behavior: a link
+            // that climbs above the mount root remains clamped at the root.
             std::path::Component::ParentDir => {
-                if !result.pop() {
-                    return None;
-                }
+                result.pop();
             }
             std::path::Component::Normal(value) => result.push(value),
+            #[cfg(windows)]
+            std::path::Component::Prefix(prefix) => match prefix.kind() {
+                std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_) => {
+                    // fsutil strips a Windows drive prefix before resolving
+                    // an absolute link target relative to the mount root.
+                    result = PathBuf::new();
+                }
+                _ => return None,
+            },
+            #[cfg(not(windows))]
             std::path::Component::Prefix(_) => return None,
         }
     }
     Some(result)
+}
+
+fn is_followpath_not_found(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        return error.raw_os_error() == Some(123);
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 fn contains_wildcard(value: &str) -> bool {
@@ -2406,6 +2439,23 @@ mod tests {
                 .expect_err("deep followpaths are rejected")
                 .code(),
             tonic::Code::ResourceExhausted
+        );
+    }
+
+    #[test]
+    fn normalize_follow_target_clamps_at_mount_root() {
+        assert_eq!(
+            normalize_follow_target(Path::new("dir"), Path::new("../../target")),
+            Some(PathBuf::from("target"))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_follow_target_resolves_drive_absolute_targets() {
+        assert_eq!(
+            normalize_follow_target(Path::new("dir"), Path::new(r"C:\target\input")),
+            Some(PathBuf::from(r"target\input"))
         );
     }
 
