@@ -562,3 +562,130 @@ fn build_file_metadata(_action: &FileAction, opts: &FileOpts) -> OpMetadata {
 
     metadata
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::ops::OperationOutput;
+    use crate::scratch;
+    use prost::Message;
+
+    fn serialize_file_op(op: FileOp) -> (pb::FileOp, crate::ops::Context) {
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        let file = match pb_op.op {
+            Some(pb::op::Op::File(file)) => file,
+            _ => panic!("expected FileOp"),
+        };
+        (file, ctx)
+    }
+
+    fn file_op_digest(base: OperationOutput, action: FileAction) -> String {
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        node_ref.digest().to_string()
+    }
+
+    #[test]
+    fn fileop_copy_has_two_inputs() {
+        let base = OperationOutput::Owned(Arc::new(
+            crate::ops::source::Image::new("alpine:latest").unwrap(),
+        ));
+        let src = crate::image("busybox:latest").unwrap();
+        let action = copy(src, "/src", "/dest");
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let (file, ctx) = serialize_file_op(op);
+        let node = ctx.nodes().values().last().unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert_eq!(pb_op.inputs.len(), 2);
+        assert_eq!(file.actions[0].secondary_input, 1);
+    }
+
+    #[test]
+    fn fileop_mkdir_has_zero_inputs_for_scratch() {
+        let base = scratch().unwrap().output().clone();
+        let action = mkdir("/app", 0o755).with_parents(true);
+        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let (file, ctx) = serialize_file_op(op);
+        let node = ctx.nodes().values().last().unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert_eq!(pb_op.inputs.len(), 0);
+        assert_eq!(file.actions[0].input, -1);
+    }
+
+    #[test]
+    fn fileop_digest_stable() {
+        let base = scratch().unwrap().output().clone();
+        let action = mkdir("/app", 0o755);
+        let a = file_op_digest(base.clone(), action.clone());
+        let b = file_op_digest(base, action);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn copy_options_chain() {
+        let src = scratch().unwrap();
+        let action = copy(src, "/src", "/dest")
+            .with_create_dest_path(true)
+            .with_exclude_pattern("*.log")
+            .with_allow_wildcard(true);
+        match action {
+            FileAction::Copy { info, .. } => {
+                assert!(info.create_dest_path);
+                assert_eq!(info.exclude_patterns, vec!["*.log"]);
+                assert!(info.allow_wildcard);
+            }
+            _ => panic!("expected Copy"),
+        }
+    }
+
+    #[test]
+    fn rm_options_chain() {
+        let action = rm("/tmp/file")
+            .with_allow_not_found(true)
+            .with_allow_wildcard(true);
+        match action {
+            FileAction::Rm {
+                allow_not_found,
+                allow_wildcard,
+                ..
+            } => {
+                assert!(allow_not_found);
+                assert!(allow_wildcard);
+            }
+            _ => panic!("expected Rm"),
+        }
+    }
+
+    #[test]
+    fn rm_allow_not_found_marshals() {
+        let base = scratch().unwrap().output().clone();
+        let op = FileOp::new(
+            base,
+            rm("/tmp/file").with_allow_not_found(true),
+            FileOpts::default(),
+        )
+        .unwrap();
+        let (file, _) = serialize_file_op(op);
+        let Some(pb::file_action::Action::Rm(rm)) = file.actions[0].action.as_ref() else {
+            panic!("expected rm action");
+        };
+        assert!(rm.allow_not_found);
+    }
+
+    #[test]
+    fn state_file_chains() {
+        let s = scratch()
+            .unwrap()
+            .file(mkdir("/app", 0o755), FileOpts::default())
+            .unwrap();
+        let _ = s
+            .file(mkfile("/app/foo", 0o644, "hi"), FileOpts::default())
+            .unwrap();
+    }
+}

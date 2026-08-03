@@ -567,3 +567,168 @@ impl From<Local> for State {
         State::new(OperationOutput::Owned(Arc::new(local)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::MarshalOpts;
+    use prost::Message;
+
+    fn source_op(image: Image) -> pb::SourceOp {
+        let definition = State::from(image).marshal(MarshalOpts::default()).unwrap();
+        let op = pb::Op::decode(definition.def[0].as_slice()).unwrap();
+        match op.op.unwrap() {
+            pb::op::Op::Source(source) => source,
+            other => panic!("expected source operation, got {other:?}"),
+        }
+    }
+
+    fn image_digest(image: Image) -> String {
+        State::from(image)
+            .marshal(MarshalOpts::default())
+            .unwrap()
+            .root
+            .expect("non-empty image has a real head")
+            .to_string()
+    }
+
+    #[test]
+    fn image_digest_stable() {
+        let a = image_digest(Image::new("alpine:latest").unwrap());
+        let b = image_digest(Image::new("alpine:latest").unwrap());
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn image_digest_differs_by_resolve_mode() {
+        let a = image_digest(Image::new("alpine:latest").unwrap());
+        let b = image_digest(
+            Image::new("alpine:latest")
+                .unwrap()
+                .with_resolve_mode(ResolveMode::ForcePull)
+                .unwrap(),
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn image_reference_is_normalized_like_docker() {
+        let cases = [
+            ("alpine", "docker-image://docker.io/library/alpine:latest"),
+            (
+                "alpine:3.20",
+                "docker-image://docker.io/library/alpine:3.20",
+            ),
+            (
+                "docker.io/alpine",
+                "docker-image://docker.io/library/alpine:latest",
+            ),
+            (
+                "ghcr.io/example/app",
+                "docker-image://ghcr.io/example/app:latest",
+            ),
+            (
+                "localhost:5000/example/app",
+                "docker-image://localhost:5000/example/app:latest",
+            ),
+        ];
+
+        for (reference, expected) in cases {
+            assert_eq!(
+                source_op(Image::new(reference).unwrap()).identifier,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn image_digest_reference_is_preserved() {
+        let digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let source = source_op(Image::new(format!("alpine@{digest}")).unwrap());
+        assert_eq!(
+            source.identifier,
+            format!("docker-image://docker.io/library/alpine@{digest}")
+        );
+    }
+
+    #[test]
+    fn default_resolve_mode_is_unset() {
+        let image = Image::new("alpine:latest").unwrap();
+        assert!(!source_op(image)
+            .attrs
+            .contains_key(attr::IMAGE_RESOLVE_MODE));
+    }
+
+    #[test]
+    fn resolve_mode_attributes_and_capabilities_match_go() {
+        let force_pull = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::ForcePull)
+            .unwrap();
+        assert_eq!(
+            source_op(force_pull)
+                .attrs
+                .get(attr::IMAGE_RESOLVE_MODE)
+                .map(String::as_str),
+            Some(attr::IMAGE_RESOLVE_MODE_FORCE_PULL)
+        );
+
+        let prefer_local = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::PreferLocal)
+            .unwrap();
+        assert_eq!(
+            source_op(prefer_local.clone())
+                .attrs
+                .get(attr::IMAGE_RESOLVE_MODE)
+                .map(String::as_str),
+            Some(attr::IMAGE_RESOLVE_MODE_PREFER_LOCAL)
+        );
+        assert!(!prefer_local
+            .metadata
+            .caps
+            .contains(cap::CAP_SOURCE_IMAGE_RESOLVE_MODE));
+
+        let reset = Image::new("alpine:latest")
+            .unwrap()
+            .with_resolve_mode(ResolveMode::ForcePull)
+            .unwrap()
+            .with_resolve_mode(ResolveMode::Default)
+            .unwrap();
+        assert!(!source_op(reset)
+            .attrs
+            .contains_key(attr::IMAGE_RESOLVE_MODE));
+    }
+
+    #[test]
+    fn invalid_image_references_are_rejected() {
+        for reference in ["", "Alpine:latest", "alpine:", "alpine@sha256:not-a-digest"] {
+            assert!(Image::new(reference).is_err(), "accepted {reference:?}");
+        }
+    }
+
+    #[test]
+    fn local_follow_paths_encoded() {
+        let local = Local::new("context")
+            .unwrap()
+            .with_follow_paths(["src", "Cargo.toml"])
+            .unwrap();
+        let expected = r#"["src","Cargo.toml"]"#;
+        assert_eq!(
+            local.attrs.get(attr::LOCAL_FOLLOW_PATHS),
+            Some(&expected.to_string())
+        );
+        assert!(local
+            .metadata
+            .caps
+            .contains(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS));
+    }
+
+    #[test]
+    fn scratch_is_empty_output() {
+        let a = scratch().unwrap();
+        let b = scratch().unwrap();
+        assert!(a.output().is_empty());
+        assert!(b.output().is_empty());
+    }
+}

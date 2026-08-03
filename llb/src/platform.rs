@@ -153,3 +153,47 @@ impl From<Platform> for pb::Platform {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_without_variant() {
+        let p = Platform::new("linux", "amd64");
+        assert_eq!(p.to_string(), "linux/amd64");
+    }
+
+    #[test]
+    fn display_with_variant() {
+        let p = Platform::new("linux", "arm").with_variant("v7");
+        assert_eq!(p.to_string(), "linux/arm/v7");
+    }
+
+    #[test]
+    fn parse_round_trip() {
+        let p: Platform = "linux/arm64".parse().unwrap();
+        assert_eq!(p.os, "linux");
+        assert_eq!(p.architecture, "arm64");
+        assert_eq!(p.variant, None);
+
+        let p2: Platform = "linux/arm/v7".parse().unwrap();
+        assert_eq!(p2.to_string(), "linux/arm/v7");
+    }
+
+    #[test]
+    fn parse_invalid_fails() {
+        assert!("linux".parse::<Platform>().is_err());
+        assert!("linux/amd64/extra/junk".parse::<Platform>().is_err());
+    }
+
+    #[test]
+    fn constants_are_populated() {
+        assert_eq!(Platform::LINUX_AMD64.to_string(), "linux/amd64");
+        assert_eq!(Platform::LINUX_ARM64.to_string(), "linux/arm64");
+        assert_eq!(Platform::LINUX_ARM_V7.to_string(), "linux/arm/v7");
+        assert_eq!(Platform::LINUX_386.to_string(), "linux/386");
+        assert_eq!(Platform::DARWIN_ARM64.to_string(), "darwin/arm64");
+        assert_eq!(Platform::WINDOWS_AMD64.to_string(), "windows/amd64");
+    }
+}

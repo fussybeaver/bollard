@@ -603,3 +603,278 @@ impl crate::state::RunOpt for WithCustomName {
         exec.run.custom_name = Some(self.name);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use prost::Message;
+
+    use super::*;
+    use crate::ops::OperationOutput;
+    use crate::scratch;
+
+    #[test]
+    fn cache_sharing_mode_default_is_shared() {
+        assert_eq!(CacheSharingMode::default(), CacheSharingMode::Shared);
+    }
+
+    #[test]
+    fn cache_sharing_mode_as_i32_matches_proto() {
+        assert_eq!(
+            CacheSharingMode::Shared.as_i32(),
+            pb::CacheSharingOpt::Shared as i32
+        );
+        assert_eq!(
+            CacheSharingMode::Locked.as_i32(),
+            pb::CacheSharingOpt::Locked as i32
+        );
+        assert_eq!(
+            CacheSharingMode::Private.as_i32(),
+            pb::CacheSharingOpt::Private as i32
+        );
+    }
+
+    fn serialize_exec_op(op: ExecOp) -> (pb::ExecOp, crate::ops::Context) {
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        let exec = match pb_op.op {
+            Some(pb::op::Op::Exec(exec)) => exec,
+            _ => panic!("expected ExecOp"),
+        };
+        (exec, ctx)
+    }
+
+    fn exec_digest(base: OperationOutput, run: RunOpts) -> String {
+        let op = ExecOp::new(base, None, None, Vec::new(), run).unwrap();
+        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let node_ref = op.serialize(&mut ctx).unwrap();
+        node_ref.digest().to_string()
+    }
+
+    #[test]
+    fn execop_digest_stable() {
+        let base = scratch().unwrap().output().clone();
+        let a = exec_digest(base.clone(), RunOpts::default().with_arg("echo"));
+        let b = exec_digest(base, RunOpts::default().with_arg("echo"));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn execop_digest_differs_by_args() {
+        let base = scratch().unwrap().output().clone();
+        let a = exec_digest(base.clone(), RunOpts::default().with_arg("echo"));
+        let b = exec_digest(base, RunOpts::default().with_arg("cat"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn exec_default_meta_removes_mount_stubs_recursively() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default().with_arg("true"),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        assert!(
+            exec.meta
+                .expect("exec metadata should be present")
+                .remove_mount_stubs_recursive
+        );
+    }
+
+    #[test]
+    fn execop_mount_input_dedup() {
+        let base = OperationOutput::Owned(Arc::new(
+            crate::ops::source::Image::new("alpine:latest").unwrap(),
+        ));
+        let src = crate::image("busybox:latest").unwrap();
+        let run = RunOpts::default()
+            .with_arg("echo")
+            .with_mount("/a", src.clone())
+            .with_mount("/b", src);
+        let op = ExecOp::new(base, None, None, Vec::new(), run).unwrap();
+        let (exec, ctx) = serialize_exec_op(op);
+        let node = ctx.nodes().values().last().unwrap();
+        let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
+        assert_eq!(pb_op.inputs.len(), 2);
+        assert_eq!(exec.mounts[1].input, 1);
+        assert_eq!(exec.mounts[2].input, 1);
+    }
+
+    #[test]
+    fn scratch_bind_mount_uses_empty_input_and_output() {
+        let state = crate::image("alpine:latest")
+            .unwrap()
+            .run(shlex("echo"))
+            .add_mount_scratch("/scratch")
+            .root()
+            .unwrap();
+        let def = state
+            .marshal(crate::state::MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find_map(|op| match op.op {
+                Some(pb::op::Op::Exec(exec)) => Some(exec),
+                _ => None,
+            })
+            .expect("expected exec operation");
+
+        assert_eq!(exec.mounts[1].input, -1);
+        assert_eq!(exec.mounts[1].output, 1);
+    }
+
+    #[test]
+    fn file_secret_mount_uses_go_defaults() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts {
+                secrets: vec![AddSecret::from("token")],
+                ..RunOpts::default().with_arg("cat")
+            },
+        )
+        .unwrap();
+        let (exec, ctx) = serialize_exec_op(op);
+        let secret = exec
+            .mounts
+            .iter()
+            .find(|mount| mount.mount_type == pb::MountType::Secret as i32)
+            .expect("file secret mount should be emitted");
+        let secret_opt = secret.secret_opt.as_ref().expect("secret options");
+
+        assert_eq!(secret.input, -1);
+        assert_eq!(secret.output, 0);
+        assert_eq!(secret.dest, "token");
+        assert_eq!(secret_opt.id, "token");
+        assert_eq!(secret_opt.uid, 0);
+        assert_eq!(secret_opt.gid, 0);
+        assert_eq!(secret_opt.mode, 0o400);
+        assert!(!secret_opt.optional);
+
+        let node = ctx.nodes().values().last().expect("exec node");
+        assert!(node.metadata.caps.contains(cap::CAP_EXEC_MOUNT_SECRET));
+    }
+
+    #[test]
+    fn file_secret_mount_preserves_target_permissions_and_optionality() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts {
+                secrets: vec![AddSecret {
+                    target: Some("/etc/license".to_string()),
+                    optional: true,
+                    uid: 1000,
+                    gid: 1001,
+                    mode: 0o440,
+                    ..AddSecret::from("license")
+                }],
+                ..RunOpts::default()
+            },
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let secret = exec
+            .mounts
+            .iter()
+            .find(|mount| mount.mount_type == pb::MountType::Secret as i32)
+            .expect("file secret mount should be emitted");
+        let secret_opt = secret.secret_opt.as_ref().expect("secret options");
+
+        assert_eq!(secret.dest, "/etc/license");
+        assert_eq!(secret_opt.uid, 1000);
+        assert_eq!(secret_opt.gid, 1001);
+        assert_eq!(secret_opt.mode, 0o440);
+        assert!(secret_opt.optional);
+    }
+
+    #[test]
+    fn environment_only_secret_has_no_file_mount() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts {
+                secrets: vec![AddSecret {
+                    as_env: true,
+                    env_name: Some("TOKEN".to_string()),
+                    ..AddSecret::from("token")
+                }],
+                ..RunOpts::default()
+            },
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+
+        assert_eq!(exec.mounts.len(), 1, "only the root mount is expected");
+        assert_eq!(exec.secretenv.len(), 1);
+        assert_eq!(exec.secretenv[0].id, "token");
+        assert_eq!(exec.secretenv[0].name, "TOKEN");
+    }
+
+    #[test]
+    fn shlex_splits_command() {
+        let s = shlex("echo hello world");
+        assert_eq!(s.args, vec!["echo", "hello", "world"]);
+    }
+
+    #[test]
+    fn shlex_from_args() {
+        let s = Shlex::from_args(["echo", "hello"]);
+        assert_eq!(s.args, vec!["echo", "hello"]);
+    }
+
+    #[test]
+    fn exec_state_root_chains() {
+        let s = scratch().unwrap().run(shlex("echo hello")).root().unwrap();
+        let _ = s.run(shlex("echo again")).root().unwrap();
+    }
+
+    #[test]
+    fn execop_rootfs_mount() {
+        let base = scratch().unwrap().output().clone();
+        let op = ExecOp::new(
+            base,
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default().with_arg("echo"),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        assert_eq!(exec.mounts[0].dest, "/");
+        assert_eq!(exec.mounts[0].input, -1);
+    }
+
+    #[test]
+    fn execop_env_merge_run_overrides_base() {
+        let base = scratch().unwrap().output().clone();
+        let run = RunOpts::default().with_env("K", "V2");
+        let op = ExecOp::new(
+            base,
+            None,
+            None,
+            vec![("K".to_string(), "V1".to_string())],
+            run,
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let meta = exec.meta.expect("expected Meta");
+        assert!(meta.env.contains(&"K=V2".to_string()));
+        assert!(!meta.env.contains(&"K=V1".to_string()));
+    }
+}

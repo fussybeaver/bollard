@@ -122,3 +122,81 @@ pub fn encode_and_hash(op: &pb::Op) -> Result<(Digest, Vec<u8>), LlbError> {
     let bytes = encode_op(op)?;
     Ok((sha256(&bytes), bytes))
 }
+
+#[cfg(test)]
+mod tests {
+    use bollard_buildkit_proto::pb;
+    use prost::Message;
+
+    use super::*;
+
+    #[test]
+    fn op_fields_use_buildkit_order() {
+        let op = pb::Op {
+            inputs: vec![pb::Input {
+                digest: "sha256:input".to_string(),
+                index: 0,
+            }],
+            platform: Some(pb::Platform {
+                architecture: "amd64".to_string(),
+                os: "linux".to_string(),
+                ..Default::default()
+            }),
+            constraints: Some(pb::WorkerConstraints { filter: vec![] }),
+            op: Some(pb::op::Op::Source(pb::SourceOp {
+                identifier: "docker-image://alpine:latest".to_string(),
+                attrs: Default::default(),
+            })),
+        };
+
+        let encoded = encode_op(&op).unwrap();
+        let platform_tag = encoded
+            .iter()
+            .position(|byte| *byte == 0x52)
+            .expect("platform field tag");
+        let constraints_tag = encoded
+            .iter()
+            .position(|byte| *byte == 0x5a)
+            .expect("constraints field tag");
+        let source_tag = encoded
+            .iter()
+            .position(|byte| *byte == 0x1a)
+            .expect("source field tag");
+
+        assert!(platform_tag < constraints_tag);
+        assert!(constraints_tag < source_tag);
+        assert_eq!(pb::Op::decode(encoded.as_slice()).unwrap(), op);
+    }
+
+    #[test]
+    fn wrapper_encoding_matches_prost_without_reordered_fields() {
+        let op = pb::Op {
+            inputs: vec![pb::Input {
+                digest: "sha256:input".to_string(),
+                index: 0,
+            }],
+            platform: None,
+            constraints: None,
+            op: None,
+        };
+        let encoded = encode_op(&op).unwrap();
+        let mut prost_encoded = Vec::new();
+        op.encode(&mut prost_encoded).unwrap();
+        assert_eq!(encoded, prost_encoded);
+    }
+
+    #[test]
+    fn encode_and_hash_uses_stored_bytes() {
+        let op = pb::Op {
+            inputs: Vec::new(),
+            platform: None,
+            constraints: None,
+            op: Some(pb::op::Op::Source(pb::SourceOp {
+                identifier: "local://context".to_string(),
+                attrs: Default::default(),
+            })),
+        };
+        let (digest, bytes) = encode_and_hash(&op).unwrap();
+        assert_eq!(digest, sha256(&bytes));
+    }
+}
