@@ -62,7 +62,7 @@ pub fn sha256(bytes: &[u8]) -> Digest {
 /// constraints, then the operation oneof. Prost sorts fields by tag and would
 /// otherwise write the oneof before fields 10 and 11.
 pub fn encode_op(op: &pb::Op) -> Result<Vec<u8>, LlbError> {
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(op.encoded_len());
 
     for input in &op.inputs {
         encode_message_field(&mut buf, 1, input)?;
@@ -91,16 +91,13 @@ fn encode_message_field<M: Message>(
     tag: u8,
     message: &M,
 ) -> Result<(), LlbError> {
-    let mut encoded = Vec::new();
+    buf.push((tag << 3) | 2);
     message
-        .encode(&mut encoded)
+        .encode_length_delimited(buf)
         .map_err(|source| LlbError::Encode {
             op: "Op".to_string(),
             source,
         })?;
-    buf.push((tag << 3) | 2);
-    encode_varint(buf, encoded.len() as u64);
-    buf.extend_from_slice(&encoded);
     Ok(())
 }
 

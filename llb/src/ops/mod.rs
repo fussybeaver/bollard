@@ -192,7 +192,10 @@ impl Context {
     /// entry is reused for deduplication.
     pub(crate) fn insert_node(&mut self, node: Node) -> NodeRef {
         let digest = node.digest.clone();
-        self.nodes.entry(digest.clone()).or_insert(node);
+        self.nodes
+            .entry(digest.clone())
+            .and_modify(|existing| existing.metadata.merge_from(&node.metadata))
+            .or_insert(node);
         NodeRef::new(digest, OutputIdx::PRIMARY)
     }
 
@@ -334,7 +337,7 @@ mod tests {
     use crate::platform::Platform;
     use crate::scratch;
     use crate::shlex;
-    use crate::state::MarshalOpts;
+    use crate::state::{MarshalOpts, RunOpts};
 
     #[test]
     fn context_starts_empty() {
@@ -355,7 +358,7 @@ mod tests {
     fn marshal_source_map_covers_real_vertices_not_wrapper() {
         let state = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let def = state.marshal(MarshalOpts::default()).unwrap();
@@ -396,8 +399,12 @@ mod tests {
     #[test]
     fn marshal_dedup_identical_exec_ops() {
         let base = image("alpine:latest").unwrap();
-        let a = base.clone().run(shlex("echo hello")).root().unwrap();
-        let b = base.run(shlex("echo hello")).root().unwrap();
+        let a = base
+            .clone()
+            .run(shlex("echo hello").unwrap())
+            .root()
+            .unwrap();
+        let b = base.run(shlex("echo hello").unwrap()).root().unwrap();
         let def = merge(vec![a, b], crate::ops::merge::MergeOpts::new())
             .unwrap()
             .marshal(MarshalOpts::default())
@@ -431,8 +438,8 @@ mod tests {
     #[test]
     fn marshal_dedup_shared_subgraph() {
         let alpine = image("alpine:latest").unwrap();
-        let branch_a = alpine.clone().run(shlex("echo a")).root().unwrap();
-        let branch_b = alpine.run(shlex("echo b")).root().unwrap();
+        let branch_a = alpine.clone().run(shlex("echo a").unwrap()).root().unwrap();
+        let branch_b = alpine.run(shlex("echo b").unwrap()).root().unwrap();
         let def = merge(
             vec![branch_a, branch_b],
             crate::ops::merge::MergeOpts::new(),
@@ -463,7 +470,7 @@ mod tests {
     fn marshal_topological_order() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
@@ -474,19 +481,19 @@ mod tests {
     fn marshal_topological_order_deep_chain() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo 1"))
+            .run(shlex("echo 1").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo 2"))
+            .run(shlex("echo 2").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo 3"))
+            .run(shlex("echo 3").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo 4"))
+            .run(shlex("echo 4").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo 5"))
+            .run(shlex("echo 5").unwrap())
             .root()
             .unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
@@ -496,8 +503,8 @@ mod tests {
     #[test]
     fn marshal_topological_order_diamond() {
         let alpine = image("alpine:latest").unwrap();
-        let branch_a = alpine.clone().run(shlex("echo a")).root().unwrap();
-        let branch_b = alpine.run(shlex("echo b")).root().unwrap();
+        let branch_a = alpine.clone().run(shlex("echo a").unwrap()).root().unwrap();
+        let branch_b = alpine.run(shlex("echo b").unwrap()).root().unwrap();
         let s = merge(
             vec![branch_a, branch_b],
             crate::ops::merge::MergeOpts::new(),
@@ -516,7 +523,7 @@ mod tests {
                 crate::FileOpts::new(),
             )
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let scratch_branch = scratch()
@@ -584,7 +591,7 @@ mod tests {
     fn marshal_round_trip_stable() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
@@ -600,13 +607,13 @@ mod tests {
     fn marshal_round_trip_multi_step() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo one"))
+            .run(shlex("echo one").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo two"))
+            .run(shlex("echo two").unwrap())
             .root()
             .unwrap()
-            .run(shlex("echo three"))
+            .run(shlex("echo three").unwrap())
             .root()
             .unwrap();
         let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
@@ -628,7 +635,7 @@ mod tests {
             crate::ops::merge::MergeOpts::new(),
         )
         .unwrap();
-        let s = merged.run(shlex("echo hello")).root().unwrap();
+        let s = merged.run(shlex("echo hello").unwrap()).root().unwrap();
         let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
         let bytes_a = def.into_bytes().unwrap();
 
@@ -666,7 +673,7 @@ mod tests {
     fn marshal_full_chain() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let def = s.marshal(MarshalOpts::default()).unwrap();
@@ -682,7 +689,7 @@ mod tests {
     fn marshal_propagates_meta_caps_to_wrapper() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .with_custom_name("hello")
             .root()
             .unwrap();
@@ -778,7 +785,7 @@ mod tests {
             .unwrap()
             .with_platform(Platform::LINUX_ARM64.clone());
         let def = s
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap()
             .marshal(MarshalOpts {
@@ -813,7 +820,7 @@ mod tests {
             })
         );
         let exec_op = s
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap()
             .marshal(MarshalOpts::linux_amd64())
@@ -827,7 +834,7 @@ mod tests {
     fn marshal_worker_constraints_on_real_ops() {
         let s = image("alpine:latest")
             .unwrap()
-            .run(shlex("echo hello"))
+            .run(shlex("echo hello").unwrap())
             .root()
             .unwrap();
         let def = s
@@ -845,6 +852,86 @@ mod tests {
                 assert!(
                     op.constraints.is_none(),
                     "wrapper should have no constraints"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn marshal_merges_metadata_for_duplicate_digests() {
+        let base = image("alpine:latest").unwrap();
+        let first = base
+            .clone()
+            .run(shlex("echo hello").unwrap())
+            .with_custom_name("first")
+            .root()
+            .unwrap();
+        let second = base
+            .run(shlex("echo hello").unwrap())
+            .with_custom_name("second")
+            .root()
+            .unwrap();
+        let definition = merge(vec![first, second], crate::MergeOpts::new())
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+
+        assert!(definition.metadata.values().any(|metadata| {
+            metadata
+                .description
+                .get(crate::metadata::attr::DESCRIPTION_NAME)
+                == Some(&"second".to_string())
+        }));
+    }
+
+    #[test]
+    fn marshal_preserves_ignore_cache_for_duplicate_digests() {
+        let base = image("alpine:latest").unwrap();
+        let first = base
+            .clone()
+            .run(RunOpts {
+                args: vec!["echo".to_string(), "hello".to_string()],
+                ..RunOpts::default()
+            })
+            .root()
+            .unwrap();
+        let second = base
+            .run(RunOpts {
+                args: vec!["echo".to_string(), "hello".to_string()],
+                ignore_cache: true,
+                ..RunOpts::default()
+            })
+            .root()
+            .unwrap();
+        let definition = merge(vec![first, second], crate::MergeOpts::new())
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+
+        assert!(definition
+            .metadata
+            .values()
+            .any(|metadata| metadata.ignore_cache));
+    }
+
+    #[test]
+    fn marshal_combines_state_and_options_worker_filters() {
+        let state = image("alpine:latest")
+            .unwrap()
+            .with_worker_filter("state-filter")
+            .run(shlex("echo hello").unwrap())
+            .root()
+            .unwrap();
+        let definition = state
+            .marshal(MarshalOpts::default().with_worker_filter("opts-filter"))
+            .unwrap();
+
+        for bytes in &definition.def {
+            let op = pb::Op::decode(bytes.as_slice()).unwrap();
+            if op.op.is_some() {
+                assert_eq!(
+                    op.constraints.unwrap().filter,
+                    vec!["state-filter", "opts-filter"]
                 );
             }
         }

@@ -1,6 +1,8 @@
 //! Execution-operation types: mounts, secrets, cache mounts, run options, and
 //! [`ExecOp`] serialization.
 
+use std::collections::HashMap;
+
 use crate::error::LlbError;
 use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
@@ -179,13 +181,14 @@ pub struct Shlex {
 
 impl Shlex {
     /// Split a command string into arguments using POSIX shell rules.
-    ///
-    /// If the input cannot be parsed (e.g. an unclosed quote), the whole
-    /// string is returned as a single argument.
-    pub fn new<S: Into<String>>(cmd: S) -> Self {
+    pub fn new<S: Into<String>>(cmd: S) -> Result<Self, LlbError> {
         let cmd = cmd.into();
-        let args = shlex::split(&cmd).unwrap_or_else(|| vec![cmd]);
-        Self { args }
+        validate_shell(&cmd)?;
+        let args = shlex::split(&cmd).ok_or(LlbError::InvalidShell {
+            position: cmd.len(),
+            kind: "invalid shell syntax",
+        })?;
+        Ok(Self { args })
     }
 
     /// Build a [`Shlex`] from an explicit argument list.
@@ -201,8 +204,63 @@ impl Shlex {
 }
 
 /// Create a [`Shlex`] from a shell command string.
-pub fn shlex<S: Into<String>>(cmd: S) -> Shlex {
+pub fn shlex<S: Into<String>>(cmd: S) -> Result<Shlex, LlbError> {
     Shlex::new(cmd)
+}
+
+fn validate_shell(command: &str) -> Result<(), LlbError> {
+    let bytes = command.as_bytes();
+    let mut quote = None;
+    let mut opening = 0;
+    let mut escaped = false;
+
+    for (position, byte) in bytes.iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match quote {
+            Some(b'\'') => {
+                if byte == b'\'' {
+                    quote = None;
+                }
+            }
+            Some(b'"') => match byte {
+                b'\\' => escaped = true,
+                b'"' => quote = None,
+                _ => {}
+            },
+            None => match byte {
+                b'\\' => escaped = true,
+                b'\'' | b'"' => {
+                    quote = Some(byte);
+                    opening = position;
+                }
+                _ => {}
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    if escaped {
+        return Err(LlbError::InvalidShell {
+            position: bytes.len().saturating_sub(1),
+            kind: "trailing escape",
+        });
+    }
+    if let Some(delimiter) = quote {
+        return Err(LlbError::InvalidShell {
+            position: opening,
+            kind: if delimiter == b'\'' {
+                "unclosed single quote"
+            } else {
+                "unclosed double quote"
+            },
+        });
+    }
+
+    Ok(())
 }
 
 /// Add a mount to an exec step.
@@ -281,16 +339,17 @@ impl Operation for ExecOp {
         // operation; an empty (scratch) base is encoded as input index -1.
         // Additional inputs are deduplicated by content digest so that two
         // mounts referencing the same source share an input index.
-        let mut inputs: Vec<OperationOutput> = Vec::new();
         let mut input_keys: Vec<(Digest, OutputIdx)> = Vec::new();
+        let mut input_indices: HashMap<(Digest, OutputIdx), i64> = HashMap::new();
         let mut mount_input_indices: Vec<i64> = Vec::with_capacity(self.run.mounts.len() + 1);
 
         if self.base.is_empty() {
             mount_input_indices.push(-1);
         } else {
             let node_ref = ctx.register(&self.base)?;
-            inputs.push(self.base.clone());
-            input_keys.push((node_ref.digest().clone(), node_ref.index()));
+            let key = (node_ref.digest().clone(), node_ref.index());
+            input_indices.insert(key.clone(), 0);
+            input_keys.push(key);
             mount_input_indices.push(0);
         }
 
@@ -302,11 +361,11 @@ impl Operation for ExecOp {
                     let output = source.output().clone();
                     let node_ref = ctx.register(&output)?;
                     let key = (node_ref.digest().clone(), node_ref.index());
-                    if let Some(pos) = input_keys.iter().position(|k| *k == key) {
-                        mount_input_indices.push(pos as i64);
+                    if let Some(pos) = input_indices.get(&key) {
+                        mount_input_indices.push(*pos);
                     } else {
-                        let pos = inputs.len() as i64;
-                        inputs.push(output);
+                        let pos = input_keys.len() as i64;
+                        input_indices.insert(key.clone(), pos);
                         input_keys.push(key);
                         mount_input_indices.push(pos);
                     }
@@ -499,11 +558,14 @@ fn build_pb_mount(mount: &Mount, input: i64) -> pb::Mount {
 }
 
 fn merge_env(base: &[(String, String)], run: &[(String, String)]) -> Vec<(String, String)> {
-    let mut merged = base.to_vec();
-    for (key, value) in run {
-        if let Some(pos) = merged.iter().position(|(k, _)| k == key) {
-            merged[pos].1 = value.clone();
+    let mut positions = HashMap::<String, usize>::new();
+    let mut merged: Vec<(String, String)> = Vec::with_capacity(base.len() + run.len());
+
+    for (key, value) in base.iter().chain(run) {
+        if let Some(pos) = positions.get(key) {
+            merged[*pos].1 = value.clone();
         } else {
+            positions.insert(key.clone(), merged.len());
             merged.push((key.clone(), value.clone()));
         }
     }
@@ -711,7 +773,7 @@ mod tests {
     fn scratch_bind_mount_uses_empty_input_and_output() {
         let state = crate::image("alpine:latest")
             .unwrap()
-            .run(shlex("echo"))
+            .run(shlex("echo").unwrap())
             .add_mount_scratch("/scratch")
             .root()
             .unwrap();
@@ -828,7 +890,7 @@ mod tests {
 
     #[test]
     fn shlex_splits_command() {
-        let s = shlex("echo hello world");
+        let s = shlex("echo hello world").unwrap();
         assert_eq!(s.args, vec!["echo", "hello", "world"]);
     }
 
@@ -839,9 +901,37 @@ mod tests {
     }
 
     #[test]
+    fn shlex_rejects_unclosed_quote_with_position() {
+        let error = shlex("echo 'hello").unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::LlbError::InvalidShell {
+                position: 5,
+                kind: "unclosed single quote"
+            }
+        ));
+    }
+
+    #[test]
+    fn shlex_rejects_trailing_escape_with_position() {
+        let error = shlex("echo \\").unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::LlbError::InvalidShell {
+                position: 5,
+                kind: "trailing escape"
+            }
+        ));
+    }
+
+    #[test]
     fn exec_state_root_chains() {
-        let s = scratch().unwrap().run(shlex("echo hello")).root().unwrap();
-        let _ = s.run(shlex("echo again")).root().unwrap();
+        let s = scratch()
+            .unwrap()
+            .run(shlex("echo hello").unwrap())
+            .root()
+            .unwrap();
+        let _ = s.run(shlex("echo again").unwrap()).root().unwrap();
     }
 
     #[test]
@@ -876,5 +966,35 @@ mod tests {
         let meta = exec.meta.expect("expected Meta");
         assert!(meta.env.contains(&"K=V2".to_string()));
         assert!(!meta.env.contains(&"K=V1".to_string()));
+    }
+
+    #[test]
+    fn exec_env_merge_deduplicates_base_keys() {
+        let merged = merge_env(
+            &[
+                ("K".to_string(), "V1".to_string()),
+                ("K".to_string(), "V2".to_string()),
+            ],
+            &[],
+        );
+        assert_eq!(merged, vec![("K".to_string(), "V2".to_string())]);
+    }
+
+    #[test]
+    fn exec_env_merge_preserves_first_key_order_when_overriding() {
+        let merged = merge_env(
+            &[
+                ("K".to_string(), "V1".to_string()),
+                ("A".to_string(), "x".to_string()),
+            ],
+            &[("K".to_string(), "V3".to_string())],
+        );
+        assert_eq!(
+            merged,
+            vec![
+                ("K".to_string(), "V3".to_string()),
+                ("A".to_string(), "x".to_string())
+            ]
+        );
     }
 }

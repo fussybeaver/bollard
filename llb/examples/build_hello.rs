@@ -14,7 +14,7 @@ use bollard_llb::{image, shlex};
 fn main() {
     let def = image("alpine:latest")
         .unwrap()
-        .run(shlex("echo 'hello world'"))
+        .run(shlex("echo 'hello world'").unwrap())
         .with_custom_name("echo hello world")
         .root()
         .unwrap()
