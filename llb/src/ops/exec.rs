@@ -315,8 +315,7 @@ impl ExecOp {
         mut run: RunOpts,
     ) -> Result<Self, LlbError> {
         // Sort mounts by target path to match Go's moby/buildkit client/llb
-        // ExecOp.Marshal behavior (github.com/moby/buildkit@v0.31.1,
-        // client/llb/exec.go:145-148). This canonicalization keeps cache keys
+        // ExecOp.Marshal behavior. This canonicalization keeps cache keys
         // stable regardless of the order in which mounts were added.
         // The rootfs mount at "/" is added separately and remains first.
         run.mounts.sort_by(|a, b| a.target.cmp(&b.target));
