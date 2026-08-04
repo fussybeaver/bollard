@@ -271,7 +271,14 @@ pub(crate) async fn solve(
     ];
 
     if ssh {
-        let ssh_provider = super::SshProvider::new();
+        // `ImageBuildFrontendOptions::enable_ssh` is still a plain bool, so
+        // the GRPC-driver path keeps exactly its previous behaviour: the one
+        // implicit `default` agent, forwarded to the host's `SSH_AUTH_SOCK`.
+        // Named agents are exposed on `ImageBuildSessionProviders` only.
+        let ssh_provider = super::SshProvider::new(HashMap::from([(
+            String::from(super::DEFAULT_SSH_AGENT_ID),
+            super::SshAgentSource::DefaultAgentSocket,
+        )]));
         let ssh = SshServer::new(ssh_provider)
             .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
