@@ -1357,21 +1357,146 @@ impl Secrets for SecretProvider {
     }
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct SshProvider {
-    src: HashMap<String, PathBuf>,
+/// BuildKit's own id for the agent a `RUN --mount=type=ssh` instruction gets
+/// when it names none — and what an empty id means in both RPCs below.
+///
+/// Ref: `DefaultID` in
+/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
+pub(crate) const DEFAULT_SSH_AGENT_ID: &str = "default";
+
+/// The gRPC metadata key BuildKit puts the requested agent id under when it
+/// opens a `ForwardAgent` stream. Note the dots: this is `buildkit.ssh.id`,
+/// not a hyphenated spelling — getting it wrong doesn't fail loudly, it
+/// silently routes every named agent to `default`.
+///
+/// Ref: `KeySSHID` in
+/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
+const SSH_ID_METADATA_KEY: &str = "buildkit.ssh.id";
+
+/// Applies BuildKit's "an empty id means [`DEFAULT_SSH_AGENT_ID`]" rule.
+///
+/// Shared by both RPCs deliberately: they read the id from different places
+/// (`CheckAgent` from the request body, `ForwardAgent` from stream metadata)
+/// but must agree on what it means, or a build passes `check_agent` and then
+/// fails to forward.
+fn resolve_agent_id(id: &str) -> &str {
+    if id.is_empty() {
+        DEFAULT_SSH_AGENT_ID
+    } else {
+        id
+    }
 }
 
-struct SshSource {
-    agent: (),
-    socket: (),
+/// The agent id a `ForwardAgent` stream is for.
+///
+/// Absent metadata, a non-ASCII value, or an empty one all mean
+/// [`DEFAULT_SSH_AGENT_ID`] — matching BuildKit's own provider, which
+/// overrides the default only when the key is present and non-empty.
+///
+/// Split out from `forward_agent` so it can be tested against a hand-built
+/// [`MetadataMap`](tonic::metadata::MetadataMap): the surrounding code needs a
+/// live `Streaming` request, which a unit test can't construct.
+fn agent_id_from_metadata(metadata: &tonic::metadata::MetadataMap) -> &str {
+    resolve_agent_id(
+        metadata
+            .get(SSH_ID_METADATA_KEY)
+            .and_then(|id| id.to_str().ok())
+            .unwrap_or_default(),
+    )
+}
+
+/// Where a named ssh agent's bytes are relayed to.
+///
+/// Registered with
+/// [`ImageBuildSessionProviders::set_ssh_agent`](crate::grpc::build::ImageBuildSessionProviders::set_ssh_agent).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SshAgentSource {
+    /// The agent the host's `SSH_AUTH_SOCK` points at.
+    ///
+    /// Resolved when the build actually asks for the agent rather than when
+    /// it is registered, so constructing a build configuration never reads
+    /// the environment and a missing `SSH_AUTH_SOCK` is reported as a build
+    /// error rather than swallowed at registration time.
+    DefaultAgentSocket,
+    /// A specific Unix socket that speaks the ssh-agent protocol. It need not
+    /// be a running `ssh-agent`: anything answering that protocol works, which
+    /// is what lets a caller serve keys it holds itself.
+    Socket(PathBuf),
+}
+
+impl SshAgentSource {
+    /// The Unix socket to relay to, given the host's current `SSH_AUTH_SOCK`
+    /// (`None` when unset).
+    ///
+    /// Takes the environment's value as an argument rather than reading it,
+    /// so the fallback rule is testable without mutating process-global state
+    /// from a test — [`SshProvider::socket_for`] is the single place that
+    /// actually consults the environment.
+    fn resolve(&self, default_agent_socket: Option<OsString>) -> Result<PathBuf, GrpcSshError> {
+        match self {
+            SshAgentSource::DefaultAgentSocket => default_agent_socket
+                .filter(|socket| !socket.is_empty())
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    GrpcSshError::SshAgentSocketInit(String::from(
+                        "The environment variable SSH_AUTH_SOCK is missing, and is required for the sshforwarding functionality",
+                    ))
+                }),
+            SshAgentSource::Socket(path) => Ok(PathBuf::clone(path)),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SshProvider {
+    /// Agent id → where to relay it. Empty ids are resolved to
+    /// [`DEFAULT_SSH_AGENT_ID`] before lookup, never stored as `""`.
+    sources: HashMap<String, SshAgentSource>,
 }
 
 impl SshProvider {
-    pub(crate) fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
+    pub(crate) fn new(sources: HashMap<String, SshAgentSource>) -> Self {
+        Self { sources }
+    }
+
+    /// Resolves an already-[`resolve_agent_id`]d id to the socket its bytes
+    /// go to, or explains why it can't be.
+    ///
+    /// The one place the environment is consulted, so `check_agent` cannot
+    /// accept an agent that `forward_agent` would then refuse.
+    fn socket_for(&self, id: &str) -> Result<PathBuf, GrpcSshError> {
+        let source = self.sources.get(id).ok_or_else(|| {
+            GrpcSshError::SshAgentSocketInit(format!(
+                "No ssh agent is registered under the id '{id}' requested by this build"
+            ))
+        })?;
+        source.resolve(env::var_os("SSH_AUTH_SOCK"))
+    }
+
+    /// Connects to the agent registered under an already-[`resolve_agent_id`]d
+    /// `id`.
+    ///
+    /// Names both the agent and the socket when it can't: with more than one
+    /// agent registered, a bare "No such file or directory" doesn't say which
+    /// one failed. BuildKit's own provider wraps this the same way
+    /// (`failed to dial agent %s`).
+    ///
+    /// Split out of `forward_agent` so that message is testable at all — that
+    /// method needs a live `Streaming` request, this needs only a provider.
+    #[cfg(not(windows))]
+    async fn connect(&self, id: &str) -> Result<tokio::net::UnixStream, GrpcSshError> {
+        let socket_path = self.socket_for(id)?;
+        tokio::net::UnixStream::connect(&socket_path)
+            .await
+            .map_err(|e| {
+                GrpcSshError::SshAgentSocketInit(format!(
+                    "Failed to connect to the ssh agent '{}' at {}: {}",
+                    id,
+                    socket_path.display(),
+                    e
+                ))
+            })
     }
 }
 
@@ -1381,18 +1506,12 @@ impl Ssh for SshProvider {
         &self,
         request: Request<CheckAgentRequest>,
     ) -> Result<Response<CheckAgentResponse>, Status> {
-        let id: &str = request.get_ref().id.as_ref();
-        if !id.is_empty() && id != "default" {
-            return Err(Status::from(std::io::Error::other(
-                GrpcSshError::SshAgentSocketInit(String::from("This buildkit server only handles sshforwarding to the ssh-agent running on environment variable SSH_AUTH_SOCK on the host")),
-            )));
-        }
-
-        if env::var("SSH_AUTH_SOCK").is_err() {
-            return Err(Status::from(std::io::Error::other(
-                GrpcSshError::SshAgentSocketInit(String::from("The environment variable SSH_AUTH_SOCK is missing, and is required for the sshforwarding functionality")),
-            )));
-        }
+        // `CheckAgent` carries the id in the request body; `ForwardAgent`
+        // carries it in stream metadata. Both go through `socket_for`, so a
+        // build that passes this check can't then fail to forward.
+        let id = resolve_agent_id(request.get_ref().id.as_ref());
+        self.socket_for(id)
+            .map_err(|e| Status::from(std::io::Error::other(e)))?;
         Ok(Response::new(CheckAgentResponse {}))
     }
 
@@ -1414,8 +1533,15 @@ impl Ssh for SshProvider {
         &self,
         request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
-        let ssh_env_sock = env::var("SSH_AUTH_SOCK").expect("missing SSH_AUTH_SOCK");
-        let sock = tokio::net::UnixStream::connect(&ssh_env_sock).await?;
+        // Which agent this stream is for. Already validated by `check_agent`,
+        // but resolved again rather than remembered: nothing guarantees the
+        // two are called in that order, or at all, and this is the call that
+        // actually needs the socket.
+        let id = agent_id_from_metadata(request.metadata()).to_owned();
+        let sock = self
+            .connect(&id)
+            .await
+            .map_err(|e| Status::from(std::io::Error::other(e)))?;
 
         let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
         let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
@@ -1581,20 +1707,26 @@ pub(crate) fn new_id() -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::ffi::OsString;
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use bollard_buildkit_proto::fsutil::types::packet::PacketType;
     use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
     use bollard_buildkit_proto::moby::filesync::packet::file_send_client::FileSendClient;
+    use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::Ssh;
+    use bollard_buildkit_proto::moby::sshforward::v1::CheckAgentRequest;
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::metadata::MetadataMap;
     use tonic::transport::Server;
+    use tonic::Request;
 
+    use super::build::ImageBuildSessionProviders;
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
-        FileSendPacketImpl, FileSendPacketServer, MAX_FILE_SIZE,
+        FileSendPacketImpl, FileSendPacketServer, SshAgentSource, SshProvider, MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -2244,5 +2376,219 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code(), tonic::Code::ResourceExhausted);
+    }
+
+    /// BuildKit puts the requested agent id in gRPC metadata under this exact
+    /// key. Pinned as a literal because getting it wrong is silent: every
+    /// named agent would fall back to `default` and forward to the wrong
+    /// socket, with no error anywhere. Taken from `KeySSHID` in
+    /// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
+    /// — note the dots, not hyphens.
+    #[test]
+    fn ssh_id_metadata_key_matches_buildkits_own() {
+        assert_eq!(super::SSH_ID_METADATA_KEY, "buildkit.ssh.id");
+        assert_eq!(super::DEFAULT_SSH_AGENT_ID, "default");
+    }
+
+    #[test]
+    fn an_empty_agent_id_means_default() {
+        assert_eq!(super::resolve_agent_id(""), "default");
+        assert_eq!(super::resolve_agent_id("deploy"), "deploy");
+    }
+
+    fn metadata_with_ssh_id(value: &str) -> MetadataMap {
+        let mut metadata = MetadataMap::new();
+        metadata.insert(super::SSH_ID_METADATA_KEY, value.parse().unwrap());
+        metadata
+    }
+
+    #[test]
+    fn a_forward_agent_stream_names_its_agent_in_metadata() {
+        assert_eq!(
+            super::agent_id_from_metadata(&metadata_with_ssh_id("deploy")),
+            "deploy"
+        );
+    }
+
+    /// The two ways BuildKit can decline to name an agent. Both mean
+    /// `default`, and neither is an error — a Dockerfile's plain
+    /// `RUN --mount=type=ssh` produces exactly this.
+    #[test]
+    fn a_forward_agent_stream_with_no_usable_id_falls_back_to_default() {
+        assert_eq!(
+            super::agent_id_from_metadata(&MetadataMap::new()),
+            "default",
+            "absent key"
+        );
+        assert_eq!(
+            super::agent_id_from_metadata(&metadata_with_ssh_id("")),
+            "default",
+            "present but empty"
+        );
+    }
+
+    #[test]
+    fn a_socket_source_resolves_to_its_own_path() {
+        let source = SshAgentSource::Socket(PathBuf::from("/tmp/deploy.sock"));
+
+        assert_eq!(
+            source.resolve(Some(OsString::from("/ignored"))).unwrap(),
+            PathBuf::from("/tmp/deploy.sock"),
+            "an explicit socket must not be overridden by SSH_AUTH_SOCK"
+        );
+    }
+
+    #[test]
+    fn the_default_source_resolves_to_ssh_auth_sock() {
+        assert_eq!(
+            SshAgentSource::DefaultAgentSocket
+                .resolve(Some(OsString::from("/run/agent.sock")))
+                .unwrap(),
+            PathBuf::from("/run/agent.sock")
+        );
+    }
+
+    /// Reported rather than panicked. `forward_agent` used to
+    /// `.expect("missing SSH_AUTH_SOCK")` here, which took the whole process
+    /// down from inside a library.
+    #[test]
+    fn the_default_source_reports_a_missing_ssh_auth_sock() {
+        for absent in [None, Some(OsString::new())] {
+            let error = SshAgentSource::DefaultAgentSocket
+                .resolve(absent.clone())
+                .unwrap_err();
+
+            assert!(
+                error.to_string().contains("SSH_AUTH_SOCK"),
+                "{absent:?} should name the missing variable, got: {error}"
+            );
+        }
+    }
+
+    fn provider_with(id: &str, path: &str) -> SshProvider {
+        SshProvider::new(HashMap::from([(
+            String::from(id),
+            SshAgentSource::Socket(PathBuf::from(path)),
+        )]))
+    }
+
+    #[tokio::test]
+    async fn check_agent_accepts_a_registered_named_agent() {
+        let provider = provider_with("deploy", "/tmp/deploy.sock");
+
+        provider
+            .check_agent(Request::new(CheckAgentRequest {
+                id: String::from("deploy"),
+            }))
+            .await
+            .expect("a registered id must be accepted");
+    }
+
+    /// BuildKit sends an empty id for a `RUN --mount=type=ssh` that names
+    /// none, so this is the path `enable_ssh(true)` alone has to serve.
+    #[tokio::test]
+    async fn check_agent_maps_an_empty_id_onto_the_default_agent() {
+        let provider = provider_with("default", "/tmp/default.sock");
+
+        provider
+            .check_agent(Request::new(CheckAgentRequest { id: String::new() }))
+            .await
+            .expect("an empty id must resolve to the default agent");
+    }
+
+    #[tokio::test]
+    async fn check_agent_rejects_an_agent_that_was_never_registered() {
+        let provider = provider_with("deploy", "/tmp/deploy.sock");
+
+        let status = provider
+            .check_agent(Request::new(CheckAgentRequest {
+                id: String::from("typo"),
+            }))
+            .await
+            .expect_err("an unregistered id must be refused");
+
+        assert!(
+            status.message().contains("typo"),
+            "the error should name the id the build asked for, got: {}",
+            status.message()
+        );
+    }
+
+    /// A failed dial has to say *which* agent failed, or a build with several
+    /// registered leaves you guessing.
+    ///
+    /// The id and the socket path share no substring on purpose: with the id
+    /// also appearing in the path, `contains("deploy")` passes on the path
+    /// alone and the assertion silently stops checking the thing it names.
+    /// (Verified — the first version of this test used
+    /// `/…/deploy.sock` and passed with the id dropped from the message.)
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn connecting_to_a_missing_socket_names_the_agent_and_the_path() {
+        const SOCKET: &str = "/nonexistent/bollard-test/agent.sock";
+        let provider = provider_with("deploy", SOCKET);
+
+        let error = provider
+            .connect("deploy")
+            .await
+            .expect_err("a socket that isn't there can't be connected to");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("deploy"),
+            "should name the agent, got: {message}"
+        );
+        assert!(
+            message.contains(SOCKET),
+            "should name the socket, got: {message}"
+        );
+    }
+
+    /// `enable_ssh(true)` is sugar, so it has to land on exactly the state the
+    /// general call produces — not merely an equivalent-looking one. Asserted
+    /// rather than assumed because the two were separate fields before, and
+    /// keeping two spellings of one setting in step by hand is what this
+    /// consolidation exists to avoid.
+    #[test]
+    fn enable_ssh_is_exactly_the_default_named_agent() {
+        assert_eq!(
+            ImageBuildSessionProviders::default().enable_ssh(true),
+            ImageBuildSessionProviders::default()
+                .set_ssh_agent("default", &SshAgentSource::DefaultAgentSocket)
+        );
+    }
+
+    /// Disabling the implicit agent must not disturb explicitly named ones —
+    /// they were never what the flag referred to.
+    #[test]
+    fn disabling_ssh_leaves_named_agents_registered() {
+        let providers = ImageBuildSessionProviders::default()
+            .set_ssh_agent(
+                "deploy",
+                &SshAgentSource::Socket(PathBuf::from("/tmp/d.sock")),
+            )
+            .enable_ssh(true)
+            .enable_ssh(false);
+
+        assert_eq!(
+            providers,
+            ImageBuildSessionProviders::default().set_ssh_agent(
+                "deploy",
+                &SshAgentSource::Socket(PathBuf::from("/tmp/d.sock"))
+            )
+        );
+        assert!(
+            !providers.is_empty(),
+            "a named agent still needs a session to serve it"
+        );
+    }
+
+    #[test]
+    fn providers_with_no_secrets_and_no_agents_are_empty() {
+        assert!(ImageBuildSessionProviders::default().is_empty());
+        assert!(ImageBuildSessionProviders::default()
+            .enable_ssh(true)
+            .enable_ssh(false)
+            .is_empty());
     }
 }
