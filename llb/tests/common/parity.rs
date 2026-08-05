@@ -522,6 +522,7 @@ pub fn compare_definitions(
         if l != r {
             let mut diffs = Vec::new();
             diff_op("op", l, r, &mut diffs);
+            ensure_diff("op", l, r, &mut diffs);
             for (path, rust_value, go_value) in diffs {
                 diagnostics.push(ParityDiagnostic {
                     fixture,
@@ -548,6 +549,7 @@ pub fn compare_definitions(
             (Some(l), Some(r)) => {
                 let mut diffs = Vec::new();
                 diff_op_metadata(&format!("metadata[{}]", i), l, r, &mut diffs);
+                ensure_diff(&format!("metadata[{}]", i), l, r, &mut diffs);
                 for (path, rust_value, go_value) in diffs {
                     diagnostics.push(ParityDiagnostic {
                         fixture,
@@ -596,6 +598,7 @@ pub fn compare_definitions(
     let right_source = canonicalize_source(right);
     let mut source_diffs = Vec::new();
     diff_source("source", &left_source, &right_source, &mut source_diffs);
+    ensure_diff("source", &left_source, &right_source, &mut source_diffs);
     for (path, rust_value, go_value) in source_diffs {
         diagnostics.push(ParityDiagnostic {
             fixture,
@@ -697,6 +700,21 @@ fn note_diff<T: PartialEq + fmt::Debug>(
             path.to_string(),
             format!("{:?}", left),
             format!("{:?}", right),
+        ));
+    }
+}
+
+fn ensure_diff<T: PartialEq + fmt::Debug>(
+    path: &str,
+    left: &T,
+    right: &T,
+    diffs: &mut Vec<(String, String, String)>,
+) {
+    if left != right && diffs.is_empty() {
+        diffs.push((
+            path.to_string(),
+            format!("unclassified: {:?}", left),
+            format!("unclassified: {:?}", right),
         ));
     }
 }
@@ -1640,6 +1658,21 @@ fn diff_repeated<T: PartialEq + fmt::Debug>(
     }
     for (i, (l, r)) in left.iter().zip(right.iter()).enumerate() {
         note_diff(&format!("{}[{}]", path, i), l, r, diffs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_diff;
+
+    #[test]
+    fn fallback_reports_an_unclassified_mismatch() {
+        let mut diffs = Vec::new();
+        ensure_diff("op", &1_u8, &2_u8, &mut diffs);
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].0, "op");
+        assert!(diffs[0].1.contains("unclassified"));
     }
 }
 

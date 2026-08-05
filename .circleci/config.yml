@@ -68,6 +68,7 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
+      - run: docker run -ti --rm bollard cargo test -p bollard-llb --all-features
       - run:
           name: Clean up Bollard BuildKit resources
           command: |

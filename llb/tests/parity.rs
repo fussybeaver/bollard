@@ -895,7 +895,7 @@ fn parity_provenance_self_check() {
             .get("fixtures")
             .and_then(serde_json::Value::as_array)
             .map(Vec::len),
-        Some(42),
+        Some(43),
         "golden manifest should describe all generated fixtures"
     );
 }

@@ -12,10 +12,11 @@ From this directory, run:
 ./regenerate.sh
 ```
 
-The script generates into a temporary directory, checks the generated
-definitions against the committed goldens and manifest, and only then copies
-the results into `llb/testdata/golden/`. The generator binary is not checked
-in.
+The script generates into two temporary directories, verifies that the pinned
+generator produces byte-identical output twice, removes stale fixture files,
+and then copies the new results into `llb/testdata/golden/`. The generator
+binary is not checked in. CI separately checks the generated output against
+the committed goldens and manifest.
 
 To generate into another directory without updating the committed fixtures:
 

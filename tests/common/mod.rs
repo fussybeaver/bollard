@@ -315,7 +315,9 @@ pub mod buildkit_test {
     // only the LLB compatibility suite currently consumes these helpers.
 
     use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-    use bollard::grpc::driver::docker_container::{DockerContainer, DockerContainerBuilder};
+    use bollard::grpc::driver::docker_container::{
+        DockerContainer, DockerContainerBuilder, DockerContainerRemoveOptions,
+    };
     use bollard::models::{ContainerInspectResponse, ExecInspectResponse, ImageInspect};
     use bollard::query_parameters::InspectContainerOptions;
     use bollard::Docker;
@@ -369,6 +371,125 @@ pub mod buildkit_test {
         builder
     }
 
+    /// Owns one named BuildKit container and its state volume for an integration test.
+    pub struct BuildkitTestFixture {
+        docker: Docker,
+        name: String,
+        volume_name: String,
+        driver: Option<DockerContainer>,
+        cleaned: bool,
+    }
+
+    impl BuildkitTestFixture {
+        pub fn new(docker: &Docker, name: impl Into<String>) -> Self {
+            let name = name.into();
+            Self {
+                docker: Docker::clone(docker),
+                volume_name: format!("{name}_state"),
+                name,
+                driver: None,
+                cleaned: false,
+            }
+        }
+
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        pub fn volume_name(&self) -> &str {
+            &self.volume_name
+        }
+
+        pub async fn bootstrap(&mut self) -> Result<&DockerContainer, Error> {
+            let mut builder = builder(&self.docker);
+            builder.name(&self.name);
+            let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+            })?;
+            self.driver = Some(driver);
+            Ok(self.driver.as_ref().expect("driver was just stored"))
+        }
+
+        pub async fn cleanup(&mut self) -> Result<(), Error> {
+            if self.cleaned {
+                return Ok(());
+            }
+            self.cleaned = true;
+
+            let Some(driver) = self.driver.as_ref() else {
+                return Ok(());
+            };
+            let result = driver
+                .remove(DockerContainerRemoveOptions::new())
+                .await
+                .map_err(|error| Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "BuildKit fixture cleanup failed for {}: {error}",
+                        self.name
+                    )),
+                });
+            if result.is_ok() {
+                self.driver = None;
+            } else {
+                self.cleaned = false;
+            }
+            result
+        }
+
+        pub async fn finish(&mut self, result: Result<(), Error>) -> Result<(), Error> {
+            let cleanup_result = self.cleanup().await;
+            match result {
+                Err(error) => {
+                    if let Err(cleanup_error) = cleanup_result {
+                        eprintln!("{cleanup_error}");
+                    }
+                    Err(error)
+                }
+                Ok(()) => cleanup_result,
+            }
+        }
+    }
+
+    impl Drop for BuildkitTestFixture {
+        fn drop(&mut self) {
+            if self.cleaned {
+                return;
+            }
+
+            let Some(driver) = self.driver.take() else {
+                return;
+            };
+            let name = self.name.clone();
+            let cleanup_name = name.clone();
+            let thread = std::thread::Builder::new()
+                .name(String::from("bollard-buildkit-test-cleanup"))
+                .spawn(move || {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build();
+                    match runtime {
+                        Ok(runtime) => {
+                            if let Err(error) = runtime.block_on(driver.remove(
+                                DockerContainerRemoveOptions::new(),
+                            )) {
+                                eprintln!(
+                                    "BuildKit fixture cleanup failed for {cleanup_name}: {error}"
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "failed to create BuildKit fixture cleanup runtime for {cleanup_name}: {error}"
+                            );
+                        }
+                    }
+                });
+            if let Err(error) = thread {
+                eprintln!("failed to spawn BuildKit fixture cleanup for {name}: {error}");
+            }
+        }
+    }
+
     /// Parse the direct BuildKit requirement from the pinned Go module.
     fn parse_go_buildkit_version(go_mod: &str) -> Option<String> {
         for line in go_mod.lines() {
@@ -413,9 +534,9 @@ pub mod buildkit_test {
         let buildkitd_version = exec_command(docker, name, vec!["buildkitd", "--version"]).await?;
         let buildctl_version = exec_command(docker, name, vec!["buildctl", "--version"]).await?;
 
-        if resolved_repo_digests.is_empty() {
+        if resolved_image_id.is_empty() {
             return Err(Error::IOError {
-                err: std::io::Error::other("BuildKit image has no repository digest"),
+                err: std::io::Error::other("BuildKit image has no resolved image ID"),
             });
         }
         if buildkitd_version.is_empty() || buildctl_version.is_empty() {
@@ -453,15 +574,21 @@ pub mod buildkit_test {
             .await?
             .id;
         let mut output = Vec::new();
-        if let StartExecResults::Attached {
-            output: mut stream, ..
-        } = docker
+        let mut stream = match docker
             .start_exec(&exec_id, None::<StartExecOptions>)
             .await?
         {
-            while let Some(Ok(log)) = stream.next().await {
-                output.extend_from_slice(log.into_bytes().as_ref());
+            StartExecResults::Attached { output, .. } => output,
+            StartExecResults::Detached => {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "command {command:?} did not attach to an output stream"
+                    )),
+                })
             }
+        };
+        while let Some(log) = stream.next().await {
+            output.extend_from_slice(log?.into_bytes().as_ref());
         }
 
         let output = String::from_utf8_lossy(&output).trim().to_string();
