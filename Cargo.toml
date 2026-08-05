@@ -106,6 +106,7 @@ glob = { version = "0.3", optional = true }
 regex = { version = "1.13", optional = true }
 
 [dev-dependencies]
+bollard-llb = { path = "llb" }
 flate2 = "1.0"
 prost = "0.14"
 sha2 = "0.10"

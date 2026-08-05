@@ -78,6 +78,19 @@ jobs:
               docker volume rm "$volume" || true
             done
           when: always
+  test_llb_goldens:
+    docker:
+      - image: golang:1.25
+    steps:
+      - checkout
+      - run:
+          name: Verify pinned LLB golden files
+          command: |
+            cd codegen/llb-parity
+            tmp=$(mktemp -d)
+            trap 'rm -rf "$tmp"' EXIT
+            go run . -out "$tmp"
+            go run . -check ../../llb/testdata/golden -against "$tmp"
   test_chrono:
     docker:
       - image: docker:29.3
@@ -250,6 +263,7 @@ workflows:
       - test_ssh
       - test_unix
       - test_buildkit
+      - test_llb_goldens
       - test_chrono
       - test_time
       - test_doc

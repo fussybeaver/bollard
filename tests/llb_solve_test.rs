@@ -1,15 +1,13 @@
 #![cfg(feature = "buildkit")]
 
-use bollard::container::LogOutput;
 use bollard::errors::Error;
-use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::grpc::driver::docker_container::DockerContainerBuilder;
+use bollard::grpc::build::SecretSource;
+use bollard::grpc::driver::docker_container::DockerContainer;
 use bollard::grpc::driver::{
     DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
 };
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
-use futures_util::TryStreamExt;
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,6 +35,18 @@ const MINIMAL_MKFILE_DEFINITION_HEX: &str = concat!(
     "323333303933653334316334323934373362613162643936356534333535",
     "353433616636306139323435623035353631636562656230661200"
 );
+
+const MKFILE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/mkfile.llb.pb");
+const SYMLINK_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/symlink.llb.pb");
+const IMAGE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/image_run.llb.pb");
+const DIFFERENTIAL_MERGE_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_merge_alpine.llb.pb");
+const DIFFERENTIAL_FILE_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_secret.llb.pb");
+const DIFFERENTIAL_ENV_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_env_secret.llb.pb");
+const DIFFERENTIAL_FILE_OPS_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_operations_allow_not_found.llb.pb");
 
 fn minimal_mkfile_definition() -> pb::Definition {
     let bytes = (0..MINIMAL_MKFILE_DEFINITION_HEX.len())
@@ -364,6 +374,68 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq)]
+enum ExportEntry {
+    File { mode: u32, contents: Vec<u8> },
+    Dir { mode: u32 },
+    Symlink { target: String },
+}
+
+#[cfg(unix)]
+fn export_mode(path: &Path) -> u32 {
+    use std::os::unix::fs::MetadataExt;
+
+    path.symlink_metadata()
+        .expect("export entry metadata should be readable")
+        .mode()
+        & 0o777
+}
+
+#[cfg(not(unix))]
+fn export_mode(_path: &Path) -> u32 {
+    0
+}
+
+fn read_export_tree(root: &Path) -> Result<BTreeMap<PathBuf, ExportEntry>, Error> {
+    fn visit(
+        root: &Path,
+        current: &Path,
+        tree: &mut BTreeMap<PathBuf, ExportEntry>,
+    ) -> Result<(), Error> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root).map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("failed to relativize export path: {error}")),
+            })?;
+            let metadata = path.symlink_metadata()?;
+            let value = if metadata.file_type().is_symlink() {
+                ExportEntry::Symlink {
+                    target: std::fs::read_link(&path)?.to_string_lossy().into_owned(),
+                }
+            } else if metadata.file_type().is_dir() {
+                let value = ExportEntry::Dir {
+                    mode: export_mode(&path),
+                };
+                tree.insert(relative.to_path_buf(), value);
+                visit(root, &path, tree)?;
+                continue;
+            } else {
+                ExportEntry::File {
+                    mode: export_mode(&path),
+                    contents: std::fs::read(&path)?,
+                }
+            };
+            tree.insert(relative.to_path_buf(), value);
+        }
+        Ok(())
+    }
+
+    let mut tree = BTreeMap::new();
+    visit(root, root, &mut tree)?;
+    Ok(tree)
+}
+
 fn unique_builder_name() -> String {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -372,71 +444,293 @@ fn unique_builder_name() -> String {
     format!("bollard_llb_gate_f_{suffix}")
 }
 
-async fn capture_builder_identity(docker: &Docker, driver_name: &str) -> Result<(), Error> {
-    let container = docker.inspect_container(driver_name, None).await?;
-    let image_ref = container
-        .config
-        .as_ref()
-        .and_then(|config| config.image.clone())
-        .ok_or_else(|| Error::IOError {
-            err: std::io::Error::other("BuildKit container has no configured image"),
-        })?;
-    let container_id = container.id.clone().ok_or_else(|| Error::IOError {
-        err: std::io::Error::other("BuildKit container has no resolved image ID"),
-    })?;
-    let image_id = container.image.clone().ok_or_else(|| Error::IOError {
-        err: std::io::Error::other("BuildKit container has no image ID"),
-    })?;
-    let image = docker.inspect_image(&image_ref).await?;
-    let repo_digests = image.repo_digests.unwrap_or_default();
+fn llb_error(error: bollard_llb::LlbError) -> Error {
+    Error::IOError {
+        err: std::io::Error::other(format!("LLB definition construction failed: {error}")),
+    }
+}
 
-    let exec = docker
-        .create_exec(
-            driver_name,
-            CreateExecOptions {
-                attach_stdout: Some(true),
-                cmd: Some(vec![String::from("buildkitd"), String::from("--version")]),
+fn go_definition(bytes: &[u8]) -> Result<pb::Definition, Error> {
+    pb::Definition::decode(bytes).map_err(|error| Error::IOError {
+        err: std::io::Error::other(format!("failed to decode Go definition: {error}")),
+    })
+}
+
+fn registry_image(name: &str) -> String {
+    format!("{}{name}", crate::common::registry_http_addr())
+}
+
+fn differential_mkfile_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{mkfile, scratch, FileOpts, MarshalOpts};
+
+    Ok(scratch()
+        .map_err(llb_error)?
+        .file(mkfile("/hello", 0o644, b"world"), FileOpts::new())
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_symlink_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{scratch, symlink, FileOpts, MarshalOpts};
+
+    Ok(scratch()
+        .map_err(llb_error)?
+        .file(symlink("/target", "/link"), FileOpts::new())
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_image_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, shlex, MarshalOpts};
+
+    Ok(image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(shlex("echo hello").map_err(llb_error)?)
+        .root()
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_merge_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, merge, shlex, MarshalOpts, MergeOpts};
+
+    let first = image(registry_image("alpine:latest")).map_err(llb_error)?;
+    let second = image(registry_image("alpine:latest")).map_err(llb_error)?;
+    Ok(merge(vec![first, second], MergeOpts::new())
+        .map_err(llb_error)?
+        .run(shlex("sh -c 'echo differential > /differential'").map_err(llb_error)?)
+        .root()
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_file_secret_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts};
+
+    Ok(image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(
+            RunOpts::default()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("sha256sum /run/secrets/token > /derived"),
+        )
+        .add_secret(
+            "token",
+            AddSecret {
+                target: Some(String::from("/run/secrets/token")),
                 ..Default::default()
             },
         )
-        .await?;
-    let results = docker
-        .start_exec(&exec.id, None::<StartExecOptions>)
-        .await?;
-    let version_output = match results {
-        StartExecResults::Attached { output, .. } => {
-            let output: Vec<LogOutput> = output.try_collect().await?;
-            output
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    LogOutput::StdOut { message } => Some(message),
-                    LogOutput::StdErr { .. } => None,
-                    _ => None,
-                })
-                .flatten()
-                .collect::<Vec<_>>()
-        }
-        StartExecResults::Detached => Vec::new(),
-    };
-    let version_output = String::from_utf8_lossy(&version_output).trim().to_string();
-    let engine_version = docker.version().await?;
-    let daemon_info = docker.info().await?;
+        .root()
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
 
-    assert!(
-        !version_output.is_empty(),
-        "buildkitd --version returned no output"
+fn differential_env_secret_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts};
+
+    Ok(image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(
+            RunOpts::default()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("printf '%s' \"$MY_SECRET\" | sha256sum > /derived"),
+        )
+        .add_secret(
+            "mysecret",
+            AddSecret {
+                as_env: true,
+                env_name: Some(String::from("MY_SECRET")),
+                ..Default::default()
+            },
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
+    use bollard_llb::{mkdir, mkfile, rm, symlink, FileOpts, MarshalOpts};
+
+    let state = bollard_llb::scratch()
+        .map_err(llb_error)?
+        .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
+        .map_err(llb_error)?
+        .file(
+            mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .file(
+            symlink("/app/config.toml", "/app/current-config"),
+            FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .file(
+            rm("/app/current-config").with_allow_not_found(true),
+            FileOpts::new(),
+        )
+        .map_err(llb_error)?;
+
+    Ok(state
+        .marshal(MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+async fn solve_definition_with_driver(
+    driver: &DockerContainer,
+    definition: pb::Definition,
+    destination: &Path,
+    image_registry: Option<&str>,
+    secrets: Vec<(String, SecretSource)>,
+) -> Result<(), Error> {
+    let mut options = DefinitionSolveOptionsBuilder::new();
+    if let Some(host) = image_registry {
+        options = options.credential(host, integration_test_registry_credentials());
+    }
+    for (id, source) in secrets {
+        options = options.secret(id, source);
+    }
+
+    let request = DefinitionSolveRequest::new(
+        definition,
+        DefinitionExporter::Local(destination.to_path_buf()),
+    )
+    .with_options(options.build());
+    SolveDefinition::solve_definition(driver, request)
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("direct definition solve failed: {error}")),
+        })
+}
+
+async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
+    type DefinitionBuilder = fn() -> Result<pb::Definition, Error>;
+
+    let cases: [(&str, &[u8], DefinitionBuilder); 7] = [
+        ("mkfile", MKFILE_GOLDEN, differential_mkfile_definition),
+        ("symlink", SYMLINK_GOLDEN, differential_symlink_definition),
+        ("image", IMAGE_GOLDEN, differential_image_definition),
+        (
+            "merge_alpine",
+            DIFFERENTIAL_MERGE_GOLDEN,
+            differential_merge_definition,
+        ),
+        (
+            "file_secret",
+            DIFFERENTIAL_FILE_SECRET_GOLDEN,
+            differential_file_secret_definition,
+        ),
+        (
+            "env_secret",
+            DIFFERENTIAL_ENV_SECRET_GOLDEN,
+            differential_env_secret_definition,
+        ),
+        (
+            "file_operations_allow_not_found",
+            DIFFERENTIAL_FILE_OPS_GOLDEN,
+            differential_file_operations_definition,
+        ),
+    ];
+
+    let name = unique_builder_name();
+    let volume_name = format!("{name}_state");
+    let (image_ref, image_registry) = alpine_image_reference();
+    let secret_dir = tempfile::tempdir()?;
+    let token_path = secret_dir.path().join("token");
+    std::fs::write(&token_path, "phase5-differential-secret")?;
+    std::env::set_var(
+        "PHASE5_DIFFERENTIAL_ENV_SECRET",
+        "phase5-differential-env-secret",
     );
-    assert!(
-        !repo_digests.is_empty(),
-        "BuildKit image has no repository digest"
-    );
-    println!(
-        "phase-f identity: image_ref={image_ref} image_id={image_id} container_id={container_id} image_digests={repo_digests:?} buildkitd_version={version_output:?} docker_version={:?} docker_api_version={:?} docker_daemon_id={:?}",
-        engine_version.version,
-        engine_version.api_version,
-        daemon_info.id
-    );
-    Ok(())
+
+    let result = async {
+        let mut builder = common::buildkit_test::builder(&docker);
+        builder.name(&name);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+        println!(
+            "{}",
+            common::buildkit_test::record_version(&docker, &driver).await?
+        );
+
+        for (fixture, golden, rust_builder) in cases {
+            let go_destination = tempfile::tempdir()?;
+            let rust_destination = tempfile::tempdir()?;
+            let go_secrets = match fixture {
+                "file_secret" => vec![(
+                    String::from("token"),
+                    SecretSource::File(token_path.clone()),
+                )],
+                "env_secret" => vec![(
+                    String::from("mysecret"),
+                    SecretSource::Env(String::from("PHASE5_DIFFERENTIAL_ENV_SECRET")),
+                )],
+                _ => Vec::new(),
+            };
+            let rust_secrets = match fixture {
+                "file_secret" => vec![(
+                    String::from("token"),
+                    SecretSource::File(token_path.clone()),
+                )],
+                "env_secret" => vec![(
+                    String::from("mysecret"),
+                    SecretSource::Env(String::from("PHASE5_DIFFERENTIAL_ENV_SECRET")),
+                )],
+                _ => Vec::new(),
+            };
+
+            solve_definition_with_driver(
+                &driver,
+                go_definition(golden)?,
+                go_destination.path(),
+                image_registry.as_deref(),
+                go_secrets,
+            )
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("{fixture}: Go solve failed: {error}")),
+            })?;
+            solve_definition_with_driver(
+                &driver,
+                rust_builder()?,
+                rust_destination.path(),
+                image_registry.as_deref(),
+                rust_secrets,
+            )
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("{fixture}: Rust solve failed: {error}")),
+            })?;
+
+            assert_eq!(
+                read_export_tree(go_destination.path())?,
+                read_export_tree(rust_destination.path())?,
+                "Go/Rust exported filesystem mismatch for {fixture} using {image_ref}"
+            );
+        }
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
 }
 
 async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
@@ -446,7 +740,7 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
     let second_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = DockerContainerBuilder::new(&docker);
+        let mut builder = common::buildkit_test::builder(&docker);
         builder.name(&name);
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
@@ -492,12 +786,15 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
     let (image_ref, image_registry) = alpine_image_reference();
 
     let result = async {
-        let mut builder = DockerContainerBuilder::new(&docker);
+        let mut builder = common::buildkit_test::builder(&docker);
         builder.name(&name);
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
         })?;
-        capture_builder_identity(&docker, driver.name()).await?;
+        println!(
+            "{}",
+            common::buildkit_test::record_version(&docker, &driver).await?
+        );
 
         let request = DefinitionSolveRequest::new(
             local_source_copy_definition("context", "/"),
@@ -566,7 +863,7 @@ async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Err
     let encoded_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = DockerContainerBuilder::new(&docker);
+        let mut builder = common::buildkit_test::builder(&docker);
         builder.name(&name);
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
@@ -627,7 +924,7 @@ async fn local_source_cache_repeatability_test(docker: Docker) -> Result<(), Err
     let (image_ref, image_registry) = alpine_image_reference();
 
     let result = async {
-        let mut builder = DockerContainerBuilder::new(&docker);
+        let mut builder = common::buildkit_test::builder(&docker);
         builder.name(&name);
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
@@ -698,7 +995,7 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
     let successful_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = DockerContainerBuilder::new(&docker);
+        let mut builder = common::buildkit_test::builder(&docker);
         builder.name(&name);
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
@@ -795,6 +1092,12 @@ fn integration_test_local_source_filter_and_metadata() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_unknown_local_source_isolated() {
     connect_to_docker_and_run!(local_source_unknown_name_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_llb_solve_go_rust_differential() {
+    connect_to_docker_and_run!(differential_exported_tree_test);
 }
 
 #[test]
