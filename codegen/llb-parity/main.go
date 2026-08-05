@@ -20,6 +20,7 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // manifestEntry records one golden fixture and its content hash.
@@ -41,6 +42,8 @@ type manifest struct {
 }
 
 const generatorVersion = "1"
+
+const differentialImageReference = "localhost:5000/alpine:latest"
 
 // fixtureCase bundles the user-facing state with the marshal constraints that
 // the corresponding Rust test uses.
@@ -120,6 +123,7 @@ func main() {
 		{"cache_mount_locked", cacheMountLocked, defaultPlatform(), "linux/amd64"},
 		{"multi_mount_ordering", multiMountOrdering, defaultPlatform(), "linux/amd64"},
 		{"file_operations_chain", fileOperationsChain, defaultPlatform(), "linux/amd64"},
+		{"differential_image", differentialImage, defaultPlatform(), "linux/amd64"},
 		{"differential_merge_alpine", differentialMergeAlpine, defaultPlatform(), "linux/amd64"},
 		{"differential_file_secret", differentialFileSecret, defaultPlatform(), "linux/amd64"},
 		{"differential_env_secret", differentialEnvSecret, defaultPlatform(), "linux/amd64"},
@@ -147,21 +151,17 @@ func main() {
 		}
 
 		path := filepath.Join(outDir, fmt.Sprintf("%s.llb.pb", c.name))
-		f, err := os.Create(path)
+		data, err := proto.MarshalOptions{Deterministic: true}.Marshal(def.ToPB())
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "create %s: %v\n", path, err)
-			os.Exit(1)
-		}
-		if err := llb.WriteTo(def, f); err != nil {
 			fmt.Fprintf(os.Stderr, "write %s: %v\n", path, err)
 			os.Exit(1)
 		}
-		if err := f.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "close %s: %v\n", path, err)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "write %s: %v\n", path, err)
 			os.Exit(1)
 		}
 
-		data, err := os.ReadFile(path)
+		data, err = os.ReadFile(path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read %s: %v\n", path, err)
 			os.Exit(1)
@@ -463,14 +463,20 @@ func fileOpsRmAllowNotFound() llb.State {
 
 func differentialMergeAlpine() llb.State {
 	return llb.Merge([]llb.State{
-		llb.Image("alpine:latest"),
-		llb.Image("alpine:latest"),
+		llb.Image(differentialImageReference),
+		llb.Image(differentialImageReference),
 	}).Run(llb.Shlex("sh -c 'echo differential > /differential'"), llb.IgnoreCache).Root()
+}
+
+func differentialImage() llb.State {
+	return llb.Image(differentialImageReference).
+		Run(llb.Shlex("echo hello")).
+		Root()
 }
 
 func differentialFileSecret() llb.State {
 	target := "/run/secrets/token"
-	return llb.Image("alpine:latest").
+	return llb.Image(differentialImageReference).
 		Run(
 			llb.Shlex("sh -c 'sha256sum /run/secrets/token > /derived'"),
 			llb.AddSecretWithDest("token", &target, llb.SecretID("token")),
@@ -479,7 +485,7 @@ func differentialFileSecret() llb.State {
 }
 
 func differentialEnvSecret() llb.State {
-	return llb.Image("alpine:latest").
+	return llb.Image(differentialImageReference).
 		Run(
 			llb.Shlex("sh -c 'printf %s \"$MY_SECRET\" | sha256sum > /derived'"),
 			llb.AddSecret("mysecret", llb.SecretID("mysecret"), llb.SecretAsEnv(true), llb.SecretAsEnvName("MY_SECRET")),

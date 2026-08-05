@@ -38,15 +38,17 @@ const MINIMAL_MKFILE_DEFINITION_HEX: &str = concat!(
 
 const MKFILE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/mkfile.llb.pb");
 const SYMLINK_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/symlink.llb.pb");
-const IMAGE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/image_run.llb.pb");
 const DIFFERENTIAL_MERGE_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/differential_merge_alpine.llb.pb");
+const DIFFERENTIAL_IMAGE_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_image.llb.pb");
 const DIFFERENTIAL_FILE_SECRET_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/differential_file_secret.llb.pb");
 const DIFFERENTIAL_ENV_SECRET_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/differential_env_secret.llb.pb");
 const DIFFERENTIAL_FILE_OPS_GOLDEN: &[u8] =
     include_bytes!("../llb/testdata/golden/differential_file_operations_allow_not_found.llb.pb");
+const DIFFERENTIAL_IMAGE_REFERENCE: &str = "localhost:5000/alpine:latest";
 
 fn minimal_mkfile_definition() -> pb::Definition {
     let bytes = (0..MINIMAL_MKFILE_DEFINITION_HEX.len())
@@ -436,12 +438,12 @@ fn read_export_tree(root: &Path) -> Result<BTreeMap<PathBuf, ExportEntry>, Error
     Ok(tree)
 }
 
-fn unique_builder_name() -> String {
+fn unique_buildkit_name() -> String {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is before the Unix epoch")
         .as_nanos();
-    format!("bollard_llb_gate_f_{suffix}")
+    format!("llb_compatibility_{suffix}")
 }
 
 fn llb_error(error: bollard_llb::LlbError) -> Error {
@@ -454,10 +456,6 @@ fn go_definition(bytes: &[u8]) -> Result<pb::Definition, Error> {
     pb::Definition::decode(bytes).map_err(|error| Error::IOError {
         err: std::io::Error::other(format!("failed to decode Go definition: {error}")),
     })
-}
-
-fn registry_image(name: &str) -> String {
-    format!("{}{name}", crate::common::registry_http_addr())
 }
 
 fn differential_mkfile_definition() -> Result<pb::Definition, Error> {
@@ -487,7 +485,7 @@ fn differential_symlink_definition() -> Result<pb::Definition, Error> {
 fn differential_image_definition() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, shlex, MarshalOpts};
 
-    Ok(image(registry_image("alpine:latest"))
+    Ok(image(DIFFERENTIAL_IMAGE_REFERENCE)
         .map_err(llb_error)?
         .run(shlex("echo hello").map_err(llb_error)?)
         .root()
@@ -500,8 +498,8 @@ fn differential_image_definition() -> Result<pb::Definition, Error> {
 fn differential_merge_definition() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, merge, shlex, MarshalOpts, MergeOpts};
 
-    let first = image(registry_image("alpine:latest")).map_err(llb_error)?;
-    let second = image(registry_image("alpine:latest")).map_err(llb_error)?;
+    let first = image(DIFFERENTIAL_IMAGE_REFERENCE).map_err(llb_error)?;
+    let second = image(DIFFERENTIAL_IMAGE_REFERENCE).map_err(llb_error)?;
     Ok(merge(vec![first, second], MergeOpts::new())
         .map_err(llb_error)?
         .run(shlex("sh -c 'echo differential > /differential'").map_err(llb_error)?)
@@ -515,7 +513,7 @@ fn differential_merge_definition() -> Result<pb::Definition, Error> {
 fn differential_file_secret_definition() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts};
 
-    Ok(image(registry_image("alpine:latest"))
+    Ok(image(DIFFERENTIAL_IMAGE_REFERENCE)
         .map_err(llb_error)?
         .run(
             RunOpts::default()
@@ -540,7 +538,7 @@ fn differential_file_secret_definition() -> Result<pb::Definition, Error> {
 fn differential_env_secret_definition() -> Result<pb::Definition, Error> {
     use bollard_llb::{image, AddSecret, MarshalOpts, RunOpts};
 
-    Ok(image(registry_image("alpine:latest"))
+    Ok(image(DIFFERENTIAL_IMAGE_REFERENCE)
         .map_err(llb_error)?
         .run(
             RunOpts::default()
@@ -625,7 +623,11 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
     let cases: [(&str, &[u8], DefinitionBuilder); 7] = [
         ("mkfile", MKFILE_GOLDEN, differential_mkfile_definition),
         ("symlink", SYMLINK_GOLDEN, differential_symlink_definition),
-        ("image", IMAGE_GOLDEN, differential_image_definition),
+        (
+            "differential_image",
+            DIFFERENTIAL_IMAGE_GOLDEN,
+            differential_image_definition,
+        ),
         (
             "merge_alpine",
             DIFFERENTIAL_MERGE_GOLDEN,
@@ -648,26 +650,20 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
         ),
     ];
 
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
-    let (image_ref, image_registry) = alpine_image_reference();
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
+    let image_registry = Some("localhost:5000");
     let secret_dir = tempfile::tempdir()?;
     let token_path = secret_dir.path().join("token");
-    std::fs::write(&token_path, "phase5-differential-secret")?;
-    std::env::set_var(
-        "PHASE5_DIFFERENTIAL_ENV_SECRET",
-        "phase5-differential-env-secret",
-    );
+    let env_secret_path = secret_dir.path().join("env-secret");
+    std::fs::write(&token_path, "llb-differential-secret")?;
+    std::fs::write(&env_secret_path, "llb-differential-env-secret")?;
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
         println!(
             "{}",
-            common::buildkit_test::record_version(&docker, &driver).await?
+            common::buildkit_test::record_version(&docker, driver).await?
         );
 
         for (fixture, golden, rust_builder) in cases {
@@ -680,7 +676,7 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
                 )],
                 "env_secret" => vec![(
                     String::from("mysecret"),
-                    SecretSource::Env(String::from("PHASE5_DIFFERENTIAL_ENV_SECRET")),
+                    SecretSource::File(env_secret_path.clone()),
                 )],
                 _ => Vec::new(),
             };
@@ -691,7 +687,7 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
                 )],
                 "env_secret" => vec![(
                     String::from("mysecret"),
-                    SecretSource::Env(String::from("PHASE5_DIFFERENTIAL_ENV_SECRET")),
+                    SecretSource::File(env_secret_path.clone()),
                 )],
                 _ => Vec::new(),
             };
@@ -722,29 +718,24 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
             assert_eq!(
                 read_export_tree(go_destination.path())?,
                 read_export_tree(rust_destination.path())?,
-                "Go/Rust exported filesystem mismatch for {fixture} using {image_ref}"
+                "Go/Rust exported filesystem mismatch for {fixture} using {DIFFERENTIAL_IMAGE_REFERENCE}"
             );
         }
         Ok::<(), Error>(())
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
+    fixture.finish(result).await
 }
 
 async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
     let first_output = tempfile::tempdir()?;
     let second_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
 
         let definition = minimal_mkfile_definition();
         for output in [first_output.path(), second_output.path()] {
@@ -752,7 +743,7 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
                 definition.clone(),
                 DefinitionExporter::Local(output.to_path_buf()),
             );
-            SolveDefinition::solve_definition(&driver, request)
+            SolveDefinition::solve_definition(driver, request)
                 .await
                 .map_err(|error| Error::IOError {
                     err: std::io::Error::other(format!("direct definition solve failed: {error}")),
@@ -767,18 +758,20 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
             container.name.as_deref(),
             Some(expected_container_name.as_str())
         );
-        assert_eq!(docker.inspect_volume(&volume_name).await?.name, volume_name);
+        assert_eq!(
+            docker.inspect_volume(fixture.volume_name()).await?.name,
+            fixture.volume_name()
+        );
         Ok::<(), Error>(())
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
+    fixture.finish(result).await
 }
 
 async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> {
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
     let source = create_application_fixture()?;
     let direct_output = tempfile::tempdir()?;
     let app_output = tempfile::tempdir()?;
@@ -786,14 +779,10 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
     let (image_ref, image_registry) = alpine_image_reference();
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
         println!(
             "{}",
-            common::buildkit_test::record_version(&docker, &driver).await?
+            common::buildkit_test::record_version(&docker, driver).await?
         );
 
         let request = DefinitionSolveRequest::new(
@@ -801,7 +790,7 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
             DefinitionExporter::Local(direct_output.path().to_path_buf()),
         )
         .with_options(local_source_options("context", source.path(), None)?);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("local source export failed: {error}")),
@@ -813,7 +802,7 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
             DefinitionExporter::Local(app_output.path().to_path_buf()),
         )
         .with_options(local_source_options("context", source.path(), None)?);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("local source copy failed: {error}")),
@@ -829,7 +818,7 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
             source.path(),
             image_registry.as_deref(),
         )?);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("local source exec failed: {error}")),
@@ -846,28 +835,26 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
 
         let container = docker.inspect_container(driver.name(), None).await?;
         assert_eq!(container.name.as_deref(), Some(format!("/{name}").as_str()));
-        assert_eq!(docker.inspect_volume(&volume_name).await?.name, volume_name);
+        assert_eq!(
+            docker.inspect_volume(fixture.volume_name()).await?.name,
+            fixture.volume_name()
+        );
         Ok::<(), Error>(())
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
+    fixture.finish(result).await
 }
 
 async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Error> {
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
     let source = create_application_fixture()?;
     let output = tempfile::tempdir()?;
     let encoded_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
         let request = DefinitionSolveRequest::new(
             local_source_copy_definition_with_patterns(
                 "context",
@@ -878,7 +865,7 @@ async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Err
             DefinitionExporter::Local(output.path().to_path_buf()),
         )
         .with_options(local_source_options("context", source.path(), None)?);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("filtered local source solve failed: {error}")),
@@ -898,7 +885,7 @@ async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Err
             DefinitionExporter::Local(encoded_output.path().to_path_buf()),
         )
         .with_options(local_source_options("context", source.path(), None)?);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("encoded local source solve failed: {error}")),
@@ -911,24 +898,19 @@ async fn local_source_filter_and_metadata_test(docker: Docker) -> Result<(), Err
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
+    fixture.finish(result).await
 }
 
 async fn local_source_cache_repeatability_test(docker: Docker) -> Result<(), Error> {
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
     let source = create_application_fixture()?;
     let first_output = tempfile::tempdir()?;
     let second_output = tempfile::tempdir()?;
     let (image_ref, image_registry) = alpine_image_reference();
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
         let first_id = docker
             .inspect_container(driver.name(), None)
             .await?
@@ -949,7 +931,7 @@ async fn local_source_cache_repeatability_test(docker: Docker) -> Result<(), Err
                 source.path(),
                 image_registry.as_deref(),
             )?);
-            SolveDefinition::solve_definition(&driver, request)
+            SolveDefinition::solve_definition(driver, request)
                 .await
                 .map_err(|error| Error::IOError {
                     err: std::io::Error::other(format!("{label} cached solve failed: {error}")),
@@ -975,18 +957,20 @@ async fn local_source_cache_repeatability_test(docker: Docker) -> Result<(), Err
                 err: std::io::Error::other("second BuildKit container has no ID"),
             })?;
         assert_eq!(first_id, second_id);
-        assert_eq!(docker.inspect_volume(&volume_name).await?.name, volume_name);
+        assert_eq!(
+            docker.inspect_volume(fixture.volume_name()).await?.name,
+            fixture.volume_name()
+        );
         Ok::<(), Error>(())
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
+    fixture.finish(result).await
 }
 
 async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
-    let name = unique_builder_name();
-    let volume_name = format!("{name}_state");
+    let name = unique_buildkit_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
     let context = create_application_fixture()?;
     let other = create_application_fixture()?;
     std::fs::write(context.path().join("context-only.txt"), b"context")?;
@@ -995,11 +979,7 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
     let successful_output = tempfile::tempdir()?;
 
     let result = async {
-        let mut builder = common::buildkit_test::builder(&docker);
-        builder.name(&name);
-        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
-            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
-        })?;
+        let driver = fixture.bootstrap().await?;
         let options = DefinitionSolveOptionsBuilder::new()
             .local_mount("context", context.path())
             .map_err(|error| Error::IOError {
@@ -1015,7 +995,7 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
             DefinitionExporter::Local(failed_output.path().to_path_buf()),
         )
         .with_options(options.clone());
-        let error = SolveDefinition::solve_definition(&driver, request)
+        let error = SolveDefinition::solve_definition(driver, request)
             .await
             .expect_err("unknown local source should fail");
         match error {
@@ -1031,7 +1011,7 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
             DefinitionExporter::Local(successful_output.path().to_path_buf()),
         )
         .with_options(options);
-        SolveDefinition::solve_definition(&driver, request)
+        SolveDefinition::solve_definition(driver, request)
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("registered local source failed: {error}")),
@@ -1042,26 +1022,7 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
     }
     .await;
 
-    let _ = driver_cleanup(&docker, &name, &volume_name).await;
-    result
-}
-
-async fn driver_cleanup(docker: &Docker, name: &str, volume_name: &str) -> Result<(), Error> {
-    use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
-
-    let _ = docker
-        .remove_container(
-            name,
-            Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-        )
-        .await;
-    let _ = docker
-        .remove_volume(
-            volume_name,
-            Some(RemoveVolumeOptionsBuilder::default().build()),
-        )
-        .await;
-    Ok(())
+    fixture.finish(result).await
 }
 
 #[test]

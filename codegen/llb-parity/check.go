@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -31,6 +32,12 @@ func runCheck(committedDir, generatedDir string) error {
 	if len(committed.Fixtures) != len(generated.Fixtures) {
 		return fmt.Errorf("fixture count differs: committed=%d generated=%d", len(committed.Fixtures), len(generated.Fixtures))
 	}
+	if err := verifyManifestFiles(committedDir, committed); err != nil {
+		return fmt.Errorf("verify committed fixtures: %w", err)
+	}
+	if err := verifyManifestFiles(generatedDir, generated); err != nil {
+		return fmt.Errorf("verify generated fixtures: %w", err)
+	}
 
 	for i, cf := range committed.Fixtures {
 		gf := generated.Fixtures[i]
@@ -43,8 +50,23 @@ func runCheck(committedDir, generatedDir string) error {
 		if cf.Platform != gf.Platform {
 			return fmt.Errorf("fixture %d platform differs: committed=%q generated=%q", i, cf.Platform, gf.Platform)
 		}
+		if cf.SHA256 != gf.SHA256 {
+			return fmt.Errorf("fixture %s bytes differ: committed sha256=%s generated sha256=%s", cf.File, cf.SHA256, gf.SHA256)
+		}
 
 		committedPath := filepath.Join(committedDir, cf.File)
+		generatedPath := filepath.Join(generatedDir, gf.File)
+		committedBytes, err := os.ReadFile(committedPath)
+		if err != nil {
+			return fmt.Errorf("read committed %s: %w", cf.File, err)
+		}
+		generatedBytes, err := os.ReadFile(generatedPath)
+		if err != nil {
+			return fmt.Errorf("read generated %s: %w", gf.File, err)
+		}
+		if !bytes.Equal(committedBytes, generatedBytes) {
+			return fmt.Errorf("fixture %s bytes differ despite matching metadata", cf.File)
+		}
 		sum, err := computeSHA256(committedPath)
 		if err != nil {
 			return fmt.Errorf("hash committed %s: %w", cf.File, err)
@@ -56,7 +78,7 @@ func runCheck(committedDir, generatedDir string) error {
 		if err != nil {
 			return fmt.Errorf("decode committed %s: %w", cf.File, err)
 		}
-		gdef, err := decodeDefinition(filepath.Join(generatedDir, gf.File))
+		gdef, err := decodeDefinition(generatedPath)
 		if err != nil {
 			return fmt.Errorf("decode generated %s: %w", gf.File, err)
 		}
@@ -65,6 +87,37 @@ func runCheck(committedDir, generatedDir string) error {
 		}
 	}
 
+	return nil
+}
+
+func verifyManifestFiles(dir string, m *manifest) error {
+	seen := make(map[string]struct{}, len(m.Fixtures))
+	for _, fixture := range m.Fixtures {
+		if _, exists := seen[fixture.File]; exists {
+			return fmt.Errorf("duplicate fixture file %q", fixture.File)
+		}
+		seen[fixture.File] = struct{}{}
+		path := filepath.Join(dir, fixture.File)
+		sum, err := computeSHA256(path)
+		if err != nil {
+			return fmt.Errorf("hash %s: %w", fixture.File, err)
+		}
+		if sum != fixture.SHA256 {
+			return fmt.Errorf("manifest sha256 mismatch for %s: manifest=%s actual=%s", fixture.File, fixture.SHA256, sum)
+		}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".pb" {
+			if _, exists := seen[entry.Name()]; !exists {
+				return fmt.Errorf("fixture %s is not listed in manifest", entry.Name())
+			}
+		}
+	}
 	return nil
 }
 
