@@ -1,0 +1,9 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+tempfile = "3.27.0"
+tonic-prost-build = "0.14"

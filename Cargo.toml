@@ -15,6 +15,7 @@ edition = "2021"
 members = [
   "codegen/swagger",
   "codegen/proto",
+  "codegen/proto/xtask",
   "llb",
   "."
 ]
