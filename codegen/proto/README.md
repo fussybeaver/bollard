@@ -6,24 +6,39 @@ The generated files are part of the project to maintain consistency across
 generated assets in the Bollard project, and to avoid a build dependency on the
 external `protoc` binary.
 
-## Fetch
+## BuildKit tooling
 
-To fetch the protobuf files needed in the Bollard project, this step will fetch
-remote files and replace import statements with local equivalents, so that they
-can be parsed by prost.
+Run the preferred generation and verification commands from the repository root:
+
+```bash
+cargo xtask buildkit update
+cargo xtask buildkit check
+```
+
+`check` generates into a temporary directory and compares the result byte-for-byte
+with the checked-in Rust output without modifying the working tree. The
+provenance-aware online check will be enabled once the provenance lock is added:
+
+```bash
+cargo xtask buildkit check --online
+```
+
+The xtask currently regenerates from the committed protobuf resources. Networked
+source resolution and hash verification are part of the subsequent provenance
+phases.
+
+The generated files remain checked in so Bollard consumers do not need a
+`protoc` installation. A `protoc` compiler is required when running the update
+command locally.
+
+## Transitional legacy commands
+
+The original feature-gated commands remain temporarily during the tooling
+migration. They are not provenance-safe because they fetch branch-head sources,
+must not be extended or used as the source of a release, and are scheduled for
+removal once the lock-backed workflow is complete.
 
 ```
 cargo run --bin fetch --features fetch
-```
-
-## Generate
-
-You will need a protoc compiler for this step. On unix there is usually a
-package `protobuf-compiler` or equivalent.
-
-To generate the rust output from the protobuf files use the following:
-
-```
 cargo run --bin gen --features build
 ```
-
