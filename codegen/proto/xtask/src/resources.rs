@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::github::Remote;
 use crate::resolver::ResolvedBaseline;
+use crate::transform::{self, Transform};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -44,16 +45,19 @@ pub struct Source {
     pub repository: String,
     pub revision: String,
     pub path: String,
+    pub transform: Transform,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FetchedSource {
+pub struct PreparedSource {
     pub class: DependencyClass,
     pub destination: String,
     pub repository: String,
     pub revision: String,
     pub path: String,
     pub source_sha256: String,
+    pub output_sha256: String,
+    pub transform: String,
 }
 
 #[derive(Debug)]
@@ -77,6 +81,7 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
         repository: "buildkit".into(),
         revision: baseline.buildkit_commit.clone(),
         path: path.into(),
+        transform: transform::for_destination(destination),
     };
     let vendored = |destination: &str, path: &str| Source {
         class: DependencyClass::BuildkitVendored,
@@ -85,6 +90,7 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
         repository: "buildkit".into(),
         revision: baseline.buildkit_commit.clone(),
         path: path.into(),
+        transform: transform::for_destination(destination),
     };
     let independent = |destination: &str, owner: &str, repository: &str, revision: &str, path: &str| {
         Source {
@@ -94,6 +100,7 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
             repository: repository.into(),
             revision: revision.into(),
             path: path.into(),
+            transform: transform::for_destination(destination),
         }
     };
 
@@ -123,6 +130,7 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
             repository: "vtprotobuf".into(),
             revision: vtprotobuf_revision.into(),
             path: "include/github.com/planetscale/vtprotobuf/vtproto/ext.proto".into(),
+            transform: transform::for_destination("vtproto/vtproto/ext.proto"),
         },
         independent(
             "google/protobuf/any.proto",
@@ -169,7 +177,7 @@ pub fn fetch_sources<R: Remote>(
     remote: &R,
     sources: &[Source],
     staging_directory: &Path,
-) -> Result<Vec<FetchedSource>> {
+) -> Result<Vec<PreparedSource>> {
     fs::create_dir_all(staging_directory)?;
     let mut fetched: BTreeMap<(String, String, String, String), Vec<u8>> = BTreeMap::new();
     let mut output = Vec::with_capacity(sources.len());
@@ -199,15 +207,19 @@ pub fn fetch_sources<R: Remote>(
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(destination, &contents)?;
+        let transformed = transform::apply(source.transform, &source.destination, &contents)?;
+        let output_path = checked_destination(staging_directory, &source.destination)?;
+        fs::write(&output_path, &transformed)?;
 
-        output.push(FetchedSource {
+        output.push(PreparedSource {
             class: source.class,
             destination: source.destination.clone(),
             repository: format!("{}/{}", source.owner, source.repository),
             revision: source.revision.clone(),
             path: source.path.clone(),
             source_sha256: sha256(&contents),
+            output_sha256: sha256(&transformed),
+            transform: source.transform.name().into(),
         });
     }
 
@@ -215,17 +227,19 @@ pub fn fetch_sources<R: Remote>(
     Ok(output)
 }
 
-pub fn print_report(sources: &[FetchedSource]) {
-    println!("Fetched immutable BuildKit protobuf sources:");
+pub fn print_report(sources: &[PreparedSource]) {
+    println!("Prepared immutable BuildKit protobuf sources:");
     for source in sources {
         println!(
-            "  [{}] {} <- {}/{} @ {} sha256:{}",
+            "  [{}] {} <- {}/{} @ {} source_sha256:{} output_sha256:{} transform:{}",
             source.class,
             source.destination,
             source.repository,
             source.path,
             source.revision,
             source.source_sha256,
+            source.output_sha256,
+            source.transform,
         );
     }
 }
@@ -236,6 +250,13 @@ fn validate_inventory(sources: &[Source]) -> Result<()> {
         validate_commit(&source.revision, &format!("{} revision", source.destination))?;
         validate_path(&source.destination, "destination")?;
         validate_path(&source.path, "source path")?;
+        if source.transform != transform::for_destination(&source.destination) {
+            return Err(resource_error(format!(
+                "{} has unexpected transform {}",
+                source.destination,
+                source.transform.name()
+            )));
+        }
         if !destinations.insert(&source.destination) {
             return Err(resource_error(format!(
                 "duplicate protobuf source destination {:?}",
@@ -317,6 +338,7 @@ mod tests {
     use super::{fetch_sources, inventory, DependencyClass};
     use crate::github::Remote;
     use crate::resolver::ResolvedBaseline;
+    use crate::transform::Transform;
 
     const BASELINE: ResolvedBaseline = ResolvedBaseline {
         moby_reference: String::new(),
@@ -384,6 +406,7 @@ mod tests {
                 repository: "buildkit".into(),
                 revision: "8543ce4428265d547cb009e5ad62348284497a88".into(),
                 path: "shared.proto".into(),
+                transform: Transform::None,
             },
             super::Source {
                 class: DependencyClass::BuildkitOwned,
@@ -392,6 +415,7 @@ mod tests {
                 repository: "buildkit".into(),
                 revision: "8543ce4428265d547cb009e5ad62348284497a88".into(),
                 path: "shared.proto".into(),
+                transform: Transform::None,
             },
         ];
         let directory = tempdir().unwrap();

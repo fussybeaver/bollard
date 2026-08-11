@@ -5,6 +5,7 @@ mod pom;
 mod provenance;
 mod resolver;
 mod resources;
+mod transform;
 
 use std::env;
 use std::error::Error;
