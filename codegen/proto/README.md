@@ -17,25 +17,26 @@ cargo xtask buildkit check
 
 `update` first resolves the Moby release selected by `codegen/swagger/pom.xml`
 to an immutable Moby commit, reads its direct BuildKit requirement from the
-immutable `go.mod`, reports the derived BuildKit baseline, and stages and hashes
-the dependency-classified protobuf sources. It then regenerates the checked-in
-bindings from the committed resources. Source transformations, checked-in
-resource replacement, and the complete provenance lock remain separate steps;
-the update command deliberately does not write a partial lock.
+immutable `go.mod`, fetches the dependency-classified protobuf sources, applies
+named transformations with exact match counts, and stages source and output
+hashes. It regenerates the checked-in bindings from the transformed resources
+and replaces the checked-in resources only after preparation succeeds. The
+complete provenance lock remains a separate step; the update command does not
+write a partial lock.
 
 `check` generates into a temporary directory and compares the result byte-for-byte
-with the checked-in Rust output without modifying the working tree. The
-provenance-aware online check remains disabled until the complete provenance lock
-is available:
+with the checked-in Rust output without modifying the working tree. The online
+variant additionally resolves, fetches, transforms, and compares every immutable
+resource with the checked-in resource tree. Lock-backed verification is deferred
+until the complete provenance lock is available:
 
 ```bash
 cargo xtask buildkit check --online
 ```
 
-The xtask currently regenerates from the committed protobuf resources while
-source transformation and output-hash verification remain unfinished. Set
-`GITHUB_TOKEN` when using the resolver in environments subject to GitHub API
-rate limits.
+The online check reports source and transformed-output hashes but does not yet
+verify them against a committed provenance lock. Set `GITHUB_TOKEN` when using
+the resolver in environments subject to GitHub API rate limits.
 
 For development-only Moby source investigations, a mutable Moby branch can be
 selected explicitly:

@@ -9,15 +9,4 @@ option go_package = "github.com/planetscale/vtprotobuf/vtproto";
 
 extend google.protobuf.MessageOptions {
   optional bool mempool = 64101;
-  optional bool ignore_unknown_fields = 64102;
-}
-
-extend google.protobuf.FieldOptions {
-  optional Opts options = 64150;
-}
-
-// These options should be used during schema definition,
-// applying them to some of the fields in protobuf
-message Opts {
-  optional bool unique = 1;
 }

@@ -57,13 +57,21 @@ struct GeneratedOutput {
     directory: PathBuf,
 }
 
+#[derive(Debug)]
+struct StagedResources {
+    _temporary_directory: TempDir,
+    directory: PathBuf,
+    sources: Vec<resources::PreparedSource>,
+}
+
 pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
-    let (baseline, sources) = resolve_and_fetch_sources(&paths, allow_moby_branch)?;
+    let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, allow_moby_branch)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
-    resources::print_report(&sources);
-    let generated = generate(&paths)?;
-    replace_generated(&generated.directory, &paths.generated_dir)?;
+    resources::print_report(&staged_resources.sources);
+    let generated = generate(&paths, &staged_resources.directory)?;
+    replace_directory(&staged_resources.directory, &paths.resources_dir)?;
+    replace_directory(&generated.directory, &paths.generated_dir)?;
     println!(
         "Updated generated BuildKit bindings in {}",
         display_path(&paths.workspace_root, &paths.generated_dir)
@@ -73,20 +81,25 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
 
 pub fn check(online: bool) -> Result<()> {
     let paths = paths()?;
-    let generated = generate(&paths)?;
+    let generated = generate(&paths, &paths.resources_dir)?;
     compare_directories(&generated.directory, &paths.generated_dir)?;
     println!("Generated BuildKit bindings are up to date.");
 
     if online {
-        let (baseline, sources) = resolve_and_fetch_sources(&paths, false)?;
+        let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, false)?;
+        compare_directories_named(
+            &staged_resources.directory,
+            &paths.resources_dir,
+            "protobuf resources",
+        )?;
         let lock_path = paths.proto_dir.join("provenance.lock.toml");
         if lock_path.exists() {
             provenance::load(&lock_path)?;
         }
         println!("Resolved BuildKit compatibility baseline:\n{baseline}");
-        resources::print_report(&sources);
+        resources::print_report(&staged_resources.sources);
         println!(
-            "Fetched immutable sources for {}; transformed-output and lock verification are not yet available.",
+            "Verified immutable transformed sources for {}; provenance-lock verification remains deferred.",
             baseline.buildkit_version
         );
     }
@@ -97,7 +110,7 @@ pub fn check(online: bool) -> Result<()> {
 fn resolve_and_fetch_sources(
     paths: &Paths,
     allow_moby_branch: bool,
-) -> Result<(resolver::ResolvedBaseline, Vec<resources::FetchedSource>)> {
+) -> Result<(resolver::ResolvedBaseline, StagedResources)> {
     let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
     if allow_moby_branch {
         eprintln!(
@@ -118,9 +131,17 @@ fn resolve_and_fetch_sources(
         .map_err(|error| ToolError(format!("BuildKit go.mod is not UTF-8: {error}")))?;
     let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
     let inventory = resources::inventory(&baseline, &vtprotobuf_revision)?;
-    let staging = tempdir_in(&paths.proto_dir)?;
-    let fetched = resources::fetch_sources(&remote, &inventory, staging.path())?;
-    Ok((baseline, fetched))
+    let temporary_directory = tempdir_in(&paths.proto_dir)?;
+    let directory = temporary_directory.path().join("resources");
+    let sources = resources::fetch_sources(&remote, &inventory, &directory)?;
+    Ok((
+        baseline,
+        StagedResources {
+            _temporary_directory: temporary_directory,
+            directory,
+            sources,
+        },
+    ))
 }
 
 fn paths() -> Result<Paths> {
@@ -141,13 +162,13 @@ fn paths() -> Result<Paths> {
     })
 }
 
-fn generate(paths: &Paths) -> Result<GeneratedOutput> {
+fn generate(paths: &Paths, resources_directory: &Path) -> Result<GeneratedOutput> {
     let temporary_directory = tempdir_in(&paths.proto_dir)?;
     let directory = temporary_directory.path().join("generated");
     fs::create_dir_all(&directory)?;
 
-    let packet_proto = paths.resources_dir.join(PACKET_PROTO);
-    let resources = paths.resources_dir.clone();
+    let packet_proto = resources_directory.join(PACKET_PROTO);
+    let resources = resources_directory.to_path_buf();
     tonic_prost_build::configure()
         .out_dir(&directory)
         .compile_well_known_types(true)
@@ -168,7 +189,7 @@ fn generate(paths: &Paths) -> Result<GeneratedOutput> {
 
     let proto_files: Vec<PathBuf> = PROTO_FILES
         .iter()
-        .map(|file| paths.resources_dir.join(file))
+        .map(|file| resources_directory.join(file))
         .collect();
     tonic_prost_build::configure()
         .out_dir(&directory)
@@ -182,10 +203,10 @@ fn generate(paths: &Paths) -> Result<GeneratedOutput> {
     })
 }
 
-fn replace_generated(source: &Path, destination: &Path) -> Result<()> {
+fn replace_directory(source: &Path, destination: &Path) -> Result<()> {
     let parent = destination.parent().ok_or_else(|| {
         Box::new(ToolError(format!(
-            "generated output has no parent: {}",
+            "directory has no parent: {}",
             destination.display()
         ))) as Box<dyn Error>
     })?;
@@ -228,6 +249,10 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
 }
 
 fn compare_directories(actual: &Path, expected: &Path) -> Result<()> {
+    compare_directories_named(actual, expected, "generated BuildKit bindings")
+}
+
+fn compare_directories_named(actual: &Path, expected: &Path, label: &str) -> Result<()> {
     let actual_files = files(actual)?;
     let expected_files = files(expected)?;
     if actual_files == expected_files {
@@ -243,7 +268,7 @@ fn compare_directories(actual: &Path, expected: &Path) -> Result<()> {
     differences.sort();
 
     Err(Box::new(ToolError(format!(
-        "generated BuildKit bindings differ: {}",
+        "{label} differ: {}",
         differences
             .iter()
             .map(|path| path.display().to_string())
@@ -294,7 +319,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{compare_directories, copy_directory, replace_generated};
+    use super::{compare_directories, copy_directory, replace_directory};
 
     #[test]
     fn compares_identical_directories() {
@@ -335,7 +360,7 @@ mod tests {
         fs::write(destination.join("existing.rs"), b"keep").unwrap();
 
         let missing_source = temporary_directory.path().join("missing");
-        assert!(replace_generated(&missing_source, &destination).is_err());
+        assert!(replace_directory(&missing_source, &destination).is_err());
         assert_eq!(fs::read(destination.join("existing.rs")).unwrap(), b"keep");
     }
 }
