@@ -15,17 +15,36 @@ cargo xtask buildkit update
 cargo xtask buildkit check
 ```
 
+`update` first resolves the Moby release selected by `codegen/swagger/pom.xml`
+to an immutable Moby commit, reads its direct BuildKit requirement from the
+immutable `go.mod`, reports the derived BuildKit baseline, and then regenerates
+the checked-in bindings. The complete source and transformation lock will
+replace this transitional resolution step; the update command deliberately does
+not write a partial lock.
+
 `check` generates into a temporary directory and compares the result byte-for-byte
 with the checked-in Rust output without modifying the working tree. The
-provenance-aware online check will be enabled once the provenance lock is added:
+provenance-aware online check remains disabled until the complete provenance lock
+is available:
 
 ```bash
 cargo xtask buildkit check --online
 ```
 
-The xtask currently regenerates from the committed protobuf resources. Networked
-source resolution and hash verification are part of the subsequent provenance
-phases.
+The xtask currently regenerates from the committed protobuf resources. Immutable
+proto source fetching, transformation and hash verification are part of the
+remaining provenance work. Set `GITHUB_TOKEN` when using the resolver in
+environments subject to GitHub API rate limits.
+
+For development-only Moby source investigations, a mutable Moby branch can be
+selected explicitly:
+
+```bash
+cargo xtask buildkit update --allow-moby-branch
+```
+
+This mode is warned as mutable and must not be used to prepare release
+provenance. The default update command remains tag-only.
 
 The generated files remain checked in so Bollard consumers do not need a
 `protoc` installation. A `protoc` compiler is required when running the update

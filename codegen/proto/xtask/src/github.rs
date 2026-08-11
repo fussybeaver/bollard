@@ -1,0 +1,238 @@
+use std::env;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+const API_BASE: &str = "https://api.github.com";
+const RAW_BASE: &str = "https://raw.githubusercontent.com";
+
+pub trait Remote {
+    fn resolve_tag(&self, owner: &str, repository: &str, tag: &str) -> Result<String>;
+    fn resolve_commit(&self, owner: &str, repository: &str, reference: &str) -> Result<String>;
+    fn resolve_commit_prefix(
+        &self,
+        owner: &str,
+        repository: &str,
+        prefix: &str,
+    ) -> Result<String>;
+    fn fetch_raw(
+        &self,
+        owner: &str,
+        repository: &str,
+        revision: &str,
+        path: &str,
+    ) -> Result<Vec<u8>>;
+}
+
+pub struct GitHubRemote {
+    token: Option<String>,
+}
+
+impl GitHubRemote {
+    pub fn from_environment() -> Self {
+        Self {
+            token: env::var("GITHUB_TOKEN").ok().filter(|token| !token.is_empty()),
+        }
+    }
+
+    fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
+        let body = self.get(url, "application/vnd.github+json")?;
+        serde_json::from_slice(&body)
+            .map_err(|error| remote_error(format!("invalid GitHub response from {url}: {error}")))
+    }
+
+    fn get(&self, url: &str, accept: &str) -> Result<Vec<u8>> {
+        let mut request = ureq::get(url)
+            .header("Accept", accept)
+            .header("User-Agent", "bollard-buildkit-xtask");
+        if let Some(token) = &self.token {
+            request = request.header("Authorization", format!("Bearer {token}"));
+        }
+        let mut response = request
+            .call()
+            .map_err(|error| remote_error(format!("GitHub request failed for {url}: {error}")))?;
+        response
+            .body_mut()
+            .read_to_vec()
+            .map_err(|error| remote_error(format!("could not read GitHub response from {url}: {error}")))
+    }
+}
+
+impl Remote for GitHubRemote {
+    fn resolve_tag(&self, owner: &str, repository: &str, tag: &str) -> Result<String> {
+        let reference = format!("{API_BASE}/repos/{owner}/{repository}/git/ref/tags/{tag}");
+        let tag_ref: GitRef = self.get_json(&reference)?;
+        let annotated = if tag_ref.object.r#type == "tag" {
+                let tag_object = format!(
+                    "{API_BASE}/repos/{owner}/{repository}/git/tags/{}",
+                    tag_ref.object.sha
+                );
+                Some(self.get_json::<GitTag>(&tag_object)?)
+            } else {
+                None
+            };
+        resolve_tag_target(&tag_ref, annotated.as_ref(), tag)
+    }
+
+    fn resolve_commit(&self, owner: &str, repository: &str, reference: &str) -> Result<String> {
+        let url = format!("{API_BASE}/repos/{owner}/{repository}/commits/{reference}");
+        let commit: Commit = self.get_json(&url)?;
+        validate_commit(&commit.sha, "reference target")
+    }
+
+    fn resolve_commit_prefix(
+        &self,
+        owner: &str,
+        repository: &str,
+        prefix: &str,
+    ) -> Result<String> {
+        let url = format!("{API_BASE}/repos/{owner}/{repository}/commits/{prefix}");
+        let commit: Commit = self.get_json(&url)?;
+        let sha = validate_commit(&commit.sha, "commit lookup result")?;
+        if !sha.starts_with(prefix) {
+            return Err(remote_error(format!(
+                "GitHub commit lookup returned {sha}, which does not match {prefix}"
+            )));
+        }
+        Ok(sha)
+    }
+
+    fn fetch_raw(
+        &self,
+        owner: &str,
+        repository: &str,
+        revision: &str,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        let url = format!("{RAW_BASE}/{owner}/{repository}/{revision}/{path}");
+        self.get(&url, "text/plain")
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct GitRef {
+    object: GitObject,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitTag {
+    object: GitObject,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitObject {
+    sha: String,
+    #[serde(rename = "type")]
+    r#type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Commit {
+    sha: String,
+}
+
+#[derive(Debug)]
+struct RemoteError(String);
+
+impl Display for RemoteError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Error for RemoteError {}
+
+fn validate_commit(value: &str, description: &str) -> Result<String> {
+    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(remote_error(format!(
+            "GitHub {description} is not a 40-character hexadecimal SHA: {value:?}"
+        )));
+    }
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(remote_error(format!(
+            "GitHub {description} is not lowercase: {value:?}"
+        )));
+    }
+    Ok(value.into())
+}
+
+fn resolve_tag_target(
+    tag_ref: &GitRef,
+    annotated: Option<&GitTag>,
+    tag: &str,
+) -> Result<String> {
+    match tag_ref.object.r#type.as_str() {
+        "commit" => validate_commit(&tag_ref.object.sha, "tag target"),
+        "tag" => {
+            let annotated = annotated.ok_or_else(|| {
+                remote_error(format!("GitHub annotated tag {tag:?} has no tag object"))
+            })?;
+            if annotated.object.r#type != "commit" {
+                return Err(remote_error(format!(
+                    "GitHub annotated tag {tag:?} resolves to {}, not a commit",
+                    annotated.object.r#type
+                )));
+            }
+            validate_commit(&annotated.object.sha, "annotated tag target")
+        }
+        kind => Err(remote_error(format!(
+            "GitHub tag {tag:?} resolves to unsupported object type {kind:?}"
+        ))),
+    }
+}
+
+fn remote_error(message: impl Into<String>) -> Box<dyn Error> {
+    Box::new(RemoteError(message.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_tag_target, GitRef, GitTag};
+
+    const COMMIT: &str = "6c91b92cc71077b70c779c510da125301a8e40f3";
+
+    #[test]
+    fn resolves_lightweight_tag_objects() {
+        let tag_ref: GitRef = serde_json::from_str(&format!(
+            r#"{{"object":{{"sha":"{COMMIT}","type":"commit"}}}}"#
+        ))
+        .unwrap();
+        assert_eq!(resolve_tag_target(&tag_ref, None, "v1.0.0").unwrap(), COMMIT);
+    }
+
+    #[test]
+    fn peels_annotated_tag_objects() {
+        let tag_ref: GitRef = serde_json::from_str(
+            r#"{"object":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","type":"tag"}}"#,
+        )
+        .unwrap();
+        let annotated: GitTag = serde_json::from_str(&format!(
+            r#"{{"object":{{"sha":"{COMMIT}","type":"commit"}}}}"#
+        ))
+        .unwrap();
+        assert_eq!(
+            resolve_tag_target(&tag_ref, Some(&annotated), "v1.0.0").unwrap(),
+            COMMIT
+        );
+    }
+
+    #[test]
+    fn rejects_non_commit_annotated_targets() {
+        let tag_ref: GitRef = serde_json::from_str(
+            r#"{"object":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","type":"tag"}}"#,
+        )
+        .unwrap();
+        let annotated: GitTag = serde_json::from_str(
+            r#"{"object":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","type":"tree"}}"#,
+        )
+        .unwrap();
+        assert!(resolve_tag_target(&tag_ref, Some(&annotated), "v1.0.0")
+            .unwrap_err()
+            .to_string()
+            .contains("not a commit"));
+    }
+}
