@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use tempfile::{tempdir_in, TempDir};
 
+use crate::provenance;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
@@ -71,12 +73,11 @@ pub fn check(online: bool) -> Result<()> {
     println!("Generated BuildKit bindings are up to date.");
 
     if online {
+        let lock_path = paths.proto_dir.join("provenance.lock.toml");
+        provenance::load(&lock_path)?;
         return Err(Box::new(ToolError(format!(
-            "online BuildKit provenance checking requires {}",
-            display_path(
-                &paths.workspace_root,
-                &paths.proto_dir.join("provenance.lock.toml")
-            )
+            "online BuildKit provenance source verification is not implemented yet ({})",
+            display_path(&paths.workspace_root, &lock_path)
         ))));
     }
 

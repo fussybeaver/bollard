@@ -1,4 +1,5 @@
 mod buildkit;
+mod provenance;
 
 use std::env;
 use std::error::Error;
