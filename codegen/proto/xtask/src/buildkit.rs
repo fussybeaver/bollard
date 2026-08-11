@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use tempfile::{tempdir_in, TempDir};
 
-use crate::provenance;
-use crate::{github, pom, resolver};
+use crate::github::Remote;
+use crate::{github, gomod, pom, provenance, resolver, resources};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -59,19 +59,9 @@ struct GeneratedOutput {
 
 pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
-    let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
-    if allow_moby_branch {
-        eprintln!(
-            "WARNING: resolving Moby reference {:?} through the commit API; this development-only mode is mutable and is not release provenance",
-            input_spec.reference
-        );
-    }
-    let baseline = resolver::resolve(
-        &github::GitHubRemote::from_environment(),
-        &input_spec,
-        allow_moby_branch,
-    )?;
+    let (baseline, sources) = resolve_and_fetch_sources(&paths, allow_moby_branch)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
+    resources::print_report(&sources);
     let generated = generate(&paths)?;
     replace_generated(&generated.directory, &paths.generated_dir)?;
     println!(
@@ -88,15 +78,49 @@ pub fn check(online: bool) -> Result<()> {
     println!("Generated BuildKit bindings are up to date.");
 
     if online {
+        let (baseline, sources) = resolve_and_fetch_sources(&paths, false)?;
         let lock_path = paths.proto_dir.join("provenance.lock.toml");
-        provenance::load(&lock_path)?;
-        return Err(Box::new(ToolError(format!(
-            "online BuildKit provenance source verification is not implemented yet ({})",
-            display_path(&paths.workspace_root, &lock_path)
-        ))));
+        if lock_path.exists() {
+            provenance::load(&lock_path)?;
+        }
+        println!("Resolved BuildKit compatibility baseline:\n{baseline}");
+        resources::print_report(&sources);
+        println!(
+            "Fetched immutable sources for {}; transformed-output and lock verification are not yet available.",
+            baseline.buildkit_version
+        );
     }
 
     Ok(())
+}
+
+fn resolve_and_fetch_sources(
+    paths: &Paths,
+    allow_moby_branch: bool,
+) -> Result<(resolver::ResolvedBaseline, Vec<resources::FetchedSource>)> {
+    let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
+    if allow_moby_branch {
+        eprintln!(
+            "WARNING: resolving Moby reference {:?} through the commit API; this development-only mode is mutable and is not release provenance",
+            input_spec.reference
+        );
+    }
+
+    let remote = github::GitHubRemote::from_environment();
+    let baseline = resolver::resolve(&remote, &input_spec, allow_moby_branch)?;
+    let buildkit_go_mod = remote.fetch_raw(
+        "moby",
+        "buildkit",
+        &baseline.buildkit_commit,
+        "go.mod",
+    )?;
+    let buildkit_go_mod = String::from_utf8(buildkit_go_mod)
+        .map_err(|error| ToolError(format!("BuildKit go.mod is not UTF-8: {error}")))?;
+    let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
+    let inventory = resources::inventory(&baseline, &vtprotobuf_revision)?;
+    let staging = tempdir_in(&paths.proto_dir)?;
+    let fetched = resources::fetch_sources(&remote, &inventory, staging.path())?;
+    Ok((baseline, fetched))
 }
 
 fn paths() -> Result<Paths> {

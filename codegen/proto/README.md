@@ -17,10 +17,11 @@ cargo xtask buildkit check
 
 `update` first resolves the Moby release selected by `codegen/swagger/pom.xml`
 to an immutable Moby commit, reads its direct BuildKit requirement from the
-immutable `go.mod`, reports the derived BuildKit baseline, and then regenerates
-the checked-in bindings. The complete source and transformation lock will
-replace this transitional resolution step; the update command deliberately does
-not write a partial lock.
+immutable `go.mod`, reports the derived BuildKit baseline, and stages and hashes
+the dependency-classified protobuf sources. It then regenerates the checked-in
+bindings from the committed resources. Source transformations, checked-in
+resource replacement, and the complete provenance lock remain separate steps;
+the update command deliberately does not write a partial lock.
 
 `check` generates into a temporary directory and compares the result byte-for-byte
 with the checked-in Rust output without modifying the working tree. The
@@ -31,10 +32,10 @@ is available:
 cargo xtask buildkit check --online
 ```
 
-The xtask currently regenerates from the committed protobuf resources. Immutable
-proto source fetching, transformation and hash verification are part of the
-remaining provenance work. Set `GITHUB_TOKEN` when using the resolver in
-environments subject to GitHub API rate limits.
+The xtask currently regenerates from the committed protobuf resources while
+source transformation and output-hash verification remain unfinished. Set
+`GITHUB_TOKEN` when using the resolver in environments subject to GitHub API
+rate limits.
 
 For development-only Moby source investigations, a mutable Moby branch can be
 selected explicitly:

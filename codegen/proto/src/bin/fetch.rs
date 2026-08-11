@@ -30,11 +30,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
         },
         Resource {
-            destination: "gogoproto/gogo.proto",
-            source: "https://raw.githubusercontent.com/gogo/protobuf/master/gogoproto/gogo.proto",
-            replacements: vec![]
-        },
-        Resource {
             destination: "google/protobuf/any.proto",
             source: "https://raw.githubusercontent.com/protocolbuffers/protobuf/main/src/google/protobuf/any.proto",
             replacements: vec![]

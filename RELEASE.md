@@ -14,9 +14,9 @@ cargo xtask buildkit check
 ```
 
 `update` derives and reports the immutable Moby and BuildKit compatibility
-baseline from `codegen/swagger/pom.xml`. It does not yet fetch or hash every
-protobuf resource; the complete lock-backed workflow will replace this
-transitional behavior.
+baseline from `codegen/swagger/pom.xml`, then stages and hashes the immutable
+dependency-classified protobuf sources. It does not yet apply transformations,
+replace checked-in resources, or write the complete provenance lock.
 
 > The commands in this section are transitional and are scheduled for removal
 > once the lock-backed xtask workflow is complete. Until then, do not extend
