@@ -1562,6 +1562,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1676,6 +1682,12 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -2573,10 +2585,17 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "roxmltree",
+ "semver",
  "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "toml",
  "tonic-prost-build",
+ "ureq",
+ "url",
 ]
 
 [[package]]

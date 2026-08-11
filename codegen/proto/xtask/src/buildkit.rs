@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::{tempdir_in, TempDir};
 
 use crate::provenance;
+use crate::{github, pom, resolver};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -44,6 +45,7 @@ impl Error for ToolError {}
 #[derive(Debug)]
 struct Paths {
     workspace_root: PathBuf,
+    pom_path: PathBuf,
     proto_dir: PathBuf,
     resources_dir: PathBuf,
     generated_dir: PathBuf,
@@ -55,8 +57,21 @@ struct GeneratedOutput {
     directory: PathBuf,
 }
 
-pub fn update() -> Result<()> {
+pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
+    let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
+    if allow_moby_branch {
+        eprintln!(
+            "WARNING: resolving Moby reference {:?} through the commit API; this development-only mode is mutable and is not release provenance",
+            input_spec.reference
+        );
+    }
+    let baseline = resolver::resolve(
+        &github::GitHubRemote::from_environment(),
+        &input_spec,
+        allow_moby_branch,
+    )?;
+    println!("Resolved BuildKit compatibility baseline:\n{baseline}");
     let generated = generate(&paths)?;
     replace_generated(&generated.directory, &paths.generated_dir)?;
     println!(
@@ -95,6 +110,7 @@ fn paths() -> Result<Paths> {
 
     Ok(Paths {
         workspace_root: workspace_root.to_path_buf(),
+        pom_path: workspace_root.join("codegen/swagger/pom.xml"),
         resources_dir: proto_dir.join("resources"),
         generated_dir: proto_dir.join("src/generated"),
         proto_dir: proto_dir.to_path_buf(),

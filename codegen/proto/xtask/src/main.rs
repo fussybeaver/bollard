@@ -1,5 +1,9 @@
 mod buildkit;
+mod github;
+mod gomod;
+mod pom;
 mod provenance;
+mod resolver;
 
 use std::env;
 use std::error::Error;
@@ -7,7 +11,7 @@ use std::error::Error;
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Help,
-    BuildkitUpdate,
+    BuildkitUpdate { allow_moby_branch: bool },
     BuildkitCheck { online: bool },
 }
 
@@ -18,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{}", usage());
             Ok(())
         }
-        Command::BuildkitUpdate => buildkit::update(),
+        Command::BuildkitUpdate { allow_moby_branch } => buildkit::update(allow_moby_branch),
         Command::BuildkitCheck { online } => buildkit::check(online),
     }
 }
@@ -27,7 +31,18 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, Stri
     let args: Vec<String> = args.into_iter().collect();
     match args.as_slice() {
         [buildkit, action] if buildkit == "buildkit" && action == "update" => {
-            Ok(Command::BuildkitUpdate)
+            Ok(Command::BuildkitUpdate {
+                allow_moby_branch: false,
+            })
+        }
+        [buildkit, action, flag]
+            if buildkit == "buildkit"
+                && action == "update"
+                && flag == "--allow-moby-branch" =>
+        {
+            Ok(Command::BuildkitUpdate {
+                allow_moby_branch: true,
+            })
         }
         [buildkit, action] if buildkit == "buildkit" && action == "check" => {
             Ok(Command::BuildkitCheck { online: false })
@@ -43,7 +58,7 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, Stri
 }
 
 fn usage() -> &'static str {
-    "usage: cargo xtask buildkit <update|check [--online]>"
+    "usage: cargo xtask buildkit <update [--allow-moby-branch]|check [--online]>"
 }
 
 #[cfg(test)]
@@ -58,7 +73,15 @@ mod tests {
     fn parses_supported_commands() {
         assert_eq!(
             parse_command(args(&["buildkit", "update"])),
-            Ok(Command::BuildkitUpdate)
+            Ok(Command::BuildkitUpdate {
+                allow_moby_branch: false,
+            })
+        );
+        assert_eq!(
+            parse_command(args(&["buildkit", "update", "--allow-moby-branch"])),
+            Ok(Command::BuildkitUpdate {
+                allow_moby_branch: true,
+            })
         );
         assert_eq!(
             parse_command(args(&["buildkit", "check"])),
@@ -74,6 +97,7 @@ mod tests {
     fn rejects_unknown_commands() {
         assert!(parse_command(args(&["buildkit", "fetch"])).is_err());
         assert!(parse_command(args(&["buildkit", "update", "--online"])).is_err());
+        assert!(parse_command(args(&["buildkit", "check", "--allow-moby-branch"])).is_err());
         assert!(parse_command(args(&[])).is_err());
     }
 }
