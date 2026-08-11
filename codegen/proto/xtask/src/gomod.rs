@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 
 use semver::Version;
 
+use crate::github::Remote;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub const BUILDKIT_MODULE: &str = "github.com/moby/buildkit";
@@ -41,6 +43,10 @@ enum Block {
 }
 
 pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement> {
+    parse_module_requirement(contents, BUILDKIT_MODULE)
+}
+
+pub fn parse_module_requirement(contents: &str, module: &str) -> Result<BuildkitRequirement> {
     let mut block = None;
     let mut requirements = Vec::new();
 
@@ -55,12 +61,12 @@ pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement>
                 continue;
             }
             if active_block == Block::Require {
-                parse_requirement_line(line, comment, &mut requirements)?;
+                parse_requirement_line(line, comment, module, &mut requirements)?;
             } else if matches!(active_block, Block::Replace | Block::Exclude | Block::Retract)
-                && line.contains(BUILDKIT_MODULE)
+                && line.contains(module)
             {
                 return Err(go_mod_error(format!(
-                    "Moby go.mod contains a {active_block} directive for {BUILDKIT_MODULE}"
+                    "go.mod contains a {active_block} directive for {module}"
                 )));
             }
             continue;
@@ -78,18 +84,18 @@ pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement>
         }
 
         if let Some(rest) = line.strip_prefix("require ") {
-            parse_requirement_line(rest, comment, &mut requirements)?;
+            parse_requirement_line(rest, comment, module, &mut requirements)?;
         } else if let Some(rest) = line.strip_prefix("replace ") {
-            if replacement_targets_buildkit(rest) {
+            if replacement_targets_module(rest, module) {
                 return Err(go_mod_error(format!(
-                    "Moby go.mod replaces {BUILDKIT_MODULE}"
+                    "go.mod replaces {module}"
                 )));
             }
         } else if (line.starts_with("exclude ") || line.starts_with("retract "))
-            && line.contains(BUILDKIT_MODULE)
+            && line.contains(module)
         {
             return Err(go_mod_error(format!(
-                "Moby go.mod excludes or retracts {BUILDKIT_MODULE}"
+                "go.mod excludes or retracts {module}"
             )));
         }
     }
@@ -99,11 +105,11 @@ pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement>
     }
     match requirements.as_slice() {
         [] => Err(go_mod_error(format!(
-            "Moby go.mod does not directly require {BUILDKIT_MODULE}"
+            "go.mod does not directly require {module}"
         ))),
         [requirement] => Ok(requirement.clone()),
         _ => Err(go_mod_error(format!(
-            "Moby go.mod contains multiple direct requirements for {BUILDKIT_MODULE}"
+            "go.mod contains multiple direct requirements for {module}"
         ))),
     }
 }
@@ -111,28 +117,29 @@ pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement>
 fn parse_requirement_line(
     line: &str,
     comment: &str,
+    module_name: &str,
     requirements: &mut Vec<BuildkitRequirement>,
 ) -> Result<()> {
     let mut fields = line.split_whitespace();
     let Some(module) = fields.next() else {
         return Ok(());
     };
-    if module != BUILDKIT_MODULE {
+    if module != module_name {
         return Ok(());
     }
     if comment.contains("indirect") {
         return Err(go_mod_error(format!(
-            "Moby go.mod marks direct requirement {BUILDKIT_MODULE} as indirect"
+            "go.mod marks direct requirement {module_name} as indirect"
         )));
     }
     let Some(version) = fields.next() else {
         return Err(go_mod_error(format!(
-            "Moby go.mod has no version for {BUILDKIT_MODULE}"
+            "go.mod has no version for {module_name}"
         )));
     };
     if fields.next().is_some() {
         return Err(go_mod_error(format!(
-            "Moby go.mod has malformed requirement for {BUILDKIT_MODULE}"
+            "go.mod has malformed requirement for {module_name}"
         )));
     }
     requirements.push(BuildkitRequirement {
@@ -141,9 +148,23 @@ fn parse_requirement_line(
     Ok(())
 }
 
-fn replacement_targets_buildkit(line: &str) -> bool {
+fn replacement_targets_module(line: &str, module_name: &str) -> bool {
     let target = line.split_once("=>").map_or(line, |(target, _)| target);
-    target.split_whitespace().next() == Some(BUILDKIT_MODULE)
+    target.split_whitespace().next() == Some(module_name)
+}
+
+pub fn resolve_vtprotobuf_revision<R: Remote>(
+    remote: &R,
+    buildkit_go_mod: &str,
+) -> Result<String> {
+    const MODULE: &str = "github.com/planetscale/vtprotobuf";
+    let requirement = parse_module_requirement(buildkit_go_mod, MODULE)?;
+    match requirement.version {
+        BuildkitVersion::Tagged(version) => remote.resolve_tag("planetscale", "vtprotobuf", &version),
+        BuildkitVersion::Pseudo { commit_prefix, .. } => {
+            remote.resolve_commit_prefix("planetscale", "vtprotobuf", &commit_prefix)
+        }
+    }
 }
 
 fn parse_version(version: &str) -> Result<BuildkitVersion> {
@@ -166,10 +187,9 @@ fn parse_version(version: &str) -> Result<BuildkitVersion> {
 }
 
 fn pseudo_parts(version: &str) -> Option<(&str, &str, &str)> {
-    let mut parts = version.rsplitn(3, '-');
-    let commit_prefix = parts.next()?;
-    let timestamp = parts.next()?;
-    let base = parts.next()?;
+    let (prefix, commit_prefix) = version.rsplit_once('-')?;
+    let (base, timestamp) = prefix.rsplit_once('-')?;
+    let timestamp = timestamp.strip_prefix("0.").unwrap_or(timestamp);
     if commit_prefix.len() != 12
         || !commit_prefix.bytes().all(|byte| byte.is_ascii_hexdigit())
         || timestamp.len() != 14
@@ -198,7 +218,7 @@ impl Display for Block {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_buildkit_requirement, BuildkitVersion};
+    use super::{parse_buildkit_requirement, parse_module_requirement, BuildkitVersion};
 
     const TAGGED: &str = r#"
 module github.com/moby/moby/v2
@@ -240,6 +260,22 @@ require (
             BuildkitVersion::Pseudo {
                 version: "v0.0.0-20251211185533-a2aa163d723f".into(),
                 commit_prefix: "a2aa163d723f".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_tagged_base_pseudo_versions() {
+        let requirement = parse_module_requirement(
+            "require github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10\n",
+            "github.com/planetscale/vtprotobuf",
+        )
+        .unwrap();
+        assert_eq!(
+            requirement.version,
+            BuildkitVersion::Pseudo {
+                version: "v0.6.1-0.20240319094008-0393e58bdf10".into(),
+                commit_prefix: "0393e58bdf10".into(),
             }
         );
     }

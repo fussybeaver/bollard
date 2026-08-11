@@ -1,0 +1,446 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
+
+use crate::github::Remote;
+use crate::resolver::ResolvedBaseline;
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+// Independent protocol inputs are reviewed pins, not values derived from Moby.
+// They remain stable until a source review intentionally updates the pin.
+const PROTOBUF_COMMIT: &str = "4dfdd53556ac2599d4f4f44e8c09f2b7b53c406d";
+const ANY_COMMIT: &str = "97921a5fc1d2685d30fb6e74b283a0a6d81660dc";
+const TIMESTAMP_COMMIT: &str = "71f247a9cf5ddcd310d8aa5e05cea2acc72f9a7f";
+const GOOGLEAPIS_COMMIT: &str = "ebd1d23ac613b177828dad42ad8dfb13ba498279";
+const GRPC_PROTO_COMMIT: &str = "2eb777aba6593c31e21f7f69a163486bdc793501";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DependencyClass {
+    BuildkitOwned,
+    BuildkitVendored,
+    Independent,
+}
+
+impl Display for DependencyClass {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::BuildkitOwned => "BuildKit-owned",
+            Self::BuildkitVendored => "BuildKit-vendored",
+            Self::Independent => "independent",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Source {
+    pub class: DependencyClass,
+    pub destination: String,
+    pub owner: String,
+    pub repository: String,
+    pub revision: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchedSource {
+    pub class: DependencyClass,
+    pub destination: String,
+    pub repository: String,
+    pub revision: String,
+    pub path: String,
+    pub source_sha256: String,
+}
+
+#[derive(Debug)]
+struct ResourceError(String);
+
+impl Display for ResourceError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Error for ResourceError {}
+
+pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Result<Vec<Source>> {
+    validate_commit(vtprotobuf_revision, "vtprotobuf revision")?;
+
+    let buildkit = |destination: &str, path: &str| Source {
+        class: DependencyClass::BuildkitOwned,
+        destination: destination.into(),
+        owner: "moby".into(),
+        repository: "buildkit".into(),
+        revision: baseline.buildkit_commit.clone(),
+        path: path.into(),
+    };
+    let vendored = |destination: &str, path: &str| Source {
+        class: DependencyClass::BuildkitVendored,
+        destination: destination.into(),
+        owner: "moby".into(),
+        repository: "buildkit".into(),
+        revision: baseline.buildkit_commit.clone(),
+        path: path.into(),
+    };
+    let independent = |destination: &str, owner: &str, repository: &str, revision: &str, path: &str| {
+        Source {
+            class: DependencyClass::Independent,
+            destination: destination.into(),
+            owner: owner.into(),
+            repository: repository.into(),
+            revision: revision.into(),
+            path: path.into(),
+        }
+    };
+
+    let sources = vec![
+        buildkit("moby/buildkit/v1/control.proto", "api/services/control/control.proto"),
+        buildkit("moby/buildkit/v1/secrets.proto", "session/secrets/secrets.proto"),
+        buildkit("moby/buildkit/v1/sourcepolicy/policy.proto", "sourcepolicy/pb/policy.proto"),
+        buildkit("moby/buildkit/v1/ssh.proto", "session/sshforward/ssh.proto"),
+        buildkit("moby/buildkit/v1/types/worker.proto", "api/types/worker.proto"),
+        buildkit("moby/filesync/v1/auth.proto", "session/auth/auth.proto"),
+        buildkit("moby/filesync/v1/filesync.packet.proto", "session/filesync/filesync.proto"),
+        buildkit("moby/filesync/v1/filesync.proto", "session/filesync/filesync.proto"),
+        buildkit("moby/upload/v1/upload.proto", "session/upload/upload.proto"),
+        buildkit("pb/ops.proto", "solver/pb/ops.proto"),
+        vendored(
+            "fsutil/types/stat.proto",
+            "vendor/github.com/tonistiigi/fsutil/types/stat.proto",
+        ),
+        vendored(
+            "fsutil/types/wire.proto",
+            "vendor/github.com/tonistiigi/fsutil/types/wire.proto",
+        ),
+        Source {
+            class: DependencyClass::BuildkitVendored,
+            destination: "vtproto/vtproto/ext.proto".into(),
+            owner: "planetscale".into(),
+            repository: "vtprotobuf".into(),
+            revision: vtprotobuf_revision.into(),
+            path: "include/github.com/planetscale/vtprotobuf/vtproto/ext.proto".into(),
+        },
+        independent(
+            "google/protobuf/any.proto",
+            "protocolbuffers",
+            "protobuf",
+            ANY_COMMIT,
+            "src/google/protobuf/any.proto",
+        ),
+        independent(
+            "google/protobuf/descriptor.proto",
+            "protocolbuffers",
+            "protobuf",
+            PROTOBUF_COMMIT,
+            "src/google/protobuf/descriptor.proto",
+        ),
+        independent(
+            "google/protobuf/timestamp.proto",
+            "protocolbuffers",
+            "protobuf",
+            TIMESTAMP_COMMIT,
+            "src/google/protobuf/timestamp.proto",
+        ),
+        independent(
+            "google/rpc/status.proto",
+            "googleapis",
+            "googleapis",
+            GOOGLEAPIS_COMMIT,
+            "google/rpc/status.proto",
+        ),
+        independent(
+            "grpc/health/v1/health.proto",
+            "grpc",
+            "grpc-proto",
+            GRPC_PROTO_COMMIT,
+            "grpc/health/v1/health.proto",
+        ),
+    ];
+
+    validate_inventory(&sources)?;
+    Ok(sources)
+}
+
+pub fn fetch_sources<R: Remote>(
+    remote: &R,
+    sources: &[Source],
+    staging_directory: &Path,
+) -> Result<Vec<FetchedSource>> {
+    fs::create_dir_all(staging_directory)?;
+    let mut fetched: BTreeMap<(String, String, String, String), Vec<u8>> = BTreeMap::new();
+    let mut output = Vec::with_capacity(sources.len());
+
+    for source in sources {
+        let key = (
+            source.owner.clone(),
+            source.repository.clone(),
+            source.revision.clone(),
+            source.path.clone(),
+        );
+        let contents = match fetched.get(&key) {
+            Some(contents) => contents.clone(),
+            None => {
+                let contents = remote.fetch_raw(
+                    &source.owner,
+                    &source.repository,
+                    &source.revision,
+                    &source.path,
+                )?;
+                fetched.insert(key, contents.clone());
+                contents
+            }
+        };
+
+        let destination = checked_destination(staging_directory, &source.destination)?;
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(destination, &contents)?;
+
+        output.push(FetchedSource {
+            class: source.class,
+            destination: source.destination.clone(),
+            repository: format!("{}/{}", source.owner, source.repository),
+            revision: source.revision.clone(),
+            path: source.path.clone(),
+            source_sha256: sha256(&contents),
+        });
+    }
+
+    output.sort_by(|left, right| left.destination.cmp(&right.destination));
+    Ok(output)
+}
+
+pub fn print_report(sources: &[FetchedSource]) {
+    println!("Fetched immutable BuildKit protobuf sources:");
+    for source in sources {
+        println!(
+            "  [{}] {} <- {}/{} @ {} sha256:{}",
+            source.class,
+            source.destination,
+            source.repository,
+            source.path,
+            source.revision,
+            source.source_sha256,
+        );
+    }
+}
+
+fn validate_inventory(sources: &[Source]) -> Result<()> {
+    let mut destinations = BTreeSet::new();
+    for source in sources {
+        validate_commit(&source.revision, &format!("{} revision", source.destination))?;
+        validate_path(&source.destination, "destination")?;
+        validate_path(&source.path, "source path")?;
+        if !destinations.insert(&source.destination) {
+            return Err(resource_error(format!(
+                "duplicate protobuf source destination {:?}",
+                source.destination
+            )));
+        }
+    }
+    if sources.len() != 18 {
+        return Err(resource_error(format!(
+            "protobuf source inventory contains {}; expected 18 destinations",
+            sources.len()
+        )));
+    }
+    if !sources
+        .iter()
+        .any(|source| source.class == DependencyClass::BuildkitOwned)
+        || !sources
+            .iter()
+            .any(|source| source.class == DependencyClass::BuildkitVendored)
+        || !sources
+            .iter()
+            .any(|source| source.class == DependencyClass::Independent)
+    {
+        return Err(resource_error(
+            "protobuf source inventory is missing a dependency class",
+        ));
+    }
+    Ok(())
+}
+
+fn checked_destination(root: &Path, destination: &str) -> Result<PathBuf> {
+    validate_path(destination, "destination")?;
+    Ok(root.join(destination))
+}
+
+fn validate_path(value: &str, field: &str) -> Result<()> {
+    if value.is_empty()
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return Err(resource_error(format!(
+            "{field} must be a normalized relative path: {value:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_commit(value: &str, field: &str) -> Result<()> {
+    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(resource_error(format!(
+            "{field} must be a 40-character hexadecimal Git revision"
+        )));
+    }
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(resource_error(format!("{field} must use lowercase hexadecimal")));
+    }
+    Ok(())
+}
+
+fn sha256(contents: &[u8]) -> String {
+    hex::encode(Sha256::digest(contents))
+}
+
+fn resource_error(message: impl Into<String>) -> Box<dyn Error> {
+    Box::new(ResourceError(message.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::collections::HashMap;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{fetch_sources, inventory, DependencyClass};
+    use crate::github::Remote;
+    use crate::resolver::ResolvedBaseline;
+
+    const BASELINE: ResolvedBaseline = ResolvedBaseline {
+        moby_reference: String::new(),
+        moby_commit: String::new(),
+        moby_go_mod_sha256: String::new(),
+        buildkit_version: String::new(),
+        buildkit_commit: String::new(),
+        buildkit_image: String::new(),
+    };
+
+    #[test]
+    fn inventory_has_expected_classes_and_destinations() {
+        let baseline = ResolvedBaseline {
+            buildkit_commit: "8543ce4428265d547cb009e5ad62348284497a88".into(),
+            ..BASELINE
+        };
+        let sources = inventory(&baseline, "0393e58bdf106fe0347e554d272a8f2c84d12461").unwrap();
+        assert_eq!(sources.len(), 18);
+        assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitOwned));
+        assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitVendored));
+        assert!(sources.iter().any(|source| source.class == DependencyClass::Independent));
+        assert!(!sources.iter().any(|source| source.destination.contains("gogo")));
+    }
+
+    #[test]
+    fn follows_buildkit_and_vtprotobuf_revisions_but_not_independent_pins() {
+        let first_baseline = ResolvedBaseline {
+            buildkit_commit: "8543ce4428265d547cb009e5ad62348284497a88".into(),
+            ..BASELINE
+        };
+        let second_baseline = ResolvedBaseline {
+            buildkit_commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            ..BASELINE
+        };
+        let first = inventory(
+            &first_baseline,
+            "0393e58bdf106fe0347e554d272a8f2c84d12461",
+        )
+        .unwrap();
+        let second = inventory(
+            &second_baseline,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        )
+        .unwrap();
+
+        for (first, second) in first.iter().zip(second.iter()) {
+            if first.class == DependencyClass::Independent {
+                assert_eq!(first.revision, second.revision, "{}", first.destination);
+            } else if first.destination == "vtproto/vtproto/ext.proto" {
+                assert_ne!(first.revision, second.revision);
+            } else {
+                assert_eq!(first.revision, first_baseline.buildkit_commit);
+                assert_eq!(second.revision, second_baseline.buildkit_commit);
+            }
+        }
+    }
+
+    #[test]
+    fn fetches_shared_sources_once_and_hashes_bytes() {
+        let sources = vec![
+            super::Source {
+                class: DependencyClass::BuildkitOwned,
+                destination: "first.proto".into(),
+                owner: "moby".into(),
+                repository: "buildkit".into(),
+                revision: "8543ce4428265d547cb009e5ad62348284497a88".into(),
+                path: "shared.proto".into(),
+            },
+            super::Source {
+                class: DependencyClass::BuildkitOwned,
+                destination: "second.proto".into(),
+                owner: "moby".into(),
+                repository: "buildkit".into(),
+                revision: "8543ce4428265d547cb009e5ad62348284497a88".into(),
+                path: "shared.proto".into(),
+            },
+        ];
+        let directory = tempdir().unwrap();
+        let remote = FakeRemote {
+            files: HashMap::from([("shared.proto", b"source".to_vec())]),
+            fetch_count: Cell::new(0),
+        };
+        let fetched = fetch_sources(&remote, &sources, directory.path()).unwrap();
+        assert_eq!(fetched.len(), 2);
+        assert_eq!(remote.fetch_count.get(), 1);
+        assert_eq!(fs::read(directory.path().join("first.proto")).unwrap(), b"source");
+        assert_eq!(fetched[0].source_sha256, fetched[1].source_sha256);
+    }
+
+    struct FakeRemote {
+        files: HashMap<&'static str, Vec<u8>>,
+        fetch_count: Cell<usize>,
+    }
+
+    impl Remote for FakeRemote {
+        fn resolve_tag(&self, _owner: &str, _repository: &str, _tag: &str) -> super::Result<String> {
+            unreachable!()
+        }
+
+        fn resolve_commit(&self, _owner: &str, _repository: &str, _reference: &str) -> super::Result<String> {
+            unreachable!()
+        }
+
+        fn resolve_commit_prefix(
+            &self,
+            _owner: &str,
+            _repository: &str,
+            _prefix: &str,
+        ) -> super::Result<String> {
+            unreachable!()
+        }
+
+        fn fetch_raw(
+            &self,
+            _owner: &str,
+            _repository: &str,
+            _revision: &str,
+            path: &str,
+        ) -> super::Result<Vec<u8>> {
+            self.fetch_count.set(self.fetch_count.get() + 1);
+            self.files
+                .get(path)
+                .cloned()
+                .ok_or_else(|| format!("missing fixture {path}").into())
+        }
+    }
+}

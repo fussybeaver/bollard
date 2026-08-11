@@ -4,6 +4,7 @@ mod gomod;
 mod pom;
 mod provenance;
 mod resolver;
+mod resources;
 
 use std::env;
 use std::error::Error;
