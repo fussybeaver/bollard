@@ -1,16 +1,22 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
+
+use crate::resolver::ResolvedBaseline;
+use crate::resources::{IndependentPin, PreparedSource};
+use crate::transform;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProvenanceLock {
     pub schema: u32,
@@ -20,7 +26,7 @@ pub struct ProvenanceLock {
     pub resources: Vec<Resource>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Moby {
     pub tag: String,
@@ -28,7 +34,7 @@ pub struct Moby {
     pub go_mod_sha256: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Buildkit {
     pub version: String,
@@ -36,7 +42,7 @@ pub struct Buildkit {
     pub image: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Resource {
     pub destination: String,
@@ -77,6 +83,101 @@ pub fn load(path: &Path) -> Result<ProvenanceLock> {
 }
 
 impl ProvenanceLock {
+    pub fn from_prepared(
+        baseline: &ResolvedBaseline,
+        mut prepared: Vec<PreparedSource>,
+    ) -> Result<Self> {
+        prepared.sort_by(|left, right| left.destination.cmp(&right.destination));
+        let lock = Self {
+            schema: SCHEMA_VERSION,
+            moby: Moby {
+                tag: baseline.moby_reference.clone(),
+                commit: baseline.moby_commit.clone(),
+                go_mod_sha256: baseline.moby_go_mod_sha256.clone(),
+            },
+            buildkit: Buildkit {
+                version: baseline.buildkit_version.clone(),
+                commit: baseline.buildkit_commit.clone(),
+                image: baseline.buildkit_image.clone(),
+            },
+            resources: prepared
+                .into_iter()
+                .map(|source| Resource {
+                    destination: source.destination,
+                    repository: source.repository,
+                    revision: source.revision,
+                    path: source.path,
+                    source_sha256: source.source_sha256,
+                    output_sha256: source.output_sha256,
+                    transform: source.transform,
+                })
+                .collect(),
+        };
+        lock.validate()?;
+        Ok(lock)
+    }
+
+    pub fn to_toml(&self) -> Result<String> {
+        self.validate()?;
+        Ok(format!("{}\n", toml::to_string_pretty(self)?))
+    }
+
+    pub fn write_atomic(&self, path: &Path) -> Result<()> {
+        let parent = path.parent().ok_or_else(|| {
+            validation_error(format!("provenance lock has no parent: {}", path.display()))
+        })?;
+        fs::create_dir_all(parent)?;
+        let contents = self.to_toml()?;
+        let mut temporary = NamedTempFile::new_in(parent)?;
+        temporary.write_all(contents.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path).map_err(|error| {
+            validation_error(format!("could not replace provenance lock {}: {error}", path.display()))
+        })?;
+        Ok(())
+    }
+
+    pub fn independent_pins(&self) -> Result<BTreeMap<String, IndependentPin>> {
+        let mut pins = BTreeMap::new();
+        for destination in crate::resources::INDEPENDENT_DESTINATIONS {
+            let resource = self
+                .resources
+                .iter()
+                .find(|resource| resource.destination == *destination)
+                .ok_or_else(|| {
+                    validation_error(format!(
+                        "provenance lock is missing independent resource {destination}"
+                    ))
+                })?;
+            let (owner, repository) = resource.repository.split_once('/').ok_or_else(|| {
+                validation_error(format!(
+                    "resource {destination} repository must be owner/repository"
+                ))
+            })?;
+            if owner.is_empty() || repository.is_empty() || repository.contains('/') {
+                return Err(validation_error(format!(
+                    "resource {destination} repository must be owner/repository"
+                )));
+            }
+            pins.insert(
+                (*destination).to_string(),
+                IndependentPin {
+                    owner: owner.to_string(),
+                    repository: repository.to_string(),
+                    revision: resource.revision.clone(),
+                    path: resource.path.clone(),
+                },
+            );
+        }
+        Ok(pins)
+    }
+
+    pub fn resources(&self) -> &[Resource] {
+        &self.resources
+    }
+}
+
+impl ProvenanceLock {
     fn validate(&self) -> Result<()> {
         if self.schema != SCHEMA_VERSION {
             return Err(validation_error(format!(
@@ -92,6 +193,11 @@ impl ProvenanceLock {
         validate_non_empty("buildkit.version", &self.buildkit.version)?;
         validate_commit("buildkit.commit", &self.buildkit.commit)?;
         validate_non_empty("buildkit.image", &self.buildkit.image)?;
+        if self.buildkit.image != format!("moby/buildkit:{}", self.buildkit.version) {
+            return Err(validation_error(
+                "buildkit.image must match moby/buildkit:<buildkit.version>",
+            ));
+        }
 
         if self.resources.is_empty() {
             return Err(validation_error(
@@ -110,6 +216,20 @@ impl ProvenanceLock {
             validate_sha256(&field("source_sha256"), &resource.source_sha256)?;
             validate_sha256(&field("output_sha256"), &resource.output_sha256)?;
             validate_non_empty(&field("transform"), &resource.transform)?;
+            if resource.transform != transform::for_destination(&resource.destination).name() {
+                return Err(validation_error(format!(
+                    "{} records transform {:?}; expected {:?}",
+                    field("transform"),
+                    resource.transform,
+                    transform::for_destination(&resource.destination).name()
+                )));
+            }
+            if resource.transform == "none" && resource.source_sha256 != resource.output_sha256 {
+                return Err(validation_error(format!(
+                    "{} with transform none must preserve the source hash",
+                    field("output_sha256")
+                )));
+            }
 
             if !destinations.insert(&resource.destination) {
                 return Err(validation_error(format!(
@@ -191,7 +311,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::load;
+    use super::{load, ProvenanceLock};
+    use crate::resolver::ResolvedBaseline;
+    use crate::resources::PreparedSource;
 
     const VALID_LOCK: &str = r#"
 schema = 1
@@ -212,7 +334,7 @@ repository = "moby/buildkit"
 revision = "8543ce4428265d547cb009e5ad62348284497a88"
 path = "solver/pb/ops.proto"
 source_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-output_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+output_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 transform = "none"
 "#;
 
@@ -226,6 +348,72 @@ transform = "none"
     #[test]
     fn loads_valid_lock() {
         load_contents(VALID_LOCK).unwrap();
+    }
+
+    #[test]
+    fn serializes_and_round_trips_valid_lock() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("provenance.lock.toml");
+        fs::write(&path, VALID_LOCK).unwrap();
+        let lock = load(&path).unwrap();
+        let serialized = lock.to_toml().unwrap();
+        let round_trip: ProvenanceLock = toml::from_str(&serialized).unwrap();
+        assert_eq!(round_trip, lock);
+        assert!(serialized.starts_with("schema = 1\n"));
+    }
+
+    #[test]
+    fn writes_lock_atomically() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("provenance.lock.toml");
+        let lock = load_contents_lock();
+        lock.write_atomic(&path).unwrap();
+        assert_eq!(load(&path).unwrap(), lock);
+    }
+
+    #[test]
+    fn builds_lock_from_prepared_sources() {
+        let baseline = ResolvedBaseline {
+            moby_reference: "docker-v29.4.1".into(),
+            moby_commit: "6c91b92cc71077b70c779c510da125301a8e40f3".into(),
+            moby_go_mod_sha256:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            buildkit_version: "v0.29.0".into(),
+            buildkit_commit: "8543ce4428265d547cb009e5ad62348284497a88".into(),
+            buildkit_image: "moby/buildkit:v0.29.0".into(),
+        };
+        let source = PreparedSource {
+            class: crate::resources::DependencyClass::BuildkitOwned,
+            destination: "pb/ops.proto".into(),
+            repository: "moby/buildkit".into(),
+            revision: baseline.buildkit_commit.clone(),
+            path: "solver/pb/ops.proto".into(),
+            source_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .into(),
+            output_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .into(),
+            transform: "none".into(),
+        };
+        let lock = ProvenanceLock::from_prepared(&baseline, vec![source]).unwrap();
+        assert_eq!(lock.resources()[0].destination, "pb/ops.proto");
+        assert_eq!(lock.buildkit.image, "moby/buildkit:v0.29.0");
+    }
+
+    #[test]
+    fn rejects_transform_not_matching_destination() {
+        let error = load_contents(&VALID_LOCK.replace(
+            "transform = \"none\"",
+            "transform = \"adapt-filesend-packet\"",
+        ))
+        .unwrap_err();
+        assert!(error.contains("expected \"none\""));
+    }
+
+    fn load_contents_lock() -> ProvenanceLock {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("provenance.lock.toml");
+        fs::write(&path, VALID_LOCK).unwrap();
+        load(&path).unwrap()
     }
 
     #[test]
@@ -288,12 +476,12 @@ transform = "none"
 
     #[test]
     fn rejects_duplicate_or_unsorted_destinations() {
-        let duplicate = format!("{VALID_LOCK}\n\n[[resource]]\ndestination = \"pb/ops.proto\"\nrepository = \"moby/buildkit\"\nrevision = \"8543ce4428265d547cb009e5ad62348284497a88\"\npath = \"solver/pb/ops.proto\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"\ntransform = \"none\"\n");
+        let duplicate = format!("{VALID_LOCK}\n\n[[resource]]\ndestination = \"pb/ops.proto\"\nrepository = \"moby/buildkit\"\nrevision = \"8543ce4428265d547cb009e5ad62348284497a88\"\npath = \"solver/pb/ops.proto\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntransform = \"none\"\n");
         let error = load_contents(&duplicate).unwrap_err();
         assert!(error.contains("duplicate resource destination"));
 
         let unsorted = VALID_LOCK.replacen("destination = \"pb/ops.proto\"", "destination = \"z/ops.proto\"", 1);
-        let second = format!("{unsorted}\n\n[[resource]]\ndestination = \"a/ops.proto\"\nrepository = \"moby/buildkit\"\nrevision = \"8543ce4428265d547cb009e5ad62348284497a88\"\npath = \"solver/pb/ops.proto\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"\ntransform = \"none\"\n");
+        let second = format!("{unsorted}\n\n[[resource]]\ndestination = \"a/ops.proto\"\nrepository = \"moby/buildkit\"\nrevision = \"8543ce4428265d547cb009e5ad62348284497a88\"\npath = \"solver/pb/ops.proto\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntransform = \"none\"\n");
         let error = load_contents(&second).unwrap_err();
         assert!(error.contains("resource destinations must be strictly sorted"));
     }

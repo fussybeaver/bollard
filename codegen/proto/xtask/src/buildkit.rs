@@ -49,6 +49,7 @@ struct Paths {
     proto_dir: PathBuf,
     resources_dir: PathBuf,
     generated_dir: PathBuf,
+    lock_path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -66,12 +67,27 @@ struct StagedResources {
 
 pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
-    let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, allow_moby_branch)?;
+    let lock = provenance::load(&paths.lock_path)?;
+    let independent_pins = lock.independent_pins()?;
+    let (baseline, staged_resources) =
+        resolve_and_fetch_sources(&paths, allow_moby_branch, &independent_pins)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
     resources::print_report(&staged_resources.sources);
     let generated = generate(&paths, &staged_resources.directory)?;
+    let replacement_lock = provenance::ProvenanceLock::from_prepared(
+        &baseline,
+        staged_resources.sources.clone(),
+    )?;
     replace_directory(&staged_resources.directory, &paths.resources_dir)?;
     replace_directory(&generated.directory, &paths.generated_dir)?;
+    if allow_moby_branch {
+        eprintln!(
+            "WARNING: development-only Moby branch update did not replace {}; release provenance remains unchanged",
+            display_path(&paths.workspace_root, &paths.lock_path)
+        );
+    } else {
+        replacement_lock.write_atomic(&paths.lock_path)?;
+    }
     println!(
         "Updated generated BuildKit bindings in {}",
         display_path(&paths.workspace_root, &paths.generated_dir)
@@ -81,25 +97,29 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
 
 pub fn check(online: bool) -> Result<()> {
     let paths = paths()?;
+    let lock = provenance::load(&paths.lock_path)?;
+    verify_pom_tag(&paths, &lock)?;
+    verify_lock_inventory(&lock)?;
+    verify_checked_in_resources(&paths, &lock)?;
     let generated = generate(&paths, &paths.resources_dir)?;
     compare_directories(&generated.directory, &paths.generated_dir)?;
     println!("Generated BuildKit bindings are up to date.");
 
     if online {
-        let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, false)?;
+        let independent_pins = lock.independent_pins()?;
+        let (baseline, staged_resources) =
+            resolve_and_fetch_sources(&paths, false, &independent_pins)?;
+        verify_baseline(&baseline, &lock)?;
+        verify_prepared_sources(&staged_resources.sources, &lock)?;
         compare_directories_named(
             &staged_resources.directory,
             &paths.resources_dir,
             "protobuf resources",
         )?;
-        let lock_path = paths.proto_dir.join("provenance.lock.toml");
-        if lock_path.exists() {
-            provenance::load(&lock_path)?;
-        }
         println!("Resolved BuildKit compatibility baseline:\n{baseline}");
         resources::print_report(&staged_resources.sources);
         println!(
-            "Verified immutable transformed sources for {}; provenance-lock verification remains deferred.",
+            "Verified immutable sources and provenance lock for {}.",
             baseline.buildkit_version
         );
     }
@@ -110,6 +130,7 @@ pub fn check(online: bool) -> Result<()> {
 fn resolve_and_fetch_sources(
     paths: &Paths,
     allow_moby_branch: bool,
+    independent_pins: &BTreeMap<String, resources::IndependentPin>,
 ) -> Result<(resolver::ResolvedBaseline, StagedResources)> {
     let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
     if allow_moby_branch {
@@ -130,7 +151,7 @@ fn resolve_and_fetch_sources(
     let buildkit_go_mod = String::from_utf8(buildkit_go_mod)
         .map_err(|error| ToolError(format!("BuildKit go.mod is not UTF-8: {error}")))?;
     let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
-    let inventory = resources::inventory(&baseline, &vtprotobuf_revision)?;
+    let inventory = resources::inventory(&baseline, &vtprotobuf_revision, independent_pins)?;
     let temporary_directory = tempdir_in(&paths.proto_dir)?;
     let directory = temporary_directory.path().join("resources");
     let sources = resources::fetch_sources(&remote, &inventory, &directory)?;
@@ -142,6 +163,163 @@ fn resolve_and_fetch_sources(
             sources,
         },
     ))
+}
+
+fn verify_pom_tag(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()> {
+    let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
+    if input_spec.reference != lock.moby.tag {
+        return Err(tool_error(format!(
+            "pom.xml selects {:?}, but provenance lock records {:?}; run cargo xtask buildkit update",
+            input_spec.reference, lock.moby.tag
+        )));
+    }
+    Ok(())
+}
+
+fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
+    let independent_pins = lock.independent_pins()?;
+    let vtprotobuf_revision = lock
+        .resources()
+        .iter()
+        .find(|resource| resource.destination == "vtproto/vtproto/ext.proto")
+        .ok_or_else(|| tool_error("provenance lock is missing vtprotobuf ext.proto"))?
+        .revision
+        .clone();
+    let baseline = resolver::ResolvedBaseline {
+        moby_reference: lock.moby.tag.clone(),
+        moby_commit: lock.moby.commit.clone(),
+        moby_go_mod_sha256: lock.moby.go_mod_sha256.clone(),
+        buildkit_version: lock.buildkit.version.clone(),
+        buildkit_commit: lock.buildkit.commit.clone(),
+        buildkit_image: lock.buildkit.image.clone(),
+    };
+    let inventory = resources::inventory(&baseline, &vtprotobuf_revision, &independent_pins)?;
+    if inventory.len() != lock.resources().len() {
+        return Err(tool_error(format!(
+            "provenance lock contains {} resources, but the canonical inventory contains {}; run cargo xtask buildkit update",
+            lock.resources().len(),
+            inventory.len()
+        )));
+    }
+
+    for source in inventory {
+        let resource = lock
+            .resources()
+            .iter()
+            .find(|resource| resource.destination == source.destination)
+            .ok_or_else(|| {
+                tool_error(format!(
+                    "provenance lock is missing resource {}; run cargo xtask buildkit update",
+                    source.destination
+                ))
+            })?;
+        let repository = format!("{}/{}", source.owner, source.repository);
+        if resource.repository != repository
+            || resource.revision != source.revision
+            || resource.path != source.path
+            || resource.transform != source.transform.name()
+        {
+            return Err(tool_error(format!(
+                "provenance resource {} does not match the canonical inventory; run cargo xtask buildkit update",
+                source.destination
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn verify_checked_in_resources(
+    paths: &Paths,
+    lock: &provenance::ProvenanceLock,
+) -> Result<()> {
+    let actual = files(&paths.resources_dir)?;
+    let expected: BTreeMap<PathBuf, &provenance::Resource> = lock
+        .resources()
+        .iter()
+        .map(|resource| (PathBuf::from(&resource.destination), resource))
+        .collect();
+
+    let mut mismatches = Vec::new();
+    for (path, resource) in &expected {
+        match actual.get(path) {
+            Some(contents) => {
+                let hash = resources::sha256(contents);
+                if hash != resource.output_sha256 {
+                    mismatches.push(format!(
+                        "{} hash {} differs from lock {}",
+                        path.display(), hash, resource.output_sha256
+                    ));
+                }
+            }
+            None => mismatches.push(format!("missing resource {}", path.display())),
+        }
+    }
+    for path in actual.keys().filter(|path| !expected.contains_key(*path)) {
+        mismatches.push(format!("extra resource {}", path.display()));
+    }
+
+    if mismatches.is_empty() {
+        Ok(())
+    } else {
+        Err(tool_error(format!(
+            "checked-in protobuf resources do not match provenance lock: {}; run cargo xtask buildkit update",
+            mismatches.join(", ")
+        )))
+    }
+}
+
+fn verify_baseline(
+    baseline: &resolver::ResolvedBaseline,
+    lock: &provenance::ProvenanceLock,
+) -> Result<()> {
+    if baseline.moby_reference != lock.moby.tag
+        || baseline.moby_commit != lock.moby.commit
+        || baseline.moby_go_mod_sha256 != lock.moby.go_mod_sha256
+        || baseline.buildkit_version != lock.buildkit.version
+        || baseline.buildkit_commit != lock.buildkit.commit
+        || baseline.buildkit_image != lock.buildkit.image
+    {
+        return Err(tool_error(
+            "resolved compatibility baseline differs from provenance lock; run cargo xtask buildkit update",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_prepared_sources(
+    sources: &[resources::PreparedSource],
+    lock: &provenance::ProvenanceLock,
+) -> Result<()> {
+    let prepared: BTreeMap<&str, &resources::PreparedSource> = sources
+        .iter()
+        .map(|source| (source.destination.as_str(), source))
+        .collect();
+    for resource in lock.resources() {
+        let source = prepared.get(resource.destination.as_str()).ok_or_else(|| {
+            tool_error(format!(
+                "online source preparation is missing {}; run cargo xtask buildkit update",
+                resource.destination
+            ))
+        })?;
+        if source.repository != resource.repository
+            || source.revision != resource.revision
+            || source.path != resource.path
+            || source.source_sha256 != resource.source_sha256
+            || source.output_sha256 != resource.output_sha256
+            || source.transform != resource.transform
+        {
+            return Err(tool_error(format!(
+                "online source verification failed for {}; run cargo xtask buildkit update",
+                resource.destination
+            )));
+        }
+    }
+    if prepared.len() != lock.resources().len() {
+        return Err(tool_error(
+            "online source preparation contains an unexpected resource set; run cargo xtask buildkit update",
+        ));
+    }
+    Ok(())
 }
 
 fn paths() -> Result<Paths> {
@@ -159,6 +337,7 @@ fn paths() -> Result<Paths> {
         resources_dir: proto_dir.join("resources"),
         generated_dir: proto_dir.join("src/generated"),
         proto_dir: proto_dir.to_path_buf(),
+        lock_path: proto_dir.join("provenance.lock.toml"),
     })
 }
 
@@ -311,6 +490,10 @@ fn display_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .map(|relative| relative.display().to_string())
         .unwrap_or_else(|_| path.display().to_string())
+}
+
+fn tool_error(message: impl Into<String>) -> Box<dyn Error> {
+    Box::new(ToolError(message.into()))
 }
 
 #[cfg(test)]
