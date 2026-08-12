@@ -321,6 +321,7 @@ pub mod buildkit_test {
     use bollard::models::{ContainerInspectResponse, ExecInspectResponse, ImageInspect};
     use bollard::query_parameters::InspectContainerOptions;
     use bollard::Docker;
+    use bollard_buildkit_proto::provenance;
     use futures_util::StreamExt;
     use sha2::{Digest, Sha256};
 
@@ -337,6 +338,10 @@ pub mod buildkit_test {
         pub resolved_repo_digests: Vec<String>,
         pub buildkitd_version: String,
         pub buildctl_version: String,
+        pub moby_tag: String,
+        pub provenance_buildkit_version: String,
+        pub provenance_buildkit_commit: String,
+        pub provenance_default_image: String,
         pub go_oracle_version: String,
         pub ops_proto_sha256: String,
     }
@@ -349,6 +354,22 @@ pub mod buildkit_test {
             writeln!(f, "resolved_repo_digests: {:?}", self.resolved_repo_digests)?;
             writeln!(f, "buildkitd_version: {}", self.buildkitd_version)?;
             writeln!(f, "buildctl_version: {}", self.buildctl_version)?;
+            writeln!(f, "moby_tag: {}", self.moby_tag)?;
+            writeln!(
+                f,
+                "provenance_buildkit_version: {}",
+                self.provenance_buildkit_version
+            )?;
+            writeln!(
+                f,
+                "provenance_buildkit_commit: {}",
+                self.provenance_buildkit_commit
+            )?;
+            writeln!(
+                f,
+                "provenance_default_image: {}",
+                self.provenance_default_image
+            )?;
             writeln!(f, "go_oracle_version: {}", self.go_oracle_version)?;
             writeln!(f, "ops_proto_sha256: {}", self.ops_proto_sha256)?;
             write!(f, "===")
@@ -551,6 +572,10 @@ pub mod buildkit_test {
             resolved_repo_digests,
             buildkitd_version,
             buildctl_version,
+            moby_tag: provenance::MOBY_TAG.to_string(),
+            provenance_buildkit_version: provenance::BUILDKIT_VERSION.to_string(),
+            provenance_buildkit_commit: provenance::BUILDKIT_COMMIT.to_string(),
+            provenance_default_image: provenance::DEFAULT_IMAGE.to_string(),
             go_oracle_version: go_oracle_version(),
             ops_proto_sha256: ops_proto_sha256(),
         })

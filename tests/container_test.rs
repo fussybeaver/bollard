@@ -6,6 +6,8 @@ use bollard::container::{
     CreateCheckpointOptions, DeleteCheckpointOptions, ListCheckpointsOptions,
 };
 use bollard::errors::Error;
+#[cfg(feature = "buildkit_providerless")]
+use bollard::grpc::driver::docker_container::DEFAULT_IMAGE as BUILDKIT_DEFAULT_IMAGE;
 #[cfg(feature = "test_checkpoint")]
 use bollard::query_parameters::RemoveContainerOptionsBuilder;
 use bollard::query_parameters::{
@@ -568,21 +570,24 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
         ))
         .await?;
 
+    let ignored_images = [
+        "bollard",
+        "registry:2",
+        "stefanscherer/registry-windows",
+        #[cfg(feature = "buildkit_providerless")]
+        BUILDKIT_DEFAULT_IMAGE,
+        // Containers existing on CircleCI after a prune
+        "docker.io/library/docker:29.3",
+        "public.ecr.aws/eks-distro/kubernetes/pause:3.6",
+    ];
+
     assert_eq!(
         0,
         result
             .iter()
-            .filter(|r| vec![
-                "bollard",
-                "registry:2",
-                "stefanscherer/registry-windows",
-                "moby/buildkit:master",
-                // Containers existing on CircleCI after a prune
-                "docker.io/library/docker:29.3",
-                "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
-            ]
-            .into_iter()
-            .all(|v| v != r.image.as_ref().unwrap()))
+            .filter(|r| ignored_images
+                .iter()
+                .all(|image| image != r.image.as_ref().unwrap()))
             .count()
     );
 

@@ -9,7 +9,7 @@
 //! implementation before operation serialization. Per-operation wire bytes are
 //! compared after decoded semantic parity is established.
 
-use bollard_buildkit_proto::pb;
+use bollard_buildkit_proto::{pb, provenance};
 use bollard_llb::{
     copy, merge, mkdir, mkfile, rm, scratch, shlex, symlink, AddSecret, CacheSharingMode, FileOpts,
     Image, Local, MarshalOpts, MergeOpts, Platform, ResolveMode, RunOpts, State,
@@ -48,9 +48,11 @@ fn ops_proto_sha256() -> String {
 
 fn provenance(name: &str) -> String {
     format!(
-        "fixture={} generator={} go_oracle={} ops_proto_sha256={}",
+        "fixture={} generator={} provenance_buildkit={} provenance_commit={} go_oracle={} ops_proto_sha256={}",
         name,
         generator_version(),
+        provenance::BUILDKIT_VERSION,
+        provenance::BUILDKIT_COMMIT,
         go_oracle_version(),
         ops_proto_sha256()
     )

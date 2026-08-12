@@ -182,4 +182,3 @@ path = "include/github.com/planetscale/vtprotobuf/vtproto/ext.proto"
 source_sha256 = "940f52d73fc9e3645580e4f1aa0ece864582550a423d5a7a47d3a0b719ad6ff3"
 output_sha256 = "940f52d73fc9e3645580e4f1aa0ece864582550a423d5a7a47d3a0b719ad6ff3"
 transform = "none"
-

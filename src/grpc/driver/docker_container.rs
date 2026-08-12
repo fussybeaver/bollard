@@ -47,7 +47,7 @@ use crate::{
 use super::{channel::BuildkitChannel, DriverInterceptor, ImageExporterEnum};
 
 /// The default `Buildkit` image to use for the [`DockerContainer] driver.
-pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
+pub const DEFAULT_IMAGE: &str = bollard_buildkit_proto::provenance::DEFAULT_IMAGE;
 const DEFAULT_STATE_DIR: &str = "/var/lib/buildkit";
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 const LABEL_MANAGED: &str = "com.github.fussybeaver.bollard.buildkit.managed";
