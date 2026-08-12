@@ -12,13 +12,13 @@ use crate::transform::{self, Transform};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-// Independent protocol inputs are reviewed pins, not values derived from Moby.
-// They remain stable until a source review intentionally updates the pin.
-const PROTOBUF_COMMIT: &str = "4dfdd53556ac2599d4f4f44e8c09f2b7b53c406d";
-const ANY_COMMIT: &str = "97921a5fc1d2685d30fb6e74b283a0a6d81660dc";
-const TIMESTAMP_COMMIT: &str = "71f247a9cf5ddcd310d8aa5e05cea2acc72f9a7f";
-const GOOGLEAPIS_COMMIT: &str = "ebd1d23ac613b177828dad42ad8dfb13ba498279";
-const GRPC_PROTO_COMMIT: &str = "2eb777aba6593c31e21f7f69a163486bdc793501";
+pub const INDEPENDENT_DESTINATIONS: &[&str] = &[
+    "google/protobuf/any.proto",
+    "google/protobuf/descriptor.proto",
+    "google/protobuf/timestamp.proto",
+    "google/rpc/status.proto",
+    "grpc/health/v1/health.proto",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DependencyClass {
@@ -49,6 +49,14 @@ pub struct Source {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndependentPin {
+    pub owner: String,
+    pub repository: String,
+    pub revision: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedSource {
     pub class: DependencyClass,
     pub destination: String,
@@ -71,7 +79,11 @@ impl Display for ResourceError {
 
 impl Error for ResourceError {}
 
-pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Result<Vec<Source>> {
+pub fn inventory(
+    baseline: &ResolvedBaseline,
+    vtprotobuf_revision: &str,
+    independent_pins: &BTreeMap<String, IndependentPin>,
+) -> Result<Vec<Source>> {
     validate_commit(vtprotobuf_revision, "vtprotobuf revision")?;
 
     let buildkit = |destination: &str, path: &str| Source {
@@ -92,16 +104,21 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
         path: path.into(),
         transform: transform::for_destination(destination),
     };
-    let independent = |destination: &str, owner: &str, repository: &str, revision: &str, path: &str| {
-        Source {
+    let independent = |destination: &str| -> Result<Source> {
+        let pin = independent_pins.get(destination).ok_or_else(|| {
+            resource_error(format!(
+                "provenance lock is missing independent resource {destination}"
+            ))
+        })?;
+        Ok(Source {
             class: DependencyClass::Independent,
             destination: destination.into(),
-            owner: owner.into(),
-            repository: repository.into(),
-            revision: revision.into(),
-            path: path.into(),
+            owner: pin.owner.clone(),
+            repository: pin.repository.clone(),
+            revision: pin.revision.clone(),
+            path: pin.path.clone(),
             transform: transform::for_destination(destination),
-        }
+        })
     };
 
     let sources = vec![
@@ -132,41 +149,11 @@ pub fn inventory(baseline: &ResolvedBaseline, vtprotobuf_revision: &str) -> Resu
             path: "include/github.com/planetscale/vtprotobuf/vtproto/ext.proto".into(),
             transform: transform::for_destination("vtproto/vtproto/ext.proto"),
         },
-        independent(
-            "google/protobuf/any.proto",
-            "protocolbuffers",
-            "protobuf",
-            ANY_COMMIT,
-            "src/google/protobuf/any.proto",
-        ),
-        independent(
-            "google/protobuf/descriptor.proto",
-            "protocolbuffers",
-            "protobuf",
-            PROTOBUF_COMMIT,
-            "src/google/protobuf/descriptor.proto",
-        ),
-        independent(
-            "google/protobuf/timestamp.proto",
-            "protocolbuffers",
-            "protobuf",
-            TIMESTAMP_COMMIT,
-            "src/google/protobuf/timestamp.proto",
-        ),
-        independent(
-            "google/rpc/status.proto",
-            "googleapis",
-            "googleapis",
-            GOOGLEAPIS_COMMIT,
-            "google/rpc/status.proto",
-        ),
-        independent(
-            "grpc/health/v1/health.proto",
-            "grpc",
-            "grpc-proto",
-            GRPC_PROTO_COMMIT,
-            "grpc/health/v1/health.proto",
-        ),
+        independent("google/protobuf/any.proto")?,
+        independent("google/protobuf/descriptor.proto")?,
+        independent("google/protobuf/timestamp.proto")?,
+        independent("google/rpc/status.proto")?,
+        independent("grpc/health/v1/health.proto")?,
     ];
 
     validate_inventory(&sources)?;
@@ -319,7 +306,7 @@ fn validate_commit(value: &str, field: &str) -> Result<()> {
     Ok(())
 }
 
-fn sha256(contents: &[u8]) -> String {
+pub fn sha256(contents: &[u8]) -> String {
     hex::encode(Sha256::digest(contents))
 }
 
@@ -330,12 +317,12 @@ fn resource_error(message: impl Into<String>) -> Box<dyn Error> {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::fs;
 
     use tempfile::tempdir;
 
-    use super::{fetch_sources, inventory, DependencyClass};
+    use super::{fetch_sources, inventory, DependencyClass, IndependentPin, INDEPENDENT_DESTINATIONS};
     use crate::github::Remote;
     use crate::resolver::ResolvedBaseline;
     use crate::transform::Transform;
@@ -349,13 +336,35 @@ mod tests {
         buildkit_image: String::new(),
     };
 
+    fn independent_pins() -> BTreeMap<String, IndependentPin> {
+        INDEPENDENT_DESTINATIONS
+            .iter()
+            .map(|destination| {
+                (
+                    (*destination).to_string(),
+                    IndependentPin {
+                        owner: "owner".into(),
+                        repository: "repository".into(),
+                        revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                        path: destination.to_string(),
+                    },
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn inventory_has_expected_classes_and_destinations() {
         let baseline = ResolvedBaseline {
             buildkit_commit: "8543ce4428265d547cb009e5ad62348284497a88".into(),
             ..BASELINE
         };
-        let sources = inventory(&baseline, "0393e58bdf106fe0347e554d272a8f2c84d12461").unwrap();
+        let sources = inventory(
+            &baseline,
+            "0393e58bdf106fe0347e554d272a8f2c84d12461",
+            &independent_pins(),
+        )
+        .unwrap();
         assert_eq!(sources.len(), 18);
         assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitOwned));
         assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitVendored));
@@ -376,11 +385,13 @@ mod tests {
         let first = inventory(
             &first_baseline,
             "0393e58bdf106fe0347e554d272a8f2c84d12461",
+            &independent_pins(),
         )
         .unwrap();
         let second = inventory(
             &second_baseline,
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            &independent_pins(),
         )
         .unwrap();
 

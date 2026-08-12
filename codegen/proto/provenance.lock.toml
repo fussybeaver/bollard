@@ -1,0 +1,174 @@
+schema = 1
+
+[moby]
+tag = "docker-v29.4.1"
+commit = "6c91b92cc71077b70c779c510da125301a8e40f3"
+go_mod_sha256 = "c94f1bab50d9ed25cc2a5273e7f8fc4bf5a4ae919bad195e286c72a15a5f9316"
+
+[buildkit]
+version = "v0.29.0"
+commit = "8543ce4428265d547cb009e5ad62348284497a88"
+image = "moby/buildkit:v0.29.0"
+
+[[resource]]
+destination = "fsutil/types/stat.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "vendor/github.com/tonistiigi/fsutil/types/stat.proto"
+source_sha256 = "80422956cb3741c83b4516e9d6ca931b4731ff3731b08e81309410d208c85d4c"
+output_sha256 = "cb2e73340318760bf6034ca816ff8e82584a00a051e764989cd918fcfb263196"
+transform = "rewrite-fsutil-stat-imports"
+
+[[resource]]
+destination = "fsutil/types/wire.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "vendor/github.com/tonistiigi/fsutil/types/wire.proto"
+source_sha256 = "bebd874ecae74b6e0e2e6f542bf54b8bf2254613fc13615948bce68b5297fa8a"
+output_sha256 = "22bbb4212bc9e7a4a96223688f80b5053713c3757e72d19a68dccd31a96829b1"
+transform = "rewrite-fsutil-wire-imports"
+
+[[resource]]
+destination = "google/protobuf/any.proto"
+repository = "protocolbuffers/protobuf"
+revision = "97921a5fc1d2685d30fb6e74b283a0a6d81660dc"
+path = "src/google/protobuf/any.proto"
+source_sha256 = "8e56f61e3078e9232d39ce1b1bab28613783af8191f93a910c3617933f87a179"
+output_sha256 = "8e56f61e3078e9232d39ce1b1bab28613783af8191f93a910c3617933f87a179"
+transform = "none"
+
+[[resource]]
+destination = "google/protobuf/descriptor.proto"
+repository = "protocolbuffers/protobuf"
+revision = "4dfdd53556ac2599d4f4f44e8c09f2b7b53c406d"
+path = "src/google/protobuf/descriptor.proto"
+source_sha256 = "7a8e95e49701543021b2e250c0ba9e0516cf5b9953a3999ad4da24aa959b2cab"
+output_sha256 = "7a8e95e49701543021b2e250c0ba9e0516cf5b9953a3999ad4da24aa959b2cab"
+transform = "none"
+
+[[resource]]
+destination = "google/protobuf/timestamp.proto"
+repository = "protocolbuffers/protobuf"
+revision = "71f247a9cf5ddcd310d8aa5e05cea2acc72f9a7f"
+path = "src/google/protobuf/timestamp.proto"
+source_sha256 = "fa6c44dca2c90a2aaf3a1e4776cef2e9177f70fba365f236269f0f41ac166c96"
+output_sha256 = "fa6c44dca2c90a2aaf3a1e4776cef2e9177f70fba365f236269f0f41ac166c96"
+transform = "none"
+
+[[resource]]
+destination = "google/rpc/status.proto"
+repository = "googleapis/googleapis"
+revision = "ebd1d23ac613b177828dad42ad8dfb13ba498279"
+path = "google/rpc/status.proto"
+source_sha256 = "f5bfd262e6705c7ae73f32e0ad8ee20ce8c0a2578df8c4f76ebf76b572f295ed"
+output_sha256 = "f5bfd262e6705c7ae73f32e0ad8ee20ce8c0a2578df8c4f76ebf76b572f295ed"
+transform = "none"
+
+[[resource]]
+destination = "grpc/health/v1/health.proto"
+repository = "grpc/grpc-proto"
+revision = "2eb777aba6593c31e21f7f69a163486bdc793501"
+path = "grpc/health/v1/health.proto"
+source_sha256 = "164b670058855c6277a0511a14e2a302dd5a8ff899853ca6851b6b201a413d28"
+output_sha256 = "164b670058855c6277a0511a14e2a302dd5a8ff899853ca6851b6b201a413d28"
+transform = "none"
+
+[[resource]]
+destination = "moby/buildkit/v1/control.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "api/services/control/control.proto"
+source_sha256 = "8ff2dad3ab7eac5a39b4665c850c67066e4540faecb82cb917a38a5a6b4b599c"
+output_sha256 = "14fe2f84c4a55704aef06335f9a7059b21975d166836080e2592ea6d6360605a"
+transform = "rewrite-buildkit-control-imports"
+
+[[resource]]
+destination = "moby/buildkit/v1/secrets.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/secrets/secrets.proto"
+source_sha256 = "0bec7c813157312d551ae881a36ddb08faf13eb042286c9fcc90c63148688150"
+output_sha256 = "0bec7c813157312d551ae881a36ddb08faf13eb042286c9fcc90c63148688150"
+transform = "none"
+
+[[resource]]
+destination = "moby/buildkit/v1/sourcepolicy/policy.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "sourcepolicy/pb/policy.proto"
+source_sha256 = "171bff4439bb69e16a12b808d9c09a5ca1da70ea267a08e9f94a7d4ffcd854fa"
+output_sha256 = "171bff4439bb69e16a12b808d9c09a5ca1da70ea267a08e9f94a7d4ffcd854fa"
+transform = "none"
+
+[[resource]]
+destination = "moby/buildkit/v1/ssh.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/sshforward/ssh.proto"
+source_sha256 = "0277eb53c08696e785fcbe9ccc687fd32f28f906059518872aedcce2e4181aad"
+output_sha256 = "0277eb53c08696e785fcbe9ccc687fd32f28f906059518872aedcce2e4181aad"
+transform = "none"
+
+[[resource]]
+destination = "moby/buildkit/v1/types/worker.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "api/types/worker.proto"
+source_sha256 = "3185bf0f67c3df8553aff3a9df2f2da6a8a21eb23afa860ec2d0fea41bf4fdac"
+output_sha256 = "7b655a338200a2a6255921a30d56cca0472d2b38da4f45e85f6afc0ab63ffc2d"
+transform = "rewrite-buildkit-worker-imports"
+
+[[resource]]
+destination = "moby/filesync/v1/auth.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/auth/auth.proto"
+source_sha256 = "bb484658f71296efa1bdbe4977055c949e9d49ddfd5fff6b9d240d068e9e269d"
+output_sha256 = "bb484658f71296efa1bdbe4977055c949e9d49ddfd5fff6b9d240d068e9e269d"
+transform = "none"
+
+[[resource]]
+destination = "moby/filesync/v1/filesync.packet.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/filesync/filesync.proto"
+source_sha256 = "5bbdd3a8158c350cd2a75cc5925a020c0f5259542cf9c2cbe6c5c38a14c3fa3d"
+output_sha256 = "d5adb38d24521fd3aae6047dfffc836722c6fa9ace6acb3c0aaac8065d1901a4"
+transform = "adapt-filesend-packet"
+
+[[resource]]
+destination = "moby/filesync/v1/filesync.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/filesync/filesync.proto"
+source_sha256 = "5bbdd3a8158c350cd2a75cc5925a020c0f5259542cf9c2cbe6c5c38a14c3fa3d"
+output_sha256 = "43c1f7dc2ac8b2d805ff4bcc265be9100a47bb000e2bbbc9f54f41a4155dce89"
+transform = "rewrite-filesync-imports"
+
+[[resource]]
+destination = "moby/upload/v1/upload.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "session/upload/upload.proto"
+source_sha256 = "e0aaf9ca20ec2bf0b96545609a6efb83e35feca2f4c87d67fa40cacb0bd6dbee"
+output_sha256 = "e0aaf9ca20ec2bf0b96545609a6efb83e35feca2f4c87d67fa40cacb0bd6dbee"
+transform = "none"
+
+[[resource]]
+destination = "pb/ops.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "solver/pb/ops.proto"
+source_sha256 = "b45049a4ae961e1eda9acf3834263cf7894ba194d721d5aed04f43b638056c37"
+output_sha256 = "b45049a4ae961e1eda9acf3834263cf7894ba194d721d5aed04f43b638056c37"
+transform = "none"
+
+[[resource]]
+destination = "vtproto/vtproto/ext.proto"
+repository = "planetscale/vtprotobuf"
+revision = "0393e58bdf106fe0347e554d272a8f2c84d12461"
+path = "include/github.com/planetscale/vtprotobuf/vtproto/ext.proto"
+source_sha256 = "940f52d73fc9e3645580e4f1aa0ece864582550a423d5a7a47d3a0b719ad6ff3"
+output_sha256 = "940f52d73fc9e3645580e4f1aa0ece864582550a423d5a7a47d3a0b719ad6ff3"
+transform = "none"
+

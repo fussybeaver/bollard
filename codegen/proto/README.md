@@ -20,23 +20,22 @@ to an immutable Moby commit, reads its direct BuildKit requirement from the
 immutable `go.mod`, fetches the dependency-classified protobuf sources, applies
 named transformations with exact match counts, and stages source and output
 hashes. It regenerates the checked-in bindings from the transformed resources
-and replaces the checked-in resources only after preparation succeeds. The
-complete provenance lock remains a separate step; the update command does not
-write a partial lock.
+and replaces the checked-in resources only after preparation succeeds. It also
+writes the complete provenance lock atomically after the resource and generated
+output replacements succeed.
 
 `check` generates into a temporary directory and compares the result byte-for-byte
-with the checked-in Rust output without modifying the working tree. The online
-variant additionally resolves, fetches, transforms, and compares every immutable
-resource with the checked-in resource tree. Lock-backed verification is deferred
-until the complete provenance lock is available:
+with the checked-in Rust output without modifying the working tree, and enforces
+the committed provenance lock and resource hashes. The online variant additionally
+resolves, fetches, transforms, and verifies every immutable source and its source
+hash against the lock:
 
 ```bash
 cargo xtask buildkit check --online
 ```
 
-The online check reports source and transformed-output hashes but does not yet
-verify them against a committed provenance lock. Set `GITHUB_TOKEN` when using
-the resolver in environments subject to GitHub API rate limits.
+Set `GITHUB_TOKEN` when using the resolver in environments subject to GitHub API
+rate limits.
 
 For development-only Moby source investigations, a mutable Moby branch can be
 selected explicitly:
@@ -57,7 +56,7 @@ command locally.
 The original feature-gated commands remain temporarily during the tooling
 migration. They are not provenance-safe because they fetch branch-head sources,
 must not be extended or used as the source of a release, and are scheduled for
-removal once the lock-backed workflow is complete.
+removal at the explicit legacy-tooling removal checkpoint.
 
 ```
 cargo run --bin fetch --features fetch

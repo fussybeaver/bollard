@@ -294,8 +294,9 @@ cargo xtask buildkit check
 
 `update` resolves the Moby-derived BuildKit baseline, refreshes immutable
 protobuf resources through named transformations, and regenerates the checked-in
-bindings. `check` regenerates into a temporary directory and compares the result
-with the checked-in output without modifying the working tree. Use
+bindings while updating the committed provenance lock. `check` regenerates into
+a temporary directory, enforces the lock, and compares the result with the
+checked-in output without modifying the working tree. Use
 `cargo xtask buildkit check --online` to additionally verify the immutable source
 resources against the checked-in tree.
 
