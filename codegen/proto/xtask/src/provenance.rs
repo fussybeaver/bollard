@@ -141,7 +141,7 @@ impl ProvenanceLock {
 
     pub fn to_toml(&self) -> Result<String> {
         self.validate()?;
-        Ok(format!("{}\n", toml::to_string_pretty(self)?))
+        Ok(format!("{}\n", toml::to_string_pretty(self)?.trim_end()))
     }
 
     pub fn write_atomic(&self, path: &Path) -> Result<()> {

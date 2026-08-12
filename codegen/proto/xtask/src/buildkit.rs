@@ -48,6 +48,10 @@ impl Error for ToolError {}
 struct Paths {
     workspace_root: PathBuf,
     pom_path: PathBuf,
+    llb_oracle_dir: PathBuf,
+    llb_golden_dir: PathBuf,
+    llb_go_mod_path: PathBuf,
+    llb_manifest_path: PathBuf,
     proto_dir: PathBuf,
     resources_dir: PathBuf,
     generated_dir: PathBuf,
@@ -67,6 +71,13 @@ struct StagedResources {
     sources: Vec<resources::PreparedSource>,
 }
 
+#[derive(Debug)]
+struct StagedLlbOracle {
+    _temporary_directory: TempDir,
+    oracle_directory: PathBuf,
+    golden_directory: PathBuf,
+}
+
 pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
     let lock = provenance::load(&paths.lock_path)?;
@@ -80,8 +91,11 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
         staged_resources.sources.clone(),
     )?;
     let generated = generate(&paths, &staged_resources.directory, &replacement_lock)?;
+    let staged_oracle = stage_llb_oracle(&paths, &replacement_lock.buildkit.version)?;
     replace_directory(&staged_resources.directory, &paths.resources_dir)?;
     replace_directory(&generated.directory, &paths.generated_dir)?;
+    replace_directory(&staged_oracle.oracle_directory, &paths.llb_oracle_dir)?;
+    replace_directory(&staged_oracle.golden_directory, &paths.llb_golden_dir)?;
     if allow_moby_branch {
         eprintln!(
             "WARNING: development-only Moby branch update did not replace {}; release provenance remains unchanged",
@@ -101,6 +115,7 @@ pub fn check(online: bool) -> Result<()> {
     let paths = paths()?;
     let lock = provenance::load(&paths.lock_path)?;
     verify_pom_tag(&paths, &lock)?;
+    verify_llb_oracle(&paths, &lock)?;
     verify_lock_inventory(&lock)?;
     verify_checked_in_resources(&paths, &lock)?;
     let generated = generate(&paths, &paths.resources_dir, &lock)?;
@@ -176,6 +191,150 @@ fn verify_pom_tag(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()
         )));
     }
     Ok(())
+}
+
+fn verify_llb_oracle(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()> {
+    verify_llb_oracle_files(
+        &paths.llb_go_mod_path,
+        &paths.llb_manifest_path,
+        &lock.buildkit.version,
+    )
+}
+
+fn verify_llb_oracle_files(
+    go_mod_path: &Path,
+    manifest_path: &Path,
+    expected_version: &str,
+) -> Result<()> {
+    let go_mod = fs::read_to_string(go_mod_path).map_err(|error| {
+        tool_error(format!(
+            "could not read LLB oracle go.mod {}: {error}",
+            go_mod_path.display()
+        ))
+    })?;
+    let requirement = gomod::parse_buildkit_requirement(&go_mod).map_err(|error| {
+        tool_error(format!(
+            "could not validate LLB oracle go.mod {}: {error}",
+            go_mod_path.display()
+        ))
+    })?;
+    let gomod::BuildkitVersion::Tagged(version) = requirement.version else {
+        return Err(tool_error(format!(
+            "LLB oracle go.mod must use tagged BuildKit version {expected_version}; run go mod tidy after updating {}",
+            go_mod_path.display()
+        )));
+    };
+    if version != expected_version {
+        return Err(tool_error(format!(
+            "LLB oracle go.mod records BuildKit {version}, but provenance requires {expected_version}; update {} and run go mod tidy",
+            go_mod_path.display()
+        )));
+    }
+
+    let manifest_contents = fs::read_to_string(manifest_path).map_err(|error| {
+        tool_error(format!(
+            "could not read LLB golden manifest {}: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_contents).map_err(|error| {
+        tool_error(format!(
+            "could not parse LLB golden manifest {}: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest_version = manifest
+        .get("buildkit_version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            tool_error(format!(
+                "LLB golden manifest {} is missing string buildkit_version",
+                manifest_path.display()
+            ))
+        })?;
+    if manifest_version != expected_version {
+        return Err(tool_error(format!(
+            "LLB golden manifest records BuildKit {manifest_version}, but provenance requires {expected_version}; regenerate the LLB goldens",
+        )));
+    }
+
+    Ok(())
+}
+
+fn stage_llb_oracle(paths: &Paths, buildkit_version: &str) -> Result<StagedLlbOracle> {
+    let temporary_directory = tempdir_in(&paths.workspace_root)?;
+    let oracle_directory = temporary_directory.path().join("llb-parity");
+    let golden_directory = temporary_directory.path().join("golden");
+    let golden_again_directory = temporary_directory.path().join("golden-again");
+    copy_directory(&paths.llb_oracle_dir, &oracle_directory)?;
+
+    run_command(
+        &oracle_directory,
+        "go",
+        &[String::from("mod"), String::from("edit"), "-require=github.com/moby/buildkit@".to_string() + buildkit_version],
+    )?;
+    run_command(
+        &oracle_directory,
+        "go",
+        &[String::from("mod"), String::from("tidy")],
+    )?;
+    run_command(
+        &oracle_directory,
+        "go",
+        &[
+            String::from("run"),
+            String::from("."),
+            String::from("-out"),
+            golden_directory.display().to_string(),
+        ],
+    )?;
+    run_command(
+        &oracle_directory,
+        "go",
+        &[
+            String::from("run"),
+            String::from("."),
+            String::from("-out"),
+            golden_again_directory.display().to_string(),
+        ],
+    )?;
+    compare_directories_named(
+        &golden_directory,
+        &golden_again_directory,
+        "LLB golden output",
+    )?;
+
+    Ok(StagedLlbOracle {
+        _temporary_directory: temporary_directory,
+        oracle_directory,
+        golden_directory,
+    })
+}
+
+fn run_command(current_dir: &Path, program: &str, args: &[String]) -> Result<()> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(current_dir)
+        .output()
+        .map_err(|error| tool_error(format!("could not run {program}: {error}")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let command = std::iter::once(program.to_string())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    Err(tool_error(format!(
+        "command `{command}` failed with {}: {}{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim(),
+        if output.stdout.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", String::from_utf8_lossy(&output.stdout).trim())
+        }
+    )))
 }
 
 fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
@@ -336,6 +495,10 @@ fn paths() -> Result<Paths> {
     Ok(Paths {
         workspace_root: workspace_root.to_path_buf(),
         pom_path: workspace_root.join("codegen/swagger/pom.xml"),
+        llb_oracle_dir: workspace_root.join("codegen/llb-parity"),
+        llb_golden_dir: workspace_root.join("llb/testdata/golden"),
+        llb_go_mod_path: workspace_root.join("codegen/llb-parity/go.mod"),
+        llb_manifest_path: workspace_root.join("llb/testdata/golden/manifest.json"),
         resources_dir: proto_dir.join("resources"),
         generated_dir: proto_dir.join("src/generated"),
         proto_dir: proto_dir.to_path_buf(),
@@ -572,7 +735,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{compare_directories, copy_directory, provenance, replace_directory};
+    use super::{
+        compare_directories, copy_directory, provenance, replace_directory,
+        verify_llb_oracle_files,
+    };
 
     #[test]
     fn compares_identical_directories() {
@@ -635,5 +801,54 @@ mod tests {
             "pub const BUILDKIT_COMMIT: &str = \"8543ce4428265d547cb009e5ad62348284497a88\";"
         ));
         assert!(generated.contains("pub const DEFAULT_IMAGE: &str = \"moby/buildkit:v0.29.0\";"));
+    }
+
+    #[test]
+    fn accepts_matching_llb_oracle_versions() {
+        let temporary_directory = tempdir().unwrap();
+        let go_mod = temporary_directory.path().join("go.mod");
+        let manifest = temporary_directory.path().join("manifest.json");
+        fs::write(
+            &go_mod,
+            "module go-parity\n\nrequire github.com/moby/buildkit v0.29.0\n",
+        )
+        .unwrap();
+        fs::write(&manifest, r#"{"buildkit_version":"v0.29.0"}"#).unwrap();
+
+        verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap();
+    }
+
+    #[test]
+    fn rejects_stale_llb_oracle_go_mod() {
+        let temporary_directory = tempdir().unwrap();
+        let go_mod = temporary_directory.path().join("go.mod");
+        let manifest = temporary_directory.path().join("manifest.json");
+        fs::write(
+            &go_mod,
+            "module go-parity\n\nrequire github.com/moby/buildkit v0.31.1\n",
+        )
+        .unwrap();
+        fs::write(&manifest, r#"{"buildkit_version":"v0.29.0"}"#).unwrap();
+
+        let error = verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap_err();
+        assert!(error.to_string().contains("go.mod records BuildKit v0.31.1"));
+    }
+
+    #[test]
+    fn rejects_stale_llb_manifest() {
+        let temporary_directory = tempdir().unwrap();
+        let go_mod = temporary_directory.path().join("go.mod");
+        let manifest = temporary_directory.path().join("manifest.json");
+        fs::write(
+            &go_mod,
+            "module go-parity\n\nrequire github.com/moby/buildkit v0.29.0\n",
+        )
+        .unwrap();
+        fs::write(&manifest, r#"{"buildkit_version":"v0.31.1"}"#).unwrap();
+
+        let error = verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("golden manifest records BuildKit v0.31.1"));
     }
 }

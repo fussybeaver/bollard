@@ -6,41 +6,60 @@ This document outlines the steps for releasing a new version of Bollard. Follow 
 
 ### Steps for `bollard-buildkit-proto`
 
-The preferred workflow is run from the repository root:
+The preferred workflow is run from the repository root. The commands must be run
+in this order:
 
 ```sh
+# 1. Select the Moby release in codegen/swagger/pom.xml.
+# 2. Derive and stage the complete provenance-aligned update:
 cargo xtask buildkit update
+# 3. Validate the staged protobuf, Go oracle, generated goldens, and Rust output.
 cargo xtask buildkit check
+# 4. Re-fetch immutable upstream sources for release preparation.
+cargo xtask buildkit check --online
 ```
 
 `update` derives the immutable Moby and BuildKit compatibility baseline from
 `codegen/swagger/pom.xml`, fetches the dependency-classified protobuf sources,
-applies named transformations with exact match counts, and stages source and
-transformed-output hashes. It replaces checked-in resources only after the
-complete preparation succeeds, then writes the complete provenance lock
-atomically. `check` enforces the lock without network access; use
-`cargo xtask buildkit check --online` during release preparation to re-fetch and
-verify upstream source hashes. The xtask uses the vendored `protoc` and exact
-generator versions recorded in the provenance lock; do not set `PROTOC` or
-`PROTOC_INCLUDE` while running it.
+applies named transformations with exact match counts, updates the exact Go
+BuildKit oracle requirement, runs `go mod tidy`, regenerates the LLB goldens
+twice, and stages source and transformed-output hashes. It replaces the
+checked-in protobuf resources, generated Rust, Go oracle, golden fixtures, and
+provenance lock only after every preparation and determinism check succeeds.
+`check` enforces the complete lock, oracle, manifest, and generated-output set
+without network access. `check --online` re-fetches and verifies immutable
+upstream source hashes after the offline check passes. The xtask uses the
+vendored `protoc` and exact generator versions recorded in the provenance lock;
+do not set `PROTOC` or `PROTOC_INCLUDE` while running it.
 
-1. Check for transient dependency updates between `bollard` and `bollard-buildkit-proto` (e.g., `tonic`).
-2. Run both provenance checks and review the lock, resource, and generated Rust diffs:
+Review and validation chronology after `update`:
+
+1. Review the Moby/BuildKit provenance lock, protobuf resources, generated Rust,
+   `codegen/llb-parity/go.mod`, `go.sum`, golden manifest, and fixture diffs.
+2. Check for transient dependency updates between `bollard` and
+   `bollard-buildkit-proto` (e.g., `tonic`).
+3. Run both provenance checks and review the lock, resource, oracle, and golden
+   diffs:
    ```sh
    cargo xtask buildkit check
    cargo xtask buildkit check --online
    ```
-3. Verify that the build succeeds:
-   - In the project root, attempt a build with the `buildkit` feature enabled.
-   - Temporarily add a path dependency in `Cargo.toml` and update related transient dependencies to test the changes.
-   - **Important:** Revert any path dependency and ensure version alignment in `Cargo.toml` before submitting a pull request.
-4. Merge the pull request and reset the `master` branch.
-5. Package and publish the crate:
+4. Run the Go oracle checks:
+   ```sh
+   (cd codegen/llb-parity && go test ./... && go vet ./...)
+   ```
+5. Verify that the build and compatibility suites succeed:
+    - In the project root, attempt a build with the `buildkit` feature enabled.
+    - Run the LLB parity, mutation, platform, solve, and export tests.
+    - Run semver checks and review any generated public API changes.
+    - Temporarily add a path dependency in `Cargo.toml` and update related transient dependencies to test the changes.
+    - **Important:** Revert any path dependency and ensure version alignment in `Cargo.toml` before submitting a pull request.
+6. Package and publish the crate:
    ```sh
    cargo package
    cargo publish
    ```
-6. Create a PR and merge the changes.
+7. Create a PR and merge the changes.
 
 ## 2. Update and Publish Swagger-Generated Files
 

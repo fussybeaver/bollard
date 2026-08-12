@@ -884,6 +884,11 @@ fn parity_provenance_self_check() {
         "unexpected Go oracle version: {}",
         go_version
     );
+    assert_eq!(
+        go_version,
+        provenance::BUILDKIT_VERSION,
+        "golden manifest BuildKit version must match generated provenance"
+    );
     let hash = ops_proto_sha256();
     assert_eq!(
         hash.len(),
