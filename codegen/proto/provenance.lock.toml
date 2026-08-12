@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 
 [moby]
 tag = "docker-v29.4.1"
@@ -9,6 +9,17 @@ go_mod_sha256 = "c94f1bab50d9ed25cc2a5273e7f8fc4bf5a4ae919bad195e286c72a15a5f931
 version = "v0.29.0"
 commit = "8543ce4428265d547cb009e5ad62348284497a88"
 image = "moby/buildkit:v0.29.0"
+
+[generation]
+contract = 1
+protoc = "31.1"
+tonic_prost_build = "0.14.6"
+prost_build = "0.14.4"
+include_root = "resources"
+compile_well_known_types = true
+btree_map = ".pb"
+packet_source = "moby/filesync/v1/filesync.packet.proto"
+packet_output = "moby.filesync.packet.rs"
 
 [[resource]]
 destination = "fsutil/types/stat.proto"

@@ -20,30 +20,27 @@ transformed-output hashes. It replaces checked-in resources only after the
 complete preparation succeeds, then writes the complete provenance lock
 atomically. `check` enforces the lock without network access; use
 `cargo xtask buildkit check --online` during release preparation to re-fetch and
-verify upstream source hashes.
+verify upstream source hashes. The xtask uses the vendored `protoc` and exact
+generator versions recorded in the provenance lock; do not set `PROTOC` or
+`PROTOC_INCLUDE` while running it.
 
-> The commands in this section are transitional and are scheduled for removal
-> at the explicit legacy-tooling removal checkpoint. Until then, do not extend
-> them or treat branch-head downloads as reproducible release provenance.
-
-1. Navigate to `./codegen/proto`.
-2. Check for transient dependency updates between `bollard` and `bollard-buildkit-proto` (e.g., `tonic`).
-3. Run the following commands to fetch and generate the latest protobuf files:
+1. Check for transient dependency updates between `bollard` and `bollard-buildkit-proto` (e.g., `tonic`).
+2. Run both provenance checks and review the lock, resource, and generated Rust diffs:
    ```sh
-   cargo run --bin fetch --features fetch
-   cargo run --bin gen --features build
+   cargo xtask buildkit check
+   cargo xtask buildkit check --online
    ```
-4. Verify that the build succeeds:
+3. Verify that the build succeeds:
    - In the project root, attempt a build with the `buildkit` feature enabled.
    - Temporarily add a path dependency in `Cargo.toml` and update related transient dependencies to test the changes.
    - **Important:** Revert any path dependency and ensure version alignment in `Cargo.toml` before submitting a pull request.
-5. Merge the pull request and reset the `master` branch.
-6. Package and publish the crate:
+4. Merge the pull request and reset the `master` branch.
+5. Package and publish the crate:
    ```sh
    cargo package
    cargo publish
    ```
-7. Create a PR and merge the changes.
+6. Create a PR and merge the changes.
 
 ## 2. Update and Publish Swagger-Generated Files
 

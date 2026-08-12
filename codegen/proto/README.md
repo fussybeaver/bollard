@@ -48,17 +48,8 @@ This mode is warned as mutable and must not be used to prepare release
 provenance. The default update command remains tag-only.
 
 The generated files remain checked in so Bollard consumers do not need a
-`protoc` installation. A `protoc` compiler is required when running the update
-command locally.
-
-## Transitional legacy commands
-
-The original feature-gated commands remain temporarily during the tooling
-migration. They are not provenance-safe because they fetch branch-head sources,
-must not be extended or used as the source of a release, and are scheduled for
-removal at the explicit legacy-tooling removal checkpoint.
-
-```
-cargo run --bin fetch --features fetch
-cargo run --bin gen --features build
-```
+generator or `protoc` installation. The unpublished xtask uses the pinned
+vendored `protoc` and records the generation contract in the provenance lock.
+The pinned versions are `protoc` 31.1, `tonic-prost-build` 0.14.6, and
+`prost-build` 0.14.4. Do not set `PROTOC` or `PROTOC_INCLUDE` while running
+xtask.
