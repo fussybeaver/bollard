@@ -1,5 +1,4 @@
 #![allow(missing_docs, unused_qualifications)]
-#![cfg(not(feature = "build"))]
 
 pub mod fsutil {
     pub mod types {

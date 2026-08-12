@@ -14,7 +14,11 @@ use crate::transform;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
+pub const GENERATION_CONTRACT: u32 = 1;
+pub const PROTOC_VERSION: &str = "31.1";
+pub const TONIC_PROST_BUILD_VERSION: &str = "0.14.6";
+pub const PROST_BUILD_VERSION: &str = "0.14.4";
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -22,8 +26,23 @@ pub struct ProvenanceLock {
     pub schema: u32,
     pub moby: Moby,
     pub buildkit: Buildkit,
+    pub generation: Generation,
     #[serde(default, rename = "resource")]
     pub resources: Vec<Resource>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Generation {
+    pub contract: u32,
+    pub protoc: String,
+    pub tonic_prost_build: String,
+    pub prost_build: String,
+    pub include_root: String,
+    pub compile_well_known_types: bool,
+    pub btree_map: String,
+    pub packet_source: String,
+    pub packet_output: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -100,6 +119,7 @@ impl ProvenanceLock {
                 commit: baseline.buildkit_commit.clone(),
                 image: baseline.buildkit_image.clone(),
             },
+            generation: current_generation(),
             resources: prepared
                 .into_iter()
                 .map(|source| Resource {
@@ -199,6 +219,12 @@ impl ProvenanceLock {
             ));
         }
 
+        if self.generation != current_generation() {
+            return Err(validation_error(
+                "provenance lock generation inputs differ from the pinned xtask toolchain",
+            ));
+        }
+
         if self.resources.is_empty() {
             return Err(validation_error(
                 "provenance lock must contain at least one resource",
@@ -249,6 +275,20 @@ impl ProvenanceLock {
         }
 
         Ok(())
+    }
+}
+
+pub fn current_generation() -> Generation {
+    Generation {
+        contract: GENERATION_CONTRACT,
+        protoc: PROTOC_VERSION.to_string(),
+        tonic_prost_build: TONIC_PROST_BUILD_VERSION.to_string(),
+        prost_build: PROST_BUILD_VERSION.to_string(),
+        include_root: "resources".to_string(),
+        compile_well_known_types: true,
+        btree_map: ".pb".to_string(),
+        packet_source: "moby/filesync/v1/filesync.packet.proto".to_string(),
+        packet_output: "moby.filesync.packet.rs".to_string(),
     }
 }
 
@@ -316,7 +356,7 @@ mod tests {
     use crate::resources::PreparedSource;
 
     const VALID_LOCK: &str = r#"
-schema = 1
+schema = 2
 
 [moby]
 tag = "docker-v29.4.1"
@@ -327,6 +367,17 @@ go_mod_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 version = "v0.29.0"
 commit = "8543ce4428265d547cb009e5ad62348284497a88"
 image = "moby/buildkit:v0.29.0"
+
+[generation]
+contract = 1
+protoc = "31.1"
+tonic_prost_build = "0.14.6"
+prost_build = "0.14.4"
+include_root = "resources"
+compile_well_known_types = true
+btree_map = ".pb"
+packet_source = "moby/filesync/v1/filesync.packet.proto"
+packet_output = "moby.filesync.packet.rs"
 
 [[resource]]
 destination = "pb/ops.proto"
@@ -359,7 +410,7 @@ transform = "none"
         let serialized = lock.to_toml().unwrap();
         let round_trip: ProvenanceLock = toml::from_str(&serialized).unwrap();
         assert_eq!(round_trip, lock);
-        assert!(serialized.starts_with("schema = 1\n"));
+        assert!(serialized.starts_with("schema = 2\n"));
     }
 
     #[test]
@@ -424,8 +475,19 @@ transform = "none"
     }
 
     #[test]
+    fn rejects_generation_toolchain_drift() {
+        let error = load_contents(&VALID_LOCK.replacen(
+            "protoc = \"31.1\"",
+            "protoc = \"31.0\"",
+            1,
+        ))
+        .unwrap_err();
+        assert!(error.contains("generation inputs differ"));
+    }
+
+    #[test]
     fn rejects_unsupported_schema() {
-        let error = load_contents(&VALID_LOCK.replacen("schema = 1", "schema = 2", 1))
+        let error = load_contents(&VALID_LOCK.replacen("schema = 2", "schema = 3", 1))
             .unwrap_err();
         assert!(error.contains("unsupported provenance lock schema"));
     }

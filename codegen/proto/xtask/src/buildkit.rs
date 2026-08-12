@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use tempfile::{tempdir_in, TempDir};
 
@@ -347,39 +349,79 @@ fn generate(paths: &Paths, resources_directory: &Path) -> Result<GeneratedOutput
     fs::create_dir_all(&directory)?;
 
     let packet_proto = resources_directory.join(PACKET_PROTO);
-    let resources = resources_directory.to_path_buf();
-    tonic_prost_build::configure()
-        .out_dir(&directory)
-        .compile_well_known_types(true)
-        .compile_protos(
-            std::slice::from_ref(&packet_proto),
-            std::slice::from_ref(&resources),
-        )?;
-
-    let packet_generated = directory.join("moby.filesync.v1.rs");
-    let packet_output = directory.join("moby.filesync.packet.rs");
-    if !packet_generated.exists() {
-        return Err(Box::new(ToolError(format!(
-            "packet generation did not produce {}",
-            packet_generated.display()
-        ))));
-    }
-    fs::copy(packet_generated, packet_output)?;
+    compile(&directory, std::slice::from_ref(&packet_proto), resources_directory, false)?;
 
     let proto_files: Vec<PathBuf> = PROTO_FILES
         .iter()
         .map(|file| resources_directory.join(file))
         .collect();
-    tonic_prost_build::configure()
-        .out_dir(&directory)
-        .compile_well_known_types(true)
-        .btree_map(".pb")
-        .compile_protos(&proto_files, std::slice::from_ref(&resources))?;
+    compile(&directory, &proto_files, resources_directory, true)?;
 
     Ok(GeneratedOutput {
         _temporary_directory: temporary_directory,
         directory,
     })
+}
+
+fn compile(
+    output_directory: &Path,
+    proto_files: &[PathBuf],
+    resources_directory: &Path,
+    btree_map: bool,
+) -> Result<()> {
+    if env::var_os("PROTOC").is_some() || env::var_os("PROTOC_INCLUDE").is_some() {
+        return Err(tool_error(
+            "PROTOC and PROTOC_INCLUDE must be unset; xtask uses its pinned vendored protoc",
+        ));
+    }
+
+    let protoc = pinned_protoc()?;
+    let mut config = tonic_prost_build::Config::new();
+    config.protoc_executable(protoc);
+    let mut builder = tonic_prost_build::configure()
+        .out_dir(output_directory)
+        .compile_well_known_types(true);
+    if btree_map {
+        builder = builder.btree_map(".pb");
+    }
+    builder.compile_with_config(
+        config,
+        proto_files,
+        &[resources_directory.to_path_buf()],
+    )?;
+
+    if !btree_map {
+        let packet_generated = output_directory.join("moby.filesync.v1.rs");
+        let packet_output = output_directory.join("moby.filesync.packet.rs");
+        if !packet_generated.exists() {
+            return Err(Box::new(ToolError(format!(
+                "packet generation did not produce {}",
+                packet_generated.display()
+            ))));
+        }
+        fs::copy(packet_generated, packet_output)?;
+    }
+
+    Ok(())
+}
+
+fn pinned_protoc() -> Result<PathBuf> {
+    let protoc = protoc_bin_vendored::protoc_bin_path()?;
+    let output = Command::new(&protoc).arg("--version").output()?;
+    if !output.status.success() {
+        return Err(tool_error(format!(
+            "pinned protoc failed to report its version: {}",
+            protoc.display()
+        )));
+    }
+    let version = String::from_utf8(output.stdout)?.trim().to_string();
+    let expected = format!("libprotoc {}", provenance::PROTOC_VERSION);
+    if version != expected {
+        return Err(tool_error(format!(
+            "vendored protoc reports {version:?}, but provenance requires {expected:?}"
+        )));
+    }
+    Ok(protoc)
 }
 
 fn replace_directory(source: &Path, destination: &Path) -> Result<()> {
