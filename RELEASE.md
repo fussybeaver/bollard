@@ -49,9 +49,14 @@ Review and validation chronology after `update`:
    (cd codegen/llb-parity && go test ./... && go vet ./...)
    ```
 5. Verify that the build and compatibility suites succeed:
-    - In the project root, attempt a build with the `buildkit` feature enabled.
-    - Run the LLB parity, mutation, platform, solve, and export tests.
-    - Run semver checks and review any generated public API changes.
+     - In the project root, attempt a build with the `buildkit` feature enabled.
+     - Run the LLB parity, mutation, platform, solve, and export tests.
+     - Confirm the live BuildKit record reports the requested image, resolved
+       image ID and repository digests, daemon tool versions, Go oracle version,
+       `ops.proto` hash, and generated provenance values.
+     - Use `BOLLARD_BUILDKIT_TEST_IMAGE` only for a separate compatibility run;
+       it must not regenerate schemas or golden fixtures.
+     - Run semver checks and review any generated public API changes.
     - Temporarily add a path dependency in `Cargo.toml` and update related transient dependencies to test the changes.
     - **Important:** Revert any path dependency and ensure version alignment in `Cargo.toml` before submitting a pull request.
 6. Package and publish the crate:

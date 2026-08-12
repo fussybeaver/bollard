@@ -535,6 +535,162 @@ pub mod buildkit_test {
         hex::encode(Sha256::digest(OPS_PROTO_BYTES))
     }
 
+    fn buildkit_commit(output: &str) -> Option<&str> {
+        output
+            .split_whitespace()
+            .find(|token| token.len() == 40 && token.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    }
+
+    fn buildkit_version(output: &str) -> Option<&str> {
+        output.split_whitespace().find(|token| {
+            token.len() > 1 && token.starts_with('v') && token.as_bytes()[1].is_ascii_digit()
+        })
+    }
+
+    fn validation_error(message: impl Into<String>) -> Error {
+        Error::IOError {
+            err: std::io::Error::other(message.into()),
+        }
+    }
+
+    fn validate_version_for_image(
+        record: &BuildkitVersionRecord,
+        override_image: Option<&str>,
+    ) -> Result<(), Error> {
+        let expected_image = override_image.unwrap_or(provenance::DEFAULT_IMAGE);
+        if record.requested_image != expected_image {
+            return Err(validation_error(format!(
+                "BuildKit requested image is {:?}, expected {:?}",
+                record.requested_image, expected_image
+            )));
+        }
+        if !record.resolved_image_id.starts_with("sha256:") {
+            return Err(validation_error(format!(
+                "BuildKit resolved image ID is not a digest: {:?}",
+                record.resolved_image_id
+            )));
+        }
+        if record.resolved_repo_digests.is_empty()
+            || record
+                .resolved_repo_digests
+                .iter()
+                .any(|digest| !digest.contains("@sha256:"))
+        {
+            return Err(validation_error(format!(
+                "BuildKit resolved image has no repository digest: {:?}",
+                record.resolved_repo_digests
+            )));
+        }
+
+        let buildkitd_commit = buildkit_commit(&record.buildkitd_version).ok_or_else(|| {
+            validation_error(format!(
+                "buildkitd --version has no full BuildKit commit: {:?}",
+                record.buildkitd_version
+            ))
+        })?;
+        let buildctl_commit = buildkit_commit(&record.buildctl_version).ok_or_else(|| {
+            validation_error(format!(
+                "buildctl --version has no full BuildKit commit: {:?}",
+                record.buildctl_version
+            ))
+        })?;
+        let buildkitd_version = buildkit_version(&record.buildkitd_version).ok_or_else(|| {
+            validation_error(format!(
+                "buildkitd --version has no semantic BuildKit version: {:?}",
+                record.buildkitd_version
+            ))
+        })?;
+        let buildctl_version = buildkit_version(&record.buildctl_version).ok_or_else(|| {
+            validation_error(format!(
+                "buildctl --version has no semantic BuildKit version: {:?}",
+                record.buildctl_version
+            ))
+        })?;
+        if !record
+            .buildkitd_version
+            .contains("github.com/moby/buildkit")
+            || !record.buildctl_version.contains("github.com/moby/buildkit")
+        {
+            return Err(validation_error(
+                "BuildKit version probes do not identify github.com/moby/buildkit",
+            ));
+        }
+        if buildkitd_commit != buildctl_commit {
+            return Err(validation_error(format!(
+                "BuildKit daemon tools disagree: buildkitd={buildkitd_commit}, buildctl={buildctl_commit}"
+            )));
+        }
+        if buildkitd_version != buildctl_version {
+            return Err(validation_error(format!(
+                "BuildKit daemon tools report different versions: buildkitd={buildkitd_version}, buildctl={buildctl_version}"
+            )));
+        }
+        if override_image.is_none() && buildkitd_version != provenance::BUILDKIT_VERSION {
+            return Err(validation_error(format!(
+                "BuildKit daemon version is {buildkitd_version}, expected {}",
+                provenance::BUILDKIT_VERSION
+            )));
+        }
+        if override_image.is_none() && buildkitd_commit != provenance::BUILDKIT_COMMIT {
+            return Err(validation_error(format!(
+                "BuildKit daemon commit is {buildkitd_commit}, expected {}",
+                provenance::BUILDKIT_COMMIT
+            )));
+        }
+
+        if record.moby_tag != provenance::MOBY_TAG {
+            return Err(validation_error(format!(
+                "BuildKit provenance Moby tag is {:?}, expected {:?}",
+                record.moby_tag,
+                provenance::MOBY_TAG
+            )));
+        }
+        if record.provenance_buildkit_version != provenance::BUILDKIT_VERSION {
+            return Err(validation_error(format!(
+                "BuildKit provenance version is {:?}, expected {:?}",
+                record.provenance_buildkit_version,
+                provenance::BUILDKIT_VERSION
+            )));
+        }
+        if record.provenance_buildkit_commit != provenance::BUILDKIT_COMMIT {
+            return Err(validation_error(format!(
+                "BuildKit provenance commit is {:?}, expected {:?}",
+                record.provenance_buildkit_commit,
+                provenance::BUILDKIT_COMMIT
+            )));
+        }
+        if record.provenance_default_image != provenance::DEFAULT_IMAGE {
+            return Err(validation_error(format!(
+                "BuildKit provenance image is {:?}, expected {:?}",
+                record.provenance_default_image,
+                provenance::DEFAULT_IMAGE
+            )));
+        }
+        if record.go_oracle_version != provenance::BUILDKIT_VERSION {
+            return Err(validation_error(format!(
+                "Go LLB oracle is {}, expected {}",
+                record.go_oracle_version,
+                provenance::BUILDKIT_VERSION
+            )));
+        }
+        if record.ops_proto_sha256 != provenance::OPS_PROTO_SHA256 {
+            return Err(validation_error(format!(
+                "ops.proto output hash is {}, expected {}",
+                record.ops_proto_sha256,
+                provenance::OPS_PROTO_SHA256
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate the live BuildKit identity against the generated provenance.
+    ///
+    /// An explicit image override may use a different BuildKit commit, but the
+    /// checked-in oracle and protobuf schema remain release-pinned.
+    pub fn validate_version(record: &BuildkitVersionRecord) -> Result<(), Error> {
+        validate_version_for_image(record, test_image().as_deref())
+    }
+
     /// Capture image, daemon, oracle, and schema identities after bootstrap.
     pub async fn record_version(
         docker: &Docker,
@@ -579,6 +735,104 @@ pub mod buildkit_test {
             go_oracle_version: go_oracle_version(),
             ops_proto_sha256: ops_proto_sha256(),
         })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn record() -> BuildkitVersionRecord {
+            BuildkitVersionRecord {
+                requested_image: provenance::DEFAULT_IMAGE.to_string(),
+                resolved_image_id: String::from(
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ),
+                resolved_repo_digests: vec![format!("moby/buildkit@sha256:{}", "b".repeat(64))],
+                buildkitd_version: format!(
+                    "buildkitd github.com/moby/buildkit {} 8543ce4 {}",
+                    provenance::BUILDKIT_VERSION,
+                    provenance::BUILDKIT_COMMIT
+                ),
+                buildctl_version: format!(
+                    "buildctl github.com/moby/buildkit {} 8543ce4 {}",
+                    provenance::BUILDKIT_VERSION,
+                    provenance::BUILDKIT_COMMIT
+                ),
+                moby_tag: provenance::MOBY_TAG.to_string(),
+                provenance_buildkit_version: provenance::BUILDKIT_VERSION.to_string(),
+                provenance_buildkit_commit: provenance::BUILDKIT_COMMIT.to_string(),
+                provenance_default_image: provenance::DEFAULT_IMAGE.to_string(),
+                go_oracle_version: provenance::BUILDKIT_VERSION.to_string(),
+                ops_proto_sha256: provenance::OPS_PROTO_SHA256.to_string(),
+            }
+        }
+
+        #[test]
+        fn validates_baseline_record() {
+            validate_version_for_image(&record(), None).unwrap();
+        }
+
+        #[test]
+        fn accepts_a_compatible_override() {
+            let mut record = record();
+            record.requested_image = String::from("moby/buildkit:override");
+            record.buildkitd_version = format!(
+                "buildkitd github.com/moby/buildkit v0.30.0 deadbee {}",
+                "c".repeat(40)
+            );
+            record.buildctl_version = format!(
+                "buildctl github.com/moby/buildkit v0.30.0 deadbee {}",
+                "c".repeat(40)
+            );
+            validate_version_for_image(&record, Some("moby/buildkit:override")).unwrap();
+        }
+
+        #[test]
+        fn rejects_mismatched_tool_commits() {
+            let mut record = record();
+            record.buildctl_version = format!(
+                "buildctl github.com/moby/buildkit v0.29.0 deadbee {}",
+                "c".repeat(40)
+            );
+            let error = validate_version_for_image(&record, None).unwrap_err();
+            assert!(error.to_string().contains("tools disagree"));
+        }
+
+        #[test]
+        fn rejects_stale_schema_hash() {
+            let mut record = record();
+            record.ops_proto_sha256 = String::from("0").repeat(64);
+            let error = validate_version_for_image(&record, None).unwrap_err();
+            assert!(error.to_string().contains("ops.proto output hash"));
+        }
+
+        #[test]
+        fn rejects_stale_baseline_version() {
+            let mut record = record();
+            record.buildkitd_version = record.buildkitd_version.replace("v0.29.0", "v0.30.0");
+            record.buildctl_version = record.buildctl_version.replace("v0.29.0", "v0.30.0");
+            let error = validate_version_for_image(&record, None).unwrap_err();
+            assert!(error.to_string().contains("daemon version"));
+        }
+
+        #[test]
+        fn rejects_missing_repository_digest() {
+            let mut record = record();
+            record.resolved_repo_digests.clear();
+            let error = validate_version_for_image(&record, None).unwrap_err();
+            assert!(error.to_string().contains("repository digest"));
+        }
+
+        #[test]
+        fn rejects_unknown_version_probe() {
+            let mut record = record();
+            record.buildctl_version = format!(
+                "buildctl example.com/other deadbee {}",
+                provenance::BUILDKIT_COMMIT
+            );
+            let error = validate_version_for_image(&record, None).unwrap_err();
+            assert!(error.to_string().contains("semantic BuildKit version"));
+        }
     }
 
     async fn exec_command(

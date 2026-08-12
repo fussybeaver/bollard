@@ -125,6 +125,7 @@ mod tests {
             format!("moby/buildkit:{}", provenance::BUILDKIT_VERSION)
         );
         assert_eq!(provenance::BUILDKIT_COMMIT.len(), 40);
+        assert_eq!(provenance::OPS_PROTO_SHA256.len(), 64);
         assert!(provenance::MOBY_TAG.starts_with("docker-v"));
     }
 }

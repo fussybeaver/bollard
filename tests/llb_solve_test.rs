@@ -661,10 +661,9 @@ async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
 
     let result = async {
         let driver = fixture.bootstrap().await?;
-        println!(
-            "{}",
-            common::buildkit_test::record_version(&docker, driver).await?
-        );
+        let version = common::buildkit_test::record_version(&docker, driver).await?;
+        println!("{version}");
+        common::buildkit_test::validate_version(&version)?;
 
         for (fixture, golden, rust_builder) in cases {
             let go_destination = tempfile::tempdir()?;
@@ -780,10 +779,9 @@ async fn local_source_application_mvp_test(docker: Docker) -> Result<(), Error> 
 
     let result = async {
         let driver = fixture.bootstrap().await?;
-        println!(
-            "{}",
-            common::buildkit_test::record_version(&docker, driver).await?
-        );
+        let version = common::buildkit_test::record_version(&docker, driver).await?;
+        println!("{version}");
+        common::buildkit_test::validate_version(&version)?;
 
         let request = DefinitionSolveRequest::new(
             local_source_copy_definition("context", "/"),
