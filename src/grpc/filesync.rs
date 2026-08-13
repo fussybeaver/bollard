@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -105,18 +106,30 @@ impl FaultInjection {
 
 struct FileSyncSession {
     cancellation: CancellationToken,
-    scanner: Option<tokio::task::JoinHandle<()>>,
+    scanner: Option<ScannerHandle>,
     workers: tokio::task::JoinSet<()>,
+}
+
+struct ScannerHandle {
+    completion: tokio::sync::oneshot::Receiver<Result<(), Status>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ScannerHandle {
+    async fn join(mut self) -> Result<(), Status> {
+        self.completion
+            .await
+            .map_err(|_| Status::internal("FileSync scanner task failed"))??;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        Ok(())
+    }
 }
 
 impl Drop for FileSyncSession {
     fn drop(&mut self) {
         self.cancellation.cancel();
-        if let Some(scanner) = self.scanner.take() {
-            // A running spawn_blocking task cannot be aborted; the scanner
-            // observes cancellation while collecting directory entries.
-            scanner.abort();
-        }
         self.workers.abort_all();
     }
 }
@@ -133,21 +146,30 @@ impl FileSyncSession {
         let (jobs_sender, jobs_receiver) = mpsc::channel(FILE_JOB_QUEUE_CAPACITY);
         let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
         let scanner_cancellation = cancellation.clone();
-        let scanner = tokio::task::spawn_blocking(move || {
-            if faults.panic_scanner {
-                panic!("injected FileSync scanner panic");
-            }
-            let result = scan_entries_with_selection(
-                scanner_root,
-                entries_sender.clone(),
-                selection,
-                scanner_cancellation,
-                faults,
-            );
-            if let Err(error) = result {
-                let _ = entries_sender.blocking_send(Err(error));
-            }
-        });
+        let (completion_sender, completion_receiver) = tokio::sync::oneshot::channel();
+        let scanner_thread = std::thread::Builder::new()
+            .name(String::from("bollard-filesync-scanner"))
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if faults.panic_scanner {
+                        panic!("injected FileSync scanner panic");
+                    }
+                    let result = scan_entries_with_selection(
+                        scanner_root,
+                        entries_sender.clone(),
+                        selection,
+                        scanner_cancellation,
+                        faults,
+                    );
+                    if let Err(error) = result {
+                        let _ = entries_sender.blocking_send(Err(error));
+                    }
+                }));
+                let result = result.map_err(|_| Status::internal("FileSync scanner panicked"));
+                let _ = completion_sender.send(result);
+            })
+            .map_err(|error| Status::internal(format!("FileSync scanner task failed: {error}")))
+            .expect("FileSync scanner thread starts");
 
         let jobs_receiver = Arc::new(Mutex::new(jobs_receiver));
         let mut workers = tokio::task::JoinSet::new();
@@ -181,7 +203,10 @@ impl FileSyncSession {
         (
             Self {
                 cancellation,
-                scanner: Some(scanner),
+                scanner: Some(ScannerHandle {
+                    completion: completion_receiver,
+                    thread: Some(scanner_thread),
+                }),
                 workers,
             },
             entries_receiver,
@@ -202,15 +227,11 @@ impl FileSyncSession {
         jobs.take();
 
         let result = tokio::time::timeout(FILESYNC_SHUTDOWN_TIMEOUT, async {
-            let scanner_result = if let Some(scanner) = self.scanner.as_mut() {
-                scanner.await.map_err(|error| {
-                    Status::internal(format!("FileSync scanner task failed: {error}"))
-                })
+            let scanner_result = if let Some(scanner) = self.scanner.take() {
+                scanner.join().await
             } else {
                 Ok(())
             };
-            self.scanner.take();
-
             self.workers.abort_all();
             let mut worker_error = None;
             while let Some(result) = self.workers.join_next().await {
@@ -230,9 +251,6 @@ impl FileSyncSession {
         match result {
             Ok(result) => result,
             Err(_) => {
-                if let Some(scanner) = self.scanner.as_ref() {
-                    scanner.abort();
-                }
                 self.workers.abort_all();
                 Err(Status::deadline_exceeded(
                     "FileSync session cleanup exceeded its timeout",
@@ -491,7 +509,7 @@ impl FileSync for FileSyncImpl {
                         }
                         None => {
                             if let Some(scanner) = session.scanner.take() {
-                                if let Err(join_error) = scanner.await {
+                                if let Err(join_error) = scanner.join().await {
                                     fail!(Status::internal(format!(
                                         "FileSync scanner task failed: {join_error}"
                                     )));
@@ -1213,6 +1231,7 @@ fn scan_entries_with_selection(
             if matches!(
                 emit_source_entry(
                     &sender,
+                    &cancellation,
                     &mut position,
                     pending_entry.stat,
                     pending_entry.regular,
@@ -1224,7 +1243,14 @@ fn scan_entries_with_selection(
             }
         }
         if matches!(
-            emit_source_entry(&sender, &mut position, stat, regular, relative.clone())?,
+            emit_source_entry(
+                &sender,
+                &cancellation,
+                &mut position,
+                stat,
+                regular,
+                relative.clone(),
+            )?,
             EmitResult::ReceiverClosed
         ) {
             return Ok(());
@@ -1258,6 +1284,7 @@ fn scan_entries_with_selection(
 
 fn emit_source_entry(
     sender: &tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+    cancellation: &CancellationToken,
     position: &mut u32,
     stat: Stat,
     regular: bool,
@@ -1272,16 +1299,26 @@ fn emit_source_entry(
     *position = position
         .checked_add(1)
         .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
-    if sender
-        .blocking_send(Ok(SourceEntry {
-            stat,
-            position: current_position,
-            regular,
-            relative,
-        }))
-        .is_err()
-    {
-        return Ok(EmitResult::ReceiverClosed);
+    let mut entry = Some(Ok(SourceEntry {
+        stat,
+        position: current_position,
+        regular,
+        relative,
+    }));
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(EmitResult::ReceiverClosed);
+        }
+        match sender.try_send(entry.take().expect("entry is available")) {
+            Ok(()) => break,
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Ok(EmitResult::ReceiverClosed)
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(value)) => {
+                entry = Some(value);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
     }
     Ok(EmitResult::Sent)
 }
@@ -1421,16 +1458,17 @@ fn entry_xattrs(
     };
     let mut xattrs = HashMap::new();
     for name in names {
-        if name.to_string_lossy().starts_with("com.apple.") {
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if name_str.starts_with("com.apple.") || !super::fsutil::is_transferable_xattr(name_str) {
             continue;
         }
         if let Some(value) = file
             .get_xattr(&name)
             .map_err(|error| filesystem_error("read xattr", Path::new(&name), error))?
         {
-            if let Some(name) = name.to_str() {
-                xattrs.insert(name.to_owned(), value);
-            }
+            xattrs.insert(name_str.to_owned(), value);
         }
     }
     Ok(xattrs)
@@ -2303,6 +2341,15 @@ mod tests {
             input.stat.xattrs.get("user.bollard"),
             Some(&b"metadata".to_vec())
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_filters_privileged_xattr_names() {
+        assert!(super::super::fsutil::is_transferable_xattr("user.bollard"));
+        assert!(!super::super::fsutil::is_transferable_xattr(
+            "security.capability"
+        ));
     }
 
     #[test]
