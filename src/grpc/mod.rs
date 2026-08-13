@@ -2426,6 +2426,39 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_filters_privileged_xattrs() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let request = state
+            .handle_packet(packet_stat(Some(stat_with_xattrs(
+                "file",
+                0o644,
+                0,
+                "",
+                &[("user.file", b"value"), ("security.capability", b"blocked")],
+            ))))
+            .await
+            .unwrap()
+            .unwrap();
+        state
+            .handle_packet(packet_data(request.id, &[]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            xattr::get(dir.path().join("file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("file"), "security.capability").unwrap(),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn test_file_receive_state_rejects_oversized_files() {
         let dir = tempfile::tempdir().unwrap();
