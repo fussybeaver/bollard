@@ -406,6 +406,9 @@ fn apply_xattrs(
     options.read(true).follow(FollowSymlinks::No);
     let file = parent.open_with(name, &options)?.into_std();
     for (name, value) in xattrs {
+        if !fsutil::is_transferable_xattr(name) {
+            continue;
+        }
         file.set_xattr(name, value)?;
     }
     Ok(())
@@ -417,6 +420,9 @@ fn apply_xattrs_to_file(
     xattrs: &HashMap<String, Vec<u8>>,
 ) -> std::io::Result<()> {
     for (name, value) in xattrs {
+        if !fsutil::is_transferable_xattr(name) {
+            continue;
+        }
         file.set_xattr(name, value)?;
     }
     Ok(())
@@ -436,7 +442,8 @@ struct FileReceiveState {
 }
 
 struct PendingFile {
-    stat: Stat,
+    size: i64,
+    mode: u32,
     file: File,
     received_bytes: u64,
 }
@@ -445,8 +452,6 @@ struct PendingDirectory {
     mode: u32,
     parent: cap_std::fs::Dir,
     name: OsString,
-    #[cfg(unix)]
-    xattrs: HashMap<String, Vec<u8>>,
 }
 
 impl FileReceiveState {
@@ -677,8 +682,6 @@ impl FileReceiveState {
                     mode: 0o700,
                     parent,
                     name,
-                    #[cfg(unix)]
-                    xattrs: HashMap::new(),
                 });
         }
 
@@ -740,14 +743,18 @@ impl FileReceiveState {
                 Status::already_exists(format!("cannot create export directory: {error}"))
             })?;
             drop(directory);
+            #[cfg(unix)]
+            apply_xattrs(&permission_parent, &permission_name, &stat.xattrs).map_err(|error| {
+                Status::internal(format!(
+                    "failed to set directory extended attributes: {error}"
+                ))
+            })?;
             self.directories.insert(
                 path,
                 PendingDirectory {
                     mode: stat.mode & 0o777,
                     parent: permission_parent,
                     name: permission_name,
-                    #[cfg(unix)]
-                    xattrs: stat.xattrs.clone(),
                 },
             );
             self.file_count += 1;
@@ -815,6 +822,7 @@ impl FileReceiveState {
             Status::internal(format!("failed to retain export directory: {error}"))
         })?;
         let name = name.to_owned();
+        let xattrs = stat.xattrs.clone();
         let file = tokio::task::spawn_blocking(move || {
             let mut options = cap_std::fs::OpenOptions::new();
             options.write(true).create_new(true);
@@ -823,9 +831,10 @@ impl FileReceiveState {
                 use cap_std::fs::OpenOptionsExt;
                 options.mode(0o600);
             }
-            parent
-                .open_with(&name, &options)
-                .map(|file| file.into_std())
+            let file = parent.open_with(&name, &options)?.into_std();
+            #[cfg(unix)]
+            apply_xattrs_to_file(&file, &xattrs)?;
+            Ok::<_, std::io::Error>(file)
         })
         .await
         .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
@@ -835,7 +844,8 @@ impl FileReceiveState {
         self.stats.insert(
             request_id,
             PendingFile {
-                stat: stat.clone(),
+                size: stat.size,
+                mode: stat.mode,
                 file: File::from_std(file),
                 received_bytes: 0,
             },
@@ -854,7 +864,7 @@ impl FileReceiveState {
             .received_bytes
             .checked_add(data_len)
             .ok_or_else(|| Status::resource_exhausted("file byte count overflow"))?;
-        let expected_bytes = u64::try_from(pending.stat.size)
+        let expected_bytes = u64::try_from(pending.size)
             .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
         if received_bytes > expected_bytes {
             return Err(Status::resource_exhausted(
@@ -875,7 +885,7 @@ impl FileReceiveState {
             .stats
             .remove(&id)
             .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
-        let expected_bytes = u64::try_from(pending.stat.size)
+        let expected_bytes = u64::try_from(pending.size)
             .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
         if pending.received_bytes != expected_bytes {
             return Err(Status::invalid_argument(format!(
@@ -892,10 +902,7 @@ impl FileReceiveState {
         #[cfg(unix)]
         {
             let file = pending.file.into_std().await;
-            apply_xattrs_to_file(&file, &pending.stat.xattrs).map_err(|error| {
-                Status::internal(format!("failed to set file extended attributes: {error}"))
-            })?;
-            file.set_permissions(std::fs::Permissions::from_mode(pending.stat.mode & 0o777))
+            file.set_permissions(std::fs::Permissions::from_mode(pending.mode & 0o777))
                 .map_err(|error| {
                     Status::internal(format!("failed to set file permissions: {error}"))
                 })?;
@@ -913,8 +920,6 @@ impl FileReceiveState {
         let directories: Vec<_> = self.directories.into_values().collect();
         tokio::task::spawn_blocking(move || {
             for directory in directories {
-                #[cfg(unix)]
-                apply_xattrs(&directory.parent, &directory.name, &directory.xattrs)?;
                 #[cfg(unix)]
                 directory.parent.set_permissions(
                     &directory.name,
@@ -988,11 +993,9 @@ impl StagingGuard {
     async fn publish(&mut self, destination: &Path) -> Result<(), Status> {
         let staging = self
             .staging
-            .as_ref()
-            .expect("staging guard owns a path before publication");
-        publish_staging_directory(staging, destination).await?;
-        self.staging = None;
-        Ok(())
+            .take()
+            .ok_or_else(|| Status::failed_precondition("staging directory is not available"))?;
+        publish_staging_directory(&staging, destination).await
     }
 }
 
@@ -1093,14 +1096,28 @@ fn publish_staging_directory_blocking(staging: &Path, destination: &Path) -> Res
     result
 }
 
+struct StagingPublication {
+    path: PathBuf,
+}
+
+impl Drop for StagingPublication {
+    fn drop(&mut self) {
+        if let Err(error) = remove_path_blocking(&self.path) {
+            warn!("failed to clean up unpublished export: {error}");
+        }
+    }
+}
+
 async fn publish_staging_directory(staging: &Path, destination: &Path) -> Result<(), Status> {
-    let staging = staging.to_owned();
+    let staging = StagingPublication {
+        path: staging.to_owned(),
+    };
     let destination = destination.to_owned();
-    tokio::task::spawn_blocking(move || publish_staging_directory_blocking(&staging, &destination))
-        .await
-        .map_err(|error| {
-            Status::internal(format!("filesystem publication worker failed: {error}"))
-        })?
+    tokio::task::spawn_blocking(move || {
+        publish_staging_directory_blocking(&staging.path, &destination)
+    })
+    .await
+    .map_err(|error| Status::internal(format!("filesystem publication worker failed: {error}")))?
 }
 
 #[tonic::async_trait]
@@ -2358,6 +2375,51 @@ mod tests {
             xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
             Some(b"value".to_vec())
         );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_applies_xattrs_before_finalize() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let directory_mode = fsutil::FileMode::Dir.bits() | 0o755;
+
+        state
+            .handle_packet(packet_stat(Some(stat_with_xattrs(
+                "nested",
+                directory_mode,
+                0,
+                "",
+                &[("user.directory", b"value")],
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(
+            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
+            Some(b"value".to_vec())
+        );
+
+        let request = state
+            .handle_packet(packet_stat(Some(stat_with_xattrs(
+                "nested/file",
+                0o644,
+                5,
+                "",
+                &[("user.file", b"value")],
+            ))))
+            .await
+            .unwrap()
+            .unwrap();
+        state
+            .handle_packet(packet_data(request.id, b"hello"))
+            .await
+            .unwrap();
         assert_eq!(
             xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
             Some(b"value".to_vec())
