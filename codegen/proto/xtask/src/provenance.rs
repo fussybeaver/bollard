@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempPath};
 
 use crate::resolver::ResolvedBaseline;
 use crate::resources::{IndependentPin, PreparedSource};
@@ -147,19 +147,13 @@ impl ProvenanceLock {
         Ok(format!("{}\n", toml::to_string_pretty(self)?.trim_end()))
     }
 
-    pub fn write_atomic(&self, path: &Path) -> Result<()> {
-        let parent = path.parent().ok_or_else(|| {
-            validation_error(format!("provenance lock has no parent: {}", path.display()))
-        })?;
+    pub fn stage(&self, parent: &Path) -> Result<TempPath> {
         fs::create_dir_all(parent)?;
         let contents = self.to_toml()?;
         let mut temporary = NamedTempFile::new_in(parent)?;
         temporary.write_all(contents.as_bytes())?;
         temporary.as_file().sync_all()?;
-        temporary.persist(path).map_err(|error| {
-            validation_error(format!("could not replace provenance lock {}: {error}", path.display()))
-        })?;
-        Ok(())
+        Ok(temporary.into_temp_path())
     }
 
     pub fn independent_pins(&self) -> Result<BTreeMap<String, IndependentPin>> {
@@ -433,15 +427,6 @@ transform = "none"
     }
 
     #[test]
-    fn writes_lock_atomically() {
-        let directory = tempdir().unwrap();
-        let path = directory.path().join("provenance.lock.toml");
-        let lock = load_contents_lock();
-        lock.write_atomic(&path).unwrap();
-        assert_eq!(load(&path).unwrap(), lock);
-    }
-
-    #[test]
     fn builds_lock_from_prepared_sources() {
         let baseline = ResolvedBaseline {
             moby_reference: "docker-v29.4.1".into(),
@@ -477,13 +462,6 @@ transform = "none"
         ))
         .unwrap_err();
         assert!(error.contains("expected \"none\""));
-    }
-
-    fn load_contents_lock() -> ProvenanceLock {
-        let directory = tempdir().unwrap();
-        let path = directory.path().join("provenance.lock.toml");
-        fs::write(&path, VALID_LOCK).unwrap();
-        load(&path).unwrap()
     }
 
     #[test]

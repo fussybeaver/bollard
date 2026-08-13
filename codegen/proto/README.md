@@ -20,9 +20,9 @@ to an immutable Moby commit, reads its direct BuildKit requirement from the
 immutable `go.mod`, fetches the dependency-classified protobuf sources, applies
 named transformations with exact match counts, and stages source and output
 hashes. It regenerates the checked-in bindings from the transformed resources
-and replaces the checked-in resources only after preparation succeeds. It also
-writes the complete provenance lock atomically after the resource and generated
-output replacements succeed.
+and commits the checked-in resources, generated bindings, LLB oracle, goldens,
+and provenance lock as one rollback-protected update after preparation
+succeeds. A failed commit restores the previous outputs.
 
 `check` generates into a temporary directory and compares the result byte-for-byte
 with the checked-in Rust output without modifying the working tree, and enforces

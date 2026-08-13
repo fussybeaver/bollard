@@ -4,9 +4,14 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
-use tempfile::{tempdir_in, TempDir};
+use tempfile::{tempdir_in, NamedTempFile, TempDir};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use crate::github::Remote;
 use crate::{github, gomod, pom, provenance, resolver, resources};
@@ -14,6 +19,8 @@ use crate::{github, gomod, pom, provenance, resolver, resources};
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
+const GO_COMMAND_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const PROTOC_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 const PROTO_FILES: &[&str] = &[
     "fsutil/types/stat.proto",
@@ -81,6 +88,7 @@ struct StagedLlbOracle {
 
 pub fn update(allow_moby_branch: bool) -> Result<()> {
     let paths = paths()?;
+    verify_generator_dependencies(&paths)?;
     let lock = provenance::load(&paths.lock_path)?;
     let independent_pins = lock.independent_pins()?;
     let (baseline, staged_resources) =
@@ -93,18 +101,30 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
     )?;
     let generated = generate(&paths, &staged_resources.directory, &replacement_lock)?;
     let staged_oracle = stage_llb_oracle(&paths, &replacement_lock.buildkit.version)?;
-    replace_directory(&staged_resources.directory, &paths.resources_dir)?;
-    replace_directory(&generated.directory, &paths.generated_dir)?;
-    replace_directory(&staged_oracle.oracle_directory, &paths.llb_oracle_dir)?;
-    replace_directory(&staged_oracle.golden_directory, &paths.llb_golden_dir)?;
-    if allow_moby_branch {
+    let mut commit = CommitGuard::new();
+    commit.add(&staged_resources.directory, &paths.resources_dir)?;
+    commit.add(&generated.directory, &paths.generated_dir)?;
+    commit.add(&staged_oracle.oracle_directory, &paths.llb_oracle_dir)?;
+    commit.add(&staged_oracle.golden_directory, &paths.llb_golden_dir)?;
+    let staged_lock = if allow_moby_branch {
         eprintln!(
             "WARNING: development-only Moby branch update did not replace {}; release provenance remains unchanged",
             display_path(&paths.workspace_root, &paths.lock_path)
         );
+        None
     } else {
-        replacement_lock.write_atomic(&paths.lock_path)?;
+        let lock_parent = paths.lock_path.parent().ok_or_else(|| {
+            tool_error(format!(
+                "provenance lock has no parent: {}",
+                paths.lock_path.display()
+            ))
+        })?;
+        Some(replacement_lock.stage(lock_parent)?)
+    };
+    if let Some(staged_lock) = &staged_lock {
+        commit.add(staged_lock, &paths.lock_path)?;
     }
+    commit.commit()?;
     println!(
         "Updated generated BuildKit bindings in {}",
         display_path(&paths.workspace_root, &paths.generated_dir)
@@ -365,21 +385,64 @@ fn stage_llb_oracle(paths: &Paths, buildkit_version: &str) -> Result<StagedLlbOr
 }
 
 fn run_command(current_dir: &Path, program: &str, args: &[String]) -> Result<()> {
-    let output = Command::new(program)
+    run_command_output(current_dir, program, args, GO_COMMAND_TIMEOUT).map(|_| ())
+}
+
+#[derive(Debug)]
+struct CommandOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn run_command_output(
+    current_dir: &Path,
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<CommandOutput> {
+    let stdout = NamedTempFile::new()?;
+    let stderr = NamedTempFile::new()?;
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(current_dir)
-        .output()
+        .stdout(Stdio::from(stdout.as_file().try_clone()?))
+        .stderr(Stdio::from(stderr.as_file().try_clone()?));
+    #[cfg(unix)]
+    command.process_group(0);
+
+    let mut child = command
+        .spawn()
         .map_err(|error| tool_error(format!("could not run {program}: {error}")))?;
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if started.elapsed() >= timeout {
+            terminate_process(&mut child);
+            return Err(tool_error(format!(
+                "command `{}` timed out after {} seconds",
+                command_string(program, args),
+                timeout.as_secs()
+            )));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    let output = CommandOutput {
+        status,
+        stdout: fs::read(stdout.path())?,
+        stderr: fs::read(stderr.path())?,
+    };
     if output.status.success() {
-        return Ok(());
+        return Ok(output);
     }
 
-    let command = std::iter::once(program.to_string())
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
     Err(tool_error(format!(
-        "command `{command}` failed with {}: {}{}",
+        "command `{}` failed with {}: {}{}",
+        command_string(program, args),
         output.status,
         String::from_utf8_lossy(&output.stderr).trim(),
         if output.stdout.is_empty() {
@@ -388,6 +451,26 @@ fn run_command(current_dir: &Path, program: &str, args: &[String]) -> Result<()>
             format!("\n{}", String::from_utf8_lossy(&output.stdout).trim())
         }
     )))
+}
+
+fn command_string(program: &str, args: &[String]) -> String {
+    std::iter::once(program.to_string())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn terminate_process(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let process_group = -(child.id() as libc::pid_t);
+        if unsafe { libc::kill(process_group, libc::SIGKILL) } != 0 {
+            let _ = child.kill();
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
@@ -661,13 +744,18 @@ fn compile(
 
 fn pinned_protoc() -> Result<PathBuf> {
     let protoc = protoc_bin_vendored::protoc_bin_path()?;
-    let output = Command::new(&protoc).arg("--version").output()?;
-    if !output.status.success() {
-        return Err(tool_error(format!(
-            "pinned protoc failed to report its version: {}",
+    let output = run_command_output(
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        &protoc.display().to_string(),
+        &[String::from("--version")],
+        PROTOC_COMMAND_TIMEOUT,
+    )
+    .map_err(|error| {
+        tool_error(format!(
+            "pinned protoc failed to report its version: {} ({error})",
             protoc.display()
-        )));
-    }
+        ))
+    })?;
     let version = String::from_utf8(output.stdout)?.trim().to_string();
     let expected = format!("libprotoc {}", provenance::PROTOC_VERSION);
     if version != expected {
@@ -678,34 +766,129 @@ fn pinned_protoc() -> Result<PathBuf> {
     Ok(protoc)
 }
 
-fn replace_directory(source: &Path, destination: &Path) -> Result<()> {
-    let parent = destination.parent().ok_or_else(|| {
-        Box::new(ToolError(format!(
-            "directory has no parent: {}",
-            destination.display()
-        ))) as Box<dyn Error>
-    })?;
-    fs::create_dir_all(parent)?;
+struct CommitEntry {
+    _staging: TempDir,
+    staged: PathBuf,
+    destination: PathBuf,
+    backup: PathBuf,
+    touched: bool,
+    installed: bool,
+}
 
-    let staging = tempdir_in(parent)?;
-    let staged_destination = staging.path().join("generated");
-    copy_directory(source, &staged_destination)?;
+struct CommitGuard {
+    entries: Vec<CommitEntry>,
+    armed: bool,
+}
 
-    if destination.exists() {
-        let backup = staging.path().join("previous");
-        fs::rename(destination, &backup)?;
-        match fs::rename(&staged_destination, destination) {
-            Ok(()) => fs::remove_dir_all(backup)?,
-            Err(error) => {
-                fs::rename(backup, destination)?;
-                return Err(Box::new(error));
-            }
+impl CommitGuard {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            armed: true,
         }
-    } else {
-        fs::rename(staged_destination, destination)?;
     }
 
-    Ok(())
+    fn add(&mut self, source: &Path, destination: &Path) -> Result<()> {
+        let parent = destination.parent().ok_or_else(|| {
+            tool_error(format!(
+                "directory has no parent: {}",
+                destination.display()
+            ))
+        })?;
+        fs::create_dir_all(parent)?;
+        let staging = tempdir_in(parent)?;
+        let staged = staging.path().join("replacement");
+        copy_entry(source, &staged)?;
+        self.entries.push(CommitEntry {
+            backup: staging.path().join("previous"),
+            _staging: staging,
+            staged,
+            destination: destination.to_path_buf(),
+            touched: false,
+            installed: false,
+        });
+        Ok(())
+    }
+
+    fn commit(mut self) -> Result<()> {
+        self.commit_inner(None)?;
+        self.armed = false;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn commit_with_failure(mut self, fail_at: usize) -> Result<()> {
+        self.commit_inner(Some(fail_at))?;
+        self.armed = false;
+        Ok(())
+    }
+
+    fn commit_inner(&mut self, fail_at: Option<usize>) -> Result<()> {
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            if fail_at == Some(index) {
+                return Err(Box::new(std::io::Error::other(
+                    "injected replacement failure",
+                )));
+            }
+
+            if fs::symlink_metadata(&entry.destination).is_ok() {
+                fs::rename(&entry.destination, &entry.backup)?;
+                entry.touched = true;
+            }
+            fs::rename(&entry.staged, &entry.destination)?;
+            entry.installed = true;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for CommitGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        for entry in self.entries.iter_mut().rev() {
+            if entry.installed {
+                if let Err(error) = remove_path(&entry.destination) {
+                    eprintln!(
+                        "could not remove {} during rollback: {error}",
+                        entry.destination.display()
+                    );
+                }
+                entry.installed = false;
+            }
+            if entry.touched {
+                if let Err(error) = fs::rename(&entry.backup, &entry.destination) {
+                    eprintln!(
+                        "could not restore {} during rollback: {error}",
+                        entry.destination.display()
+                    );
+                }
+                entry.touched = false;
+            }
+        }
+    }
+}
+
+fn copy_entry(source: &Path, destination: &Path) -> Result<()> {
+    if source.is_dir() {
+        copy_directory(source, destination)
+    } else {
+        fs::copy(source, destination)?;
+        let file = fs::OpenOptions::new().write(true).open(destination)?;
+        file.sync_all()?;
+        Ok(())
+    }
+}
+
+fn remove_path(path: &Path) -> std::io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_dir() => fs::remove_dir_all(path),
+        Ok(_) => fs::remove_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
@@ -795,11 +978,13 @@ fn tool_error(message: impl Into<String>) -> Box<dyn Error> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
+    use std::time::Duration;
 
     use tempfile::tempdir;
 
     use super::{
-        compare_directories, copy_directory, provenance, replace_directory,
+        CommitGuard, compare_directories, copy_directory, provenance, run_command_output,
         verify_generator_dependencies_at, verify_llb_oracle_files,
     };
 
@@ -835,15 +1020,90 @@ mod tests {
     }
 
     #[test]
-    fn failed_staging_does_not_replace_existing_output() {
+    fn failed_commit_restores_all_previous_outputs() {
         let temporary_directory = tempdir().unwrap();
-        let destination = temporary_directory.path().join("generated");
-        fs::create_dir_all(&destination).unwrap();
-        fs::write(destination.join("existing.rs"), b"keep").unwrap();
+        let mut replacements = Vec::new();
+        for name in ["resources", "generated", "oracle", "golden"] {
+            let source = temporary_directory.path().join(format!("{name}-source"));
+            let destination = temporary_directory.path().join(name);
+            fs::create_dir_all(&source).unwrap();
+            fs::write(source.join("output"), format!("new-{name}")).unwrap();
+            fs::create_dir_all(&destination).unwrap();
+            fs::write(destination.join("output"), format!("old-{name}")).unwrap();
+            replacements.push((source, destination));
+        }
 
-        let missing_source = temporary_directory.path().join("missing");
-        assert!(replace_directory(&missing_source, &destination).is_err());
-        assert_eq!(fs::read(destination.join("existing.rs")).unwrap(), b"keep");
+        let lock_source = temporary_directory.path().join("lock-source");
+        let lock_destination = temporary_directory.path().join("provenance.lock.toml");
+        fs::write(&lock_source, b"new-lock").unwrap();
+        fs::write(&lock_destination, b"old-lock").unwrap();
+        replacements.push((lock_source, lock_destination.clone()));
+
+        let mut commit = CommitGuard::new();
+        for (source, destination) in &replacements {
+            commit.add(source, destination).unwrap();
+        }
+        assert!(commit.commit_with_failure(4).is_err());
+        for name in ["resources", "generated", "oracle", "golden"] {
+            assert_eq!(
+                fs::read(temporary_directory.path().join(name).join("output")).unwrap(),
+                format!("old-{name}").as_bytes()
+            );
+        }
+        assert_eq!(fs::read(lock_destination).unwrap(), b"old-lock");
+    }
+
+    #[test]
+    fn failed_commit_removes_new_outputs() {
+        let temporary_directory = tempdir().unwrap();
+        let mut replacements = Vec::new();
+        for name in ["first", "second"] {
+            let source = temporary_directory.path().join(format!("{name}-source"));
+            let destination = temporary_directory.path().join(name);
+            fs::create_dir_all(&source).unwrap();
+            fs::write(source.join("output"), b"new").unwrap();
+            replacements.push((source, destination));
+        }
+
+        let mut commit = CommitGuard::new();
+        for (source, destination) in &replacements {
+            commit.add(source, destination).unwrap();
+        }
+        assert!(commit.commit_with_failure(1).is_err());
+        assert!(!replacements[0].1.exists());
+        assert!(!replacements[1].1.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_timeout_terminates_and_reports_the_command() {
+        let error = run_command_output(
+            Path::new("."),
+            "sh",
+            &[String::from("-c"), String::from("sleep 60")],
+            Duration::from_millis(20),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("timed out"));
+        assert!(error.to_string().contains("sleep 60"));
+    }
+
+    #[test]
+    fn command_output_preserves_stdout_and_stderr() {
+        let output = run_command_output(
+            Path::new("."),
+            if cfg!(windows) { "cmd" } else { "sh" },
+            if cfg!(windows) {
+                vec![String::from("/C"), String::from("echo out & echo err 1>&2")]
+            } else {
+                vec![String::from("-c"), String::from("printf out; printf err >&2")]
+            }
+            .as_slice(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "out");
+        assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), "err");
     }
 
     #[test]
