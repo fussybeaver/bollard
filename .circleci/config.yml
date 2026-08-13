@@ -67,6 +67,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
+      - run: docker run -ti --rm bollard bash -c "cargo xtask buildkit check && cargo test -p xtask && cargo test -p bollard-buildkit-proto --all-features"
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
       - run: docker run -ti --rm bollard cargo test -p bollard-llb --all-features
       - run:
@@ -92,6 +93,8 @@ jobs:
             trap 'rm -rf "$tmp"' EXIT
             go run . -out "$tmp"
             go run . -check ../../llb/testdata/golden -against "$tmp"
+            go test ./...
+            go vet ./...
   test_chrono:
     docker:
       - image: docker:29.3

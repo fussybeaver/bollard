@@ -32,6 +32,13 @@ upstream source hashes after the offline check passes. The xtask uses the
 vendored `protoc` and exact generator versions recorded in the provenance lock;
 do not set `PROTOC` or `PROTOC_INCLUDE` while running it.
 
+Routine pull requests must use the offline `check`; it must not depend on
+GitHub availability. Release preparation must run both `check` and
+`check --online`, with the online check refetching every immutable source and
+verifying its source hash. Generator dependency updates must retain the exact
+xtask requirements, review the bundled `protoc --version`, regenerate and
+review output, pass `cargo audit`, and pass the full provenance and test gates.
+
 Review and validation chronology after `update`:
 
 1. Review the Moby/BuildKit provenance lock, protobuf resources, generated Rust,
@@ -65,6 +72,11 @@ Review and validation chronology after `update`:
    cargo publish
    ```
 7. Create a PR and merge the changes.
+
+For the extraction release, publish in dependency order: `bollard-buildkit-proto`,
+matching `bollard-stubs` when required, `bollard-llb`, and finally Bollard.
+Mutable Moby or BuildKit branch investigations are development-only and must
+not prepare release provenance.
 
 ## 2. Update and Publish Swagger-Generated Files
 
