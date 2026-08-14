@@ -100,6 +100,7 @@ pub fn load(path: &Path) -> Result<ProvenanceLock> {
         ))
     })?;
     lock.validate()?;
+    validate_moby_release_tag(&lock.moby.tag)?;
     Ok(lock)
 }
 
@@ -141,7 +142,8 @@ impl ProvenanceLock {
 
     pub fn to_toml(&self) -> Result<String> {
         self.validate()?;
-        Ok(format!("{}\n", toml::to_string_pretty(self)?))
+        validate_moby_release_tag(&self.moby.tag)?;
+        Ok(format!("{}\n", toml::to_string_pretty(self)?.trim_end()))
     }
 
     pub fn write_atomic(&self, path: &Path) -> Result<()> {
@@ -302,6 +304,20 @@ fn validate_non_empty(field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         return Err(validation_error(format!("{field} must not be empty")));
     }
+    Ok(())
+}
+
+fn validate_moby_release_tag(value: &str) -> Result<()> {
+    let version = value.strip_prefix("docker-v").ok_or_else(|| {
+        validation_error(format!(
+            "moby.tag {value:?} must be an immutable docker-v<version> release tag"
+        ))
+    })?;
+    semver::Version::parse(version).map_err(|error| {
+        validation_error(format!(
+            "moby.tag {value:?} must contain a valid release version: {error}"
+        ))
+    })?;
     Ok(())
 }
 

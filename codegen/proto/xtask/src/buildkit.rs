@@ -48,6 +48,7 @@ impl Error for ToolError {}
 struct Paths {
     workspace_root: PathBuf,
     pom_path: PathBuf,
+    xtask_manifest_path: PathBuf,
     proto_dir: PathBuf,
     resources_dir: PathBuf,
     generated_dir: PathBuf,
@@ -100,6 +101,7 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
 pub fn check(online: bool) -> Result<()> {
     let paths = paths()?;
     let lock = provenance::load(&paths.lock_path)?;
+    verify_generator_dependencies(&paths)?;
     verify_pom_tag(&paths, &lock)?;
     verify_lock_inventory(&lock)?;
     verify_checked_in_resources(&paths, &lock)?;
@@ -175,6 +177,57 @@ fn verify_pom_tag(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()
             input_spec.reference, lock.moby.tag
         )));
     }
+    Ok(())
+}
+
+fn verify_generator_dependencies(paths: &Paths) -> Result<()> {
+    verify_generator_dependencies_at(&paths.xtask_manifest_path)
+}
+
+fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
+    let contents = fs::read_to_string(path).map_err(|error| {
+        tool_error(format!(
+            "could not read xtask manifest {}: {error}",
+            path.display()
+        ))
+    })?;
+    let manifest: toml::Value = toml::from_str(&contents).map_err(|error| {
+        tool_error(format!(
+            "could not parse xtask manifest {}: {error}",
+            path.display()
+        ))
+    })?;
+    let dependencies = manifest
+        .get("dependencies")
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| tool_error("xtask manifest is missing [dependencies]"))?;
+
+    for (name, expected) in [
+        ("protoc-bin-vendored", provenance::PROTOC_BIN_VENDORED_VERSION),
+        ("tonic-prost-build", provenance::TONIC_PROST_BUILD_VERSION),
+        ("prost-build", provenance::PROST_BUILD_VERSION),
+    ] {
+        let dependency = dependencies
+            .get(name)
+            .ok_or_else(|| tool_error(format!("xtask manifest is missing {name}")))?;
+        let requirement = dependency
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| {
+                dependency
+                    .get("version")
+                    .and_then(toml::Value::as_str)
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| tool_error(format!("xtask dependency {name} has no version")))?;
+        let expected = format!("={expected}");
+        if requirement != expected {
+            return Err(tool_error(format!(
+                "xtask dependency {name} uses {requirement:?}, expected exact requirement {expected:?}"
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -336,6 +389,7 @@ fn paths() -> Result<Paths> {
     Ok(Paths {
         workspace_root: workspace_root.to_path_buf(),
         pom_path: workspace_root.join("codegen/swagger/pom.xml"),
+        xtask_manifest_path: proto_dir.join("xtask/Cargo.toml"),
         resources_dir: proto_dir.join("resources"),
         generated_dir: proto_dir.join("src/generated"),
         proto_dir: proto_dir.to_path_buf(),
@@ -581,7 +635,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{compare_directories, copy_directory, provenance, replace_directory};
+    use super::{
+        compare_directories, copy_directory, provenance, replace_directory,
+        verify_generator_dependencies_at,
+    };
 
     #[test]
     fn compares_identical_directories() {
@@ -647,5 +704,38 @@ mod tests {
         assert!(generated.contains(
             "pub const OPS_PROTO_SHA256: &str = \"b45049a4ae961e1eda9acf3834263cf7894ba194d721d5aed04f43b638056c37\";"
         ));
+    }
+
+    #[test]
+    fn accepts_exact_generator_dependencies() {
+        let directory = tempdir().unwrap();
+        let manifest = directory.path().join("Cargo.toml");
+        fs::write(
+            &manifest,
+            format!(
+                "[dependencies]\nprotoc-bin-vendored = \"={}\"\ntonic-prost-build = \"={}\"\nprost-build = \"={}\"\n",
+                provenance::PROTOC_BIN_VENDORED_VERSION,
+                provenance::TONIC_PROST_BUILD_VERSION,
+                provenance::PROST_BUILD_VERSION,
+            ),
+        )
+        .unwrap();
+
+        verify_generator_dependencies_at(&manifest).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_exact_generator_dependencies() {
+        let directory = tempdir().unwrap();
+        let manifest = directory.path().join("Cargo.toml");
+        fs::write(
+            &manifest,
+            "[dependencies]\nprotoc-bin-vendored = \"3.2\"\ntonic-prost-build = \"=0.14.6\"\nprost-build = \"=0.14.4\"\n",
+        )
+        .unwrap();
+
+        let error = verify_generator_dependencies_at(&manifest).unwrap_err();
+        assert!(error.to_string().contains("protoc-bin-vendored"));
+        assert!(error.to_string().contains("exact requirement"));
     }
 }
