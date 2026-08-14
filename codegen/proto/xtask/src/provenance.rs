@@ -14,6 +14,8 @@ use crate::transform;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// The schema version changes only when the lock structure or field semantics
+// change. The generation contract changes when the generation recipe changes.
 const SCHEMA_VERSION: u32 = 2;
 pub const GENERATION_CONTRACT: u32 = 1;
 pub const PROTOC_VERSION: &str = "31.1";
@@ -482,6 +484,13 @@ transform = "none"
             1,
         ))
         .unwrap_err();
+        assert!(error.contains("generation inputs differ"));
+    }
+
+    #[test]
+    fn rejects_generation_contract_drift() {
+        let error = load_contents(&VALID_LOCK.replacen("contract = 1", "contract = 2", 1))
+            .unwrap_err();
         assert!(error.contains("generation inputs differ"));
     }
 
