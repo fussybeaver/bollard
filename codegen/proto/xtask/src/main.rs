@@ -14,7 +14,8 @@ use std::error::Error;
 enum Command {
     Help,
     BuildkitUpdate,
-    BuildkitCheck { online: bool },
+    BuildkitCheck,
+    BuildkitCheckOnline,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -25,7 +26,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(())
         }
         Command::BuildkitUpdate => buildkit::update(),
-        Command::BuildkitCheck { online } => buildkit::check(online),
+        Command::BuildkitCheck => buildkit::check(),
+        Command::BuildkitCheckOnline => buildkit::check_online(),
     }
 }
 
@@ -36,12 +38,12 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, Stri
             Ok(Command::BuildkitUpdate)
         }
         [buildkit, action] if buildkit == "buildkit" && action == "check" => {
-            Ok(Command::BuildkitCheck { online: false })
+            Ok(Command::BuildkitCheck)
         }
         [buildkit, action, online]
             if buildkit == "buildkit" && action == "check" && online == "--online" =>
         {
-            Ok(Command::BuildkitCheck { online: true })
+            Ok(Command::BuildkitCheckOnline)
         }
         [flag] if flag == "--help" || flag == "-h" => Ok(Command::Help),
         _ => Err(usage().to_string()),
@@ -68,11 +70,11 @@ mod tests {
         );
         assert_eq!(
             parse_command(args(&["buildkit", "check"])),
-            Ok(Command::BuildkitCheck { online: false })
+            Ok(Command::BuildkitCheck)
         );
         assert_eq!(
             parse_command(args(&["buildkit", "check", "--online"])),
-            Ok(Command::BuildkitCheck { online: true })
+            Ok(Command::BuildkitCheckOnline)
         );
     }
 

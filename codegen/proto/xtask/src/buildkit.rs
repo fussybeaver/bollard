@@ -101,7 +101,32 @@ pub fn update() -> Result<()> {
     Ok(())
 }
 
-pub fn check(online: bool) -> Result<()> {
+pub fn check() -> Result<()> {
+    check_common()?;
+    Ok(())
+}
+
+pub fn check_online() -> Result<()> {
+    let (paths, lock) = check_common()?;
+    let independent_pins = lock.independent_pins()?;
+    let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
+    verify_baseline(&baseline, &lock)?;
+    verify_prepared_sources(&staged_resources.sources, &lock)?;
+    compare_directories_named(
+        &staged_resources.directory,
+        &paths.resources_dir,
+        "protobuf resources",
+    )?;
+    println!("Resolved BuildKit compatibility baseline:\n{baseline}");
+    resources::print_report(&staged_resources.sources);
+    println!(
+        "Verified immutable sources and provenance lock for {}.",
+        baseline.buildkit_version
+    );
+    Ok(())
+}
+
+fn check_common() -> Result<(Paths, provenance::ProvenanceLock)> {
     let paths = paths()?;
     let lock = provenance::load(&paths.lock_path)?;
     verify_generator_dependencies(&paths)?;
@@ -111,26 +136,7 @@ pub fn check(online: bool) -> Result<()> {
     let generated = generate(&paths, &paths.resources_dir, &lock)?;
     compare_directories(&generated.directory, &paths.generated_dir)?;
     println!("Generated BuildKit bindings are up to date.");
-
-    if online {
-        let independent_pins = lock.independent_pins()?;
-        let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
-        verify_baseline(&baseline, &lock)?;
-        verify_prepared_sources(&staged_resources.sources, &lock)?;
-        compare_directories_named(
-            &staged_resources.directory,
-            &paths.resources_dir,
-            "protobuf resources",
-        )?;
-        println!("Resolved BuildKit compatibility baseline:\n{baseline}");
-        resources::print_report(&staged_resources.sources);
-        println!(
-            "Verified immutable sources and provenance lock for {}.",
-            baseline.buildkit_version
-        );
-    }
-
-    Ok(())
+    Ok((paths, lock))
 }
 
 fn resolve_and_fetch_sources(
