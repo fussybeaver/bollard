@@ -81,7 +81,7 @@ pub fn update() -> Result<()> {
         staged_resources.sources.clone(),
     )?;
     let generated = generate(&paths, &staged_resources.directory, &replacement_lock)?;
-    let mut commit = CommitGuard::new();
+    let mut commit = OutputTransaction::new();
     commit.add(&staged_resources.directory, &paths.resources_dir)?;
     commit.add(&generated.directory, &paths.generated_dir)?;
     let lock_parent = paths.lock_path.parent().ok_or_else(|| {
@@ -517,7 +517,7 @@ fn pinned_protoc() -> Result<PathBuf> {
     Ok(protoc)
 }
 
-struct CommitEntry {
+struct TransactionEntry {
     _staging: TempDir,
     staged: PathBuf,
     destination: PathBuf,
@@ -526,12 +526,16 @@ struct CommitEntry {
     installed: bool,
 }
 
-struct CommitGuard {
-    entries: Vec<CommitEntry>,
+/// Rollback-protected replacement of all generated outputs.
+///
+/// This is atomic for errors returned while this process is running. A process
+/// crash or forced termination between renames can still leave mixed outputs.
+struct OutputTransaction {
+    entries: Vec<TransactionEntry>,
     armed: bool,
 }
 
-impl CommitGuard {
+impl OutputTransaction {
     fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -550,7 +554,7 @@ impl CommitGuard {
         let staging = tempdir_in(parent)?;
         let staged = staging.path().join("replacement");
         copy_entry(source, &staged)?;
-        self.entries.push(CommitEntry {
+        self.entries.push(TransactionEntry {
             backup: staging.path().join("previous"),
             _staging: staging,
             staged,
@@ -593,7 +597,7 @@ impl CommitGuard {
     }
 }
 
-impl Drop for CommitGuard {
+impl Drop for OutputTransaction {
     fn drop(&mut self) {
         if !self.armed {
             return;
@@ -733,7 +737,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        CommitGuard, compare_directories, copy_directory, provenance, verify_generator_dependencies_at,
+        OutputTransaction, compare_directories, copy_directory, provenance, verify_generator_dependencies_at,
     };
 
     #[test]
@@ -787,7 +791,7 @@ mod tests {
         fs::write(&lock_destination, b"old-lock").unwrap();
         replacements.push((lock_source, lock_destination.clone()));
 
-        let mut commit = CommitGuard::new();
+        let mut commit = OutputTransaction::new();
         for (source, destination) in &replacements {
             commit.add(source, destination).unwrap();
         }
@@ -813,7 +817,7 @@ mod tests {
             replacements.push((source, destination));
         }
 
-        let mut commit = CommitGuard::new();
+        let mut commit = OutputTransaction::new();
         for (source, destination) in &replacements {
             commit.add(source, destination).unwrap();
         }
