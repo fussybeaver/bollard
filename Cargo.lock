@@ -726,6 +726,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gomod-parser"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27f6248cb5f6d4ea74c974c7eb818fdc3d6d5c68d6e03a0ab914ca76d48eaeb2"
+dependencies = [
+ "winnow 1.0.4",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2140,7 +2149,7 @@ dependencies = [
  "serde_spanned",
  "toml_datetime",
  "toml_write",
- "winnow",
+ "winnow 0.7.15",
 ]
 
 [[package]]
@@ -2603,6 +2612,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "winnow"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "winx"
 version = "0.36.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2633,6 +2651,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "fs_extra",
+ "gomod-parser",
  "hex",
  "prost-build",
  "protoc-bin-vendored",

@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
+use gomod_parser::GoMod;
 use semver::Version;
 
 use crate::github::Remote;
@@ -34,123 +36,61 @@ impl Display for GoModError {
 
 impl Error for GoModError {}
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Block {
-    Require,
-    Replace,
-    Exclude,
-    Retract,
-}
-
 pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement> {
     parse_module_requirement(contents, BUILDKIT_MODULE)
 }
 
 pub fn parse_module_requirement(contents: &str, module: &str) -> Result<BuildkitRequirement> {
-    let mut block = None;
-    let mut requirements = Vec::new();
+    // gomod-parser does not currently accept comment-only lines inside a
+    // directive block, although they are valid go.mod syntax.
+    let normalized = contents
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let go_mod = GoMod::from_str(&normalized)
+        .map_err(|error| go_mod_error(format!("could not parse go.mod: {error}")))?;
 
-    for raw_line in contents.lines() {
-        let (code, comment) = raw_line.split_once("//").unwrap_or((raw_line, ""));
-        let line = code.trim();
-        let starts_block = line.ends_with('(');
-
-        if let Some(active_block) = block {
-            if line == ")" {
-                block = None;
-                continue;
-            }
-            if active_block == Block::Require {
-                parse_requirement_line(line, comment, module, &mut requirements)?;
-            } else if matches!(active_block, Block::Replace | Block::Exclude | Block::Retract)
-                && line.contains(module)
-            {
-                return Err(go_mod_error(format!(
-                    "go.mod contains a {active_block} directive for {module}"
-                )));
-            }
-            continue;
-        }
-
-        if starts_block {
-            block = match line {
-                "require (" => Some(Block::Require),
-                "replace (" => Some(Block::Replace),
-                "exclude (" => Some(Block::Exclude),
-                "retract (" => Some(Block::Retract),
-                _ => None,
-            };
-            continue;
-        }
-
-        if let Some(rest) = line.strip_prefix("require ") {
-            parse_requirement_line(rest, comment, module, &mut requirements)?;
-        } else if let Some(rest) = line.strip_prefix("replace ") {
-            if replacement_targets_module(rest, module) {
-                return Err(go_mod_error(format!(
-                    "go.mod replaces {module}"
-                )));
-            }
-        } else if (line.starts_with("exclude ") || line.starts_with("retract "))
-            && line.contains(module)
-        {
-            return Err(go_mod_error(format!(
-                "go.mod excludes or retracts {module}"
-            )));
-        }
+    if go_mod
+        .replace
+        .iter()
+        .any(|replacement| replacement.module_path == module)
+    {
+        return Err(go_mod_error(format!("go.mod replaces {module}")));
+    }
+    if go_mod
+        .exclude
+        .iter()
+        .any(|dependency| dependency.module.module_path == module)
+    {
+        return Err(go_mod_error(format!("go.mod excludes {module}")));
     }
 
-    if block.is_some() {
-        return Err(go_mod_error("Moby go.mod contains an unterminated block"));
-    }
-    match requirements.as_slice() {
-        [] => Err(go_mod_error(format!(
-            "go.mod does not directly require {module}"
-        ))),
-        [requirement] => Ok(requirement.clone()),
-        _ => Err(go_mod_error(format!(
-            "go.mod contains multiple direct requirements for {module}"
-        ))),
-    }
-}
-
-fn parse_requirement_line(
-    line: &str,
-    comment: &str,
-    module_name: &str,
-    requirements: &mut Vec<BuildkitRequirement>,
-) -> Result<()> {
-    let mut fields = line.split_whitespace();
-    let Some(module) = fields.next() else {
-        return Ok(());
+    let requirements: Vec<_> = go_mod
+        .require
+        .iter()
+        .filter(|requirement| requirement.module.module_path == module)
+        .collect();
+    let [requirement] = requirements.as_slice() else {
+        return if requirements.is_empty() {
+            Err(go_mod_error(format!(
+                "go.mod does not directly require {module}"
+            )))
+        } else {
+            Err(go_mod_error(format!(
+                "go.mod contains multiple direct requirements for {module}"
+            )))
+        };
     };
-    if module != module_name {
-        return Ok(());
-    }
-    if comment.contains("indirect") {
+    if requirement.indirect {
         return Err(go_mod_error(format!(
-            "go.mod marks direct requirement {module_name} as indirect"
+            "go.mod marks direct requirement {module} as indirect"
         )));
     }
-    let Some(version) = fields.next() else {
-        return Err(go_mod_error(format!(
-            "go.mod has no version for {module_name}"
-        )));
-    };
-    if fields.next().is_some() {
-        return Err(go_mod_error(format!(
-            "go.mod has malformed requirement for {module_name}"
-        )));
-    }
-    requirements.push(BuildkitRequirement {
-        version: parse_version(version)?,
-    });
-    Ok(())
-}
 
-fn replacement_targets_module(line: &str, module_name: &str) -> bool {
-    let target = line.split_once("=>").map_or(line, |(target, _)| target);
-    target.split_whitespace().next() == Some(module_name)
+    Ok(BuildkitRequirement {
+        version: parse_version(&requirement.module.version)?,
+    })
 }
 
 pub fn resolve_vtprotobuf_revision<R: Remote>(
@@ -203,17 +143,6 @@ fn pseudo_parts(version: &str) -> Option<(&str, &str, &str)> {
 
 fn go_mod_error(message: impl Into<String>) -> Box<dyn Error> {
     Box::new(GoModError(message.into()))
-}
-
-impl Display for Block {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Require => "require",
-            Self::Replace => "replace",
-            Self::Exclude => "exclude",
-            Self::Retract => "retract",
-        })
-    }
 }
 
 #[cfg(test)]
@@ -302,10 +231,16 @@ require (
     }
 
     #[test]
+    fn rejects_exclusions_with_comment_only_lines() {
+        let contents = format!(
+            "{TAGGED}\nexclude (\n // explanatory comment\n github.com/moby/buildkit v0.28.0\n)\n"
+        );
+        assert!(parse_buildkit_requirement(&contents).is_err());
+    }
+
+    #[test]
     fn rejects_unterminated_blocks() {
         assert!(parse_buildkit_requirement("require (\n github.com/moby/buildkit v0.29.0\n")
-            .unwrap_err()
-            .to_string()
-            .contains("unterminated"));
+            .is_err());
     }
 }
