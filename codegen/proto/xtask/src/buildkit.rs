@@ -401,13 +401,14 @@ fn generate(
     fs::create_dir_all(&directory)?;
 
     let packet_proto = resources_directory.join(PACKET_PROTO);
-    compile(&directory, std::slice::from_ref(&packet_proto), resources_directory, false)?;
+    compile(&directory, std::slice::from_ref(&packet_proto), resources_directory)?;
+    copy_packet_output(&directory)?;
 
     let proto_files: Vec<PathBuf> = PROTO_FILES
         .iter()
         .map(|file| resources_directory.join(file))
         .collect();
-    compile(&directory, &proto_files, resources_directory, true)?;
+    compile(&directory, &proto_files, resources_directory)?;
     write_provenance_module(&directory, lock)?;
 
     Ok(GeneratedOutput {
@@ -452,7 +453,6 @@ fn compile(
     output_directory: &Path,
     proto_files: &[PathBuf],
     resources_directory: &Path,
-    btree_map: bool,
 ) -> Result<()> {
     if env::var_os("PROTOC").is_some() || env::var_os("PROTOC_INCLUDE").is_some() {
         return Err(tool_error(
@@ -463,30 +463,29 @@ fn compile(
     let protoc = pinned_protoc()?;
     let mut config = tonic_prost_build::Config::new();
     config.protoc_executable(protoc);
-    let mut builder = tonic_prost_build::configure()
+    let builder = tonic_prost_build::configure()
         .out_dir(output_directory)
-        .compile_well_known_types(true);
-    if btree_map {
-        builder = builder.btree_map(".pb");
-    }
+        .compile_well_known_types(true)
+        .btree_map(".pb");
     builder.compile_with_config(
         config,
         proto_files,
         &[resources_directory.to_path_buf()],
     )?;
 
-    if !btree_map {
-        let packet_generated = output_directory.join("moby.filesync.v1.rs");
-        let packet_output = output_directory.join("moby.filesync.packet.rs");
-        if !packet_generated.exists() {
-            return Err(Box::new(ToolError(format!(
-                "packet generation did not produce {}",
-                packet_generated.display()
-            ))));
-        }
-        fs::copy(packet_generated, packet_output)?;
-    }
+    Ok(())
+}
 
+fn copy_packet_output(output_directory: &Path) -> Result<()> {
+    let packet_generated = output_directory.join("moby.filesync.v1.rs");
+    let packet_output = output_directory.join("moby.filesync.packet.rs");
+    if !packet_generated.exists() {
+        return Err(Box::new(ToolError(format!(
+            "packet generation did not produce {}",
+            packet_generated.display()
+        ))));
+    }
+    fs::copy(packet_generated, packet_output)?;
     Ok(())
 }
 
