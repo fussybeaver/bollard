@@ -2633,7 +2633,6 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "hex",
- "libc",
  "prost-build",
  "protoc-bin-vendored",
  "roxmltree",

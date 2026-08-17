@@ -4,14 +4,9 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::Command;
 
-use tempfile::{tempdir_in, NamedTempFile, TempDir};
-
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use tempfile::{tempdir_in, TempDir};
 
 use crate::github::Remote;
 use crate::{github, gomod, pom, provenance, resolver, resources};
@@ -19,7 +14,6 @@ use crate::{github, gomod, pom, provenance, resolver, resources};
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
-const PROTOC_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 const PROTO_FILES: &[&str] = &[
     "fsutil/types/stat.proto",
@@ -229,91 +223,6 @@ fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[derive(Debug)]
-struct CommandOutput {
-    status: std::process::ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-}
-
-fn run_command_output(
-    current_dir: &Path,
-    program: &str,
-    args: &[String],
-    timeout: Duration,
-) -> Result<CommandOutput> {
-    let stdout = NamedTempFile::new()?;
-    let stderr = NamedTempFile::new()?;
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .current_dir(current_dir)
-        .stdout(Stdio::from(stdout.as_file().try_clone()?))
-        .stderr(Stdio::from(stderr.as_file().try_clone()?));
-    #[cfg(unix)]
-    command.process_group(0);
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| tool_error(format!("could not run {program}: {error}")))?;
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if started.elapsed() >= timeout {
-            terminate_process(&mut child);
-            return Err(tool_error(format!(
-                "command `{}` timed out after {} seconds",
-                command_string(program, args),
-                timeout.as_secs()
-            )));
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
-
-    let output = CommandOutput {
-        status,
-        stdout: fs::read(stdout.path())?,
-        stderr: fs::read(stderr.path())?,
-    };
-    if output.status.success() {
-        return Ok(output);
-    }
-
-    Err(tool_error(format!(
-        "command `{}` failed with {}: {}{}",
-        command_string(program, args),
-        output.status,
-        String::from_utf8_lossy(&output.stderr).trim(),
-        if output.stdout.is_empty() {
-            String::new()
-        } else {
-            format!("\n{}", String::from_utf8_lossy(&output.stdout).trim())
-        }
-    )))
-}
-
-fn command_string(program: &str, args: &[String]) -> String {
-    std::iter::once(program.to_string())
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn terminate_process(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    {
-        let process_group = -(child.id() as libc::pid_t);
-        if unsafe { libc::kill(process_group, libc::SIGKILL) } != 0 {
-            let _ = child.kill();
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
@@ -583,18 +492,22 @@ fn compile(
 
 fn pinned_protoc() -> Result<PathBuf> {
     let protoc = protoc_bin_vendored::protoc_bin_path()?;
-    let output = run_command_output(
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        &protoc.display().to_string(),
-        &[String::from("--version")],
-        PROTOC_COMMAND_TIMEOUT,
-    )
-    .map_err(|error| {
-        tool_error(format!(
-            "pinned protoc failed to report its version: {} ({error})",
-            protoc.display()
-        ))
-    })?;
+    let output = Command::new(&protoc)
+        .arg("--version")
+        .output()
+        .map_err(|error| {
+            tool_error(format!(
+                "pinned protoc failed to report its version: {} ({error})",
+                protoc.display()
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(tool_error(format!(
+            "pinned protoc failed to report its version: {}: {}",
+            protoc.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
     let version = String::from_utf8(output.stdout)?.trim().to_string();
     let expected = format!("libprotoc {}", provenance::PROTOC_VERSION);
     if version != expected {
@@ -817,14 +730,11 @@ fn tool_error(message: impl Into<String>) -> Box<dyn Error> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::Path;
-    use std::time::Duration;
 
     use tempfile::tempdir;
 
     use super::{
-        CommitGuard, compare_directories, copy_directory, provenance, run_command_output,
-        verify_generator_dependencies_at,
+        CommitGuard, compare_directories, copy_directory, provenance, verify_generator_dependencies_at,
     };
 
     #[test]
@@ -911,38 +821,6 @@ mod tests {
         assert!(commit.commit_with_failure(1).is_err());
         assert!(!replacements[0].1.exists());
         assert!(!replacements[1].1.exists());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn command_timeout_terminates_and_reports_the_command() {
-        let error = run_command_output(
-            Path::new("."),
-            "sh",
-            &[String::from("-c"), String::from("sleep 60")],
-            Duration::from_millis(20),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("timed out"));
-        assert!(error.to_string().contains("sleep 60"));
-    }
-
-    #[test]
-    fn command_output_preserves_stdout_and_stderr() {
-        let output = run_command_output(
-            Path::new("."),
-            if cfg!(windows) { "cmd" } else { "sh" },
-            if cfg!(windows) {
-                vec![String::from("/C"), String::from("echo out & echo err 1>&2")]
-            } else {
-                vec![String::from("-c"), String::from("printf out; printf err >&2")]
-            }
-            .as_slice(),
-            Duration::from_secs(5),
-        )
-        .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "out");
-        assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), "err");
     }
 
     #[test]
