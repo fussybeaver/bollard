@@ -2632,6 +2632,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "fs_extra",
  "hex",
  "prost-build",
  "protoc-bin-vendored",

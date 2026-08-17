@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use fs_extra::dir::{copy, CopyOptions};
 use tempfile::{tempdir_in, TempDir};
 
 use crate::github::Remote;
@@ -647,17 +648,11 @@ fn remove_path(path: &Path) -> std::io::Result<()> {
 }
 
 fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
-    fs::create_dir_all(destination)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if source_path.is_dir() {
-            copy_directory(&source_path, &destination_path)?;
-        } else {
-            fs::copy(source_path, destination_path)?;
-        }
-    }
+    copy(
+        source,
+        destination,
+        &CopyOptions::new().content_only(true),
+    )?;
     Ok(())
 }
 
