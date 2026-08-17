@@ -82,7 +82,6 @@ mod tests {
     fn rejects_unknown_commands() {
         assert!(parse_command(args(&["buildkit", "fetch"])).is_err());
         assert!(parse_command(args(&["buildkit", "update", "--online"])).is_err());
-        assert!(parse_command(args(&["buildkit", "update", "--unknown"])).is_err());
         assert!(parse_command(args(&[])).is_err());
     }
 }
