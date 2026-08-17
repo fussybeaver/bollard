@@ -33,13 +33,8 @@ impl Error for ResolverError {}
 pub fn resolve<R: Remote>(
     remote: &R,
     input_spec: &MobyInputSpec,
-    allow_moby_branch: bool,
 ) -> Result<ResolvedBaseline> {
-    let moby_commit = if allow_moby_branch {
-        remote.resolve_commit("moby", "moby", &input_spec.reference)?
-    } else {
-        remote.resolve_tag("moby", "moby", &input_spec.reference)?
-    };
+    let moby_commit = remote.resolve_tag("moby", "moby", &input_spec.reference)?;
     let go_mod = remote.fetch_raw("moby", "moby", &moby_commit, "go.mod")?;
     let go_mod_sha256 = sha256(&go_mod);
     let go_mod = String::from_utf8(go_mod)
@@ -113,19 +108,6 @@ mod tests {
                 .ok_or_else(|| format!("missing fake tag {owner}/{repository}:{tag}").into())
         }
 
-        fn resolve_commit(
-            &self,
-            owner: &str,
-            repository: &str,
-            reference: &str,
-        ) -> super::Result<String> {
-            if repository == "moby" && reference == "fix/swagger-docs" {
-                Ok("6c91b92cc71077b70c779c510da125301a8e40f3".into())
-            } else {
-                self.resolve_tag(owner, repository, reference)
-            }
-        }
-
         fn resolve_commit_prefix(
             &self,
             _owner: &str,
@@ -170,7 +152,7 @@ mod tests {
             reference: "docker-v29.4.1".into(),
         };
 
-        let baseline = resolve(&remote, &input_spec, false).unwrap();
+        let baseline = resolve(&remote, &input_spec).unwrap();
         assert_eq!(
             baseline,
             ResolvedBaseline {
@@ -200,29 +182,8 @@ mod tests {
             url: "fixture".into(),
             reference: "docker-v29.4.1".into(),
         };
-        let error = resolve(&remote, &input_spec, false).unwrap_err().to_string();
+        let error = resolve(&remote, &input_spec).unwrap_err().to_string();
         assert!(error.contains("reviewed image reference"));
     }
 
-    #[test]
-    fn allows_branch_resolution_only_when_requested() {
-        let remote = FakeRemote {
-            tags: HashMap::from([
-                (
-                    ("buildkit".into(), "v0.29.0".into()),
-                    "8543ce4428265d547cb009e5ad62348284497a88".into(),
-                ),
-            ]),
-            files: HashMap::from([(
-                "go.mod",
-                b"require github.com/moby/buildkit v0.29.0\n".as_slice(),
-            )]),
-        };
-        let input_spec = MobyInputSpec {
-            url: "fixture".into(),
-            reference: "fix/swagger-docs".into(),
-        };
-        assert!(resolve(&remote, &input_spec, false).is_err());
-        assert!(resolve(&remote, &input_spec, true).is_ok());
-    }
 }

@@ -451,10 +451,6 @@ mod tests {
             unreachable!()
         }
 
-        fn resolve_commit(&self, _owner: &str, _repository: &str, _reference: &str) -> super::Result<String> {
-            unreachable!()
-        }
-
         fn resolve_commit_prefix(
             &self,
             _owner: &str,

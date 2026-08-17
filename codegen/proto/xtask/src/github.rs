@@ -16,7 +16,6 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub trait Remote {
     fn resolve_tag(&self, owner: &str, repository: &str, tag: &str) -> Result<String>;
-    fn resolve_commit(&self, owner: &str, repository: &str, reference: &str) -> Result<String>;
     fn resolve_commit_prefix(
         &self,
         owner: &str,
@@ -104,12 +103,6 @@ impl Remote for GitHubRemote {
                 None
             };
         resolve_tag_target(&tag_ref, annotated.as_ref(), tag)
-    }
-
-    fn resolve_commit(&self, owner: &str, repository: &str, reference: &str) -> Result<String> {
-        let url = format!("{API_BASE}/repos/{owner}/{repository}/commits/{reference}");
-        let commit: Commit = self.get_json(&url)?;
-        validate_commit(&commit.sha, "reference target")
     }
 
     fn resolve_commit_prefix(

@@ -74,13 +74,12 @@ struct StagedResources {
     sources: Vec<resources::PreparedSource>,
 }
 
-pub fn update(allow_moby_branch: bool) -> Result<()> {
+pub fn update() -> Result<()> {
     let paths = paths()?;
     verify_generator_dependencies(&paths)?;
     let lock = provenance::load(&paths.lock_path)?;
     let independent_pins = lock.independent_pins()?;
-    let (baseline, staged_resources) =
-        resolve_and_fetch_sources(&paths, allow_moby_branch, &independent_pins)?;
+    let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
     resources::print_report(&staged_resources.sources);
     let replacement_lock = provenance::ProvenanceLock::from_prepared(
@@ -91,24 +90,14 @@ pub fn update(allow_moby_branch: bool) -> Result<()> {
     let mut commit = CommitGuard::new();
     commit.add(&staged_resources.directory, &paths.resources_dir)?;
     commit.add(&generated.directory, &paths.generated_dir)?;
-    let staged_lock = if allow_moby_branch {
-        eprintln!(
-            "WARNING: development-only Moby branch update did not replace {}; release provenance remains unchanged",
-            display_path(&paths.workspace_root, &paths.lock_path)
-        );
-        None
-    } else {
-        let lock_parent = paths.lock_path.parent().ok_or_else(|| {
-            tool_error(format!(
-                "provenance lock has no parent: {}",
-                paths.lock_path.display()
-            ))
-        })?;
-        Some(replacement_lock.stage(lock_parent)?)
-    };
-    if let Some(staged_lock) = &staged_lock {
-        commit.add(staged_lock, &paths.lock_path)?;
-    }
+    let lock_parent = paths.lock_path.parent().ok_or_else(|| {
+        tool_error(format!(
+            "provenance lock has no parent: {}",
+            paths.lock_path.display()
+        ))
+    })?;
+    let staged_lock = replacement_lock.stage(lock_parent)?;
+    commit.add(&staged_lock, &paths.lock_path)?;
     commit.commit()?;
     println!(
         "Updated generated BuildKit bindings in {}",
@@ -130,8 +119,7 @@ pub fn check(online: bool) -> Result<()> {
 
     if online {
         let independent_pins = lock.independent_pins()?;
-        let (baseline, staged_resources) =
-            resolve_and_fetch_sources(&paths, false, &independent_pins)?;
+        let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
         verify_baseline(&baseline, &lock)?;
         verify_prepared_sources(&staged_resources.sources, &lock)?;
         compare_directories_named(
@@ -152,19 +140,12 @@ pub fn check(online: bool) -> Result<()> {
 
 fn resolve_and_fetch_sources(
     paths: &Paths,
-    allow_moby_branch: bool,
     independent_pins: &BTreeMap<String, resources::IndependentPin>,
 ) -> Result<(resolver::ResolvedBaseline, StagedResources)> {
     let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
-    if allow_moby_branch {
-        eprintln!(
-            "WARNING: resolving Moby reference {:?} through the commit API; this development-only mode is mutable and is not release provenance",
-            input_spec.reference
-        );
-    }
 
     let remote = github::GitHubRemote::from_environment();
-    let baseline = resolver::resolve(&remote, &input_spec, allow_moby_branch)?;
+    let baseline = resolver::resolve(&remote, &input_spec)?;
     let buildkit_go_mod = remote.fetch_raw(
         "moby",
         "buildkit",

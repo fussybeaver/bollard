@@ -37,16 +37,6 @@ cargo xtask buildkit check --online
 Set `GITHUB_TOKEN` when using the resolver in environments subject to GitHub API
 rate limits.
 
-For development-only Moby source investigations, a mutable Moby branch can be
-selected explicitly:
-
-```bash
-cargo xtask buildkit update --allow-moby-branch
-```
-
-This mode is warned as mutable and must not be used to prepare release
-provenance. The default update command remains tag-only.
-
 The generated files remain checked in so Bollard consumers do not need a
 generator or `protoc` installation. The unpublished xtask uses the pinned
 vendored `protoc` and records the generation contract in the provenance lock.
