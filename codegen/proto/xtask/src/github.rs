@@ -1,12 +1,11 @@
 use std::env;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{validate_commit as validate_revision, Result};
+use crate::support::xtask_error as remote_error;
 
 const API_BASE: &str = "https://api.github.com";
 const RAW_BASE: &str = "https://raw.githubusercontent.com";
@@ -156,28 +155,8 @@ struct Commit {
     sha: String,
 }
 
-#[derive(Debug)]
-struct RemoteError(String);
-
-impl Display for RemoteError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for RemoteError {}
-
 fn validate_commit(value: &str, description: &str) -> Result<String> {
-    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(remote_error(format!(
-            "GitHub {description} is not a 40-character hexadecimal SHA: {value:?}"
-        )));
-    }
-    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(remote_error(format!(
-            "GitHub {description} is not lowercase: {value:?}"
-        )));
-    }
+    validate_revision(&format!("GitHub {description}"), value)?;
     Ok(value.into())
 }
 
@@ -204,10 +183,6 @@ fn resolve_tag_target(
             "GitHub tag {tag:?} resolves to unsupported object type {kind:?}"
         ))),
     }
-}
-
-fn remote_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(RemoteError(message.into()))
 }
 
 #[cfg(test)]

@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 use std::env;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,8 +9,7 @@ use tempfile::{tempdir_in, TempDir};
 
 use crate::github::Remote;
 use crate::{github, gomod, pom, provenance, resolver, resources};
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{sha256, xtask_error as tool_error, Result};
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
 
@@ -33,17 +30,6 @@ const PROTO_FILES: &[&str] = &[
     "grpc/health/v1/health.proto",
     "pb/ops.proto",
 ];
-
-#[derive(Debug)]
-struct ToolError(String);
-
-impl Display for ToolError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for ToolError {}
 
 #[derive(Debug)]
 struct Paths {
@@ -154,7 +140,7 @@ fn resolve_and_fetch_sources(
         "go.mod",
     )?;
     let buildkit_go_mod = String::from_utf8(buildkit_go_mod)
-        .map_err(|error| ToolError(format!("BuildKit go.mod is not UTF-8: {error}")))?;
+        .map_err(|source_error| tool_error(format!("BuildKit go.mod is not UTF-8: {source_error}")))?;
     let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
     let inventory = resources::inventory(&baseline, &vtprotobuf_revision, independent_pins)?;
     let temporary_directory = tempdir_in(&paths.proto_dir)?;
@@ -299,7 +285,7 @@ fn verify_checked_in_resources(
     for (path, resource) in &expected {
         match actual.get(path) {
             Some(contents) => {
-                let hash = resources::sha256(contents);
+                let hash = sha256(contents);
                 if hash != resource.output_sha256 {
                     mismatches.push(format!(
                         "{} hash {} differs from lock {}",
@@ -381,10 +367,10 @@ fn verify_prepared_sources(
 fn paths() -> Result<Paths> {
     let xtask_directory = Path::new(env!("CARGO_MANIFEST_DIR"));
     let proto_dir = xtask_directory.parent().ok_or_else(|| {
-        Box::new(ToolError("could not determine proto directory".to_string())) as Box<dyn Error>
+        tool_error("could not determine proto directory")
     })?;
     let workspace_root = proto_dir.parent().and_then(Path::parent).ok_or_else(|| {
-        Box::new(ToolError("could not determine workspace root".to_string())) as Box<dyn Error>
+        tool_error("could not determine workspace root")
     })?;
 
     Ok(Paths {
@@ -487,10 +473,10 @@ fn copy_packet_output(output_directory: &Path) -> Result<()> {
     let packet_generated = output_directory.join("moby.filesync.v1.rs");
     let packet_output = output_directory.join("moby.filesync.packet.rs");
     if !packet_generated.exists() {
-        return Err(Box::new(ToolError(format!(
+        return Err(tool_error(format!(
             "packet generation did not produce {}",
             packet_generated.display()
-        ))));
+        )));
     }
     fs::copy(packet_generated, packet_output)?;
     Ok(())
@@ -681,22 +667,22 @@ fn compare_directories_named(actual: &Path, expected: &Path, label: &str) -> Res
     }
     differences.sort();
 
-    Err(Box::new(ToolError(format!(
+    Err(tool_error(format!(
         "{label} differ: {}",
         differences
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join(", ")
-    ))))
+    )))
 }
 
 fn files(directory: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
     if !directory.is_dir() {
-        return Err(Box::new(ToolError(format!(
+        return Err(tool_error(format!(
             "generated directory does not exist: {}",
             directory.display()
-        ))));
+        )));
     }
 
     let mut output = BTreeMap::new();
@@ -725,10 +711,6 @@ fn display_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .map(|relative| relative.display().to_string())
         .unwrap_or_else(|_| path.display().to_string())
-}
-
-fn tool_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(ToolError(message.into()))
 }
 
 #[cfg(test)]

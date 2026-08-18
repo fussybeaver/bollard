@@ -1,7 +1,4 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{xtask_error as transform_error, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transform {
@@ -27,17 +24,6 @@ impl Transform {
         }
     }
 }
-
-#[derive(Debug)]
-struct TransformError(String);
-
-impl Display for TransformError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for TransformError {}
 
 #[derive(Debug, Clone, Copy)]
 struct Replacement {
@@ -156,10 +142,6 @@ pub fn apply(transform: Transform, destination: &str, contents: &[u8]) -> Result
     }
 
     Ok(output.into_bytes())
-}
-
-fn transform_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(TransformError(message.into()))
 }
 
 #[cfg(test)]

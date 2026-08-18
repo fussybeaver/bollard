@@ -1,6 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -10,9 +8,8 @@ use tempfile::{NamedTempFile, TempPath};
 
 use crate::resolver::ResolvedBaseline;
 use crate::resources::{IndependentPin, PreparedSource};
+use crate::support::{validate_commit, validate_path, xtask_error as validation_error, Result};
 use crate::transform;
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // The schema version changes only when the lock structure or field semantics
 // change. The generation contract changes when the generation recipe changes.
@@ -76,26 +73,15 @@ pub struct Resource {
     pub transform: String,
 }
 
-#[derive(Debug)]
-struct ProvenanceError(String);
-
-impl Display for ProvenanceError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for ProvenanceError {}
-
 pub fn load(path: &Path) -> Result<ProvenanceLock> {
     let contents = fs::read_to_string(path).map_err(|error| {
-        ProvenanceError(format!(
+        validation_error(format!(
             "could not read provenance lock {}: {error}",
             path.display()
         ))
     })?;
     let lock: ProvenanceLock = toml::from_str(&contents).map_err(|error| {
-        ProvenanceError(format!(
+        validation_error(format!(
             "could not parse provenance lock {}: {error}",
             path.display()
         ))
@@ -291,10 +277,6 @@ pub fn current_generation() -> Generation {
     }
 }
 
-fn validation_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(ProvenanceError(message.into()))
-}
-
 fn validate_non_empty(field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         return Err(validation_error(format!("{field} must not be empty")));
@@ -316,20 +298,6 @@ fn validate_moby_release_tag(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_commit(field: &str, value: &str) -> Result<()> {
-    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(validation_error(format!(
-            "{field} must be a 40-character hexadecimal Git revision"
-        )));
-    }
-    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(validation_error(format!(
-            "{field} must use lowercase hexadecimal"
-        )));
-    }
-    Ok(())
-}
-
 fn validate_sha256(field: &str, value: &str) -> Result<()> {
     if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(validation_error(format!(
@@ -339,20 +307,6 @@ fn validate_sha256(field: &str, value: &str) -> Result<()> {
     if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
         return Err(validation_error(format!(
             "{field} must use lowercase hexadecimal"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_path(field: &str, value: &str) -> Result<()> {
-    validate_non_empty(field, value)?;
-    let path = Path::new(value);
-    if path.is_absolute()
-        || value.contains('\\')
-        || value.split('/').any(|component| component.is_empty() || component == "." || component == "..")
-    {
-        return Err(validation_error(format!(
-            "{field} must be a normalized relative path"
         )));
     }
     Ok(())

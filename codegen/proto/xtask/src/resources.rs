@@ -1,16 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
 use crate::github::Remote;
 use crate::resolver::ResolvedBaseline;
+use crate::support::{sha256, validate_commit, validate_path, xtask_error as resource_error, Result};
 use crate::transform::{self, Transform};
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub const INDEPENDENT_DESTINATIONS: &[&str] = &[
     "google/protobuf/any.proto",
@@ -68,23 +64,12 @@ pub struct PreparedSource {
     pub transform: String,
 }
 
-#[derive(Debug)]
-struct ResourceError(String);
-
-impl Display for ResourceError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for ResourceError {}
-
 pub fn inventory(
     baseline: &ResolvedBaseline,
     vtprotobuf_revision: &str,
     independent_pins: &BTreeMap<String, IndependentPin>,
 ) -> Result<Vec<Source>> {
-    validate_commit(vtprotobuf_revision, "vtprotobuf revision")?;
+    validate_commit("vtprotobuf revision", vtprotobuf_revision)?;
 
     let buildkit = |destination: &str, path: &str| Source {
         class: DependencyClass::BuildkitOwned,
@@ -234,9 +219,12 @@ pub fn print_report(sources: &[PreparedSource]) {
 fn validate_inventory(sources: &[Source]) -> Result<()> {
     let mut destinations = BTreeSet::new();
     for source in sources {
-        validate_commit(&source.revision, &format!("{} revision", source.destination))?;
-        validate_path(&source.destination, "destination")?;
-        validate_path(&source.path, "source path")?;
+        validate_commit(
+            &format!("{} revision", source.destination),
+            &source.revision,
+        )?;
+        validate_path("destination", &source.destination)?;
+        validate_path("source path", &source.path)?;
         if source.transform != transform::for_destination(&source.destination) {
             return Err(resource_error(format!(
                 "{} has unexpected transform {}",
@@ -275,43 +263,8 @@ fn validate_inventory(sources: &[Source]) -> Result<()> {
 }
 
 fn checked_destination(root: &Path, destination: &str) -> Result<PathBuf> {
-    validate_path(destination, "destination")?;
+    validate_path("destination", destination)?;
     Ok(root.join(destination))
-}
-
-fn validate_path(value: &str, field: &str) -> Result<()> {
-    if value.is_empty()
-        || value.starts_with('/')
-        || value.contains('\\')
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || component == "." || component == "..")
-    {
-        return Err(resource_error(format!(
-            "{field} must be a normalized relative path: {value:?}"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_commit(value: &str, field: &str) -> Result<()> {
-    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(resource_error(format!(
-            "{field} must be a 40-character hexadecimal Git revision"
-        )));
-    }
-    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(resource_error(format!("{field} must use lowercase hexadecimal")));
-    }
-    Ok(())
-}
-
-pub fn sha256(contents: &[u8]) -> String {
-    hex::encode(Sha256::digest(contents))
-}
-
-fn resource_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(ResourceError(message.into()))
 }
 
 #[cfg(test)]

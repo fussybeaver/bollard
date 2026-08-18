@@ -5,6 +5,7 @@ mod pom;
 mod provenance;
 mod resolver;
 mod resources;
+mod support;
 mod transform;
 
 use std::env;

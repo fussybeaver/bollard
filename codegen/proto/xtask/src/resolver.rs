@@ -1,13 +1,9 @@
-use std::error::Error;
 use std::fmt::{Display, Formatter};
-
-use sha2::{Digest, Sha256};
 
 use crate::github::Remote;
 use crate::gomod::{parse_buildkit_requirement, BuildkitVersion};
 use crate::pom::MobyInputSpec;
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{sha256, xtask_error as resolver_error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedBaseline {
@@ -18,17 +14,6 @@ pub struct ResolvedBaseline {
     pub buildkit_commit: String,
     pub buildkit_image: String,
 }
-
-#[derive(Debug)]
-struct ResolverError(String);
-
-impl Display for ResolverError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for ResolverError {}
 
 pub fn resolve<R: Remote>(
     remote: &R,
@@ -65,14 +50,6 @@ pub fn resolve<R: Remote>(
         buildkit_commit,
         buildkit_image,
     })
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
-
-fn resolver_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(ResolverError(message.into()))
 }
 
 impl Display for ResolvedBaseline {

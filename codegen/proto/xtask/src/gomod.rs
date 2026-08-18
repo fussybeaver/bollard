@@ -1,13 +1,10 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use gomod_parser::GoMod;
 use semver::Version;
 
 use crate::github::Remote;
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{xtask_error as go_mod_error, Result};
 
 pub const BUILDKIT_MODULE: &str = "github.com/moby/buildkit";
 
@@ -24,17 +21,6 @@ pub enum BuildkitVersion {
 pub struct BuildkitRequirement {
     pub version: BuildkitVersion,
 }
-
-#[derive(Debug)]
-struct GoModError(String);
-
-impl Display for GoModError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for GoModError {}
 
 pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement> {
     parse_module_requirement(contents, BUILDKIT_MODULE)
@@ -140,10 +126,6 @@ fn pseudo_parts(version: &str) -> Option<(&str, &str, &str)> {
         return None;
     }
     Some((base, timestamp, commit_prefix))
-}
-
-fn go_mod_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(GoModError(message.into()))
 }
 
 #[cfg(test)]

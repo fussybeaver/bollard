@@ -1,10 +1,7 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-
 use roxmltree::Document;
 use url::Url;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use crate::support::{xtask_error as pom_error, Result};
 
 const MOBY_HOST: &str = "raw.githubusercontent.com";
 
@@ -14,20 +11,9 @@ pub struct MobyInputSpec {
     pub reference: String,
 }
 
-#[derive(Debug)]
-struct PomError(String);
-
-impl Display for PomError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for PomError {}
-
 pub fn parse_input_spec(contents: &str) -> Result<MobyInputSpec> {
     let document = Document::parse(contents)
-        .map_err(|error| PomError(format!("could not parse pom.xml: {error}")))?;
+        .map_err(|error| pom_error(format!("could not parse pom.xml: {error}")))?;
     let input_specs: Vec<String> = document
         .descendants()
         .filter(|node| node.tag_name().name() == "inputSpec")
@@ -69,10 +55,6 @@ pub fn parse_input_spec(contents: &str) -> Result<MobyInputSpec> {
     let reference = segments[2..api_index].join("/");
 
     Ok(MobyInputSpec { url, reference })
-}
-
-fn pom_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(PomError(message.into()))
 }
 
 #[cfg(test)]
