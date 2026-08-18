@@ -2,11 +2,17 @@
 
 This document outlines the steps for releasing a new version of Bollard. Follow these instructions carefully to ensure a smooth release process.
 
-## 1. Update and Publish Protobuf-Generated Files
+## 1. Update the Moby Compatibility Input
+
+1. Identify the Moby API release to support and update the `inputSpec` URL in
+   `codegen/swagger/pom.xml`.
+2. Confirm that the URL references the intended immutable Moby release.
+
+## 2. Regenerate and Validate BuildKit Protobuf Files
 
 ### Steps for `bollard-buildkit-proto`
 
-The preferred workflow is run from the repository root:
+Run the preferred workflow from the repository root:
 
 ```sh
 cargo xtask buildkit update
@@ -24,67 +30,58 @@ verify upstream source hashes. The xtask uses the vendored `protoc` and exact
 generator versions recorded in the provenance lock; do not set `PROTOC` or
 `PROTOC_INCLUDE` while running it.
 
-1. Check for transient dependency updates between `bollard` and `bollard-buildkit-proto` (e.g., `tonic`).
-2. Run both provenance checks and review the lock, resource, and generated Rust diffs:
+1. Check for transient dependency updates between `bollard` and
+   `bollard-buildkit-proto` (e.g., `tonic`).
+2. Run both provenance checks and review the lock, resource, and generated Rust
+   diffs:
    ```sh
    cargo xtask buildkit check
    cargo xtask buildkit check --online
    ```
-3. Verify that the build succeeds:
-   - In the project root, attempt a build with the `buildkit` feature enabled.
-   - Temporarily add a path dependency in `Cargo.toml` and update related transient dependencies to test the changes.
-   - **Important:** Revert any path dependency and ensure version alignment in `Cargo.toml` before submitting a pull request.
-4. Merge the pull request and reset the `master` branch.
-5. Package and publish the crate:
-   ```sh
-   cargo package
-   cargo publish
-   ```
-6. Create a PR and merge the changes.
+3. Review the provenance and generated Rust diffs.
+4. Verify the build and full test suite, including clippy, formatting, semver,
+   and audit checks.
 
-## 2. Update and Publish Swagger-Generated Files
+## 3. Update Swagger-Generated Files
 
 ### Steps for `bollard-swagger`
 
-1. Navigate to `./codegen/swagger`.
-2. Check for transient dependency updates between `bollard` and `bollard-buildkit-proto` (e.g., `chrono`).
-3. Identify the latest released API version:
-   - Check the latest release tag on the [Moby GitHub repository](https://github.com/moby/moby/releases/).
-   - Locate the most recent API documentation in `./docs/api`.
-   - Copy the raw download URL and update `./codegen/swagger/pom.xml` accordingly.
-4. Update the `packageVersion` field:
+1. Check for transient dependency updates between `bollard` and
+   `bollard-buildkit-proto` (e.g., `chrono`).
+2. Update the `packageVersion` field:
    - The first two numbers represent the Moby API version.
    - The third number corresponds to Bollard's internal codegen version.
    - The digits following `rc` match the Moby release tag.
    - Format: `[API-major].[API-minor].[bollard-codegen-version]-rc.[moby-tag-major][moby-tag-minor].[moby-tag-patch]`.
-5. Modify `Cargo.mustache` to reference the new `bollard-buildkit-proto` version.
-6. Generate the new Swagger bindings:
+3. Modify `Cargo.mustache` to reference the new `bollard-buildkit-proto` version.
+4. Generate the new Swagger bindings:
    ```sh
    mvn -D org.slf4j.simpleLogger.defaultLogLevel=warn clean compiler:compile generate-resources
    ```
-7. Validate the build:
+5. Validate the build:
    - Run a build in the root directory.
    - Temporarily add a path dependency in `Cargo.toml` to verify correctness.
-8. Merge the pull request and reset the `master` branch.
-9. Package and publish the crate:
+6. Review the generated Swagger diff alongside the protobuf diff. Do not run
+   `cargo fmt` over generated Swagger stubs; regenerate them through Maven.
+
+## 4. Publish in Dependency Order
+
+1. Package and publish `bollard-buildkit-proto`:
    ```sh
-   cargo package
-   cargo publish
+   (cd codegen/proto && cargo package && cargo publish)
    ```
-10. Create a PR and merge the changes.
-
-## 3. Update Bollard Crate and Documentation
-
-1. Update `Cargo.toml`:
-   - Modify dependencies to point to the latest versions of `bollard-buildkit-proto` and `bollard-stubs`.
-2. Update `lib.rs` and `docker.rs` to match the new API version if changes were made in the Swagger release.
-3. Modify `lib.rs` with any relevant documentation updates.
-4. Regenerate the README:
+2. Update the generated stubs and Bollard manifests to reference the released
+   proto version, then package and publish `bollard-stubs`:
+   ```sh
+   (cd codegen/swagger && cargo package && cargo publish)
+   ```
+3. Update Bollard's dependencies and any generated API or documentation as
+   needed. Regenerate the README:
    ```sh
    cargo readme --no-title > README.md
    ```
 
-## 4. Publish the New Release
+## 5. Publish Bollard
 
 1. Bump the crate version as necessary.
 2. Package and publish the release:
