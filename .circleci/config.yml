@@ -206,7 +206,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -- --check --verbose"
+      - run: docker run -ti --rm bollard bash -c "rustup component add rustfmt && cargo fmt -p bollard -p bollard-buildkit-proto -p xtask -- --check --verbose"
   test_podman:
     docker:
       - image: docker:29.3
