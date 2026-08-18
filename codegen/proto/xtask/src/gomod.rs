@@ -42,7 +42,8 @@ pub fn parse_buildkit_requirement(contents: &str) -> Result<BuildkitRequirement>
 
 pub fn parse_module_requirement(contents: &str, module: &str) -> Result<BuildkitRequirement> {
     // gomod-parser does not currently accept comment-only lines inside a
-    // directive block, although they are valid go.mod syntax.
+    // directive block, although they are valid go.mod syntax. See
+    // https://github.com/baz-scm/gomod-parser/issues/45.
     let normalized = contents
         .lines()
         .filter(|line| !line.trim_start().starts_with("//"))
