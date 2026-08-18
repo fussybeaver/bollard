@@ -73,6 +73,12 @@ pub struct Resource {
     pub transform: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct UpdateLock {
+    #[serde(default, rename = "resource")]
+    resources: Vec<Resource>,
+}
+
 pub fn load(path: &Path) -> Result<ProvenanceLock> {
     let contents = fs::read_to_string(path).map_err(|error| {
         validation_error(format!(
@@ -89,6 +95,22 @@ pub fn load(path: &Path) -> Result<ProvenanceLock> {
     lock.validate()?;
     validate_moby_release_tag(&lock.moby.tag)?;
     Ok(lock)
+}
+
+pub fn load_update_pins(path: &Path) -> Result<BTreeMap<String, IndependentPin>> {
+    let contents = fs::read_to_string(path).map_err(|error| {
+        validation_error(format!(
+            "could not read provenance lock {}: {error}",
+            path.display()
+        ))
+    })?;
+    let lock: UpdateLock = toml::from_str(&contents).map_err(|error| {
+        validation_error(format!(
+            "could not parse provenance lock {}: {error}",
+            path.display()
+        ))
+    })?;
+    independent_pins_from_resources(&lock.resources)
 }
 
 impl ProvenanceLock {
@@ -143,17 +165,36 @@ impl ProvenanceLock {
     }
 
     pub fn independent_pins(&self) -> Result<BTreeMap<String, IndependentPin>> {
+        independent_pins_from_resources(&self.resources)
+    }
+
+    pub fn resources(&self) -> &[Resource] {
+        &self.resources
+    }
+}
+
+fn independent_pins_from_resources(
+    resources: &[Resource],
+) -> Result<BTreeMap<String, IndependentPin>> {
         let mut pins = BTreeMap::new();
         for destination in crate::resources::INDEPENDENT_DESTINATIONS {
-            let resource = self
-                .resources
+            let matches: Vec<_> = resources
                 .iter()
-                .find(|resource| resource.destination == *destination)
-                .ok_or_else(|| {
-                    validation_error(format!(
+                .filter(|resource| resource.destination == *destination)
+                .collect();
+            let resource = match matches.as_slice() {
+                [resource] => resource,
+                [] => {
+                    return Err(validation_error(format!(
                         "provenance lock is missing independent resource {destination}"
-                    ))
-                })?;
+                    )))
+                }
+                _ => {
+                    return Err(validation_error(format!(
+                        "provenance lock contains duplicate independent resource {destination}"
+                    )))
+                }
+            };
             let (owner, repository) = resource.repository.split_once('/').ok_or_else(|| {
                 validation_error(format!(
                     "resource {destination} repository must be owner/repository"
@@ -164,6 +205,11 @@ impl ProvenanceLock {
                     "resource {destination} repository must be owner/repository"
                 )));
             }
+            validate_commit(
+                &format!("resource {destination} revision"),
+                &resource.revision,
+            )?;
+            validate_path(&format!("resource {destination} path"), &resource.path)?;
             pins.insert(
                 (*destination).to_string(),
                 IndependentPin {
@@ -176,11 +222,6 @@ impl ProvenanceLock {
         }
         Ok(pins)
     }
-
-    pub fn resources(&self) -> &[Resource] {
-        &self.resources
-    }
-}
 
 impl ProvenanceLock {
     fn validate(&self) -> Result<()> {
@@ -318,9 +359,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{load, ProvenanceLock};
+    use super::{load, load_update_pins, ProvenanceLock};
     use crate::resolver::ResolvedBaseline;
-    use crate::resources::PreparedSource;
+    use crate::resources::{PreparedSource, INDEPENDENT_DESTINATIONS};
 
     const VALID_LOCK: &str = r#"
 schema = 2
@@ -363,9 +404,59 @@ transform = "none"
         load(&path).map(|_| ()).map_err(|error| error.to_string())
     }
 
+    fn independent_resource(destination: &str) -> String {
+        format!(
+            "\n[[resource]]\ndestination = \"{destination}\"\nrepository = \"google/protobuf\"\nrevision = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\npath = \"{destination}\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntransform = \"none\"\n"
+        )
+    }
+
+    fn update_lock_contents() -> String {
+        let resources = INDEPENDENT_DESTINATIONS
+            .iter()
+            .map(|destination| independent_resource(destination))
+            .collect::<String>();
+        format!(
+            "{}\n{resources}",
+            VALID_LOCK
+                .replacen("schema = 2", "schema = 99", 1)
+                .replacen("protoc = \"31.1\"", "protoc = \"future\"", 1)
+        )
+    }
+
+    fn load_update_contents(contents: &str) -> Result<usize, String> {
+        let directory = tempdir().map_err(|error| error.to_string())?;
+        let path = directory.path().join("provenance.lock.toml");
+        fs::write(&path, contents).map_err(|error| error.to_string())?;
+        load_update_pins(&path)
+            .map(|pins| pins.len())
+            .map_err(|error| error.to_string())
+    }
+
     #[test]
     fn loads_valid_lock() {
         load_contents(VALID_LOCK).unwrap();
+    }
+
+    #[test]
+    fn update_loads_pins_without_validating_stale_generation() {
+        assert_eq!(load_update_contents(&update_lock_contents()).unwrap(), 5);
+    }
+
+    #[test]
+    fn update_rejects_missing_duplicate_or_malformed_pins() {
+        let valid = update_lock_contents();
+        let first = independent_resource(INDEPENDENT_DESTINATIONS[0]);
+        let missing = valid.replacen(&first, "", 1);
+        let duplicate = format!("{valid}\n{first}");
+        let malformed = valid.replacen(
+            "revision = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+            "revision = \"not-a-revision\"",
+            1,
+        );
+
+        for contents in [missing, duplicate, malformed] {
+            assert!(load_update_contents(&contents).is_err());
+        }
     }
 
     #[test]

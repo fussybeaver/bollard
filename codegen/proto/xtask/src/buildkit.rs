@@ -58,8 +58,7 @@ struct StagedResources {
 pub fn update() -> Result<()> {
     let paths = paths()?;
     verify_generator_dependencies(&paths)?;
-    let lock = provenance::load(&paths.lock_path)?;
-    let independent_pins = lock.independent_pins()?;
+    let independent_pins = provenance::load_update_pins(&paths.lock_path)?;
     let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
     resources::print_report(&staged_resources.sources);

@@ -265,7 +265,7 @@ dependencies = [
 name = "bollard-stubs"
 version = "1.53.1-rc.29.3.1"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "bollard-buildkit-proto 0.8.0",
  "bytes",
  "chrono",
