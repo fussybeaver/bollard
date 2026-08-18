@@ -1,4 +1,4 @@
-use crate::support::{xtask_error as transform_error, Result};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transform {
@@ -124,19 +124,19 @@ pub fn apply(transform: Transform, destination: &str, contents: &[u8]) -> Result
     }
 
     let mut output = String::from_utf8(contents.to_vec()).map_err(|error| {
-        transform_error(format!(
+        anyhow!(
             "{} cannot transform {destination}: source is not UTF-8: {error}",
             transform.name()
-        ))
+        )
     })?;
 
     for replacement in replacements(transform) {
         let actual = output.matches(replacement.from).count();
         if actual != replacement.expected {
-            return Err(transform_error(format!(
+            return Err(anyhow!(
                 "{} cannot transform {destination}: expected {} matches for {:?}, found {}",
                 transform.name(), replacement.expected, replacement.from, actual
-            )));
+            ));
         }
         output = output.replace(replacement.from, replacement.to);
     }

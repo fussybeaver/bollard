@@ -1,9 +1,10 @@
 use std::fmt::{Display, Formatter};
 
+use anyhow::{anyhow, Result};
 use crate::github::Remote;
 use crate::gomod::{parse_buildkit_requirement, BuildkitVersion};
 use crate::pom::MobyInputSpec;
-use crate::support::{sha256, xtask_error as resolver_error, Result};
+use crate::support::sha256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedBaseline {
@@ -23,7 +24,7 @@ pub fn resolve<R: Remote>(
     let go_mod = remote.fetch_raw("moby", "moby", &moby_commit, "go.mod")?;
     let go_mod_sha256 = sha256(&go_mod);
     let go_mod = String::from_utf8(go_mod)
-        .map_err(|error| resolver_error(format!("Moby go.mod is not UTF-8: {error}")))?;
+        .map_err(|error| anyhow!("Moby go.mod is not UTF-8: {error}"))?;
     let requirement = parse_buildkit_requirement(&go_mod)?;
 
     let (buildkit_version, buildkit_commit, buildkit_image) = match requirement.version {
@@ -36,9 +37,9 @@ pub fn resolve<R: Remote>(
             commit_prefix,
         } => {
             let commit = remote.resolve_commit_prefix("moby", "buildkit", &commit_prefix)?;
-            return Err(resolver_error(format!(
+            return Err(anyhow!(
                 "BuildKit requirement {version} resolves to {commit}; set a reviewed image reference before recording this pseudo-version"
-            )));
+            ));
         }
     };
 
@@ -68,6 +69,8 @@ impl Display for ResolvedBaseline {
 mod tests {
     use std::collections::HashMap;
 
+    use anyhow::anyhow;
+
     use super::{resolve, ResolvedBaseline};
     use crate::github::Remote;
     use crate::pom::MobyInputSpec;
@@ -82,7 +85,7 @@ mod tests {
             self.tags
                 .get(&(repository.into(), tag.into()))
                 .cloned()
-                .ok_or_else(|| format!("missing fake tag {owner}/{repository}:{tag}").into())
+                .ok_or_else(|| anyhow!("missing fake tag {owner}/{repository}:{tag}"))
         }
 
         fn resolve_commit_prefix(
@@ -104,7 +107,7 @@ mod tests {
             self.files
                 .get(path)
                 .map(|contents| contents.to_vec())
-                .ok_or_else(|| format!("missing fake file {revision}/{path}").into())
+                .ok_or_else(|| anyhow!("missing fake file {revision}/{path}"))
         }
     }
 

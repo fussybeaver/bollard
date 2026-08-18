@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use fs_extra::dir::{copy, CopyOptions};
+use anyhow::{anyhow, Result};
 use tempfile::{tempdir_in, TempDir};
 
 use crate::github::Remote;
 use crate::{github, gomod, pom, provenance, resolver, resources};
-use crate::support::{sha256, xtask_error as tool_error, Result};
+use crate::support::sha256;
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
 
@@ -71,10 +72,10 @@ pub fn update() -> Result<()> {
     commit.add(&staged_resources.directory, &paths.resources_dir)?;
     commit.add(&generated.directory, &paths.generated_dir)?;
     let lock_parent = paths.lock_path.parent().ok_or_else(|| {
-        tool_error(format!(
+        anyhow!(
             "provenance lock has no parent: {}",
             paths.lock_path.display()
-        ))
+        )
     })?;
     let staged_lock = replacement_lock.stage(lock_parent)?;
     commit.add(&staged_lock, &paths.lock_path)?;
@@ -139,7 +140,7 @@ fn resolve_and_fetch_sources(
         "go.mod",
     )?;
     let buildkit_go_mod = String::from_utf8(buildkit_go_mod)
-        .map_err(|source_error| tool_error(format!("BuildKit go.mod is not UTF-8: {source_error}")))?;
+        .map_err(|source_error| anyhow!("BuildKit go.mod is not UTF-8: {source_error}"))?;
     let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
     let inventory = resources::inventory(&baseline, &vtprotobuf_revision, independent_pins)?;
     let temporary_directory = tempdir_in(&paths.proto_dir)?;
@@ -158,10 +159,10 @@ fn resolve_and_fetch_sources(
 fn verify_pom_tag(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()> {
     let input_spec = pom::parse_input_spec(&fs::read_to_string(&paths.pom_path)?)?;
     if input_spec.reference != lock.moby.tag {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "pom.xml selects {:?}, but provenance lock records {:?}; run cargo xtask buildkit update",
             input_spec.reference, lock.moby.tag
-        )));
+        ));
     }
     Ok(())
 }
@@ -172,21 +173,21 @@ fn verify_generator_dependencies(paths: &Paths) -> Result<()> {
 
 fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
     let contents = fs::read_to_string(path).map_err(|error| {
-        tool_error(format!(
+        anyhow!(
             "could not read xtask manifest {}: {error}",
             path.display()
-        ))
+        )
     })?;
     let manifest: toml::Value = toml::from_str(&contents).map_err(|error| {
-        tool_error(format!(
+        anyhow!(
             "could not parse xtask manifest {}: {error}",
             path.display()
-        ))
+        )
     })?;
     let dependencies = manifest
         .get("dependencies")
         .and_then(toml::Value::as_table)
-        .ok_or_else(|| tool_error("xtask manifest is missing [dependencies]"))?;
+        .ok_or_else(|| anyhow!("xtask manifest is missing [dependencies]"))?;
 
     for (name, expected) in [
         ("protoc-bin-vendored", provenance::PROTOC_BIN_VENDORED_VERSION),
@@ -195,7 +196,7 @@ fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
     ] {
         let dependency = dependencies
             .get(name)
-            .ok_or_else(|| tool_error(format!("xtask manifest is missing {name}")))?;
+            .ok_or_else(|| anyhow!("xtask manifest is missing {name}"))?;
         let requirement = dependency
             .as_str()
             .map(str::to_string)
@@ -205,12 +206,12 @@ fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
                     .and_then(toml::Value::as_str)
                     .map(str::to_string)
             })
-            .ok_or_else(|| tool_error(format!("xtask dependency {name} has no version")))?;
+            .ok_or_else(|| anyhow!("xtask dependency {name} has no version"))?;
         let expected = format!("={expected}");
         if requirement != expected {
-            return Err(tool_error(format!(
+            return Err(anyhow!(
                 "xtask dependency {name} uses {requirement:?}, expected exact requirement {expected:?}"
-            )));
+            ));
         }
     }
 
@@ -223,7 +224,7 @@ fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
         .resources()
         .iter()
         .find(|resource| resource.destination == "vtproto/vtproto/ext.proto")
-        .ok_or_else(|| tool_error("provenance lock is missing vtprotobuf ext.proto"))?
+        .ok_or_else(|| anyhow!("provenance lock is missing vtprotobuf ext.proto"))?
         .revision
         .clone();
     let baseline = resolver::ResolvedBaseline {
@@ -236,11 +237,11 @@ fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
     };
     let inventory = resources::inventory(&baseline, &vtprotobuf_revision, &independent_pins)?;
     if inventory.len() != lock.resources().len() {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "provenance lock contains {} resources, but the canonical inventory contains {}; run cargo xtask buildkit update",
             lock.resources().len(),
             inventory.len()
-        )));
+        ));
     }
 
     for source in inventory {
@@ -249,10 +250,10 @@ fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
             .iter()
             .find(|resource| resource.destination == source.destination)
             .ok_or_else(|| {
-                tool_error(format!(
+                anyhow!(
                     "provenance lock is missing resource {}; run cargo xtask buildkit update",
                     source.destination
-                ))
+                )
             })?;
         let repository = format!("{}/{}", source.owner, source.repository);
         if resource.repository != repository
@@ -260,10 +261,10 @@ fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
             || resource.path != source.path
             || resource.transform != source.transform.name()
         {
-            return Err(tool_error(format!(
+            return Err(anyhow!(
                 "provenance resource {} does not match the canonical inventory; run cargo xtask buildkit update",
                 source.destination
-            )));
+            ));
         }
     }
     Ok(())
@@ -302,10 +303,10 @@ fn verify_checked_in_resources(
     if mismatches.is_empty() {
         Ok(())
     } else {
-        Err(tool_error(format!(
+        Err(anyhow!(
             "checked-in protobuf resources do not match provenance lock: {}; run cargo xtask buildkit update",
             mismatches.join(", ")
-        )))
+        ))
     }
 }
 
@@ -320,7 +321,7 @@ fn verify_baseline(
         || baseline.buildkit_commit != lock.buildkit.commit
         || baseline.buildkit_image != lock.buildkit.image
     {
-        return Err(tool_error(
+        return Err(anyhow!(
             "resolved compatibility baseline differs from provenance lock; run cargo xtask buildkit update",
         ));
     }
@@ -337,10 +338,10 @@ fn verify_prepared_sources(
         .collect();
     for resource in lock.resources() {
         let source = prepared.get(resource.destination.as_str()).ok_or_else(|| {
-            tool_error(format!(
+            anyhow!(
                 "online source preparation is missing {}; run cargo xtask buildkit update",
                 resource.destination
-            ))
+            )
         })?;
         if source.repository != resource.repository
             || source.revision != resource.revision
@@ -349,14 +350,14 @@ fn verify_prepared_sources(
             || source.output_sha256 != resource.output_sha256
             || source.transform != resource.transform
         {
-            return Err(tool_error(format!(
+            return Err(anyhow!(
                 "online source verification failed for {}; run cargo xtask buildkit update",
                 resource.destination
-            )));
+            ));
         }
     }
     if prepared.len() != lock.resources().len() {
-        return Err(tool_error(
+        return Err(anyhow!(
             "online source preparation contains an unexpected resource set; run cargo xtask buildkit update",
         ));
     }
@@ -366,10 +367,10 @@ fn verify_prepared_sources(
 fn paths() -> Result<Paths> {
     let xtask_directory = Path::new(env!("CARGO_MANIFEST_DIR"));
     let proto_dir = xtask_directory.parent().ok_or_else(|| {
-        tool_error("could not determine proto directory")
+        anyhow!("could not determine proto directory")
     })?;
     let workspace_root = proto_dir.parent().and_then(Path::parent).ok_or_else(|| {
-        tool_error("could not determine workspace root")
+        anyhow!("could not determine workspace root")
     })?;
 
     Ok(Paths {
@@ -418,7 +419,7 @@ fn write_provenance_module(
         .iter()
         .find(|resource| resource.destination == "pb/ops.proto")
         .map(|resource| resource.output_sha256.as_str())
-        .ok_or_else(|| tool_error("provenance lock is missing pb/ops.proto"))?;
+        .ok_or_else(|| anyhow!("provenance lock is missing pb/ops.proto"))?;
     let moby_tag = serde_json::to_string(&lock.moby.tag)?;
     let buildkit_version = serde_json::to_string(&lock.buildkit.version)?;
     let buildkit_commit = serde_json::to_string(&lock.buildkit.commit)?;
@@ -447,7 +448,7 @@ fn compile(
     resources_directory: &Path,
 ) -> Result<()> {
     if env::var_os("PROTOC").is_some() || env::var_os("PROTOC_INCLUDE").is_some() {
-        return Err(tool_error(
+        return Err(anyhow!(
             "PROTOC and PROTOC_INCLUDE must be unset; xtask uses its pinned vendored protoc",
         ));
     }
@@ -472,10 +473,10 @@ fn copy_packet_output(output_directory: &Path) -> Result<()> {
     let packet_generated = output_directory.join("moby.filesync.v1.rs");
     let packet_output = output_directory.join("moby.filesync.packet.rs");
     if !packet_generated.exists() {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "packet generation did not produce {}",
             packet_generated.display()
-        )));
+        ));
     }
     fs::copy(packet_generated, packet_output)?;
     Ok(())
@@ -487,24 +488,24 @@ fn pinned_protoc() -> Result<PathBuf> {
         .arg("--version")
         .output()
         .map_err(|error| {
-            tool_error(format!(
+            anyhow!(
                 "pinned protoc failed to report its version: {} ({error})",
                 protoc.display()
-            ))
+            )
         })?;
     if !output.status.success() {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "pinned protoc failed to report its version: {}: {}",
             protoc.display(),
             String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        ));
     }
     let version = String::from_utf8(output.stdout)?.trim().to_string();
     let expected = format!("libprotoc {}", provenance::PROTOC_VERSION);
     if version != expected {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "vendored protoc reports {version:?}, but provenance requires {expected:?}"
-        )));
+        ));
     }
     Ok(protoc)
 }
@@ -537,10 +538,10 @@ impl OutputTransaction {
 
     fn add(&mut self, source: &Path, destination: &Path) -> Result<()> {
         let parent = destination.parent().ok_or_else(|| {
-            tool_error(format!(
+            anyhow!(
                 "directory has no parent: {}",
                 destination.display()
-            ))
+            )
         })?;
         fs::create_dir_all(parent)?;
         let staging = tempdir_in(parent)?;
@@ -573,9 +574,9 @@ impl OutputTransaction {
     fn commit_inner(&mut self, fail_at: Option<usize>) -> Result<()> {
         for (index, entry) in self.entries.iter_mut().enumerate() {
             if fail_at == Some(index) {
-                return Err(Box::new(std::io::Error::other(
+                return Err(std::io::Error::other(
                     "injected replacement failure",
-                )));
+                ).into());
             }
 
             if fs::symlink_metadata(&entry.destination).is_ok() {
@@ -666,22 +667,22 @@ fn compare_directories_named(actual: &Path, expected: &Path, label: &str) -> Res
     }
     differences.sort();
 
-    Err(tool_error(format!(
+    Err(anyhow!(
         "{label} differ: {}",
         differences
             .iter()
             .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
+        .collect::<Vec<_>>()
             .join(", ")
-    )))
+    ))
 }
 
 fn files(directory: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
     if !directory.is_dir() {
-        return Err(tool_error(format!(
+        return Err(anyhow!(
             "generated directory does not exist: {}",
             directory.display()
-        )));
+        ));
     }
 
     let mut output = BTreeMap::new();

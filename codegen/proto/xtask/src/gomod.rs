@@ -1,11 +1,10 @@
 use std::str::FromStr;
 
+use anyhow::{anyhow, Result};
 use gomod_parser::GoMod;
 use semver::Version;
 
 use crate::github::Remote;
-use crate::support::{xtask_error as go_mod_error, Result};
-
 pub const BUILDKIT_MODULE: &str = "github.com/moby/buildkit";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,21 +35,21 @@ pub fn parse_module_requirement(contents: &str, module: &str) -> Result<Buildkit
         .collect::<Vec<_>>()
         .join("\n");
     let go_mod = GoMod::from_str(&normalized)
-        .map_err(|error| go_mod_error(format!("could not parse go.mod: {error}")))?;
+        .map_err(|error| anyhow!("could not parse go.mod: {error}"))?;
 
     if go_mod
         .replace
         .iter()
         .any(|replacement| replacement.module_path == module)
     {
-        return Err(go_mod_error(format!("go.mod replaces {module}")));
+        return Err(anyhow!("go.mod replaces {module}"));
     }
     if go_mod
         .exclude
         .iter()
         .any(|dependency| dependency.module.module_path == module)
     {
-        return Err(go_mod_error(format!("go.mod excludes {module}")));
+        return Err(anyhow!("go.mod excludes {module}"));
     }
 
     let requirements: Vec<_> = go_mod
@@ -60,19 +59,19 @@ pub fn parse_module_requirement(contents: &str, module: &str) -> Result<Buildkit
         .collect();
     let [requirement] = requirements.as_slice() else {
         return if requirements.is_empty() {
-            Err(go_mod_error(format!(
+            Err(anyhow!(
                 "go.mod does not directly require {module}"
-            )))
+            ))
         } else {
-            Err(go_mod_error(format!(
+            Err(anyhow!(
                 "go.mod contains multiple direct requirements for {module}"
-            )))
+            ))
         };
     };
     if requirement.indirect {
-        return Err(go_mod_error(format!(
+        return Err(anyhow!(
             "go.mod marks direct requirement {module} as indirect"
-        )));
+        ));
     }
 
     Ok(BuildkitRequirement {
@@ -98,7 +97,7 @@ fn parse_version(version: &str) -> Result<BuildkitVersion> {
     if let Some((base, _timestamp, commit_prefix)) = pseudo_parts(version) {
         let semver_base = base.strip_prefix('v').unwrap_or(base);
         Version::parse(semver_base).map_err(|error| {
-            go_mod_error(format!("malformed BuildKit pseudo-version {version:?}: {error}"))
+            anyhow!("malformed BuildKit pseudo-version {version:?}: {error}")
         })?;
         return Ok(BuildkitVersion::Pseudo {
             version: version.into(),
@@ -108,7 +107,7 @@ fn parse_version(version: &str) -> Result<BuildkitVersion> {
 
     let semver = version.strip_prefix('v').unwrap_or(version);
     Version::parse(semver).map_err(|error| {
-        go_mod_error(format!("malformed BuildKit module version {version:?}: {error}"))
+        anyhow!("malformed BuildKit module version {version:?}: {error}")
     })?;
     Ok(BuildkitVersion::Tagged(version.into()))
 }

@@ -3,12 +3,13 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, TempPath};
 
 use crate::resolver::ResolvedBaseline;
 use crate::resources::{IndependentPin, PreparedSource};
-use crate::support::{validate_commit, validate_path, xtask_error as validation_error, Result};
+use crate::support::{validate_commit, validate_path};
 use crate::transform;
 
 // The schema version changes only when the lock structure or field semantics
@@ -80,36 +81,20 @@ struct UpdateLock {
 }
 
 pub fn load(path: &Path) -> Result<ProvenanceLock> {
-    let contents = fs::read_to_string(path).map_err(|error| {
-        validation_error(format!(
-            "could not read provenance lock {}: {error}",
-            path.display()
-        ))
-    })?;
-    let lock: ProvenanceLock = toml::from_str(&contents).map_err(|error| {
-        validation_error(format!(
-            "could not parse provenance lock {}: {error}",
-            path.display()
-        ))
-    })?;
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("could not read provenance lock {}", path.display()))?;
+    let lock: ProvenanceLock = toml::from_str(&contents)
+        .with_context(|| format!("could not parse provenance lock {}", path.display()))?;
     lock.validate()?;
     validate_moby_release_tag(&lock.moby.tag)?;
     Ok(lock)
 }
 
 pub fn load_update_pins(path: &Path) -> Result<BTreeMap<String, IndependentPin>> {
-    let contents = fs::read_to_string(path).map_err(|error| {
-        validation_error(format!(
-            "could not read provenance lock {}: {error}",
-            path.display()
-        ))
-    })?;
-    let lock: UpdateLock = toml::from_str(&contents).map_err(|error| {
-        validation_error(format!(
-            "could not parse provenance lock {}: {error}",
-            path.display()
-        ))
-    })?;
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("could not read provenance lock {}", path.display()))?;
+    let lock: UpdateLock = toml::from_str(&contents)
+        .with_context(|| format!("could not parse provenance lock {}", path.display()))?;
     independent_pins_from_resources(&lock.resources)
 }
 
@@ -185,25 +170,25 @@ fn independent_pins_from_resources(
             let resource = match matches.as_slice() {
                 [resource] => resource,
                 [] => {
-                    return Err(validation_error(format!(
+                    return Err(anyhow!(
                         "provenance lock is missing independent resource {destination}"
-                    )))
+                    ))
                 }
                 _ => {
-                    return Err(validation_error(format!(
+                    return Err(anyhow!(
                         "provenance lock contains duplicate independent resource {destination}"
-                    )))
+                    ))
                 }
             };
             let (owner, repository) = resource.repository.split_once('/').ok_or_else(|| {
-                validation_error(format!(
+                anyhow!(
                     "resource {destination} repository must be owner/repository"
-                ))
+                )
             })?;
             if owner.is_empty() || repository.is_empty() || repository.contains('/') {
-                return Err(validation_error(format!(
+                return Err(anyhow!(
                     "resource {destination} repository must be owner/repository"
-                )));
+                ));
             }
             validate_commit(
                 &format!("resource {destination} revision"),
@@ -226,10 +211,10 @@ fn independent_pins_from_resources(
 impl ProvenanceLock {
     fn validate(&self) -> Result<()> {
         if self.schema != SCHEMA_VERSION {
-            return Err(validation_error(format!(
+            return Err(anyhow!(
                 "unsupported provenance lock schema {}; expected {SCHEMA_VERSION}",
                 self.schema
-            )));
+            ));
         }
 
         validate_non_empty("moby.tag", &self.moby.tag)?;
@@ -240,19 +225,19 @@ impl ProvenanceLock {
         validate_commit("buildkit.commit", &self.buildkit.commit)?;
         validate_non_empty("buildkit.image", &self.buildkit.image)?;
         if self.buildkit.image != format!("moby/buildkit:{}", self.buildkit.version) {
-            return Err(validation_error(
+            return Err(anyhow!(
                 "buildkit.image must match moby/buildkit:<buildkit.version>",
             ));
         }
 
         if self.generation != current_generation() {
-            return Err(validation_error(
+            return Err(anyhow!(
                 "provenance lock generation inputs differ from the pinned xtask toolchain",
             ));
         }
 
         if self.resources.is_empty() {
-            return Err(validation_error(
+            return Err(anyhow!(
                 "provenance lock must contain at least one resource",
             ));
         }
@@ -269,32 +254,32 @@ impl ProvenanceLock {
             validate_sha256(&field("output_sha256"), &resource.output_sha256)?;
             validate_non_empty(&field("transform"), &resource.transform)?;
             if resource.transform != transform::for_destination(&resource.destination).name() {
-                return Err(validation_error(format!(
+                return Err(anyhow!(
                     "{} records transform {:?}; expected {:?}",
                     field("transform"),
                     resource.transform,
                     transform::for_destination(&resource.destination).name()
-                )));
+                ));
             }
             if resource.transform == "none" && resource.source_sha256 != resource.output_sha256 {
-                return Err(validation_error(format!(
+                return Err(anyhow!(
                     "{} with transform none must preserve the source hash",
                     field("output_sha256")
-                )));
+                ));
             }
 
             if !destinations.insert(&resource.destination) {
-                return Err(validation_error(format!(
+                return Err(anyhow!(
                     "duplicate resource destination {:?}",
                     resource.destination
-                )));
+                ));
             }
             if let Some(previous) = previous_destination {
                 if previous >= resource.destination.as_str() {
-                    return Err(validation_error(format!(
+                    return Err(anyhow!(
                         "resource destinations must be strictly sorted; {:?} follows {:?}",
                         resource.destination, previous
-                    )));
+                    ));
                 }
             }
             previous_destination = Some(resource.destination.as_str());
@@ -320,35 +305,35 @@ pub fn current_generation() -> Generation {
 
 fn validate_non_empty(field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
-        return Err(validation_error(format!("{field} must not be empty")));
+        return Err(anyhow!("{field} must not be empty"));
     }
     Ok(())
 }
 
 fn validate_moby_release_tag(value: &str) -> Result<()> {
     let version = value.strip_prefix("docker-v").ok_or_else(|| {
-        validation_error(format!(
+        anyhow!(
             "moby.tag {value:?} must be an immutable docker-v<version> release tag"
-        ))
+        )
     })?;
     semver::Version::parse(version).map_err(|error| {
-        validation_error(format!(
+        anyhow!(
             "moby.tag {value:?} must contain a valid release version: {error}"
-        ))
+        )
     })?;
     Ok(())
 }
 
 fn validate_sha256(field: &str, value: &str) -> Result<()> {
     if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(validation_error(format!(
+        return Err(anyhow!(
             "{field} must be a 64-character hexadecimal SHA-256 digest"
-        )));
+        ));
     }
     if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(validation_error(format!(
+        return Err(anyhow!(
             "{field} must use lowercase hexadecimal"
-        )));
+        ));
     }
     Ok(())
 }
@@ -401,7 +386,7 @@ transform = "none"
         let directory = tempdir().map_err(|error| error.to_string())?;
         let path = directory.path().join("provenance.lock.toml");
         fs::write(&path, contents).map_err(|error| error.to_string())?;
-        load(&path).map(|_| ()).map_err(|error| error.to_string())
+        load(&path).map(|_| ()).map_err(|error| format!("{error:#}"))
     }
 
     fn independent_resource(destination: &str) -> String {
@@ -429,7 +414,7 @@ transform = "none"
         fs::write(&path, contents).map_err(|error| error.to_string())?;
         load_update_pins(&path)
             .map(|pins| pins.len())
-            .map_err(|error| error.to_string())
+            .map_err(|error| format!("{error:#}"))
     }
 
     #[test]

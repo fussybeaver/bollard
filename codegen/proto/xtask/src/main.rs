@@ -8,8 +8,8 @@ mod resources;
 mod support;
 mod transform;
 
+use anyhow::{Error, Result};
 use std::env;
-use std::error::Error;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -19,8 +19,8 @@ enum Command {
     BuildkitCheckOnline,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let command = parse_command(env::args().skip(1))?;
+fn main() -> Result<()> {
+    let command = parse_command(env::args().skip(1)).map_err(Error::msg)?;
     match command {
         Command::Help => {
             println!("{}", usage());
@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+fn parse_command(args: impl IntoIterator<Item = String>) -> std::result::Result<Command, String> {
     let args: Vec<String> = args.into_iter().collect();
     match args.as_slice() {
         [buildkit, action] if buildkit == "buildkit" && action == "update" => {

@@ -3,9 +3,10 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{anyhow, Result};
 use crate::github::Remote;
 use crate::resolver::ResolvedBaseline;
-use crate::support::{sha256, validate_commit, validate_path, xtask_error as resource_error, Result};
+use crate::support::{sha256, validate_commit, validate_path};
 use crate::transform::{self, Transform};
 
 pub const INDEPENDENT_DESTINATIONS: &[&str] = &[
@@ -91,9 +92,9 @@ pub fn inventory(
     };
     let independent = |destination: &str| -> Result<Source> {
         let pin = independent_pins.get(destination).ok_or_else(|| {
-            resource_error(format!(
+            anyhow!(
                 "provenance lock is missing independent resource {destination}"
-            ))
+            )
         })?;
         Ok(Source {
             class: DependencyClass::Independent,
@@ -226,24 +227,24 @@ fn validate_inventory(sources: &[Source]) -> Result<()> {
         validate_path("destination", &source.destination)?;
         validate_path("source path", &source.path)?;
         if source.transform != transform::for_destination(&source.destination) {
-            return Err(resource_error(format!(
+            return Err(anyhow!(
                 "{} has unexpected transform {}",
                 source.destination,
                 source.transform.name()
-            )));
+            ));
         }
         if !destinations.insert(&source.destination) {
-            return Err(resource_error(format!(
+            return Err(anyhow!(
                 "duplicate protobuf source destination {:?}",
                 source.destination
-            )));
+            ));
         }
     }
     if sources.len() != 18 {
-        return Err(resource_error(format!(
+        return Err(anyhow!(
             "protobuf source inventory contains {}; expected 18 destinations",
             sources.len()
-        )));
+        ));
     }
     if !sources
         .iter()
@@ -255,7 +256,7 @@ fn validate_inventory(sources: &[Source]) -> Result<()> {
             .iter()
             .any(|source| source.class == DependencyClass::Independent)
     {
-        return Err(resource_error(
+        return Err(anyhow!(
             "protobuf source inventory is missing a dependency class",
         ));
     }
@@ -273,6 +274,7 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::fs;
 
+    use anyhow::anyhow;
     use tempfile::tempdir;
 
     use super::{fetch_sources, inventory, DependencyClass, IndependentPin, INDEPENDENT_DESTINATIONS};
@@ -424,7 +426,7 @@ mod tests {
             self.files
                 .get(path)
                 .cloned()
-                .ok_or_else(|| format!("missing fixture {path}").into())
+                .ok_or_else(|| anyhow!("missing fixture {path}"))
         }
     }
 }

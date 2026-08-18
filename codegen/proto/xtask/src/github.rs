@@ -1,11 +1,11 @@
 use std::env;
 use std::time::Duration;
 
+use anyhow::{anyhow, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
-use crate::support::{validate_commit as validate_revision, Result};
-use crate::support::xtask_error as remote_error;
+use crate::support::validate_commit as validate_revision;
 
 const API_BASE: &str = "https://api.github.com";
 const RAW_BASE: &str = "https://raw.githubusercontent.com";
@@ -44,7 +44,7 @@ impl GitHubRemote {
     fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         let body = self.get(url, "application/vnd.github+json")?;
         serde_json::from_slice(&body)
-            .map_err(|error| remote_error(format!("invalid GitHub response from {url}: {error}")))
+            .map_err(|error| anyhow!("invalid GitHub response from {url}: {error}"))
     }
 
     fn get(&self, url: &str, accept: &str) -> Result<Vec<u8>> {
@@ -78,13 +78,13 @@ impl GitHubRemote {
             .timeout_recv_body(Some(request_timeout))
             .build()
             .call()
-            .map_err(|error| remote_error(format!("GitHub request failed for {url}: {error}")))?;
+            .map_err(|error| anyhow!("GitHub request failed for {url}: {error}"))?;
         response
             .body_mut()
             .with_config()
             .limit(max_response_bytes)
             .read_to_vec()
-            .map_err(|error| remote_error(format!("could not read GitHub response from {url}: {error}")))
+            .map_err(|error| anyhow!("could not read GitHub response from {url}: {error}"))
     }
 }
 
@@ -114,9 +114,9 @@ impl Remote for GitHubRemote {
         let commit: Commit = self.get_json(&url)?;
         let sha = validate_commit(&commit.sha, "commit lookup result")?;
         if !sha.starts_with(prefix) {
-            return Err(remote_error(format!(
+            return Err(anyhow!(
                 "GitHub commit lookup returned {sha}, which does not match {prefix}"
-            )));
+            ));
         }
         Ok(sha)
     }
@@ -169,19 +169,19 @@ fn resolve_tag_target(
         "commit" => validate_commit(&tag_ref.object.sha, "tag target"),
         "tag" => {
             let annotated = annotated.ok_or_else(|| {
-                remote_error(format!("GitHub annotated tag {tag:?} has no tag object"))
+                anyhow!("GitHub annotated tag {tag:?} has no tag object")
             })?;
             if annotated.object.r#type != "commit" {
-                return Err(remote_error(format!(
+                return Err(anyhow!(
                     "GitHub annotated tag {tag:?} resolves to {}, not a commit",
                     annotated.object.r#type
-                )));
+                ));
             }
             validate_commit(&annotated.object.sha, "annotated tag target")
         }
-        kind => Err(remote_error(format!(
+        kind => Err(anyhow!(
             "GitHub tag {tag:?} resolves to unsupported object type {kind:?}"
-        ))),
+        )),
     }
 }
 
