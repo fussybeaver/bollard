@@ -3,6 +3,7 @@
 [![circle-ci](https://circleci.com/gh/fussybeaver/bollard/tree/master.svg?style=svg)](https://circleci.com/gh/fussybeaver/bollard/tree/master)
 [![appveyor](https://ci.appveyor.com/api/projects/status/n5khebyfae0u1sbv/branch/master?svg=true)](https://ci.appveyor.com/project/fussybeaver/boondock)
 [![docs](https://docs.rs/bollard/badge.svg)](https://docs.rs/bollard/)
+[![inspect.software](https://raw.githubusercontent.com/inspect-software/badges/main/v1/f/fussybeaver/bollard.svg)](https://inspect.software/software/fussybeaver/bollard)
 
 ## Bollard: an asynchronous rust client library for the Docker/Podman API
 
