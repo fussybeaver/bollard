@@ -3,11 +3,13 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "daily"
-  - package-ecosystem: "cargo"
-    directory: "/codegen/proto"
-    schedule:
-      interval: "daily"
+      interval: "weekly"
+    groups:
+      buildkit-generator-toolchain:
+        patterns:
+          - "protoc-bin-vendored"
+          - "tonic-prost-build"
+          - "prost-build"
   - package-ecosystem: "cargo"
     directory: "/codegen/swagger"
     schedule:

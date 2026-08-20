@@ -285,12 +285,20 @@ Contributions are welcome, please observe the following.
 ### Building the proto models
 
 Serialization models for the buildkit feature are generated through the [Tonic
-library](https://github.com/hyperium/tonic/). To generate these files, use the
-following in the `codegen/proto` folder:
+library](https://github.com/hyperium/tonic/). From the repository root, use:
 
 ```bash
-cargo run --bin gen --features build
+cargo xtask buildkit update
+cargo xtask buildkit check
 ```
+
+`update` resolves the Moby-derived BuildKit baseline, refreshes immutable
+protobuf resources through named transformations, and regenerates the checked-in
+bindings while updating the committed provenance lock. `check` regenerates into
+a temporary directory, enforces the lock, and compares the result with the
+checked-in output without modifying the working tree. Use
+`cargo xtask buildkit check --online` to additionally verify the immutable source
+resources against the checked-in tree.
 
 ### Building the swagger models
 

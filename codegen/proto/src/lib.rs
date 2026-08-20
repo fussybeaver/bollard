@@ -1,5 +1,4 @@
 #![allow(missing_docs, unused_qualifications)]
-#![cfg(not(feature = "build"))]
 
 pub mod fsutil {
     pub mod types {
@@ -18,6 +17,10 @@ pub mod google {
 
 pub mod health {
     include!("generated/grpc.health.v1.rs");
+}
+
+pub mod provenance {
+    include!("generated/provenance.rs");
 }
 
 pub mod moby {
@@ -108,5 +111,21 @@ impl Display for moby::buildkit::v1::VertexLog {
 impl AsRef<[u8]> for moby::buildkit::v1::BytesMessage {
     fn as_ref(&self) -> &[u8] {
         self.data.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::provenance;
+
+    #[test]
+    fn generated_default_image_matches_buildkit_version() {
+        assert_eq!(
+            provenance::DEFAULT_IMAGE,
+            format!("moby/buildkit:{}", provenance::BUILDKIT_VERSION)
+        );
+        assert_eq!(provenance::BUILDKIT_COMMIT.len(), 40);
+        assert_eq!(provenance::OPS_PROTO_SHA256.len(), 64);
+        assert!(provenance::MOBY_TAG.starts_with("docker-v"));
     }
 }
