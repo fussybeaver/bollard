@@ -889,8 +889,8 @@ impl Docker {
             services.push(crate::grpc::GrpcServer::Secrets(secret));
         }
 
-        if providers.ssh {
-            let ssh_provider = crate::grpc::SshProvider::new();
+        if !providers.ssh.is_empty() {
+            let ssh_provider = crate::grpc::SshProvider::new(providers.ssh);
             let ssh = bollard_buildkit_proto::moby::sshforward::v1::ssh_server::SshServer::new(
                 ssh_provider,
             )

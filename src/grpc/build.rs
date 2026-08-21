@@ -11,6 +11,8 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 
+use crate::grpc::{SshAgentSource, DEFAULT_SSH_AGENT_ID};
+
 /// Parameters available for passing frontend options to buildkit when initiating a Solve GRPC
 /// request, f.e. used in associated methods within the [GRPC module](module@crate::grpc)
 ///
@@ -79,7 +81,7 @@ pub enum SecretSource {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ImageBuildSessionProviders {
     pub(crate) secrets: HashMap<String, SecretSource>,
-    pub(crate) ssh: bool,
+    pub(crate) ssh: HashMap<String, SshAgentSource>,
 }
 
 impl ImageBuildSessionProviders {
@@ -91,11 +93,41 @@ impl ImageBuildSessionProviders {
         self
     }
 
+    /// Register an ssh agent, keyed by the id a Dockerfile's
+    /// `RUN --mount=type=ssh,id=<id>` instruction references. An instruction
+    /// naming no id gets `default`.
+    ///
+    /// Registering the same id twice keeps the last source given.
+    ///
+    /// ```rust
+    /// use std::path::PathBuf;
+    /// use bollard::grpc::build::ImageBuildSessionProviders;
+    /// use bollard::grpc::SshAgentSource;
+    ///
+    /// let providers = ImageBuildSessionProviders::default()
+    ///     .set_ssh_agent("default", &SshAgentSource::DefaultAgentSocket)
+    ///     .set_ssh_agent("deploy", &SshAgentSource::Socket(PathBuf::from("/tmp/deploy-agent.sock")));
+    /// ```
+    pub fn set_ssh_agent(mut self, id: &str, value: &SshAgentSource) -> Self {
+        self.ssh
+            .insert(String::from(id), SshAgentSource::clone(value));
+        self
+    }
+
     /// Enable sshforward to the ssh-agent the host's `SSH_AUTH_SOCK` points at,
     /// under buildkit's implicit `default` agent id, for a Dockerfile's
     /// `RUN --mount=type=ssh` instructions.
+    ///
+    /// Exactly equivalent to
+    /// [`set_ssh_agent`](Self::set_ssh_agent)`("default",
+    /// &`[`SshAgentSource::DefaultAgentSocket`]`)` — defined in terms of it
+    /// rather than alongside it, so the two can't drift apart. `false`
+    /// unregisters that one id and leaves any other named agent alone.
     pub fn enable_ssh(mut self, value: bool) -> Self {
-        self.ssh = value;
+        if value {
+            return self.set_ssh_agent(DEFAULT_SSH_AGENT_ID, &SshAgentSource::DefaultAgentSocket);
+        }
+        self.ssh.remove(DEFAULT_SSH_AGENT_ID);
         self
     }
 
@@ -103,7 +135,7 @@ impl ImageBuildSessionProviders {
     /// A build issued with an empty set has nothing to serve over its session,
     /// so it need not be a BuildKit build.
     pub(crate) fn is_empty(&self) -> bool {
-        self.secrets.is_empty() && !self.ssh
+        self.secrets.is_empty() && self.ssh.is_empty()
     }
 }
 
