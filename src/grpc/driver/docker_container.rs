@@ -375,7 +375,7 @@ impl DockerContainerBuilder {
             }
         }
 
-        debug!("starting container {}", &self.inner.name);
+        debug!("starting container {}", self.inner.name);
 
         let start_result: Result<(), GrpcError> = async {
             if should_start {
@@ -604,7 +604,7 @@ impl DockerContainer {
     }
 
     fn state_volume_name(&self) -> String {
-        format!("{}_state", &self.name)
+        format!("{}_state", self.name)
     }
 
     fn ownership_labels(&self) -> HashMap<String, String> {
@@ -728,7 +728,7 @@ impl DockerContainer {
             DEFAULT_IMAGE
         };
 
-        debug!("pulling image {}", &image_name);
+        debug!("pulling image {}", image_name);
 
         // TODO: registry auth
 
@@ -747,7 +747,7 @@ impl DockerContainer {
         )
         .await?;
 
-        debug!("creating container {}", &self.name);
+        debug!("creating container {}", self.name);
 
         let container_options =
             bollard_stubs::query_parameters::CreateContainerOptionsBuilder::default()
