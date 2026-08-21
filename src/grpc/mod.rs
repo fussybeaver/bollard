@@ -201,7 +201,7 @@ impl HealthServerImpl {
 
     pub fn shutdown(mut self) {
         self.shutdown = true;
-        for (_, val) in self.service_map.iter_mut() {
+        for val in self.service_map.values_mut() {
             *val = ServingStatus::NotServing;
         }
     }
@@ -1206,7 +1206,7 @@ impl AuthProvider {
 
         let client = Self::ssl_client()?;
 
-        let full_uri = format!("{}?{}", opts.realm, &params);
+        let full_uri = format!("{}?{}", opts.realm, params);
         let request_uri: hyper::Uri = full_uri.try_into()?;
         let request =
             hyper::Request::post(request_uri).body(BodyType::Left(Full::new(Bytes::new())))?;

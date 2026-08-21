@@ -83,7 +83,7 @@ impl Decoder for SshAgentPacketDecoder {
                             e => {
                                 log::error!(
                                     "sshforward unsupported message type: {}",
-                                    &message_type
+                                    message_type
                                 );
                                 self.state = SshAgentPacketDecoderState::WaitingHeader;
                                 return Err(GrpcSshError::InvalidMessageType(e));
