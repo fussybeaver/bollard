@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -105,16 +106,30 @@ impl FaultInjection {
 
 struct FileSyncSession {
     cancellation: CancellationToken,
-    scanner: Option<tokio::task::JoinHandle<()>>,
+    scanner: Option<ScannerHandle>,
     workers: tokio::task::JoinSet<()>,
+}
+
+struct ScannerHandle {
+    completion: tokio::sync::oneshot::Receiver<Result<(), Status>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ScannerHandle {
+    async fn join(mut self) -> Result<(), Status> {
+        self.completion
+            .await
+            .map_err(|_| Status::internal("FileSync scanner task failed"))??;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        Ok(())
+    }
 }
 
 impl Drop for FileSyncSession {
     fn drop(&mut self) {
         self.cancellation.cancel();
-        if let Some(scanner) = self.scanner.take() {
-            scanner.abort();
-        }
         self.workers.abort_all();
     }
 }
@@ -131,21 +146,30 @@ impl FileSyncSession {
         let (jobs_sender, jobs_receiver) = mpsc::channel(FILE_JOB_QUEUE_CAPACITY);
         let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
         let scanner_cancellation = cancellation.clone();
-        let scanner = tokio::task::spawn_blocking(move || {
-            if faults.panic_scanner {
-                panic!("injected FileSync scanner panic");
-            }
-            let result = scan_entries_with_selection(
-                scanner_root,
-                entries_sender.clone(),
-                selection,
-                scanner_cancellation,
-                faults,
-            );
-            if let Err(error) = result {
-                let _ = entries_sender.blocking_send(Err(error));
-            }
-        });
+        let (completion_sender, completion_receiver) = tokio::sync::oneshot::channel();
+        let scanner_thread = std::thread::Builder::new()
+            .name(String::from("bollard-filesync-scanner"))
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if faults.panic_scanner {
+                        panic!("injected FileSync scanner panic");
+                    }
+                    let result = scan_entries_with_selection(
+                        scanner_root,
+                        entries_sender.clone(),
+                        selection,
+                        scanner_cancellation,
+                        faults,
+                    );
+                    if let Err(error) = result {
+                        let _ = entries_sender.blocking_send(Err(error));
+                    }
+                }));
+                let result = result.map_err(|_| Status::internal("FileSync scanner panicked"));
+                let _ = completion_sender.send(result);
+            })
+            .map_err(|error| Status::internal(format!("FileSync scanner task failed: {error}")))
+            .expect("FileSync scanner thread starts");
 
         let jobs_receiver = Arc::new(Mutex::new(jobs_receiver));
         let mut workers = tokio::task::JoinSet::new();
@@ -179,7 +203,10 @@ impl FileSyncSession {
         (
             Self {
                 cancellation,
-                scanner: Some(scanner),
+                scanner: Some(ScannerHandle {
+                    completion: completion_receiver,
+                    thread: Some(scanner_thread),
+                }),
                 workers,
             },
             entries_receiver,
@@ -200,15 +227,11 @@ impl FileSyncSession {
         jobs.take();
 
         let result = tokio::time::timeout(FILESYNC_SHUTDOWN_TIMEOUT, async {
-            let scanner_result = if let Some(scanner) = self.scanner.as_mut() {
-                scanner.await.map_err(|error| {
-                    Status::internal(format!("FileSync scanner task failed: {error}"))
-                })
+            let scanner_result = if let Some(scanner) = self.scanner.take() {
+                scanner.join().await
             } else {
                 Ok(())
             };
-            self.scanner.take();
-
             self.workers.abort_all();
             let mut worker_error = None;
             while let Some(result) = self.workers.join_next().await {
@@ -228,9 +251,6 @@ impl FileSyncSession {
         match result {
             Ok(result) => result,
             Err(_) => {
-                if let Some(scanner) = self.scanner.as_ref() {
-                    scanner.abort();
-                }
                 self.workers.abort_all();
                 Err(Status::deadline_exceeded(
                     "FileSync session cleanup exceeded its timeout",
@@ -489,7 +509,7 @@ impl FileSync for FileSyncImpl {
                         }
                         None => {
                             if let Some(scanner) = session.scanner.take() {
-                                if let Err(join_error) = scanner.await {
+                                if let Err(join_error) = scanner.join().await {
                                     fail!(Status::internal(format!(
                                         "FileSync scanner task failed: {join_error}"
                                     )));
@@ -803,8 +823,7 @@ fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec
         if path == "." {
             return Ok(vec![String::from(".")]);
         }
-        budget.resolve(Path::new(path))?;
-        resolved.push(path.clone());
+        resolved.push(budget.resolve(Path::new(path))?);
         let components = path.split('/').map(str::to_owned).collect::<Vec<_>>();
         if components.len() > MAX_FOLLOW_DEPTH {
             return Err(Status::resource_exhausted(
@@ -823,7 +842,17 @@ fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec
     }
     resolved.sort_unstable();
     resolved.dedup();
-    Ok(resolved)
+    let mut deduped = Vec::with_capacity(resolved.len());
+    for path in resolved {
+        if deduped.last().is_some_and(|parent: &String| {
+            path.strip_prefix(parent)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        }) {
+            continue;
+        }
+        deduped.push(path);
+    }
+    Ok(deduped)
 }
 
 fn resolve_follow_components(
@@ -860,7 +889,7 @@ fn resolve_follow_components(
         };
         let directory = match directory {
             Ok(directory) => directory,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if is_followpath_not_found(&error) => return Ok(()),
             Err(error) => {
                 return Err(filesystem_error(
                     "open followpaths directory",
@@ -881,7 +910,10 @@ fn resolve_follow_components(
         }
         names.sort_unstable();
         for name in names {
-            let Some(name) = name.to_str() else { continue };
+            let Some(name) = name.to_str() else {
+                log::debug!("skipping non-UTF-8 followpath entry: {name:?}");
+                continue;
+            };
             if component_pattern.matches(name) {
                 resolve_follow_entry(
                     root,
@@ -924,7 +956,7 @@ fn resolve_follow_entry(
     let next = current.join(name);
     let metadata = match root.symlink_metadata(&next) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if is_followpath_not_found(&error) => return Ok(()),
         Err(error) => return Err(filesystem_error("stat followpaths entry", &next, error)),
     };
     let next_string = path_string(&next)?;
@@ -981,16 +1013,40 @@ fn normalize_follow_target(parent: &Path, link: &Path) -> Option<PathBuf> {
     for component in link.components() {
         match component {
             std::path::Component::RootDir | std::path::Component::CurDir => {}
+            // Match fsutil's filepath.Join(root, target) behavior: a link
+            // that climbs above the mount root remains clamped at the root.
             std::path::Component::ParentDir => {
-                if !result.pop() {
-                    return None;
-                }
+                result.pop();
             }
             std::path::Component::Normal(value) => result.push(value),
+            #[cfg(windows)]
+            std::path::Component::Prefix(prefix) => match prefix.kind() {
+                std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_) => {
+                    // fsutil strips a Windows drive prefix before resolving
+                    // an absolute link target relative to the mount root.
+                    result = PathBuf::new();
+                }
+                _ => return None,
+            },
+            #[cfg(not(windows))]
             std::path::Component::Prefix(_) => return None,
         }
     }
     Some(result)
+}
+
+fn is_followpath_not_found(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        return error.raw_os_error() == Some(123);
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 fn contains_wildcard(value: &str) -> bool {
@@ -1080,11 +1136,12 @@ fn scan_entries(
     root: Arc<cap_std::fs::Dir>,
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
 ) -> Result<(), Status> {
+    let cancellation = CancellationToken::new();
     scan_entries_with_selection(
         root,
         sender,
         ScanSelection::All,
-        CancellationToken::new(),
+        cancellation,
         FaultInjection::default(),
     )
 }
@@ -1100,7 +1157,7 @@ fn scan_entries_with_selection(
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
     let mut budget = ScanBudget { inspected: 0 };
-    let names = sorted_names(&root, &mut budget)?;
+    let names = sorted_names(&root, &mut budget, &cancellation)?;
     let mut frames = vec![ScanFrame {
         relative: PathBuf::new(),
         directory: root,
@@ -1153,7 +1210,7 @@ fn scan_entries_with_selection(
                 frames.push(frame);
                 frames.push(ScanFrame {
                     relative,
-                    names: sorted_names(&directory, &mut budget)?,
+                    names: sorted_names(&directory, &mut budget, &cancellation)?,
                     directory,
                     next_name: 0,
                     pending: true,
@@ -1174,6 +1231,7 @@ fn scan_entries_with_selection(
             if matches!(
                 emit_source_entry(
                     &sender,
+                    &cancellation,
                     &mut position,
                     pending_entry.stat,
                     pending_entry.regular,
@@ -1185,7 +1243,14 @@ fn scan_entries_with_selection(
             }
         }
         if matches!(
-            emit_source_entry(&sender, &mut position, stat, regular, relative.clone())?,
+            emit_source_entry(
+                &sender,
+                &cancellation,
+                &mut position,
+                stat,
+                regular,
+                relative.clone(),
+            )?,
             EmitResult::ReceiverClosed
         ) {
             return Ok(());
@@ -1199,7 +1264,7 @@ fn scan_entries_with_selection(
                 .map_err(|error| filesystem_error("open directory", &relative, error))?;
             Some(ScanFrame {
                 relative,
-                names: sorted_names(&directory, &mut budget)?,
+                names: sorted_names(&directory, &mut budget, &cancellation)?,
                 directory,
                 next_name: 0,
                 pending: false,
@@ -1219,6 +1284,7 @@ fn scan_entries_with_selection(
 
 fn emit_source_entry(
     sender: &tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+    cancellation: &CancellationToken,
     position: &mut u32,
     stat: Stat,
     regular: bool,
@@ -1233,16 +1299,26 @@ fn emit_source_entry(
     *position = position
         .checked_add(1)
         .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
-    if sender
-        .blocking_send(Ok(SourceEntry {
-            stat,
-            position: current_position,
-            regular,
-            relative,
-        }))
-        .is_err()
-    {
-        return Ok(EmitResult::ReceiverClosed);
+    let mut entry = Some(Ok(SourceEntry {
+        stat,
+        position: current_position,
+        regular,
+        relative,
+    }));
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(EmitResult::ReceiverClosed);
+        }
+        match sender.try_send(entry.take().expect("entry is available")) {
+            Ok(()) => break,
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Ok(EmitResult::ReceiverClosed)
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(value)) => {
+                entry = Some(value);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
     }
     Ok(EmitResult::Sent)
 }
@@ -1250,23 +1326,21 @@ fn emit_source_entry(
 fn sorted_names(
     directory: &cap_std::fs::Dir,
     budget: &mut ScanBudget,
+    cancellation: &CancellationToken,
 ) -> Result<Vec<OsString>, Status> {
-    let mut names = directory
-        .entries()
-        .map_err(|error| {
-            Status::internal(format!("failed to read local source directory: {error}"))
-        })?
-        .map(|entry| {
-            entry
-                .map(|entry| {
-                    budget.inspect()?;
-                    Ok(entry.file_name())
-                })
-                .map_err(|error| {
-                    Status::internal(format!("failed to read local source entry: {error}"))
-                })?
-        })
-        .collect::<Result<Vec<_>, Status>>()?;
+    let mut names = Vec::new();
+    for entry in directory.entries().map_err(|error| {
+        Status::internal(format!("failed to read local source directory: {error}"))
+    })? {
+        if cancellation.is_cancelled() {
+            return Ok(names);
+        }
+        let entry = entry.map_err(|error| {
+            Status::internal(format!("failed to read local source entry: {error}"))
+        })?;
+        budget.inspect()?;
+        names.push(entry.file_name());
+    }
     names.sort_unstable();
     Ok(names)
 }
@@ -1384,16 +1458,17 @@ fn entry_xattrs(
     };
     let mut xattrs = HashMap::new();
     for name in names {
-        if name.to_string_lossy().starts_with("com.apple.") {
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if name_str.starts_with("com.apple.") || !super::fsutil::is_transferable_xattr(name_str) {
             continue;
         }
         if let Some(value) = file
             .get_xattr(&name)
             .map_err(|error| filesystem_error("read xattr", Path::new(&name), error))?
         {
-            if let Some(name) = name.to_str() {
-                xattrs.insert(name.to_owned(), value);
-            }
+            xattrs.insert(name_str.to_owned(), value);
         }
     }
     Ok(xattrs)
@@ -2016,6 +2091,39 @@ mod tests {
             .all(|entry| entry.stat.path.len() <= MAX_PATH_LENGTH));
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn scanner_maps_windows_metadata_contract() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory is created");
+        std::fs::write(root.path().join("nested/input.txt"), b"source")
+            .expect("source file is created");
+
+        let entries = scan_fixture(open_mount(root.path())).await;
+        assert!(entries.iter().all(|entry| !entry.stat.path.contains('\\')));
+
+        let directory = entries
+            .iter()
+            .find(|entry| entry.stat.path == "nested")
+            .expect("nested directory stat exists");
+        assert_ne!(
+            directory.stat.mode & super::super::fsutil::FileMode::Dir.bits(),
+            0
+        );
+        assert_eq!(directory.stat.mode & 0o777, 0o755);
+        assert_eq!(directory.stat.uid, 0);
+        assert_eq!(directory.stat.gid, 0);
+
+        let file = entries
+            .iter()
+            .find(|entry| entry.stat.path == "nested/input.txt")
+            .expect("nested file stat exists");
+        assert_eq!(file.stat.mode & 0o777, 0o755);
+        assert_eq!(file.stat.uid, 0);
+        assert_eq!(file.stat.gid, 0);
+        assert!(file.stat.mod_time > 0);
+    }
+
     #[tokio::test]
     async fn scanner_emits_regular_and_symlink_metadata() {
         let root = tempdir().expect("temporary directory is created");
@@ -2235,6 +2343,15 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn scanner_filters_privileged_xattr_names() {
+        assert!(super::super::fsutil::is_transferable_xattr("user.bollard"));
+        assert!(!super::super::fsutil::is_transferable_xattr(
+            "security.capability"
+        ));
+    }
+
     #[test]
     fn metadata_decodes_encoded_values() {
         let mut metadata = MetadataMap::new();
@@ -2260,8 +2377,9 @@ mod tests {
         let mut budget = ScanBudget {
             inspected: MAX_ENTRIES - 1,
         };
+        let cancellation = CancellationToken::new();
         assert_eq!(
-            sorted_names(&directory, &mut budget)
+            sorted_names(&directory, &mut budget, &cancellation)
                 .expect_err("directory budget is enforced")
                 .code(),
             tonic::Code::ResourceExhausted
@@ -2373,6 +2491,23 @@ mod tests {
                 .expect_err("deep followpaths are rejected")
                 .code(),
             tonic::Code::ResourceExhausted
+        );
+    }
+
+    #[test]
+    fn normalize_follow_target_clamps_at_mount_root() {
+        assert_eq!(
+            normalize_follow_target(Path::new("dir"), Path::new("../../target")),
+            Some(PathBuf::from("target"))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_follow_target_resolves_drive_absolute_targets() {
+        assert_eq!(
+            normalize_follow_target(Path::new("dir"), Path::new(r"C:\target\input")),
+            Some(PathBuf::from(r"target\input"))
         );
     }
 

@@ -253,9 +253,32 @@ fn create_application_fixture() -> Result<tempfile::TempDir, Error> {
             source.path().join("mode.txt"),
             std::fs::Permissions::from_mode(0o600),
         )?;
+        xattr::set(
+            source.path().join("nested"),
+            "user.bollard.directory",
+            b"directory metadata",
+        )?;
+        xattr::set(
+            source.path().join("nested/input.txt"),
+            "user.bollard.file",
+            b"file metadata",
+        )?;
         symlink("nested/input.txt", source.path().join("link"))?;
     }
     Ok(source)
+}
+
+#[cfg(unix)]
+fn xattrs_for_path(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, Error> {
+    let mut values = BTreeMap::new();
+    for name in xattr::list(path)? {
+        if let Some(name_str) = name.to_str() {
+            if let Some(value) = xattr::get(path, &name)? {
+                values.insert(name_str.to_owned(), value);
+            }
+        }
+    }
+    Ok(values)
 }
 
 fn relative_entries(root: &Path) -> Result<BTreeSet<PathBuf>, Error> {
@@ -312,6 +335,15 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
                 std::fs::read(&expected_path)?,
                 std::fs::read(&actual_path)?,
                 "{relative:?}"
+            );
+        }
+
+        #[cfg(unix)]
+        if !expected_type.is_symlink() {
+            assert_eq!(
+                xattrs_for_path(&expected_path)?,
+                xattrs_for_path(&actual_path)?,
+                "{relative:?} xattrs"
             );
         }
 
