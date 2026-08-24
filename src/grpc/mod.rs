@@ -846,14 +846,12 @@ async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status
 
 struct StagingGuard {
     staging: Option<PathBuf>,
-    runtime: tokio::runtime::Handle,
 }
 
 impl StagingGuard {
     async fn new(destination: &Path) -> Result<Self, Status> {
         Ok(Self {
             staging: Some(prepare_staging_directory(destination).await?),
-            runtime: tokio::runtime::Handle::current(),
         })
     }
 
@@ -886,12 +884,16 @@ impl Drop for StagingGuard {
             return;
         };
 
-        let runtime = self.runtime.clone();
-        runtime.spawn(async move {
-            if let Err(error) = remove_path(&staging).await {
-                warn!("failed to clean up cancelled FileSend staging directory: {error}");
-            }
-        });
+        let thread = std::thread::Builder::new()
+            .name(String::from("bollard-filesend-cleanup"))
+            .spawn(move || {
+                if let Err(error) = remove_path_blocking(&staging) {
+                    warn!("failed to clean up cancelled FileSend staging directory: {error}");
+                }
+            });
+        if let Err(error) = thread {
+            warn!("failed to spawn FileSend cleanup thread: {error}");
+        }
     }
 }
 
@@ -1924,6 +1926,30 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .filter(|name| name.contains(".bollard-staging-") || name.contains(".bollard-backup-"))
             .collect()
+    }
+
+    #[test]
+    fn staging_guard_cleans_after_runtime_shutdown() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        let guard = {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime
+                .block_on(super::StagingGuard::new(&destination))
+                .expect("staging directory is created")
+        };
+
+        assert!(!transfer_sibling_names(root.path()).is_empty());
+        drop(guard);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            if transfer_sibling_names(root.path()).is_empty() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("staging cleanup did not finish after runtime shutdown");
     }
 
     async fn wait_for_staging_siblings(root: &Path, expected: bool) {
