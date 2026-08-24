@@ -15,6 +15,7 @@ use bollard_buildkit_proto::{
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
+use log::warn;
 use tokio::io::AsyncReadExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -295,6 +296,11 @@ struct PendingEntry {
     relative: PathBuf,
 }
 
+enum EmitResult {
+    Sent,
+    ReceiverClosed,
+}
+
 struct ScanBudget {
     inspected: usize,
 }
@@ -436,9 +442,12 @@ impl FileSync for FileSyncImpl {
                 ($error:expr) => {{
                     let error = $error;
                     yield Ok(error_packet(&error));
-                    let _ = session
+                    if let Err(cleanup_error) = session
                         .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
-                        .await;
+                        .await
+                    {
+                        warn!("FileSync cleanup failed after protocol error: {cleanup_error}");
+                    }
                     yield Err(error);
                     break;
                 }};
@@ -630,6 +639,7 @@ async fn worker_loop(
     cancellation: CancellationToken,
     faults: FaultInjection,
 ) {
+    let mut buffer = vec![0_u8; FILE_READ_BUFFER_SIZE];
     loop {
         let job = {
             let mut jobs = jobs.lock().await;
@@ -651,7 +661,6 @@ async fn worker_loop(
             }
         };
         let mut file = file;
-        let mut buffer = vec![0_u8; FILE_READ_BUFFER_SIZE];
         loop {
             if cancellation.is_cancelled() {
                 return;
@@ -1162,15 +1171,25 @@ fn scan_entries_with_selection(
             &mut seen_hardlinks,
         )?;
         for pending_entry in pending.drain(..) {
-            emit_source_entry(
-                &sender,
-                &mut position,
-                pending_entry.stat,
-                pending_entry.regular,
-                pending_entry.relative,
-            )?;
+            if matches!(
+                emit_source_entry(
+                    &sender,
+                    &mut position,
+                    pending_entry.stat,
+                    pending_entry.regular,
+                    pending_entry.relative,
+                )?,
+                EmitResult::ReceiverClosed
+            ) {
+                return Ok(());
+            }
         }
-        emit_source_entry(&sender, &mut position, stat, regular, relative.clone())?;
+        if matches!(
+            emit_source_entry(&sender, &mut position, stat, regular, relative.clone())?,
+            EmitResult::ReceiverClosed
+        ) {
+            return Ok(());
+        }
 
         let file_type = metadata.file_type();
         let child = if file_type.is_dir() {
@@ -1204,7 +1223,7 @@ fn emit_source_entry(
     stat: Stat,
     regular: bool,
     relative: PathBuf,
-) -> Result<(), Status> {
+) -> Result<EmitResult, Status> {
     if *position as usize >= MAX_ENTRIES {
         return Err(Status::resource_exhausted(
             "local source has too many entries",
@@ -1223,9 +1242,9 @@ fn emit_source_entry(
         }))
         .is_err()
     {
-        return Ok(());
+        return Ok(EmitResult::ReceiverClosed);
     }
-    Ok(())
+    Ok(EmitResult::Sent)
 }
 
 fn sorted_names(
