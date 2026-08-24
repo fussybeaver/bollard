@@ -72,6 +72,12 @@ pub(crate) trait Driver {
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
 }
 
+/// Cleans up driver resources created for a solve.
+///
+/// Implementations must be idempotent: when a solve future is cancelled while
+/// teardown is in flight, the guard retries teardown once from a fresh
+/// runtime, so `tear_down` may observe partially torn-down state or run more
+/// than once for the same solve.
 pub(crate) trait DriverTearDownHandler: Send + Sync {
     fn tear_down(
         &self,
@@ -80,11 +86,9 @@ pub(crate) trait DriverTearDownHandler: Send + Sync {
 
 struct TearDownGuard {
     handler: Arc<dyn DriverTearDownHandler>,
-    runtime: tokio::runtime::Handle,
-    task: Option<tokio::task::JoinHandle<Result<(), GrpcError>>>,
     timeout: Duration,
     armed: bool,
-    started: bool,
+    completed: bool,
 }
 
 impl TearDownGuard {
@@ -95,11 +99,9 @@ impl TearDownGuard {
     fn with_timeout(handler: Box<dyn DriverTearDownHandler>, timeout: Duration) -> Self {
         Self {
             handler: Arc::from(handler),
-            runtime: tokio::runtime::Handle::current(),
-            task: None,
             timeout,
             armed: true,
-            started: false,
+            completed: false,
         }
     }
 
@@ -107,27 +109,13 @@ impl TearDownGuard {
         self.armed = false;
     }
 
-    fn start(&mut self) {
-        if self.started {
-            return;
-        }
-
-        self.started = true;
-        let handler = Arc::clone(&self.handler);
-        self.task = Some(self.runtime.spawn(run_tear_down(handler, self.timeout)));
-    }
-
     async fn tear_down(&mut self) -> Result<(), GrpcError> {
-        self.start();
-        let result = {
-            let task = self
-                .task
-                .as_mut()
-                .ok_or_else(|| GrpcError::TearDownTaskUnavailable)?;
-            task.await
-        };
-        self.task.take();
-        result.map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?
+        if self.completed {
+            return Err(GrpcError::TearDownTaskUnavailable);
+        }
+        let result = run_tear_down(Arc::clone(&self.handler), self.timeout).await;
+        self.completed = true;
+        result
     }
 }
 
@@ -135,17 +123,11 @@ async fn run_tear_down(
     handler: Arc<dyn DriverTearDownHandler>,
     timeout: Duration,
 ) -> Result<(), GrpcError> {
-    let mut task = tokio::spawn(async move { handler.tear_down().await });
-    match tokio::time::timeout(timeout, &mut task).await {
-        Ok(result) => result
-            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?,
-        Err(_) => {
-            task.abort();
-            let _ = task.await;
-            Err(GrpcError::from(tonic::Status::deadline_exceeded(
-                "driver teardown exceeded its timeout",
-            )))
-        }
+    match tokio::time::timeout(timeout, handler.tear_down()).await {
+        Ok(result) => result,
+        Err(_) => Err(GrpcError::from(tonic::Status::deadline_exceeded(
+            "driver teardown exceeded its timeout",
+        ))),
     }
 }
 
@@ -155,28 +137,33 @@ impl Drop for TearDownGuard {
             return;
         }
 
-        if let Some(task) = self.task.take() {
-            self.runtime.spawn(async move {
-                match task.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        warn!("failed to tear down BuildKit driver after cancellation: {error}");
+        if self.completed {
+            return;
+        }
+
+        let handler = Arc::clone(&self.handler);
+        let timeout = self.timeout;
+        let thread = std::thread::Builder::new()
+            .name(String::from("bollard-buildkit-teardown"))
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                match runtime {
+                    Ok(runtime) => {
+                        if let Err(error) = runtime.block_on(run_tear_down(handler, timeout)) {
+                            warn!(
+                                "failed to tear down BuildKit driver after cancellation: {error}"
+                            );
+                        }
                     }
                     Err(error) => {
-                        warn!(
-                            "failed to join BuildKit driver teardown after cancellation: {error}"
-                        );
+                        warn!("failed to create BuildKit teardown runtime: {error}");
                     }
                 }
             });
-        } else if !self.started {
-            let handler = Arc::clone(&self.handler);
-            let timeout = self.timeout;
-            self.runtime.spawn(async move {
-                if let Err(error) = run_tear_down(handler, timeout).await {
-                    warn!("failed to tear down BuildKit driver after cancellation: {error}");
-                }
-            });
+        if let Err(error) = thread {
+            warn!("failed to spawn BuildKit teardown thread: {error}");
         }
     }
 }
@@ -239,6 +226,22 @@ pub struct DefinitionSolveOptions {
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
     local_mounts: HashMap<String, LocalMount>,
+}
+
+impl std::fmt::Debug for DefinitionSolveOptions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DefinitionSolveOptions")
+            .field("cache_to_count", &self.cache_to.len())
+            .field("cache_from_count", &self.cache_from.len())
+            .field("credential_count", &self.credentials.len())
+            .field("secret_count", &self.secrets.len())
+            .field("ssh", &self.ssh)
+            .field("timeout", &self.timeout)
+            .field("file_transfer_limits", &self.file_transfer_limits)
+            .field("local_mount_count", &self.local_mounts.len())
+            .finish()
+    }
 }
 
 #[derive(Clone)]
@@ -1384,6 +1387,28 @@ mod tests {
     }
 
     #[test]
+    fn definition_options_debug_redacts_credentials_and_secrets() {
+        let options = DefinitionSolveOptionsBuilder::new()
+            .credential(
+                "registry.example",
+                DockerCredentials {
+                    username: Some(String::from("user")),
+                    password: Some(String::from("super-secret-password")),
+                    auth: Some(String::from("super-secret-auth")),
+                    ..Default::default()
+                },
+            )
+            .secret("token", SecretSource::Env(String::from("super-secret-env")))
+            .build();
+
+        let rendered = format!("{options:?}");
+        assert!(!rendered.contains("super-secret"));
+        assert!(!rendered.contains("registry.example"));
+        assert!(rendered.contains("credential_count: 1"));
+        assert!(rendered.contains("secret_count: 1"));
+    }
+
+    #[test]
     fn definition_options_open_and_retain_local_mount_capabilities() {
         let root = tempdir().expect("temporary local mount exists");
         let path = root.path().to_path_buf();
@@ -1615,6 +1640,66 @@ mod tests {
         assert!(session_ids[..2]
             .iter()
             .all(|session_id| !session_ids[2..].contains(session_id)));
+    }
+
+    #[test]
+    fn teardown_guard_drop_survives_runtime_shutdown() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let guard = {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                TearDownGuard::new(Box::new(TestTearDown {
+                    calls: Arc::clone(&calls),
+                    error: None,
+                    started: None,
+                }))
+            })
+        };
+
+        drop(guard);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            if calls.load(Ordering::SeqCst) == 1 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("teardown cleanup did not start after runtime shutdown");
+    }
+
+    #[tokio::test]
+    async fn teardown_guard_retries_cleanup_cancelled_in_progress() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let guard = TearDownGuard::with_timeout(
+            Box::new(BlockingTearDown {
+                calls: Arc::clone(&calls),
+                started: Arc::clone(&started),
+                cancelled: Arc::new(AtomicBool::new(false)),
+            }),
+            Duration::from_millis(10),
+        );
+        let task = tokio::spawn(async move {
+            let mut guard = guard;
+            let _ = guard.tear_down().await;
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("initial teardown starts");
+        task.abort();
+        let _ = task.await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if calls.load(Ordering::SeqCst) == 2 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled teardown is retried once");
     }
 
     #[tokio::test]
