@@ -996,22 +996,27 @@ async fn build_buildkit_named_context_test(docker: Docker) -> Result<(), Error> 
 }
 
 #[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
-async fn build_buildkit_ssh_test(docker: Docker) -> Result<(), Error> {
-    let git_host = std::env::var("GIT_HTTP_HOST").unwrap_or_else(|_| "localhost".to_string());
-    let git_port = std::env::var("GIT_HTTP_PORT").unwrap_or_else(|_| "2222".to_string());
-    let dockerfile = format!(
+fn buildkit_ssh_dockerfile(git_host: &str, git_port: &str, agent_id: Option<&str>) -> String {
+    let mount = agent_id.map_or("--mount=type=ssh".to_string(), |id| {
+        format!("--mount=type=ssh,id={id}")
+    });
+    format!(
         "FROM {}alpine as builder1
 RUN apk add --no-cache openssh-client git netcat-openbsd
 RUN mkdir -p -m 0600 ~/.ssh && ssh-keyscan -t rsa -p {} {} >> ~/.ssh/known_hosts
-RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
+RUN {} git clone ssh://git@{}:{}/srv/git/config.git /config
 ",
-        &registry_http_addr(),
-        &git_port,
-        &git_host,
-        &git_host,
-        &git_port,
-    );
+        registry_http_addr(),
+        git_port,
+        git_host,
+        mount,
+        git_host,
+        git_port,
+    )
+}
 
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+fn compressed_dockerfile(dockerfile: &str) -> bytes::Bytes {
     let mut header = tar::Header::new_gnu();
     header.set_path("Dockerfile").unwrap();
     header.set_size(dockerfile.len() as u64);
@@ -1021,9 +1026,64 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
     tar.append(&header, dockerfile.as_bytes()).unwrap();
 
     let uncompressed = tar.into_inner().unwrap();
-    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    c.write_all(&uncompressed).unwrap();
-    let compressed = c.finish().unwrap();
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&uncompressed).unwrap();
+    bytes::Bytes::from(encoder.finish().unwrap())
+}
+
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+fn ssh_registry_credentials() -> bollard::auth::DockerCredentials {
+    bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    }
+}
+
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+async fn assert_buildkit_ssh_image(docker: &Docker, name: &str) -> Result<(), Error> {
+    let _ = &docker
+        .create_container(
+            Some(CreateContainerOptions {
+                name: Some(name.to_string()),
+                ..Default::default()
+            }),
+            ContainerCreateBody {
+                image: Some(name.to_string()),
+                cmd: Some(["ls", "/config"].iter().map(|s| s.to_string()).collect()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let _ = &docker
+        .start_container(name, None::<StartContainerOptions>)
+        .await?;
+    let results = &docker
+        .wait_container(name, None::<WaitContainerOptions>)
+        .try_collect::<Vec<_>>()
+        .await?;
+    let first = results.first().unwrap();
+    if let Some(error) = &first.error {
+        println!("{}", error.message.as_ref().unwrap());
+    }
+    assert_eq!(first.status_code, 0);
+
+    let _ = &docker
+        .remove_container(name, None::<RemoveContainerOptions>)
+        .await?;
+    let _ = &docker
+        .remove_image(name, None::<RemoveImageOptions>, None)
+        .await?;
+
+    Ok(())
+}
+
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+async fn build_buildkit_ssh_test(docker: Docker) -> Result<(), Error> {
+    let git_host = std::env::var("GIT_HTTP_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let git_port = std::env::var("GIT_HTTP_PORT").unwrap_or_else(|_| "2222".to_string());
+    let compressed = compressed_dockerfile(&buildkit_ssh_dockerfile(&git_host, &git_port, None));
 
     let name = "integration_test_build_buildkit_ssh";
 
@@ -1038,78 +1098,68 @@ RUN --mount=type=ssh git clone ssh://git@{}:{}/srv/git/config.git /config
 
     let driver = bollard::grpc::driver::moby::Moby::new(&docker);
 
-    let load_input =
-        bollard::grpc::build::ImageBuildLoadInput::Upload(bytes::Bytes::from(compressed));
-
-    let credentials = bollard::auth::DockerCredentials {
-        username: Some("bollard".to_string()),
-        password: std::env::var("REGISTRY_PASSWORD").ok(),
-        ..Default::default()
-    };
-    let mut creds_hsh = std::collections::HashMap::new();
-    creds_hsh.insert("localhost:5000", credentials);
+    let load_input = bollard::grpc::build::ImageBuildLoadInput::Upload(compressed);
 
     let res = bollard::grpc::driver::Build::docker_build(
         &driver,
         name,
         frontend_opts,
         load_input,
-        Some(creds_hsh),
+        Some(HashMap::from([(
+            "localhost:5000",
+            ssh_registry_credentials(),
+        )])),
         None,
     )
     .await;
 
     assert!(res.is_ok());
+    assert_buildkit_ssh_image(&docker, name).await?;
 
-    let _ = &docker
-        .create_container(
-            Some(CreateContainerOptions {
-                name: Some("integration_test_build_buildkit_ssh".to_string()),
-                ..Default::default()
-            }),
-            ContainerCreateBody {
-                image: Some("integration_test_build_buildkit_ssh".to_string()),
-                cmd: Some(["ls", "/config"].iter().map(|s| s.to_string()).collect()),
-                ..Default::default()
-            },
+    Ok(())
+}
+
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+async fn build_buildkit_named_ssh_test(docker: Docker) -> Result<(), Error> {
+    use bollard::grpc::build::ImageBuildSessionProviders;
+    use bollard::grpc::SshAgentSource;
+
+    let git_host = std::env::var("GIT_HTTP_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let git_port = std::env::var("GIT_HTTP_PORT").unwrap_or_else(|_| "2222".to_string());
+    let name = "integration_test_build_buildkit_ssh_named";
+    let session = "integration_test_build_buildkit_ssh_named_session";
+    let compressed = compressed_dockerfile(&buildkit_ssh_dockerfile(
+        &git_host,
+        &git_port,
+        Some("deploy"),
+    ));
+    let socket =
+        std::env::var_os("SSH_AUTH_SOCK").expect("SSH_AUTH_SOCK is set by test_sshforward");
+    let providers = ImageBuildSessionProviders::default()
+        .set_ssh_agent("deploy", &SshAgentSource::Socket(socket.into()));
+    let options = BuildImageOptionsBuilder::default()
+        .dockerfile("Dockerfile")
+        .t(name)
+        .pull("true")
+        .version(BuilderVersion::BuilderBuildKit)
+        .rm(true)
+        .session(session)
+        .build();
+
+    let result = docker
+        .build_image_with_session_providers(
+            options,
+            Some(HashMap::from([(
+                String::from("localhost:5000"),
+                ssh_registry_credentials(),
+            )])),
+            Some(body_full(compressed)),
+            providers,
         )
-        .await?;
-
-    let _ = &docker
-        .start_container(
-            "integration_test_build_buildkit_ssh",
-            None::<StartContainerOptions>,
-        )
-        .await?;
-
-    let vec = &docker
-        .wait_container(
-            "integration_test_build_buildkit_ssh",
-            None::<WaitContainerOptions>,
-        )
-        .try_collect::<Vec<_>>()
-        .await?;
-
-    let first = vec.first().unwrap();
-    if let Some(error) = &first.error {
-        println!("{}", error.message.as_ref().unwrap());
-    }
-    assert_eq!(first.status_code, 0);
-
-    let _ = &docker
-        .remove_container(
-            "integration_test_build_buildkit_ssh",
-            None::<RemoveContainerOptions>,
-        )
-        .await?;
-
-    let _ = &docker
-        .remove_image(
-            "integration_test_build_buildkit_ssh",
-            None::<RemoveImageOptions>,
-            None,
-        )
-        .await?;
+        .try_collect::<Vec<bollard::models::BuildInfo>>()
+        .await;
+    assert!(result.is_ok());
+    assert_buildkit_ssh_image(&docker, name).await?;
 
     Ok(())
 }
@@ -1901,6 +1951,12 @@ fn integration_test_build_buildkit_named_context() {
 #[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
 fn integration_test_build_buildkit_ssh() {
     connect_to_docker_and_run!(build_buildkit_ssh_test);
+}
+
+#[test]
+#[cfg(all(feature = "buildkit", feature = "test_sshforward"))]
+fn integration_test_build_buildkit_ssh_named() {
+    connect_to_docker_and_run!(build_buildkit_named_ssh_test);
 }
 
 #[test]

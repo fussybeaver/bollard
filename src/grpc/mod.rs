@@ -358,11 +358,9 @@ impl FileSendPacketImpl {
 
 /// Aggregate limits for one packet-based local export.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct FileTransferLimits {
-    /// Maximum number of filesystem entries accepted in one transfer.
-    pub max_files: Option<u64>,
-    /// Maximum sum of declared entry sizes accepted in one transfer.
-    pub max_bytes: Option<u64>,
+pub(crate) struct FileTransferLimits {
+    max_files: Option<u64>,
+    max_bytes: Option<u64>,
 }
 
 const MAX_PATH_LENGTH: usize = 4096;
@@ -570,23 +568,30 @@ impl FileReceiveState {
     async fn receive_stat(&mut self, request_id: u32, stat: &Stat) -> Result<bool, Status> {
         let declared_size = u64::try_from(stat.size)
             .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
-        if let Some(max_files) = self.limits.max_files {
-            if self.file_count as u64 >= max_files {
-                return Err(Status::resource_exhausted(
-                    "file transfer exceeds the maximum entry count",
-                ));
-            }
+        if self
+            .limits
+            .max_files
+            .is_some_and(|max_files| self.file_count as u64 >= max_files)
+        {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the maximum entry count",
+            ));
         }
-        if let Some(max_bytes) = self.limits.max_bytes {
-            let total = self
-                .total_size
-                .checked_add(declared_size)
-                .ok_or_else(|| Status::resource_exhausted("file transfer byte count overflow"))?;
-            if total > max_bytes {
-                return Err(Status::resource_exhausted(
-                    "file transfer exceeds the maximum byte count",
-                ));
-            }
+        let total = self.total_size.checked_add(declared_size).ok_or_else(|| {
+            Status::resource_exhausted(if self.limits.max_bytes.is_some() {
+                "file transfer byte count overflow"
+            } else {
+                "export size overflow"
+            })
+        })?;
+        if self
+            .limits
+            .max_bytes
+            .is_some_and(|max_bytes| total > max_bytes)
+        {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the maximum byte count",
+            ));
         }
         if self.file_count >= MAX_FILE_COUNT {
             return Err(Status::resource_exhausted("too many files in export"));
@@ -599,10 +604,7 @@ impl FileReceiveState {
             )));
         }
 
-        self.total_size = self
-            .total_size
-            .checked_add(declared_size)
-            .ok_or_else(|| Status::resource_exhausted("export size overflow"))?;
+        self.total_size = total;
         if self.total_size > MAX_TOTAL_SIZE {
             return Err(Status::resource_exhausted(
                 "export exceeds the maximum size",
@@ -851,15 +853,15 @@ impl StagingGuard {
             .expect("staging guard owns a path before publication")
     }
 
-    async fn cleanup(&mut self) -> Result<(), Status> {
-        if let Some(staging) = self.staging.take() {
-            remove_path(&staging).await
-        } else {
-            Ok(())
-        }
+    async fn cleanup(mut self) -> Result<(), Status> {
+        let staging = self
+            .staging
+            .take()
+            .expect("staging guard owns a path before cleanup");
+        remove_path(&staging).await
     }
 
-    async fn publish(&mut self, destination: &Path) -> Result<(), Status> {
+    async fn publish(mut self, destination: &Path) -> Result<(), Status> {
         let staging = self
             .staging
             .take()
@@ -880,6 +882,31 @@ impl Drop for StagingGuard {
                 warn!("failed to clean up cancelled FileSend staging directory: {error}");
             }
         });
+    }
+}
+
+async fn prepare_file_receive_state(
+    destination: &Path,
+    limits: FileTransferLimits,
+) -> Result<(StagingGuard, FileReceiveState), Status> {
+    let staging_guard = StagingGuard::new(destination).await?;
+    let staging = staging_guard.path().to_owned();
+    match FileReceiveState::with_limits(staging, limits).await {
+        Ok(state) => Ok((staging_guard, state)),
+        Err(error) => {
+            if let Err(cleanup_error) = staging_guard.cleanup().await {
+                warn!("failed to clean up staging directory: {cleanup_error}");
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn cleanup_staging_guard(guard: &mut Option<StagingGuard>, context: &str) {
+    if let Some(guard) = guard.take() {
+        if let Err(error) = guard.cleanup().await {
+            warn!("failed to clean up {context}: {error}");
+        }
     }
 }
 
@@ -985,32 +1012,13 @@ impl FileSendPacket for FileSendPacketImpl {
         // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
         let out_stream = async_stream::try_stream! {
             debug!("starting FileSend packet export");
-            let mut staging_guard = StagingGuard::new(&destination).await?;
-            let staging = staging_guard.path().to_owned();
-            let mut state = Some(match FileReceiveState::with_limits(staging.clone(), limits).await {
-                Ok(state) => state,
-                Err(error) => {
-                    if let Err(cleanup_error) = staging_guard.cleanup().await {
-                        warn!("failed to clean up staging directory: {cleanup_error}");
-                    }
-                    Err::<FileReceiveState, Status>(error)?;
-                    unreachable!();
-                }
-            });
+            let (staging_guard, state) = prepare_file_receive_state(&destination, limits).await?;
+            let mut staging_guard = Some(staging_guard);
+            let mut state = Some(state);
 
-            let mut receiver_sent_fin = false;
             loop {
                 match in_stream.next().await {
                     Some(Ok(packet)) => {
-                        if receiver_sent_fin {
-                            if packet.r#type != PacketType::PacketFin as i32 {
-                                Err::<(), Status>(Status::failed_precondition(
-                                    "packet received after PACKET_FIN",
-                                    ))?;
-                            }
-                            break;
-                        }
-
                         let packet_result = state
                             .as_mut()
                             .expect("receiver state is present before PACKET_FIN")
@@ -1023,65 +1031,57 @@ impl FileSendPacket for FileSendPacketImpl {
                                         .take()
                                         .expect("receiver state is present before finalization");
                                     if let Err(error) = completed_state.finalize().await {
-                                        if let Err(cleanup_error) = staging_guard.cleanup().await {
-                                            warn!("failed to clean up unfinalized export: {cleanup_error}");
-                                        }
+                                        cleanup_staging_guard(&mut staging_guard, "unfinalized export")
+                                            .await;
                                         Err::<(), Status>(error)?;
                                     }
 
-                                    if let Err(error) = staging_guard.publish(&destination).await {
-                                        Err::<(), Status>(error)?;
-                                    }
-
-                                    receiver_sent_fin = true;
+                                    staging_guard
+                                        .take()
+                                        .expect("staging guard is armed before publication")
+                                        .publish(&destination)
+                                        .await?;
                                     yield out;
+
+                                    match in_stream.next().await {
+                                        Some(Ok(packet)) if packet.r#type == PacketType::PacketFin as i32 => {}
+                                        Some(Ok(_)) => {
+                                            Err::<(), Status>(Status::failed_precondition(
+                                                "packet received after PACKET_FIN",
+                                            ))?;
+                                        }
+                                        Some(Err(error)) => {
+                                            warn!("packet stream ended after export publish: {error}");
+                                        }
+                                        None => {
+                                            warn!("packet stream ended after export publish");
+                                        }
+                                    }
+                                    break;
                                 } else {
                                     yield out;
                                 }
                             }
                             Ok(None) => {}
                             Err(error) => {
-                                if let Err(cleanup_error) = staging_guard.cleanup().await {
-                                    warn!("failed to clean up failed export: {cleanup_error}");
-                                }
+                                cleanup_staging_guard(&mut staging_guard, "failed export").await;
                                 Err::<(), Status>(error)?;
                             }
                         }
                     }
                     Some(Err(error)) => {
-                        if receiver_sent_fin {
-                            warn!("packet stream ended after export publish: {error}");
-                            break;
-                        }
-                        if let Err(cleanup_error) = staging_guard.cleanup().await {
-                            warn!("failed to clean up failed export: {cleanup_error}");
-                        }
+                        cleanup_staging_guard(&mut staging_guard, "failed export").await;
                         Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
                     }
                     None => {
-                        if receiver_sent_fin {
-                            warn!("packet stream ended after export publish");
-                        } else {
-                            if let Err(cleanup_error) = staging_guard.cleanup().await {
-                                warn!("failed to clean up incomplete export: {cleanup_error}");
-                            }
-                            Err::<(), Status>(Status::failed_precondition(
-                                "file packet stream ended before PACKET_FIN",
-                            ))?;
-                        }
-                        break;
+                        cleanup_staging_guard(&mut staging_guard, "incomplete export").await;
+                        Err::<(), Status>(Status::failed_precondition(
+                            "file packet stream ended before PACKET_FIN",
+                        ))?;
                     }
                 }
             }
 
-            if !receiver_sent_fin {
-                if let Err(cleanup_error) = staging_guard.cleanup().await {
-                    warn!("failed to clean up incomplete export: {cleanup_error}");
-                }
-                Err::<(), Status>(Status::failed_precondition(
-                    "file packet stream ended before PACKET_FIN",
-                ))?;
-            }
             info!("published FileSend packet export");
         };
 
@@ -2139,37 +2139,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_send_packet_grpc_cleans_staging_after_stream_cancellation() {
-        let root = tempfile::tempdir().unwrap();
-        let destination = root.path().join("output");
-        let (address, server_task) = start_file_send_server(destination).await;
-        let mut client = FileSendClient::connect(format!("http://{address}"))
-            .await
-            .unwrap();
-        let (sender, receiver) = mpsc::channel(1);
-        let response = client
-            .diff_copy(tokio_stream::wrappers::ReceiverStream::new(receiver))
-            .await
-            .unwrap();
-        let mut response_stream = response.into_inner();
-        let response_task =
-            tokio::spawn(async move { while response_stream.message().await.is_ok() {} });
-
-        sender
-            .send(packet_stat(Some(stat("partial", 0o600, 5, ""))))
-            .await
-            .unwrap();
-        wait_for_staging_siblings(root.path(), true).await;
-        response_task.abort();
-        let _ = response_task.await;
-        drop(sender);
-        wait_for_staging_siblings(root.path(), false).await;
-
-        server_task.abort();
-        let _ = server_task.await;
-    }
-
-    #[tokio::test]
-    async fn test_file_send_packet_grpc_cleans_partial_staging_after_stream_cancellation() {
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("output");
         let (address, server_task) = start_file_send_server(destination).await;
