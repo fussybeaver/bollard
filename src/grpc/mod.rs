@@ -14,6 +14,7 @@ mod filesync;
 mod fsutil;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
+mod patternmatcher;
 /// End-user buildkit registry functions
 pub mod registry;
 mod ssh;
@@ -64,9 +65,13 @@ use hyper_util::rt::TokioExecutor;
 use log::{debug, error, info, trace, warn};
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
+#[cfg(not(windows))]
 use ssh::SshAgentPacketDecoder;
+#[cfg(not(windows))]
 use tokio::sync::mpsc;
+#[cfg(not(windows))]
 use tokio_util::codec::FramedRead;
+#[cfg(not(windows))]
 use tokio_util::io::{ReaderStream, StreamReader};
 use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
@@ -357,9 +362,10 @@ impl FileSendPacketImpl {
         if mode.contains(fsutil::FileMode::Symlink) {
             Self::validate_linkname(&stat.linkname)?;
         } else if !mode.intersects(fsutil::FileMode::Type) && !stat.linkname.is_empty() {
-            return Err(Status::invalid_argument(
-                "regular file has an unexpected symlink target",
-            ));
+            let target = FileSendPacketImpl::validate_path(&stat.linkname)?;
+            if target == path {
+                return Err(Status::invalid_argument("hardlink cannot target itself"));
+            }
         }
 
         Ok((path, mode))
@@ -549,12 +555,14 @@ impl FileReceiveState {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                         let permission_parent = current.try_clone()?;
                         let permission_name = name.to_owned();
-                        let mut builder = cap_std::fs::DirBuilder::new();
+                        let builder = cap_std::fs::DirBuilder::new();
                         #[cfg(unix)]
-                        {
+                        let builder = {
+                            let mut builder = builder;
                             use cap_std::fs::DirBuilderExt;
                             builder.mode(0o700);
-                        }
+                            builder
+                        };
                         current.create_dir_with(name, &builder).map_err(|error| {
                             std::io::Error::new(
                                 error.kind(),
@@ -634,23 +642,25 @@ impl FileReceiveState {
 
         if mode.contains(fsutil::FileMode::Symlink) {
             #[cfg(unix)]
-            tokio::task::spawn_blocking({
-                let linkname = stat.linkname.clone();
-                let parent = parent.try_clone().map_err(|error| {
-                    Status::internal(format!("failed to retain export directory: {error}"))
-                })?;
-                let name = name.to_owned();
-                move || parent.symlink_contents(linkname, name)
-            })
-            .await
-            .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
-            .map_err(|error| Status::internal(format!("failed to create symlink: {error}")))?;
+            {
+                tokio::task::spawn_blocking({
+                    let linkname = stat.linkname.clone();
+                    let parent = parent.try_clone().map_err(|error| {
+                        Status::internal(format!("failed to retain export directory: {error}"))
+                    })?;
+                    let name = name.to_owned();
+                    move || parent.symlink_contents(linkname, name)
+                })
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| Status::internal(format!("failed to create symlink: {error}")))?;
+                self.file_count += 1;
+                return Ok(false);
+            }
             #[cfg(not(unix))]
             return Err(Status::unimplemented(
                 "symlink export is only supported on Unix",
             ));
-            self.file_count += 1;
-            return Ok(false);
         }
 
         if mode.contains(fsutil::FileMode::Dir) {
@@ -665,12 +675,14 @@ impl FileReceiveState {
             let directory = tokio::task::spawn_blocking(move || match parent.open_dir(&name) {
                 Ok(directory) => Ok(directory),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    let mut builder = cap_std::fs::DirBuilder::new();
+                    let builder = cap_std::fs::DirBuilder::new();
                     #[cfg(unix)]
-                    {
+                    let builder = {
+                        let mut builder = builder;
                         use cap_std::fs::DirBuilderExt;
                         builder.mode(0o700);
-                    }
+                        builder
+                    };
                     parent.create_dir_with(&name, &builder)?;
                     parent.open_dir(&name)
                 }
@@ -686,6 +698,39 @@ impl FileReceiveState {
                 path,
                 (stat.mode & 0o777, permission_parent, permission_name),
             );
+            self.file_count += 1;
+            return Ok(false);
+        }
+
+        if !mode.intersects(fsutil::FileMode::Type) && !stat.linkname.is_empty() {
+            let target = FileSendPacketImpl::validate_path(&stat.linkname)?;
+            if !self.declared_paths.contains(&target) {
+                return Err(Status::invalid_argument(format!(
+                    "hardlink target has not been declared: {:?}",
+                    stat.linkname
+                )));
+            }
+            let root = self.root.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let target_metadata = root.symlink_metadata(&target).map_err(|error| {
+                Status::invalid_argument(format!("invalid hardlink target: {error}"))
+            })?;
+            if !target_metadata.file_type().is_file() {
+                return Err(Status::invalid_argument(
+                    "hardlink target is not a regular file",
+                ));
+            }
+            let name = name.to_owned();
+            tokio::task::spawn_blocking(move || root.hard_link(&target, &parent, &name))
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| {
+                    Status::invalid_argument(format!("failed to create hardlink: {error}"))
+                })?;
             self.file_count += 1;
             return Ok(false);
         }
@@ -1740,7 +1785,7 @@ impl Ssh for SshProvider {
     #[cfg(windows)]
     async fn forward_agent(
         &self,
-        request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
+        _request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
         unimplemented!();
     }
@@ -2222,6 +2267,38 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_preserves_hardlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(stat("first", 0o644, 5, ""))))
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            0
+        );
+        state.handle_packet(packet_data(0, b"hello")).await.unwrap();
+        state.handle_packet(packet_data(0, &[])).await.unwrap();
+        state
+            .handle_packet(packet_stat(Some(stat("second", 0o644, 0, "first"))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.finalize().await.unwrap();
+
+        let first = std::fs::metadata(dir.path().join("first")).unwrap();
+        let second = std::fs::metadata(dir.path().join("second")).unwrap();
+        assert_eq!(first.ino(), second.ino());
+        assert_eq!(std::fs::read(dir.path().join("second")).unwrap(), b"hello");
     }
 
     #[tokio::test]
