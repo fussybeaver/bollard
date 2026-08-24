@@ -322,9 +322,15 @@ impl DefinitionSolveOptionsBuilder {
         self
     }
 
-    /// Set aggregate packet-export transfer limits.
-    pub fn file_transfer_limits(mut self, limits: FileTransferLimits) -> Self {
-        self.options.file_transfer_limits = limits;
+    /// Reject a packet export once it reaches this many filesystem entries.
+    pub fn max_files(mut self, max_files: u64) -> Self {
+        self.options.file_transfer_limits.max_files = Some(max_files);
+        self
+    }
+
+    /// Reject a packet export once its declared entry sizes exceed this total.
+    pub fn max_bytes(mut self, max_bytes: u64) -> Self {
+        self.options.file_transfer_limits.max_bytes = Some(max_bytes);
         self
     }
 
@@ -1158,6 +1164,30 @@ mod tests {
         }
     }
 
+    async fn assert_teardown_timeout_case(
+        driver: &TestDriver,
+        deadline: Option<Instant>,
+        expected_code: tonic::Code,
+    ) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let result = execute_solve_with_teardown_timeout(
+            driver,
+            "session",
+            SolveRequest::default(),
+            Vec::new(),
+            blocking_teardown(calls.clone(), started, cancelled.clone()),
+            deadline,
+            Duration::from_millis(5),
+        )
+        .await;
+
+        assert_eq!(status_code(result), expected_code);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cancelled.load(Ordering::SeqCst));
+    }
+
     #[test]
     fn definition_solve_request_has_definition_and_empty_frontend() {
         let request = build_definition_solve_request(
@@ -1274,10 +1304,8 @@ mod tests {
             .secret("token", SecretSource::Env(String::from("TOKEN")))
             .enable_ssh(true)
             .timeout(Duration::from_secs(3))
-            .file_transfer_limits(FileTransferLimits {
-                max_files: Some(2),
-                max_bytes: Some(8),
-            })
+            .max_files(2)
+            .max_bytes(8)
             .build();
 
         assert_eq!(options.cache_to.len(), 1);
@@ -1417,7 +1445,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn solve_reuses_a_driver_with_fresh_session_ids() {
+    async fn solve_entry_points_use_fresh_session_ids() {
         let (address, shutdown_sender, handle) = start_test_server(None).await;
         let driver = test_driver(address);
         let session_ids = Arc::clone(&driver.session_ids);
@@ -1437,21 +1465,6 @@ mod tests {
             .unwrap();
         }
 
-        stop_test_server(shutdown_sender, handle).await;
-
-        let session_ids = session_ids
-            .lock()
-            .expect("session IDs mutex is not poisoned");
-        assert_eq!(session_ids.len(), 2);
-        assert_ne!(session_ids[0], session_ids[1]);
-    }
-
-    #[tokio::test]
-    async fn solve_definition_reuses_a_driver_with_fresh_session_ids() {
-        let (address, shutdown_sender, handle) = start_test_server(None).await;
-        let driver = test_driver(address);
-        let session_ids = Arc::clone(&driver.session_ids);
-
         for _ in 0..2 {
             let request = DefinitionSolveRequest::new(
                 bollard_buildkit_proto::pb::Definition::default(),
@@ -1461,9 +1474,16 @@ mod tests {
         }
 
         stop_test_server(shutdown_sender, handle).await;
-        let session_ids = session_ids.lock().unwrap();
-        assert_eq!(session_ids.len(), 2);
+
+        let session_ids = session_ids
+            .lock()
+            .expect("session IDs mutex is not poisoned");
+        assert_eq!(session_ids.len(), 4);
         assert_ne!(session_ids[0], session_ids[1]);
+        assert_ne!(session_ids[2], session_ids[3]);
+        assert!(session_ids[..2]
+            .iter()
+            .all(|session_id| !session_ids[2..].contains(session_id)));
     }
 
     #[tokio::test]
@@ -1495,70 +1515,35 @@ mod tests {
 
     #[tokio::test]
     async fn execute_solve_awaits_teardown_after_setup_timeout() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let started = Arc::new(Notify::new());
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let result = execute_solve_with_teardown_timeout(
-            &pending_test_driver(),
-            "session",
-            SolveRequest::default(),
-            Vec::new(),
-            blocking_teardown(calls.clone(), started, cancelled.clone()),
+        let driver = pending_test_driver();
+        assert_teardown_timeout_case(
+            &driver,
             Some(Instant::now() + Duration::from_millis(1)),
-            Duration::from_millis(5),
+            tonic::Code::DeadlineExceeded,
         )
         .await;
-
-        assert_eq!(status_code(result), tonic::Code::DeadlineExceeded);
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(cancelled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
     async fn execute_solve_awaits_teardown_after_solve_timeout() {
         let (address, shutdown_sender, handle) = start_pending_solve_server().await;
-        let calls = Arc::new(AtomicUsize::new(0));
-        let started = Arc::new(Notify::new());
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let result = execute_solve_with_teardown_timeout(
-            &test_driver(address),
-            "session",
-            SolveRequest::default(),
-            Vec::new(),
-            blocking_teardown(calls.clone(), started, cancelled.clone()),
+        let driver = test_driver(address);
+        assert_teardown_timeout_case(
+            &driver,
             Some(Instant::now() + Duration::from_millis(25)),
-            Duration::from_millis(5),
+            tonic::Code::DeadlineExceeded,
         )
         .await;
         stop_test_server(shutdown_sender, handle).await;
-
-        assert_eq!(status_code(result), tonic::Code::DeadlineExceeded);
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(cancelled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
     async fn execute_solve_preserves_solve_error_over_teardown_timeout() {
         let (address, shutdown_sender, handle) =
             start_test_server(Some(Status::not_found("solve failed"))).await;
-        let calls = Arc::new(AtomicUsize::new(0));
-        let started = Arc::new(Notify::new());
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let result = execute_solve_with_teardown_timeout(
-            &test_driver(address),
-            "session",
-            SolveRequest::default(),
-            Vec::new(),
-            blocking_teardown(calls.clone(), started, cancelled.clone()),
-            None,
-            Duration::from_millis(5),
-        )
-        .await;
+        let driver = test_driver(address);
+        assert_teardown_timeout_case(&driver, None, tonic::Code::NotFound).await;
         stop_test_server(shutdown_sender, handle).await;
-
-        assert_eq!(status_code(result), tonic::Code::NotFound);
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(cancelled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
