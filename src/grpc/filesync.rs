@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
     panic::AssertUnwindSafe,
     path::{Path, PathBuf},
@@ -22,7 +22,7 @@ use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 #[cfg(unix)]
 use xattr::FileExt;
 
-use super::patternmatcher::{match_component, PatternMatcher};
+use super::patternmatcher::{compile_component, PatternMatcher};
 
 #[cfg(unix)]
 use cap_std::fs::MetadataExt;
@@ -36,6 +36,11 @@ const FOLLOW_PATHS_METADATA: &str = "followpaths";
 const MAX_ENTRIES: usize = 100_000;
 const MAX_PATH_LENGTH: usize = 4096;
 const MAX_LINKNAME_LENGTH: usize = 4096;
+const MAX_FILESYNC_PATTERNS: usize = 4096;
+const MAX_FOLLOW_PATHS: usize = 1024;
+const MAX_FOLLOW_RESOLVED_PATHS: usize = MAX_ENTRIES;
+const MAX_FOLLOW_INSPECTED_ENTRIES: usize = MAX_ENTRIES;
+const MAX_FOLLOW_DEPTH: usize = 256;
 const ENTRY_QUEUE_CAPACITY: usize = 128;
 const FILE_JOB_QUEUE_CAPACITY: usize = 128;
 const OUTPUT_QUEUE_CAPACITY: usize = 16;
@@ -306,6 +311,33 @@ impl ScanBudget {
     }
 }
 
+struct FollowPathBudget {
+    inspected: usize,
+    resolved: usize,
+}
+
+impl FollowPathBudget {
+    fn inspect(&mut self) -> Result<(), Status> {
+        if self.inspected >= MAX_FOLLOW_INSPECTED_ENTRIES {
+            return Err(Status::resource_exhausted(
+                "FileSync followpaths inspected too many entries",
+            ));
+        }
+        self.inspected += 1;
+        Ok(())
+    }
+
+    fn resolve(&mut self, path: &Path) -> Result<String, Status> {
+        if self.resolved >= MAX_FOLLOW_RESOLVED_PATHS {
+            return Err(Status::resource_exhausted(
+                "FileSync followpaths resolved too many paths",
+            ));
+        }
+        self.resolved += 1;
+        path_string(path)
+    }
+}
+
 enum SessionEvent {
     Entry(Option<Result<SourceEntry, Status>>),
     Packet(Option<Result<Packet, Status>>),
@@ -376,7 +408,14 @@ impl FileSync for FileSyncImpl {
             .clone()
             .ok_or_else(|| Status::not_found("local source name is missing"))?;
         let root = lookup_mount(&self.mounts, &name)?;
-        let selection = scan_selection(&root, &options)?;
+        let selection = tokio::task::spawn_blocking({
+            let root = root.clone();
+            move || scan_selection(&root, &options)
+        })
+        .await
+        .map_err(|error| {
+            Status::internal(format!("FileSync selection worker failed: {error}"))
+        })??;
         #[cfg(test)]
         let faults = FaultInjection::from_metadata(request.metadata());
         #[cfg(not(test))]
@@ -723,6 +762,13 @@ fn scan_selection(
     root: &cap_std::fs::Dir,
     options: &FileSyncOptions,
 ) -> Result<ScanSelection, Status> {
+    if options.include_patterns.len() > MAX_FILESYNC_PATTERNS
+        || options.exclude_patterns.len() > MAX_FILESYNC_PATTERNS
+    {
+        return Err(Status::resource_exhausted(
+            "FileSync request contains too many filter patterns",
+        ));
+    }
     let mut include_patterns = options.include_patterns.clone();
     let follow_patterns = resolve_follow_paths(root, &options.follow_paths)?;
     if follow_patterns.iter().any(|path| path == ".") {
@@ -733,19 +779,37 @@ fn scan_selection(
 }
 
 fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec<String>, Status> {
+    if paths.len() > MAX_FOLLOW_PATHS {
+        return Err(Status::resource_exhausted(
+            "FileSync request contains too many followpaths",
+        ));
+    }
     let mut resolved = Vec::new();
+    let mut budget = FollowPathBudget {
+        inspected: 0,
+        resolved: 0,
+    };
+    let mut visited = HashSet::new();
     for path in paths {
         if path == "." {
             return Ok(vec![String::from(".")]);
         }
+        budget.resolve(Path::new(path))?;
         resolved.push(path.clone());
         let components = path.split('/').map(str::to_owned).collect::<Vec<_>>();
+        if components.len() > MAX_FOLLOW_DEPTH {
+            return Err(Status::resource_exhausted(
+                "FileSync followpaths path is too deep",
+            ));
+        }
         resolve_follow_components(
             root,
             Path::new(""),
             &components,
-            &mut Vec::new(),
+            &mut visited,
             &mut resolved,
+            &mut budget,
+            0,
         )?;
     }
     resolved.sort_unstable();
@@ -757,17 +821,29 @@ fn resolve_follow_components(
     root: &cap_std::fs::Dir,
     current: &Path,
     components: &[String],
-    visited: &mut Vec<String>,
+    visited: &mut HashSet<String>,
     resolved: &mut Vec<String>,
+    budget: &mut FollowPathBudget,
+    depth: usize,
 ) -> Result<(), Status> {
+    if depth > MAX_FOLLOW_DEPTH {
+        return Err(Status::resource_exhausted(
+            "FileSync followpaths resolution is too deep",
+        ));
+    }
     let Some(component) = components.first() else {
         if !current.as_os_str().is_empty() {
-            resolved.push(path_string(current)?);
+            resolved.push(budget.resolve(current)?);
         }
         return Ok(());
     };
 
     if contains_wildcard(component) {
+        let component_pattern = compile_component(component).ok_or_else(|| {
+            Status::invalid_argument(format!(
+                "invalid FileSync followpath pattern: {component:?}"
+            ))
+        })?;
         let directory = if current.as_os_str().is_empty() {
             root.try_clone()
         } else {
@@ -784,27 +860,59 @@ fn resolve_follow_components(
                 ))
             }
         };
-        let mut names = directory
+        let mut names = Vec::new();
+        for entry in directory
             .entries()
             .map_err(|error| filesystem_error("read followpaths directory", current, error))?
-            .map(|entry| {
-                entry
-                    .map(|entry| entry.file_name())
-                    .map_err(|error| filesystem_error("read followpaths entry", current, error))
-            })
-            .collect::<Result<Vec<_>, Status>>()?;
+        {
+            budget.inspect()?;
+            let entry = entry
+                .map_err(|error| filesystem_error("read followpaths entry", current, error))?;
+            names.push(entry.file_name());
+        }
         names.sort_unstable();
         for name in names {
             let Some(name) = name.to_str() else { continue };
-            if match_component(component, name) {
-                let next = current.join(name);
-                resolve_follow_components(root, &next, &components[1..], visited, resolved)?;
+            if component_pattern.matches(name) {
+                resolve_follow_entry(
+                    root,
+                    current,
+                    name,
+                    &components[1..],
+                    visited,
+                    resolved,
+                    budget,
+                    depth + 1,
+                )?;
             }
         }
         return Ok(());
     }
 
-    let next = current.join(component);
+    budget.inspect()?;
+    resolve_follow_entry(
+        root,
+        current,
+        component,
+        &components[1..],
+        visited,
+        resolved,
+        budget,
+        depth + 1,
+    )
+}
+
+fn resolve_follow_entry(
+    root: &cap_std::fs::Dir,
+    current: &Path,
+    name: &str,
+    remaining: &[String],
+    visited: &mut HashSet<String>,
+    resolved: &mut Vec<String>,
+    budget: &mut FollowPathBudget,
+    depth: usize,
+) -> Result<(), Status> {
+    let next = current.join(name);
     let metadata = match root.symlink_metadata(&next) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -812,14 +920,13 @@ fn resolve_follow_components(
     };
     let next_string = path_string(&next)?;
     if metadata.file_type().is_symlink() {
-        if visited.contains(&next_string) {
+        if !visited.insert(next_string.clone()) {
             return Ok(());
         }
-        visited.push(next_string.clone());
-        resolved.push(next_string);
+        resolved.push(budget.resolve(&next)?);
         let parent = next.parent().unwrap_or_else(|| Path::new(""));
         let link = root
-            .read_link_contents(current.join(component).as_path())
+            .read_link_contents(&next)
             .map_err(|error| filesystem_error("read followpaths symlink", &next, error))?;
         let Some(target) = normalize_follow_target(parent, &link) else {
             return Ok(());
@@ -835,21 +942,23 @@ fn resolve_follow_components(
                 _ => None,
             })
             .collect::<Vec<_>>();
-        target_components.extend_from_slice(&components[1..]);
+        target_components.extend_from_slice(remaining);
         return resolve_follow_components(
             root,
             Path::new(""),
             &target_components,
             visited,
             resolved,
+            budget,
+            depth + 1,
         );
     }
-    if components.len() == 1 {
-        resolved.push(next_string);
+    if remaining.is_empty() {
+        resolved.push(budget.resolve(&next)?);
     } else if !metadata.file_type().is_dir() {
         return Ok(());
     } else {
-        resolve_follow_components(root, &next, &components[1..], visited, resolved)?;
+        resolve_follow_components(root, &next, remaining, visited, resolved, budget, depth)?;
     }
     Ok(())
 }
@@ -1374,8 +1483,6 @@ fn error_packet(error: &Status) -> Packet {
 
 #[cfg(test)]
 use futures_util::stream;
-#[cfg(test)]
-use std::collections::HashSet;
 #[cfg(test)]
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 #[cfg(test)]
@@ -2029,6 +2136,14 @@ mod tests {
         };
         let selection =
             scan_selection(&open_mount(root.path()), &options).expect("followpaths resolve");
+        let wildcard_only = FileSyncOptions {
+            follow_paths: vec![String::from("dir/link*")],
+            ..Default::default()
+        };
+        let wildcard_selection = scan_selection(&open_mount(root.path()), &wildcard_only)
+            .expect("wildcard followpath resolves");
+        assert!(wildcard_selection.is_selected(Path::new("dir/link1")));
+        assert!(wildcard_selection.is_selected(Path::new("target/input")));
         let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
         let scanner = tokio::task::spawn_blocking({
             let root = open_mount(root.path());
@@ -2216,6 +2331,30 @@ mod tests {
                 tonic::Code::InvalidArgument
             );
         }
+    }
+
+    #[test]
+    fn followpath_resolution_has_bounded_input_and_depth() {
+        let root = tempdir().expect("temporary directory is created");
+        let mount = open_mount(root.path());
+        let too_many = vec![String::from("missing"); MAX_FOLLOW_PATHS + 1];
+        assert_eq!(
+            resolve_follow_paths(&mount, &too_many)
+                .expect_err("too many followpaths are rejected")
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
+
+        let too_deep = (0..=MAX_FOLLOW_DEPTH)
+            .map(|_| "missing")
+            .collect::<Vec<_>>()
+            .join("/");
+        assert_eq!(
+            resolve_follow_paths(&mount, &[too_deep])
+                .expect_err("deep followpaths are rejected")
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
     }
 
     #[test]
