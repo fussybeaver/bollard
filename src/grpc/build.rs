@@ -195,12 +195,13 @@ pub struct ImageBuildPlatform {
 
 impl Display for ImageBuildPlatform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let prefix = Path::new(&self.os).join(Path::new(&self.architecture));
+        // OCI platform strings are always forward-slash separated, regardless
+        // of the host path separator.
+        write!(f, "{}/{}", self.os, self.architecture)?;
         if let Some(variant) = &self.variant {
-            write!(f, "{}", prefix.join(Path::new(&variant)).display())
-        } else {
-            write!(f, "{}", prefix.display())
+            write!(f, "/{variant}")?;
         }
+        Ok(())
     }
 }
 
