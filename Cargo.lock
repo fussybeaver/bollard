@@ -195,6 +195,7 @@ dependencies = [
  "bollard-buildkit-proto 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bollard-stubs 1.53.1-rc.29.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
+ "cap-fs-ext",
  "cap-std",
  "chrono",
  "flate2",
@@ -317,6 +318,18 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "cap-fs-ext"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d78e5a3368ae89b7cb68186411452b4b9fac8b41be9c19bf3f47c2d2c8e36e6b"
+dependencies = [
+ "cap-primitives",
+ "cap-std",
+ "io-lifetimes 3.0.1",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "cap-primitives"

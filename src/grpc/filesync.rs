@@ -5,12 +5,14 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use bollard_buildkit_proto::{
     fsutil::types::{packet::PacketType, Packet, Stat},
     moby::filesync::v1::file_sync_server::FileSync,
 };
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use tokio::io::AsyncReadExt;
@@ -35,6 +37,7 @@ const FILE_JOB_QUEUE_CAPACITY: usize = 128;
 const OUTPUT_QUEUE_CAPACITY: usize = 16;
 const FILE_WORKER_COUNT: usize = 4;
 const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
+const FILESYNC_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 type EntryReceiver = tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>;
 type JobSender = tokio::sync::mpsc::Sender<FileJob>;
@@ -69,6 +72,27 @@ struct FileTarget {
     relative: PathBuf,
 }
 
+/// Test-only fault-injection switches for exercising panic and race paths
+/// through the real FileSync wire protocol. Always all-off in production:
+/// `diff_copy` only parses them from request metadata under `cfg(test)`.
+#[derive(Clone, Copy, Debug, Default)]
+struct FaultInjection {
+    panic_worker: bool,
+    delay_scan: bool,
+    panic_scanner: bool,
+}
+
+impl FaultInjection {
+    #[cfg(test)]
+    fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
+        Self {
+            panic_worker: metadata.contains_key("x-test-panic-worker"),
+            delay_scan: metadata.contains_key("x-test-delay-scan"),
+            panic_scanner: metadata.contains_key("x-test-panic-scanner"),
+        }
+    }
+}
+
 struct FileSyncSession {
     cancellation: CancellationToken,
     scanner: Option<tokio::task::JoinHandle<()>>,
@@ -89,8 +113,7 @@ impl FileSyncSession {
     fn start(
         root: Arc<cap_std::fs::Dir>,
         selection: ScanSelection,
-        test_panic_worker: bool,
-        test_delay_scan: bool,
+        faults: FaultInjection,
     ) -> FileSyncStart {
         let cancellation = CancellationToken::new();
         let scanner_root = root.clone();
@@ -99,12 +122,15 @@ impl FileSyncSession {
         let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
         let scanner_cancellation = cancellation.clone();
         let scanner = tokio::task::spawn_blocking(move || {
+            if faults.panic_scanner {
+                panic!("injected FileSync scanner panic");
+            }
             let result = scan_entries_with_selection(
                 scanner_root,
                 entries_sender.clone(),
                 selection,
                 scanner_cancellation,
-                test_delay_scan,
+                faults,
             );
             if let Err(error) = result {
                 let _ = entries_sender.blocking_send(Err(error));
@@ -125,7 +151,7 @@ impl FileSyncSession {
                         worker_jobs,
                         worker_output.clone(),
                         worker_cancellation,
-                        test_panic_worker,
+                        faults,
                     )
                     .await;
                 })
@@ -163,22 +189,44 @@ impl FileSyncSession {
         output.close();
         jobs.take();
 
-        if let Some(scanner) = self.scanner.take() {
-            scanner.await.map_err(|error| {
-                Status::internal(format!("FileSync scanner task failed: {error}"))
-            })?;
-        }
-        self.workers.abort_all();
-        while let Some(result) = self.workers.join_next().await {
-            if let Err(error) = result {
-                if !error.is_cancelled() {
-                    return Err(Status::internal(format!(
-                        "FileSync worker task failed: {error}"
-                    )));
+        let result = tokio::time::timeout(FILESYNC_SHUTDOWN_TIMEOUT, async {
+            let scanner_result = if let Some(scanner) = self.scanner.as_mut() {
+                scanner.await.map_err(|error| {
+                    Status::internal(format!("FileSync scanner task failed: {error}"))
+                })
+            } else {
+                Ok(())
+            };
+            self.scanner.take();
+
+            self.workers.abort_all();
+            let mut worker_error = None;
+            while let Some(result) = self.workers.join_next().await {
+                if let Err(error) = result {
+                    if !error.is_cancelled() && worker_error.is_none() {
+                        worker_error = Some(Status::internal(format!(
+                            "FileSync worker task failed: {error}"
+                        )));
+                    }
                 }
             }
+            scanner_result?;
+            worker_error.map_or(Ok(()), Err)
+        })
+        .await;
+
+        match result {
+            Ok(result) => result,
+            Err(_) => {
+                if let Some(scanner) = self.scanner.as_ref() {
+                    scanner.abort();
+                }
+                self.workers.abort_all();
+                Err(Status::deadline_exceeded(
+                    "FileSync session cleanup exceeded its timeout",
+                ))
+            }
         }
-        Ok(())
     }
 }
 
@@ -193,6 +241,22 @@ struct ScanFrame {
     directory: cap_std::fs::Dir,
     names: Vec<OsString>,
     next_name: usize,
+}
+
+struct ScanBudget {
+    inspected: usize,
+}
+
+impl ScanBudget {
+    fn inspect(&mut self) -> Result<(), Status> {
+        if self.inspected >= MAX_ENTRIES {
+            return Err(Status::resource_exhausted(
+                "local source has too many entries",
+            ));
+        }
+        self.inspected += 1;
+        Ok(())
+    }
 }
 
 enum SessionEvent {
@@ -262,15 +326,11 @@ impl FileSync for FileSyncImpl {
         let root = lookup_mount(&self.mounts, &name)?;
         let selection = scan_selection(request.metadata())?;
         #[cfg(test)]
-        let test_panic_worker = request.metadata().contains_key("x-test-panic-worker");
+        let faults = FaultInjection::from_metadata(request.metadata());
         #[cfg(not(test))]
-        let test_panic_worker = false;
-        #[cfg(test)]
-        let test_delay_scan = request.metadata().contains_key("x-test-delay-scan");
-        #[cfg(not(test))]
-        let test_delay_scan = false;
+        let faults = FaultInjection::default();
         let (mut session, mut entries_receiver, jobs_sender, mut output_receiver) =
-            FileSyncSession::start(root, selection, test_panic_worker, test_delay_scan);
+            FileSyncSession::start(root, selection, faults);
         let mut jobs_sender = Some(jobs_sender);
         let mut input = Box::pin(request.into_inner());
 
@@ -407,6 +467,11 @@ impl FileSync for FileSyncImpl {
                                         "FileSync received PACKET_FIN before STAT termination",
                                     ));
                                 }
+                                if fin_requested {
+                                    fail!(Status::failed_precondition(
+                                        "FileSync received repeated PACKET_FIN",
+                                    ));
+                                }
                                 fin_requested = true;
                                 if pending_jobs.is_empty() {
                                     yield Ok(fin_response_packet());
@@ -472,7 +537,7 @@ async fn worker_loop(
     jobs: Arc<Mutex<tokio::sync::mpsc::Receiver<FileJob>>>,
     output: tokio::sync::mpsc::Sender<Result<Packet, Status>>,
     cancellation: CancellationToken,
-    test_panic_worker: bool,
+    faults: FaultInjection,
 ) {
     loop {
         let job = {
@@ -483,7 +548,7 @@ async fn worker_loop(
         if cancellation.is_cancelled() {
             return;
         }
-        if test_panic_worker {
+        if faults.panic_worker {
             panic!("injected FileSync worker panic");
         }
 
@@ -538,8 +603,10 @@ async fn open_regular_file(
     relative: PathBuf,
 ) -> Result<tokio::fs::File, Status> {
     let file = tokio::task::spawn_blocking(move || {
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
         let file = root
-            .open(&relative)
+            .open_with(&relative, &options)
             .map_err(|error| filesystem_error("open", &relative, error))?;
         let metadata = file
             .metadata()
@@ -652,7 +719,7 @@ fn scan_entries(
         sender,
         ScanSelection::All,
         CancellationToken::new(),
-        false,
+        FaultInjection::default(),
     )
 }
 
@@ -661,13 +728,14 @@ fn scan_entries_with_selection(
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
     selection: ScanSelection,
     cancellation: CancellationToken,
-    delay_scan: bool,
+    faults: FaultInjection,
 ) -> Result<(), Status> {
     let root = root.try_clone().map_err(|error| {
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
     let selection = resolve_selection(&root, selection)?;
-    let names = sorted_names(&root)?;
+    let mut budget = ScanBudget { inspected: 0 };
+    let names = sorted_names(&root, &mut budget)?;
     let mut frames = vec![ScanFrame {
         relative: PathBuf::new(),
         directory: root,
@@ -677,7 +745,7 @@ fn scan_entries_with_selection(
     let mut position = 0_u32;
 
     while let Some(mut frame) = frames.pop() {
-        if delay_scan {
+        if faults.delay_scan {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         if cancellation.is_cancelled() {
@@ -702,7 +770,7 @@ fn scan_entries_with_selection(
                 frames.push(frame);
                 frames.push(ScanFrame {
                     relative,
-                    names: sorted_names(&directory)?,
+                    names: sorted_names(&directory, &mut budget)?,
                     directory,
                     next_name: 0,
                 });
@@ -745,7 +813,7 @@ fn scan_entries_with_selection(
                     .map_err(|error| filesystem_error("open directory", &relative, error))?;
                 Some(ScanFrame {
                     relative,
-                    names: sorted_names(&directory)?,
+                    names: sorted_names(&directory, &mut budget)?,
                     directory,
                     next_name: 0,
                 })
@@ -815,21 +883,35 @@ fn entry_is_ancestor_or_selected_directory(
     metadata: &cap_std::fs::Metadata,
     selection: &ScanSelection,
 ) -> bool {
-    metadata.file_type().is_dir() && entry_is_ancestor(path, selection)
+    metadata.file_type().is_dir()
+        && match selection {
+            ScanSelection::All => true,
+            ScanSelection::Paths(paths) => paths
+                .iter()
+                .any(|selected| path_is_prefix(path, selected) || path_is_prefix(selected, path)),
+        }
 }
 
-fn sorted_names(directory: &cap_std::fs::Dir) -> Result<Vec<OsString>, Status> {
+fn sorted_names(
+    directory: &cap_std::fs::Dir,
+    budget: &mut ScanBudget,
+) -> Result<Vec<OsString>, Status> {
     let mut names = directory
         .entries()
         .map_err(|error| {
             Status::internal(format!("failed to read local source directory: {error}"))
         })?
         .map(|entry| {
-            entry.map(|entry| entry.file_name()).map_err(|error| {
-                Status::internal(format!("failed to read local source entry: {error}"))
-            })
+            entry
+                .map(|entry| {
+                    budget.inspect()?;
+                    Ok(entry.file_name())
+                })
+                .map_err(|error| {
+                    Status::internal(format!("failed to read local source entry: {error}"))
+                })?
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, Status>>()?;
     names.sort_unstable();
     Ok(names)
 }
@@ -1227,11 +1309,21 @@ async fn start_filesync_server(
     tokio::sync::oneshot::Sender<()>,
     tokio::task::JoinHandle<()>,
 ) {
+    start_filesync_server_with_mounts(HashMap::from([(String::from("context"), root)])).await
+}
+
+#[cfg(test)]
+async fn start_filesync_server_with_mounts(
+    mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("FileSync test listener binds");
     let address = listener.local_addr().expect("FileSync test address exists");
-    let mounts = HashMap::from([(String::from("context"), root)]);
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let server = Server::builder()
         .add_service(FileSyncServer::new(FileSyncImpl::new(mounts)))
@@ -1253,21 +1345,40 @@ async fn open_filesync_transfer(
     tokio::sync::oneshot::Sender<()>,
     tokio::task::JoinHandle<()>,
 ) {
-    open_filesync_transfer_with_controls(root, false, false).await
+    open_filesync_transfer_with_metadata(root, "context", FaultInjection::default()).await
 }
 
 #[cfg(test)]
-async fn open_filesync_transfer_with_controls(
+async fn open_filesync_transfer_with_metadata(
     root: Arc<cap_std::fs::Dir>,
-    panic_worker: bool,
-    delay_scan: bool,
+    dir_name: &str,
+    faults: FaultInjection,
 ) -> (
     mpsc::Sender<Packet>,
     Streaming<Packet>,
     tokio::sync::oneshot::Sender<()>,
     tokio::task::JoinHandle<()>,
 ) {
-    let (address, shutdown_sender, server_task) = start_filesync_server(root).await;
+    open_filesync_transfer_from_mounts(
+        HashMap::from([(String::from("context"), root)]),
+        dir_name,
+        faults,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn open_filesync_transfer_from_mounts(
+    mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
+    dir_name: &str,
+    faults: FaultInjection,
+) -> (
+    mpsc::Sender<Packet>,
+    Streaming<Packet>,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (address, shutdown_sender, server_task) = start_filesync_server_with_mounts(mounts).await;
     let mut client =
         bollard_buildkit_proto::moby::filesync::v1::file_sync_client::FileSyncClient::connect(
             format!("http://{address}"),
@@ -1278,17 +1389,23 @@ async fn open_filesync_transfer_with_controls(
     let mut request = Request::new(ReceiverStream::new(receiver));
     request.metadata_mut().insert(
         DIR_NAME_METADATA,
-        tonic::metadata::MetadataValue::try_from("context").expect("metadata value is valid"),
+        tonic::metadata::MetadataValue::try_from(dir_name).expect("metadata value is valid"),
     );
-    if panic_worker {
+    if faults.panic_worker {
         request.metadata_mut().insert(
             "x-test-panic-worker",
             tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
         );
     }
-    if delay_scan {
+    if faults.delay_scan {
         request.metadata_mut().insert(
             "x-test-delay-scan",
+            tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
+        );
+    }
+    if faults.panic_scanner {
+        request.metadata_mut().insert(
+            "x-test-panic-scanner",
             tonic::metadata::MetadataValue::try_from("1").expect("metadata value is valid"),
         );
     }
@@ -1487,17 +1604,21 @@ mod tests {
     #[tokio::test]
     async fn scanner_emits_regular_and_symlink_metadata() {
         let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("empty"), b"").expect("empty file is created");
+        std::fs::write(root.path().join("target"), b"non-empty target")
+            .expect("target file is created");
         #[cfg(unix)]
-        std::os::unix::fs::symlink("empty", root.path().join("link")).expect("symlink is created");
+        std::os::unix::fs::symlink("target", root.path().join("link")).expect("symlink is created");
 
         let entries = scan_fixture(open_mount(root.path())).await;
         let empty = entries
             .iter()
-            .find(|entry| entry.stat.path == "empty")
-            .expect("empty file stat exists");
+            .find(|entry| entry.stat.path == "target")
+            .expect("target file stat exists");
         assert!(empty.regular);
-        assert_eq!(empty.stat.size, 0);
+        assert_eq!(
+            empty.stat.size,
+            i64::try_from(b"non-empty target".len()).expect("target length fits")
+        );
         assert_eq!(
             empty.stat.mode & super::super::fsutil::FileMode::Type.bits(),
             0
@@ -1514,7 +1635,7 @@ mod tests {
                 link.stat.mode & super::super::fsutil::FileMode::Symlink.bits(),
                 0
             );
-            assert_eq!(link.stat.linkname, "empty");
+            assert_eq!(link.stat.linkname, "target");
             assert_eq!(link.stat.size, 0);
         }
     }
@@ -1524,13 +1645,13 @@ mod tests {
         let root = tempdir().expect("temporary directory is created");
         std::fs::create_dir(root.path().join("a")).expect("a directory is created");
         std::fs::create_dir(root.path().join("b")).expect("b directory is created");
-        std::fs::write(root.path().join("a/input"), b"source").expect("input is created");
+        std::fs::create_dir(root.path().join("a/subdir")).expect("subdir is created");
+        std::fs::write(root.path().join("a/subdir/input"), b"source").expect("input is created");
         std::fs::write(root.path().join("b/other"), b"other").expect("other is created");
         let mut metadata = MetadataMap::new();
         metadata.insert(
             FOLLOW_PATHS_METADATA,
-            tonic::metadata::MetadataValue::try_from("a/input")
-                .expect("follow path metadata is valid"),
+            tonic::metadata::MetadataValue::try_from("a").expect("follow path metadata is valid"),
         );
         let selection = scan_selection(&metadata).expect("follow path is accepted");
         let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
@@ -1542,7 +1663,7 @@ mod tests {
                     sender,
                     selection,
                     CancellationToken::new(),
-                    false,
+                    FaultInjection::default(),
                 )
             }
         });
@@ -1554,7 +1675,24 @@ mod tests {
             .await
             .expect("selected scanner joins")
             .expect("selected scanner succeeds");
-        assert_eq!(paths, ["a", "a/input"]);
+        assert_eq!(paths, ["a", "a/subdir", "a/subdir/input"]);
+    }
+
+    #[test]
+    fn scanner_bounds_directory_entry_collection() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"a").expect("a is created");
+        std::fs::write(root.path().join("b"), b"b").expect("b is created");
+        let directory = open_mount(root.path());
+        let mut budget = ScanBudget {
+            inspected: MAX_ENTRIES - 1,
+        };
+        assert_eq!(
+            sorted_names(&directory, &mut budget)
+                .expect_err("directory budget is enforced")
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
     }
 
     #[test]
@@ -1598,8 +1736,17 @@ mod tests {
 
         let root = tempdir().expect("temporary directory is created");
         let mounts = HashMap::from([(String::from("context"), open_mount(root.path()))]);
+        assert!(lookup_mount(&mounts, "context").is_ok());
         assert_eq!(
             lookup_mount(&mounts, "missing").unwrap_err().code(),
+            tonic::Code::NotFound
+        );
+        assert_eq!(
+            lookup_mount(&mounts, "con").unwrap_err().code(),
+            tonic::Code::NotFound
+        );
+        assert_eq!(
+            lookup_mount(&mounts, "Context").unwrap_err().code(),
             tonic::Code::NotFound
         );
         let file = root.path().join("file");
@@ -1622,6 +1769,20 @@ mod tests {
             .code(),
             tonic::Code::InvalidArgument
         );
+
+        for value in ["../escape", "/absolute", "foo/../bar"] {
+            let mut metadata = MetadataMap::new();
+            metadata.insert(
+                FOLLOW_PATHS_METADATA,
+                tonic::metadata::MetadataValue::try_from(value)
+                    .expect("follow path metadata is valid"),
+            );
+            assert_eq!(
+                scan_selection(&metadata).unwrap_err().code(),
+                tonic::Code::Unimplemented,
+                "path {value:?} must fail closed"
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -1910,8 +2071,15 @@ mod tests {
     async fn diff_copy_rejects_early_fin() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), false, true).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
         let first = responses.message().await.unwrap().unwrap();
         assert_eq!(first.r#type, PacketType::PacketStat as i32);
         sender.send(fin_packet()).await.expect("FIN sends");
@@ -2000,13 +2168,317 @@ mod tests {
     async fn diff_copy_reports_worker_panics() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer_with_controls(open_mount(root.path()), true, false).await;
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                panic_worker: true,
+                ..Default::default()
+            },
+        )
+        .await;
         read_stat_terminator(&mut responses).await;
         sender.send(request_packet(0)).await.expect("request sends");
         assert_eq!(
             expect_protocol_error(&mut responses).await.code(),
             tonic::Code::Internal
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn diff_copy_reports_scanner_errors() {
+        use std::os::unix::net::UnixListener;
+
+        let root = tempdir().expect("temporary directory is created");
+        let _socket =
+            UnixListener::bind(root.path().join("socket")).expect("unix socket is created");
+        let (_sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::InvalidArgument
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_reports_scanner_panics() {
+        let root = tempdir().expect("temporary directory is created");
+        let (_sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                panic_scanner: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::Internal
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_unknown_mount_names() {
+        let root = tempdir().expect("temporary directory is created");
+        let (address, shutdown, server) = start_filesync_server(open_mount(root.path())).await;
+        let mut client =
+            bollard_buildkit_proto::moby::filesync::v1::file_sync_client::FileSyncClient::connect(
+                format!("http://{address}"),
+            )
+            .await
+            .expect("FileSync client connects");
+        let mut request = Request::new(stream::empty::<Packet>());
+        request.metadata_mut().insert(
+            DIR_NAME_METADATA,
+            tonic::metadata::MetadataValue::try_from("missing").expect("metadata value is valid"),
+        );
+        let error = client
+            .diff_copy(request)
+            .await
+            .expect_err("unknown mount names are rejected");
+        assert_eq!(error.code(), tonic::Code::NotFound);
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_non_regular_requests() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("directory")).expect("directory is created");
+        std::fs::write(root.path().join("directory/input"), b"source").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        let stats = read_stat_terminator(&mut responses).await;
+        assert_eq!(stats[0].stat.as_ref().unwrap().path, "directory");
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            expect_protocol_error(&mut responses).await.code(),
+            tonic::Code::InvalidArgument
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_unknown_and_unexpected_packet_types() {
+        for packet in [
+            Packet {
+                r#type: 999,
+                ..Default::default()
+            },
+            stat_packet("unexpected"),
+        ] {
+            let root = tempdir().expect("temporary directory is created");
+            std::fs::write(root.path().join("input"), b"source").expect("source is created");
+            let (sender, mut responses, shutdown, server) =
+                open_filesync_transfer(open_mount(root.path())).await;
+            read_stat_terminator(&mut responses).await;
+            sender.send(packet).await.expect("packet sends");
+            assert_eq!(
+                expect_protocol_error(&mut responses).await.code(),
+                tonic::Code::InvalidArgument
+            );
+            let _ = shutdown.send(());
+            let _ = server.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_repeated_fin_and_peer_errors_during_transfer() {
+        for peer_error in [false, true] {
+            let root = tempdir().expect("temporary directory is created");
+            std::fs::write(
+                root.path().join("input"),
+                vec![b'x'; FILE_READ_BUFFER_SIZE * 8],
+            )
+            .expect("source is created");
+            let (sender, mut responses, shutdown, server) =
+                open_filesync_transfer(open_mount(root.path())).await;
+            read_stat_terminator(&mut responses).await;
+            sender.send(request_packet(0)).await.expect("request sends");
+            sender
+                .send(if peer_error {
+                    err_packet("peer failure")
+                } else {
+                    fin_packet()
+                })
+                .await
+                .expect("control packet sends");
+            sender
+                .send(fin_packet())
+                .await
+                .expect("second control packet sends");
+            assert_eq!(
+                expect_protocol_error(&mut responses).await.code(),
+                if peer_error {
+                    tonic::Code::Aborted
+                } else {
+                    tonic::Code::FailedPrecondition
+                }
+            );
+            let _ = shutdown.send(());
+            let _ = server.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn diff_copy_accepts_requests_while_stat_is_in_flight() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"a").expect("a is created");
+        std::fs::write(root.path().join("b"), b"b").expect("b is created");
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let first = responses
+            .message()
+            .await
+            .expect("first STAT succeeds")
+            .expect("first STAT exists");
+        assert_eq!(first.stat.as_ref().unwrap().path, "a");
+        sender.send(request_packet(0)).await.expect("request sends");
+
+        let mut saw_data = false;
+        let mut saw_eof = false;
+        loop {
+            let packet = responses
+                .message()
+                .await
+                .expect("FileSync response succeeds")
+                .expect("FileSync response exists");
+            match PacketType::try_from(packet.r#type).expect("response type is known") {
+                PacketType::PacketStat if packet.stat.is_none() => break,
+                PacketType::PacketData => {
+                    saw_data = true;
+                    if packet.data.is_empty() {
+                        saw_eof = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_data);
+        assert!(saw_eof);
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_handles_large_stat_streams_with_bounded_queues() {
+        let root = tempdir().expect("temporary directory is created");
+        for index in 0..(ENTRY_QUEUE_CAPACITY * 2) {
+            std::fs::write(root.path().join(format!("entry-{index:03}")), b"entry")
+                .expect("entry is created");
+        }
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        let stats = read_stat_terminator(&mut responses).await;
+        assert_eq!(stats.len(), ENTRY_QUEUE_CAPACITY * 2 + 1);
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn diff_copy_rejects_replaced_regular_files() {
+        let root = tempdir().expect("temporary directory is created");
+        let outside = root.path().with_extension("outside");
+        std::fs::write(&outside, b"outside").expect("outside target is created");
+
+        for replacement in ["outside-symlink", "inside-symlink", "directory"] {
+            std::fs::write(root.path().join("input"), b"source").expect("source is created");
+            let (sender, mut responses, shutdown, server) =
+                open_filesync_transfer(open_mount(root.path())).await;
+            read_stat_terminator(&mut responses).await;
+            std::fs::remove_file(root.path().join("input")).expect("source is removed");
+            match replacement {
+                "outside-symlink" => {
+                    std::os::unix::fs::symlink(&outside, root.path().join("input"))
+                        .expect("outside symlink is created")
+                }
+                "inside-symlink" => {
+                    std::os::unix::fs::symlink("replacement-target", root.path().join("input"))
+                        .expect("inside symlink is created")
+                }
+                "directory" => std::fs::create_dir(root.path().join("input"))
+                    .expect("replacement directory is created"),
+                _ => unreachable!(),
+            }
+            if replacement == "inside-symlink" {
+                std::fs::write(root.path().join("replacement-target"), b"different")
+                    .expect("replacement target is created");
+            }
+
+            sender.send(request_packet(0)).await.expect("request sends");
+            let error = expect_protocol_error(&mut responses).await;
+            assert!(
+                matches!(
+                    error.code(),
+                    tonic::Code::Internal | tonic::Code::InvalidArgument
+                ),
+                "replacement {replacement:?} returned {:?}",
+                error.code()
+            );
+            let _ = shutdown.send(());
+            let _ = server.await;
+            let input = root.path().join("input");
+            if input.is_dir() {
+                std::fs::remove_dir(input).expect("replacement directory is removed");
+            } else {
+                std::fs::remove_file(input).expect("replacement link is removed");
+            }
+            let target = root.path().join("replacement-target");
+            if target.exists() {
+                std::fs::remove_file(target).expect("replacement target is removed");
+            }
+        }
+        std::fs::remove_file(outside).expect("outside target is removed");
+    }
+
+    #[tokio::test]
+    async fn diff_copy_reads_current_file_contents_after_stat() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"before").expect("source is created");
+        let (sender, mut responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        read_stat_terminator(&mut responses).await;
+        std::fs::write(root.path().join("input"), b"after").expect("source is modified");
+        sender.send(request_packet(0)).await.expect("request sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, b"after".to_vec())
+        );
+        assert_eq!(
+            responses.message().await.unwrap().unwrap(),
+            data_packet(0, Vec::new())
+        );
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
         );
         let _ = shutdown.send(());
         let _ = server.await;
@@ -2029,6 +2501,9 @@ mod tests {
         loop {
             let packet = responses.message().await.unwrap().unwrap();
             let done = packet.r#type == PacketType::PacketData as i32 && packet.data.is_empty();
+            if packet.r#type == PacketType::PacketData as i32 {
+                assert!(packet.data.len() <= FILE_READ_BUFFER_SIZE);
+            }
             packets.push(packet);
             if done {
                 break;
@@ -2044,5 +2519,53 @@ mod tests {
         );
         let _ = shutdown.send(());
         let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_cancellation_stops_a_delayed_scanner() {
+        let root = tempdir().expect("temporary directory is created");
+        for index in 0..16 {
+            std::fs::write(root.path().join(format!("entry-{index}")), b"entry")
+                .expect("entry is created");
+        }
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let _ = responses.message().await;
+        drop(sender);
+        drop(responses);
+        let _ = shutdown.send(());
+        tokio::time::timeout(std::time::Duration::from_secs(1), server)
+            .await
+            .expect("delayed scanner service shuts down")
+            .expect("delayed scanner service joins");
+    }
+
+    #[tokio::test]
+    async fn diff_copy_cancellation_stops_a_worker_under_output_backpressure() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(
+            root.path().join("input"),
+            vec![b'x'; FILE_READ_BUFFER_SIZE * OUTPUT_QUEUE_CAPACITY * 2],
+        )
+        .expect("source is created");
+        let (sender, responses, shutdown, server) =
+            open_filesync_transfer(open_mount(root.path())).await;
+        let mut responses = responses;
+        read_stat_terminator(&mut responses).await;
+        sender.send(request_packet(0)).await.expect("request sends");
+        drop(sender);
+        drop(responses);
+        let _ = shutdown.send(());
+        tokio::time::timeout(std::time::Duration::from_secs(1), server)
+            .await
+            .expect("backpressured service shuts down")
+            .expect("backpressured service joins");
     }
 }
