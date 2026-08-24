@@ -1,5 +1,5 @@
 use std::time::Duration;
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use bollard_buildkit_proto::moby::{
     buildkit::{
@@ -154,8 +154,16 @@ impl Drop for TearDownGuard {
 
         if let Some(task) = self.task.take() {
             self.runtime.spawn(async move {
-                if let Err(error) = task.await {
-                    warn!("failed to join BuildKit driver teardown after cancellation: {error}");
+                match task.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        warn!("failed to tear down BuildKit driver after cancellation: {error}");
+                    }
+                    Err(error) => {
+                        warn!(
+                            "failed to join BuildKit driver teardown after cancellation: {error}"
+                        );
+                    }
                 }
             });
         } else if !self.started {
@@ -218,7 +226,7 @@ pub enum DefinitionExporter {
 }
 
 /// Options for a direct LLB definition solve.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DefinitionSolveOptions {
     cache_to: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
     cache_from: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
@@ -227,6 +235,21 @@ pub struct DefinitionSolveOptions {
     ssh: bool,
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
+}
+
+impl fmt::Debug for DefinitionSolveOptions {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DefinitionSolveOptions")
+            .field("cache_to", &self.cache_to.len())
+            .field("cache_from", &self.cache_from.len())
+            .field("credentials", &self.credentials.len())
+            .field("secrets", &self.secrets.len())
+            .field("ssh", &self.ssh)
+            .field("timeout", &self.timeout)
+            .field("file_transfer_limits", &self.file_transfer_limits)
+            .finish()
+    }
 }
 
 impl Default for DefinitionSolveOptions {
@@ -312,7 +335,7 @@ impl DefinitionSolveOptionsBuilder {
 }
 
 /// A direct-definition solve request.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DefinitionSolveRequest {
     /// The pre-built LLB definition to solve.
     pub definition: bollard_buildkit_proto::pb::Definition,
@@ -320,6 +343,22 @@ pub struct DefinitionSolveRequest {
     pub exporter: DefinitionExporter,
     options: DefinitionSolveOptions,
     build_ref: Option<BuildRef>,
+}
+
+impl fmt::Debug for DefinitionSolveRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let exporter = match &self.exporter {
+            DefinitionExporter::Local(_) => "local",
+        };
+
+        formatter
+            .debug_struct("DefinitionSolveRequest")
+            .field("definition_ops", &self.definition.def.len())
+            .field("exporter", &exporter)
+            .field("options", &self.options)
+            .field("has_build_ref", &self.build_ref.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1167,6 +1206,59 @@ mod tests {
         assert!(!rendered.contains("sensitive-definition-bytes"));
         assert!(!rendered.contains("secret-path"));
         assert!(!rendered.contains("/private"));
+    }
+
+    #[test]
+    fn definition_solve_debug_output_redacts_sensitive_values() {
+        let builder = DefinitionSolveOptionsBuilder::new()
+            .credential(
+                "sensitive-registry.example",
+                DockerCredentials {
+                    username: Some(String::from("sensitive-username")),
+                    password: Some(String::from("sensitive-password")),
+                    auth: Some(String::from("sensitive-auth")),
+                    identitytoken: Some(String::from("sensitive-identity-token")),
+                    registrytoken: Some(String::from("sensitive-registry-token")),
+                    ..Default::default()
+                },
+            )
+            .secret(
+                "sensitive-secret-id",
+                SecretSource::Env(String::from("sensitive-secret-source")),
+            );
+        let builder_debug = format!("{builder:?}");
+        let options = builder.clone().build();
+        let options_debug = format!("{options:?}");
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition {
+                def: vec![b"sensitive-definition-bytes".to_vec()],
+                ..Default::default()
+            },
+            DefinitionExporter::Local(PathBuf::from("/sensitive-export-path")),
+        )
+        .with_options(options);
+        let request_debug = format!("{request:?}");
+
+        for rendered in [&builder_debug, &options_debug, &request_debug] {
+            assert!(!rendered.contains("sensitive-registry.example"));
+            assert!(!rendered.contains("sensitive-username"));
+            assert!(!rendered.contains("sensitive-password"));
+            assert!(!rendered.contains("sensitive-auth"));
+            assert!(!rendered.contains("sensitive-identity-token"));
+            assert!(!rendered.contains("sensitive-registry-token"));
+            assert!(!rendered.contains("sensitive-secret-id"));
+            assert!(!rendered.contains("sensitive-secret-source"));
+            assert!(!rendered.contains("sensitive-definition-bytes"));
+            assert!(!rendered.contains("/sensitive-export-path"));
+        }
+
+        assert!(builder_debug.contains("credentials: 1"));
+        assert!(builder_debug.contains("secrets: 1"));
+        assert!(options_debug.contains("credentials: 1"));
+        assert!(options_debug.contains("secrets: 1"));
+        assert!(request_debug.contains("definition_ops: 1"));
+        assert!(request_debug.contains("exporter: \"local\""));
+        assert!(request_debug.contains("has_build_ref: false"));
     }
 
     #[test]
