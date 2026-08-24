@@ -19,11 +19,15 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
+#[cfg(unix)]
+use xattr::FileExt;
+
+use super::patternmatcher::{match_component, PatternMatcher};
 
 #[cfg(unix)]
 use cap_std::fs::MetadataExt;
 #[cfg(not(unix))]
-use std::time::UNIX_EPOCH;
+use cap_std::time::SystemClock;
 
 const DIR_NAME_METADATA: &str = "dir-name";
 const INCLUDE_PATTERNS_METADATA: &str = "include-patterns";
@@ -233,7 +237,43 @@ impl FileSyncSession {
 #[derive(Clone, Debug)]
 enum ScanSelection {
     All,
-    Paths(Vec<PathBuf>),
+    Filter {
+        include: Option<PatternMatcher>,
+        exclude: Option<PatternMatcher>,
+    },
+}
+
+impl ScanSelection {
+    fn from_patterns(include: &[String], exclude: &[String]) -> Result<Self, Status> {
+        let include = PatternMatcher::new(include).map_err(|error| {
+            Status::invalid_argument(format!("invalid FileSync include pattern: {error}"))
+        })?;
+        let exclude = PatternMatcher::new(exclude).map_err(|error| {
+            Status::invalid_argument(format!("invalid FileSync exclude pattern: {error}"))
+        })?;
+        if include.is_none() && exclude.is_none() {
+            Ok(Self::All)
+        } else {
+            Ok(Self::Filter { include, exclude })
+        }
+    }
+
+    fn is_selected(&self, path: &Path) -> bool {
+        let path = path
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        match self {
+            Self::All => true,
+            Self::Filter { include, exclude } => {
+                include
+                    .as_ref()
+                    .is_none_or(|matcher| matcher.matches_or_parent(&path))
+                    && exclude
+                        .as_ref()
+                        .is_none_or(|matcher| !matcher.matches_or_parent(&path))
+            }
+        }
+    }
 }
 
 struct ScanFrame {
@@ -241,6 +281,13 @@ struct ScanFrame {
     directory: cap_std::fs::Dir,
     names: Vec<OsString>,
     next_name: usize,
+    pending: bool,
+}
+
+struct PendingEntry {
+    stat: Stat,
+    regular: bool,
+    relative: PathBuf,
 }
 
 struct ScanBudget {
@@ -322,9 +369,14 @@ impl FileSync for FileSyncImpl {
         &self,
         request: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
-        let name = mount_name(request.metadata())?;
+        let options = parse_options(request.metadata())?;
+        validate_options(request.metadata())?;
+        let name = options
+            .dir_name
+            .clone()
+            .ok_or_else(|| Status::not_found("local source name is missing"))?;
         let root = lookup_mount(&self.mounts, &name)?;
-        let selection = scan_selection(request.metadata())?;
+        let selection = scan_selection(&root, &options)?;
         #[cfg(test)]
         let faults = FaultInjection::from_metadata(request.metadata());
         #[cfg(not(test))]
@@ -623,54 +675,243 @@ async fn open_regular_file(
     Ok(tokio::fs::File::from_std(file))
 }
 
-fn scan_selection(metadata: &MetadataMap) -> Result<ScanSelection, Status> {
-    validate_options(metadata)?;
-    let mut paths = Vec::new();
-    for value in metadata.get_all(FOLLOW_PATHS_METADATA).iter() {
-        let value = value
-            .to_str()
-            .map_err(|_| Status::invalid_argument("invalid followpaths metadata"))?;
-        if value == "." {
-            return Ok(ScanSelection::All);
-        }
-        let path = PathBuf::from(value);
-        if value.is_empty()
-            || path.is_absolute()
-            || path
-                .components()
-                .any(|component| !matches!(component, std::path::Component::Normal(_)))
-            || value.contains('*')
-            || value.contains('?')
-            || value.contains('[')
-        {
-            return Err(Status::unimplemented(
-                "FileSync followpaths must be literal relative paths",
-            ));
-        }
-        if path.to_str().is_none() || path.as_os_str().len() > MAX_PATH_LENGTH {
-            return Err(Status::invalid_argument(
-                "invalid FileSync followpaths path",
-            ));
-        }
-        paths.push(path);
+#[derive(Clone, Debug, Default)]
+struct FileSyncOptions {
+    dir_name: Option<String>,
+    include_patterns: Vec<String>,
+    exclude_patterns: Vec<String>,
+    follow_paths: Vec<String>,
+}
+
+fn parse_options(metadata: &MetadataMap) -> Result<FileSyncOptions, Status> {
+    Ok(FileSyncOptions {
+        dir_name: metadata_values(metadata, DIR_NAME_METADATA)?
+            .into_iter()
+            .next(),
+        include_patterns: metadata_values(metadata, INCLUDE_PATTERNS_METADATA)?,
+        exclude_patterns: metadata_values(metadata, EXCLUDE_PATTERNS_METADATA)?,
+        follow_paths: metadata_values(metadata, FOLLOW_PATHS_METADATA)?,
+    })
+}
+
+fn metadata_values(metadata: &MetadataMap, key: &str) -> Result<Vec<String>, Status> {
+    let encoded = metadata
+        .get(format!("{key}-encoded"))
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| matches!(value, "1" | "true" | "TRUE" | "True" | "t" | "T"));
+    metadata
+        .get_all(key)
+        .iter()
+        .map(|value| {
+            let value = value
+                .to_str()
+                .map_err(|_| Status::invalid_argument(format!("invalid {key} metadata")))?;
+            if encoded {
+                let encoded_value = format!("value={value}");
+                Ok(url::form_urlencoded::parse(encoded_value.as_bytes())
+                    .next()
+                    .map(|(_, value)| value.into_owned())
+                    .unwrap_or_default())
+            } else {
+                Ok(value.to_owned())
+            }
+        })
+        .collect()
+}
+
+fn scan_selection(
+    root: &cap_std::fs::Dir,
+    options: &FileSyncOptions,
+) -> Result<ScanSelection, Status> {
+    let mut include_patterns = options.include_patterns.clone();
+    let follow_patterns = resolve_follow_paths(root, &options.follow_paths)?;
+    if follow_patterns.iter().any(|path| path == ".") {
+        return ScanSelection::from_patterns(&include_patterns, &options.exclude_patterns);
     }
-    if paths.is_empty() {
-        Ok(ScanSelection::All)
+    include_patterns.extend(follow_patterns);
+    ScanSelection::from_patterns(&include_patterns, &options.exclude_patterns)
+}
+
+fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec<String>, Status> {
+    let mut resolved = Vec::new();
+    for path in paths {
+        if path == "." {
+            return Ok(vec![String::from(".")]);
+        }
+        resolved.push(path.clone());
+        let components = path.split('/').map(str::to_owned).collect::<Vec<_>>();
+        resolve_follow_components(
+            root,
+            Path::new(""),
+            &components,
+            &mut Vec::new(),
+            &mut resolved,
+        )?;
+    }
+    resolved.sort_unstable();
+    resolved.dedup();
+    Ok(resolved)
+}
+
+fn resolve_follow_components(
+    root: &cap_std::fs::Dir,
+    current: &Path,
+    components: &[String],
+    visited: &mut Vec<String>,
+    resolved: &mut Vec<String>,
+) -> Result<(), Status> {
+    let Some(component) = components.first() else {
+        if !current.as_os_str().is_empty() {
+            resolved.push(path_string(current)?);
+        }
+        return Ok(());
+    };
+
+    if contains_wildcard(component) {
+        let directory = if current.as_os_str().is_empty() {
+            root.try_clone()
+        } else {
+            root.open_dir(current)
+        };
+        let directory = match directory {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(filesystem_error(
+                    "open followpaths directory",
+                    current,
+                    error,
+                ))
+            }
+        };
+        let mut names = directory
+            .entries()
+            .map_err(|error| filesystem_error("read followpaths directory", current, error))?
+            .map(|entry| {
+                entry
+                    .map(|entry| entry.file_name())
+                    .map_err(|error| filesystem_error("read followpaths entry", current, error))
+            })
+            .collect::<Result<Vec<_>, Status>>()?;
+        names.sort_unstable();
+        for name in names {
+            let Some(name) = name.to_str() else { continue };
+            if match_component(component, name) {
+                let next = current.join(name);
+                resolve_follow_components(root, &next, &components[1..], visited, resolved)?;
+            }
+        }
+        return Ok(());
+    }
+
+    let next = current.join(component);
+    let metadata = match root.symlink_metadata(&next) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(filesystem_error("stat followpaths entry", &next, error)),
+    };
+    let next_string = path_string(&next)?;
+    if metadata.file_type().is_symlink() {
+        if visited.contains(&next_string) {
+            return Ok(());
+        }
+        visited.push(next_string.clone());
+        resolved.push(next_string);
+        let parent = next.parent().unwrap_or_else(|| Path::new(""));
+        let link = root
+            .read_link_contents(current.join(component).as_path())
+            .map_err(|error| filesystem_error("read followpaths symlink", &next, error))?;
+        let Some(target) = normalize_follow_target(parent, &link) else {
+            return Ok(());
+        };
+        if target.as_os_str().is_empty() {
+            resolved.push(String::from("."));
+            return Ok(());
+        }
+        let mut target_components = target
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(value) => value.to_str().map(str::to_owned),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        target_components.extend_from_slice(&components[1..]);
+        return resolve_follow_components(
+            root,
+            Path::new(""),
+            &target_components,
+            visited,
+            resolved,
+        );
+    }
+    if components.len() == 1 {
+        resolved.push(next_string);
+    } else if !metadata.file_type().is_dir() {
+        return Ok(());
     } else {
-        paths.sort_unstable();
-        paths.dedup();
-        Ok(ScanSelection::Paths(paths))
+        resolve_follow_components(root, &next, &components[1..], visited, resolved)?;
     }
+    Ok(())
+}
+
+fn normalize_follow_target(parent: &Path, link: &Path) -> Option<PathBuf> {
+    let mut result = if link.is_absolute() {
+        PathBuf::new()
+    } else {
+        parent.to_path_buf()
+    };
+    for component in link.components() {
+        match component {
+            std::path::Component::RootDir | std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !result.pop() {
+                    return None;
+                }
+            }
+            std::path::Component::Normal(value) => result.push(value),
+            std::path::Component::Prefix(_) => return None,
+        }
+    }
+    Some(result)
+}
+
+fn contains_wildcard(value: &str) -> bool {
+    let mut escaped = false;
+    for character in value.chars() {
+        if cfg!(not(windows)) && escaped {
+            escaped = false;
+            continue;
+        }
+        if cfg!(not(windows)) && character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(character, '*' | '?' | '[') {
+            return true;
+        }
+    }
+    false
+}
+
+fn path_string(path: &Path) -> Result<String, Status> {
+    let value = path
+        .to_str()
+        .ok_or_else(|| {
+            Status::invalid_argument("local source contains a non-UTF-8 followpaths path")
+        })?
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    if value.len() > MAX_PATH_LENGTH {
+        return Err(Status::invalid_argument(
+            "invalid FileSync followpaths path",
+        ));
+    }
+    Ok(value)
 }
 
 fn mount_name(metadata: &MetadataMap) -> Result<String, Status> {
-    let value = metadata
-        .get(DIR_NAME_METADATA)
-        .ok_or_else(|| Status::not_found("local source name is missing"))?;
-    value
-        .to_str()
-        .map(str::to_owned)
-        .map_err(|_| Status::invalid_argument("invalid dir-name metadata"))
+    parse_options(metadata)?
+        .dir_name
+        .ok_or_else(|| Status::not_found("local source name is missing"))
 }
 
 fn lookup_mount(
@@ -684,29 +925,36 @@ fn lookup_mount(
 }
 
 fn validate_options(metadata: &MetadataMap) -> Result<(), Status> {
-    for key in [INCLUDE_PATTERNS_METADATA, EXCLUDE_PATTERNS_METADATA] {
-        if metadata.contains_key(key) || metadata.contains_key(format!("{key}-encoded")) {
-            return Err(Status::invalid_argument(format!(
-                "FileSync {key} are unsupported"
-            )));
+    let options = parse_options(metadata)?;
+    for value in options.follow_paths {
+        if value == "." {
+            continue;
         }
-    }
-
-    if metadata.contains_key(format!("{FOLLOW_PATHS_METADATA}-encoded")) {
-        return Err(Status::invalid_argument(
-            "encoded FileSync followpaths are unsupported",
-        ));
-    }
-    for value in metadata.get_all(FOLLOW_PATHS_METADATA).iter() {
-        let value = value
-            .to_str()
-            .map_err(|_| Status::invalid_argument("invalid followpaths metadata"))?;
-        if value.contains('*') || value.contains('?') || value.contains('[') {
-            return Err(Status::unimplemented(
-                "wildcard FileSync followpaths are not implemented",
+        let path = PathBuf::from(&value);
+        if value.is_empty()
+            || path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            })
+            || path.as_os_str().len() > MAX_PATH_LENGTH
+        {
+            return Err(Status::invalid_argument(
+                "invalid FileSync followpaths path",
             ));
         }
+        PatternMatcher::new(std::slice::from_ref(&value)).map_err(|error| {
+            Status::invalid_argument(format!("invalid FileSync followpath pattern: {error}"))
+        })?;
     }
+    PatternMatcher::new(&options.include_patterns).map_err(|error| {
+        Status::invalid_argument(format!("invalid FileSync include pattern: {error}"))
+    })?;
+    PatternMatcher::new(&options.exclude_patterns).map_err(|error| {
+        Status::invalid_argument(format!("invalid FileSync exclude pattern: {error}"))
+    })?;
     Ok(())
 }
 
@@ -733,7 +981,6 @@ fn scan_entries_with_selection(
     let root = root.try_clone().map_err(|error| {
         Status::internal(format!("failed to retain local source root: {error}"))
     })?;
-    let selection = resolve_selection(&root, selection)?;
     let mut budget = ScanBudget { inspected: 0 };
     let names = sorted_names(&root, &mut budget)?;
     let mut frames = vec![ScanFrame {
@@ -741,8 +988,11 @@ fn scan_entries_with_selection(
         directory: root,
         names,
         next_name: 0,
+        pending: false,
     }];
     let mut position = 0_u32;
+    let mut pending = Vec::<PendingEntry>::new();
+    let mut seen_hardlinks = HashMap::<(u64, u64), String>::new();
 
     while let Some(mut frame) = frames.pop() {
         if faults.delay_scan {
@@ -752,6 +1002,9 @@ fn scan_entries_with_selection(
             return Ok(());
         }
         let Some(name) = frame.names.get(frame.next_name).cloned() else {
+            if frame.pending {
+                pending.pop();
+            }
             continue;
         };
         frame.next_name += 1;
@@ -761,63 +1014,68 @@ fn scan_entries_with_selection(
             .directory
             .symlink_metadata(&name)
             .map_err(|error| filesystem_error("stat", &relative, error))?;
-        if !entry_is_selected(&relative, &metadata, &selection) {
-            if metadata.file_type().is_dir() && entry_is_ancestor(&relative, &selection) {
+        if !selection.is_selected(&relative) {
+            if metadata.file_type().is_dir() {
+                let (stat, regular) = source_stat(
+                    &frame.directory,
+                    &name,
+                    &relative,
+                    &metadata,
+                    &mut seen_hardlinks,
+                )?;
                 let directory = frame
                     .directory
                     .open_dir(&name)
                     .map_err(|error| filesystem_error("open directory", &relative, error))?;
+                pending.push(PendingEntry {
+                    stat,
+                    regular,
+                    relative: relative.clone(),
+                });
                 frames.push(frame);
                 frames.push(ScanFrame {
                     relative,
                     names: sorted_names(&directory, &mut budget)?,
                     directory,
                     next_name: 0,
+                    pending: true,
                 });
             } else {
                 frames.push(frame);
             }
             continue;
         }
-        let (stat, regular) = source_stat(&frame.directory, &name, &relative, &metadata)?;
-        if position as usize >= MAX_ENTRIES {
-            return Err(Status::resource_exhausted(
-                "local source has too many entries",
-            ));
+        let (stat, regular) = source_stat(
+            &frame.directory,
+            &name,
+            &relative,
+            &metadata,
+            &mut seen_hardlinks,
+        )?;
+        for pending_entry in pending.drain(..) {
+            emit_source_entry(
+                &sender,
+                &mut position,
+                pending_entry.stat,
+                pending_entry.regular,
+                pending_entry.relative,
+            )?;
         }
-        let current_position = position;
-        position = position
-            .checked_add(1)
-            .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
-
-        if sender
-            .blocking_send(Ok(SourceEntry {
-                stat,
-                position: current_position,
-                regular,
-                relative: relative.clone(),
-            }))
-            .is_err()
-        {
-            return Ok(());
-        }
+        emit_source_entry(&sender, &mut position, stat, regular, relative.clone())?;
 
         let file_type = metadata.file_type();
         let child = if file_type.is_dir() {
-            if !entry_is_ancestor_or_selected_directory(&relative, &metadata, &selection) {
-                None
-            } else {
-                let directory = frame
-                    .directory
-                    .open_dir(&name)
-                    .map_err(|error| filesystem_error("open directory", &relative, error))?;
-                Some(ScanFrame {
-                    relative,
-                    names: sorted_names(&directory, &mut budget)?,
-                    directory,
-                    next_name: 0,
-                })
-            }
+            let directory = frame
+                .directory
+                .open_dir(&name)
+                .map_err(|error| filesystem_error("open directory", &relative, error))?;
+            Some(ScanFrame {
+                relative,
+                names: sorted_names(&directory, &mut budget)?,
+                directory,
+                next_name: 0,
+                pending: false,
+            })
         } else {
             None
         };
@@ -831,65 +1089,34 @@ fn scan_entries_with_selection(
     Ok(())
 }
 
-fn resolve_selection(
-    root: &cap_std::fs::Dir,
-    selection: ScanSelection,
-) -> Result<ScanSelection, Status> {
-    let ScanSelection::Paths(paths) = selection else {
-        return Ok(ScanSelection::All);
-    };
-    let mut existing = Vec::new();
-    for path in paths {
-        match root.symlink_metadata(&path) {
-            Ok(_) => existing.push(path),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(filesystem_error("stat", &path, error)),
-        }
+fn emit_source_entry(
+    sender: &tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+    position: &mut u32,
+    stat: Stat,
+    regular: bool,
+    relative: PathBuf,
+) -> Result<(), Status> {
+    if *position as usize >= MAX_ENTRIES {
+        return Err(Status::resource_exhausted(
+            "local source has too many entries",
+        ));
     }
-    Ok(ScanSelection::Paths(existing))
-}
-
-fn path_is_prefix(prefix: &Path, path: &Path) -> bool {
-    prefix == path
-        || prefix
-            .components()
-            .zip(path.components())
-            .all(|(a, b)| a == b)
-            && prefix.components().count() <= path.components().count()
-}
-
-fn entry_is_ancestor(path: &Path, selection: &ScanSelection) -> bool {
-    match selection {
-        ScanSelection::All => true,
-        ScanSelection::Paths(paths) => paths.iter().any(|selected| path_is_prefix(path, selected)),
+    let current_position = *position;
+    *position = position
+        .checked_add(1)
+        .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
+    if sender
+        .blocking_send(Ok(SourceEntry {
+            stat,
+            position: current_position,
+            regular,
+            relative,
+        }))
+        .is_err()
+    {
+        return Ok(());
     }
-}
-
-fn entry_is_selected(
-    path: &Path,
-    _metadata: &cap_std::fs::Metadata,
-    selection: &ScanSelection,
-) -> bool {
-    match selection {
-        ScanSelection::All => true,
-        ScanSelection::Paths(paths) => paths.iter().any(|selected| {
-            path == selected || path_is_prefix(selected, path) || path_is_prefix(path, selected)
-        }),
-    }
-}
-
-fn entry_is_ancestor_or_selected_directory(
-    path: &Path,
-    metadata: &cap_std::fs::Metadata,
-    selection: &ScanSelection,
-) -> bool {
-    metadata.file_type().is_dir()
-        && match selection {
-            ScanSelection::All => true,
-            ScanSelection::Paths(paths) => paths
-                .iter()
-                .any(|selected| path_is_prefix(path, selected) || path_is_prefix(selected, path)),
-        }
+    Ok(())
 }
 
 fn sorted_names(
@@ -921,6 +1148,7 @@ fn source_stat(
     name: &OsStr,
     relative: &Path,
     metadata: &cap_std::fs::Metadata,
+    _seen_hardlinks: &mut HashMap<(u64, u64), String>,
 ) -> Result<(Stat, bool), Status> {
     let path = relative
         .to_str()
@@ -967,6 +1195,32 @@ fn source_stat(
         )));
     };
 
+    #[cfg(unix)]
+    let (linkname, size) = {
+        let mut linkname = linkname;
+        let mut size = size;
+        if regular && metadata.nlink() > 1 {
+            let identity = (metadata.dev(), metadata.ino());
+            if let Some(first) = _seen_hardlinks.get(&identity) {
+                linkname = first.clone();
+                size = 0;
+            } else {
+                _seen_hardlinks.insert(identity, path.to_owned());
+            }
+        }
+        (linkname, size)
+    };
+
+    #[cfg(unix)]
+    let xattrs = if file_type.is_dir() || regular {
+        entry_xattrs(directory, name, file_type.is_dir())?
+    } else {
+        HashMap::new()
+    };
+
+    #[cfg(not(unix))]
+    let xattrs = HashMap::new();
+
     Ok((
         Stat {
             path: path.replace(std::path::MAIN_SEPARATOR, "/"),
@@ -976,10 +1230,45 @@ fn source_stat(
             size,
             mod_time: modification_time(metadata),
             linkname,
+            xattrs,
             ..Default::default()
         },
         regular,
     ))
+}
+
+#[cfg(unix)]
+fn entry_xattrs(
+    directory: &cap_std::fs::Dir,
+    name: &OsStr,
+    _is_directory: bool,
+) -> Result<HashMap<String, Vec<u8>>, Status> {
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = directory
+        .open_with(name, &options)
+        .map_err(|error| filesystem_error("open xattr entry", Path::new(name), error))?
+        .into_std();
+    let names = match file.list_xattr() {
+        Ok(names) => names,
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => return Ok(HashMap::new()),
+        Err(error) => return Err(filesystem_error("list xattrs", Path::new(name), error)),
+    };
+    let mut xattrs = HashMap::new();
+    for name in names {
+        if name.to_string_lossy().starts_with("com.apple.") {
+            continue;
+        }
+        if let Some(value) = file
+            .get_xattr(&name)
+            .map_err(|error| filesystem_error("read xattr", Path::new(&name), error))?
+        {
+            if let Some(name) = name.to_str() {
+                xattrs.insert(name.to_owned(), value);
+            }
+        }
+    }
+    Ok(xattrs)
 }
 
 fn filesystem_error(operation: &str, path: &Path, error: std::io::Error) -> Status {
@@ -1039,7 +1328,7 @@ fn modification_time(metadata: &cap_std::fs::Metadata) -> i64 {
     metadata
         .modified()
         .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|time| time.duration_since(SystemClock::UNIX_EPOCH).ok())
         .and_then(|duration| i64::try_from(duration.as_nanos()).ok())
         .unwrap_or(0)
 }
@@ -1653,7 +1942,11 @@ mod tests {
             FOLLOW_PATHS_METADATA,
             tonic::metadata::MetadataValue::try_from("a").expect("follow path metadata is valid"),
         );
-        let selection = scan_selection(&metadata).expect("follow path is accepted");
+        let selection = scan_selection(
+            &open_mount(root.path()),
+            &parse_options(&metadata).expect("follow path options parse"),
+        )
+        .expect("follow path is accepted");
         let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
         let scanner = tokio::task::spawn_blocking({
             let root = open_mount(root.path());
@@ -1678,6 +1971,152 @@ mod tests {
         assert_eq!(paths, ["a", "a/subdir", "a/subdir/input"]);
     }
 
+    #[tokio::test]
+    async fn scanner_applies_ordered_filters_and_doublestar() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir_all(root.path().join("a/b")).expect("nested directory is created");
+        std::fs::create_dir(root.path().join("other")).expect("other directory is created");
+        std::fs::write(root.path().join("a/b/input.txt"), b"input").expect("input is created");
+        std::fs::write(root.path().join("a/b/skip.txt"), b"skip").expect("skip is created");
+        std::fs::write(root.path().join("other/output.txt"), b"output").expect("output is created");
+        let selection = ScanSelection::from_patterns(
+            &[String::from("**/*.txt")],
+            &[String::from("**/skip.txt")],
+        )
+        .expect("patterns compile");
+        let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
+        let scanner = tokio::task::spawn_blocking({
+            let root = open_mount(root.path());
+            move || {
+                scan_entries_with_selection(
+                    root,
+                    sender,
+                    selection,
+                    CancellationToken::new(),
+                    FaultInjection::default(),
+                )
+            }
+        });
+        let mut paths = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            paths.push(event.expect("filtered scan succeeds").stat.path);
+        }
+        scanner
+            .await
+            .expect("filtered scanner joins")
+            .expect("filtered scanner succeeds");
+        assert_eq!(
+            paths,
+            ["a", "a/b", "a/b/input.txt", "other", "other/output.txt"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scanner_resolves_wildcard_and_transitive_followpaths() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("dir")).expect("directory is created");
+        std::fs::create_dir(root.path().join("target")).expect("target directory is created");
+        std::fs::write(root.path().join("target/input"), b"source")
+            .expect("target file is created");
+        std::os::unix::fs::symlink("../target", root.path().join("dir/link1"))
+            .expect("first symlink is created");
+        std::os::unix::fs::symlink("dir/link1", root.path().join("link2"))
+            .expect("second symlink is created");
+        let options = FileSyncOptions {
+            follow_paths: vec![String::from("dir/link*"), String::from("link2")],
+            ..Default::default()
+        };
+        let selection =
+            scan_selection(&open_mount(root.path()), &options).expect("followpaths resolve");
+        let (sender, mut receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
+        let scanner = tokio::task::spawn_blocking({
+            let root = open_mount(root.path());
+            move || {
+                scan_entries_with_selection(
+                    root,
+                    sender,
+                    selection,
+                    CancellationToken::new(),
+                    FaultInjection::default(),
+                )
+            }
+        });
+        let mut paths = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            paths.push(event.expect("followpaths scan succeeds").stat.path);
+        }
+        scanner
+            .await
+            .expect("followpaths scanner joins")
+            .expect("followpaths scanner succeeds");
+        assert_eq!(
+            paths,
+            ["dir", "dir/link1", "link2", "target", "target/input"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scanner_preserves_hardlink_topology() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"shared").expect("source is created");
+        std::fs::hard_link(root.path().join("a"), root.path().join("b"))
+            .expect("hardlink is created");
+        let entries = scan_fixture(open_mount(root.path())).await;
+        let first = entries
+            .iter()
+            .find(|entry| entry.stat.path == "a")
+            .expect("first hardlink stat exists");
+        let second = entries
+            .iter()
+            .find(|entry| entry.stat.path == "b")
+            .expect("second hardlink stat exists");
+        assert!(first.stat.linkname.is_empty());
+        assert_eq!(first.stat.size, 6);
+        assert_eq!(second.stat.linkname, "a");
+        assert_eq!(second.stat.size, 0);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scanner_reads_supported_xattrs() {
+        let root = tempdir().expect("temporary directory is created");
+        let file = root.path().join("input");
+        std::fs::write(&file, b"source").expect("source is created");
+        if let Err(error) = xattr::set(&file, "user.bollard", b"metadata") {
+            if error.kind() == std::io::ErrorKind::Unsupported {
+                return;
+            }
+            panic!("xattr setup failed: {error}");
+        }
+        let entries = scan_fixture(open_mount(root.path())).await;
+        let input = entries
+            .iter()
+            .find(|entry| entry.stat.path == "input")
+            .expect("xattr file stat exists");
+        assert_eq!(
+            input.stat.xattrs.get("user.bollard"),
+            Some(&b"metadata".to_vec())
+        );
+    }
+
+    #[test]
+    fn metadata_decodes_encoded_values() {
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            DIR_NAME_METADATA,
+            tonic::metadata::MetadataValue::try_from("caf%C3%A9")
+                .expect("encoded metadata is valid"),
+        );
+        metadata.insert(
+            "dir-name-encoded",
+            tonic::metadata::MetadataValue::try_from("1").expect("encoded marker is valid"),
+        );
+        let options = parse_options(&metadata).expect("metadata decodes");
+        assert_eq!(options.dir_name.as_deref(), Some("café"));
+    }
+
     #[test]
     fn scanner_bounds_directory_entry_collection() {
         let root = tempdir().expect("temporary directory is created");
@@ -1696,7 +2135,7 @@ mod tests {
     }
 
     #[test]
-    fn scanner_rejects_unsupported_options_and_long_paths() {
+    fn scanner_rejects_invalid_options_and_long_paths() {
         let mut metadata = MetadataMap::new();
         metadata.insert(
             DIR_NAME_METADATA,
@@ -1713,20 +2152,14 @@ mod tests {
             INCLUDE_PATTERNS_METADATA,
             tonic::metadata::MetadataValue::try_from("*.tmp").expect("metadata value is valid"),
         );
-        assert_eq!(
-            validate_options(&metadata).unwrap_err().code(),
-            tonic::Code::InvalidArgument
-        );
+        validate_options(&metadata).expect("include patterns are supported");
 
         let mut metadata = MetadataMap::new();
         metadata.insert(
             FOLLOW_PATHS_METADATA,
             tonic::metadata::MetadataValue::try_from("**/*.rs").expect("metadata value is valid"),
         );
-        assert_eq!(
-            validate_options(&metadata).unwrap_err().code(),
-            tonic::Code::Unimplemented
-        );
+        validate_options(&metadata).expect("wildcard followpaths are supported");
         let mut metadata = MetadataMap::new();
         metadata.insert(
             FOLLOW_PATHS_METADATA,
@@ -1764,6 +2197,7 @@ mod tests {
                 OsStr::new("file"),
                 &long_path,
                 &metadata,
+                &mut HashMap::new(),
             )
             .unwrap_err()
             .code(),
@@ -1778,11 +2212,19 @@ mod tests {
                     .expect("follow path metadata is valid"),
             );
             assert_eq!(
-                scan_selection(&metadata).unwrap_err().code(),
-                tonic::Code::Unimplemented,
-                "path {value:?} must fail closed"
+                validate_options(&metadata).unwrap_err().code(),
+                tonic::Code::InvalidArgument
             );
         }
+    }
+
+    #[test]
+    fn followpath_wildcard_detection_honors_escaped_metacharacters() {
+        assert!(contains_wildcard("link*"));
+        assert!(contains_wildcard("link[0-9]"));
+        assert!(!contains_wildcard("literal"));
+        #[cfg(not(windows))]
+        assert!(!contains_wildcard(r"literal\*"));
     }
 
     #[cfg(unix)]
