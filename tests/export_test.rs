@@ -155,7 +155,7 @@ async fn export_buildkit_oci_test(docker: Docker) -> Result<(), Error> {
             paths.push(path);
         }
 
-        println!("{:#?}", &paths);
+        println!("{:#?}", paths);
 
         assert!(paths.contains(&String::from("blobs/")));
         assert!(paths.contains(&String::from("blobs/sha256/")));

@@ -178,7 +178,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --all-targets -- -Dwarnings"
+      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --features buildkit,chrono --all-targets -- -Dwarnings"
   test_audit:
     docker:
       - image: docker:29.3
