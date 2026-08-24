@@ -267,21 +267,6 @@ impl std::fmt::Debug for LocalMount {
     }
 }
 
-impl fmt::Debug for DefinitionSolveOptions {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("DefinitionSolveOptions")
-            .field("cache_to", &self.cache_to.len())
-            .field("cache_from", &self.cache_from.len())
-            .field("credentials", &self.credentials.len())
-            .field("secrets", &self.secrets.len())
-            .field("ssh", &self.ssh)
-            .field("timeout", &self.timeout)
-            .field("file_transfer_limits", &self.file_transfer_limits)
-            .finish()
-    }
-}
-
 impl Default for DefinitionSolveOptions {
     fn default() -> Self {
         Self {
