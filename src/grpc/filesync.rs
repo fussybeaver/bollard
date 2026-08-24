@@ -364,6 +364,12 @@ impl FollowPathBudget {
     }
 }
 
+struct FollowPathContext {
+    visited: HashSet<String>,
+    resolved: Vec<String>,
+    budget: FollowPathBudget,
+}
+
 enum SessionEvent {
     Entry(Option<Result<SourceEntry, Status>>),
     Packet(Option<Result<Packet, Status>>),
@@ -813,37 +819,33 @@ fn resolve_follow_paths(root: &cap_std::fs::Dir, paths: &[String]) -> Result<Vec
             "FileSync request contains too many followpaths",
         ));
     }
-    let mut resolved = Vec::new();
-    let mut budget = FollowPathBudget {
-        inspected: 0,
-        resolved: 0,
+    let mut context = FollowPathContext {
+        visited: HashSet::new(),
+        resolved: Vec::new(),
+        budget: FollowPathBudget {
+            inspected: 0,
+            resolved: 0,
+        },
     };
-    let mut visited = HashSet::new();
     for path in paths {
         if path == "." {
             return Ok(vec![String::from(".")]);
         }
-        resolved.push(budget.resolve(Path::new(path))?);
+        context
+            .resolved
+            .push(context.budget.resolve(Path::new(path))?);
         let components = path.split('/').map(str::to_owned).collect::<Vec<_>>();
         if components.len() > MAX_FOLLOW_DEPTH {
             return Err(Status::resource_exhausted(
                 "FileSync followpaths path is too deep",
             ));
         }
-        resolve_follow_components(
-            root,
-            Path::new(""),
-            &components,
-            &mut visited,
-            &mut resolved,
-            &mut budget,
-            0,
-        )?;
+        resolve_follow_components(root, Path::new(""), &components, &mut context, 0)?;
     }
-    resolved.sort_unstable();
-    resolved.dedup();
-    let mut deduped = Vec::with_capacity(resolved.len());
-    for path in resolved {
+    context.resolved.sort_unstable();
+    context.resolved.dedup();
+    let mut deduped = Vec::with_capacity(context.resolved.len());
+    for path in context.resolved {
         if deduped.last().is_some_and(|parent: &String| {
             path.strip_prefix(parent)
                 .is_some_and(|suffix| suffix.starts_with('/'))
@@ -859,9 +861,7 @@ fn resolve_follow_components(
     root: &cap_std::fs::Dir,
     current: &Path,
     components: &[String],
-    visited: &mut HashSet<String>,
-    resolved: &mut Vec<String>,
-    budget: &mut FollowPathBudget,
+    context: &mut FollowPathContext,
     depth: usize,
 ) -> Result<(), Status> {
     if depth > MAX_FOLLOW_DEPTH {
@@ -871,7 +871,7 @@ fn resolve_follow_components(
     }
     let Some(component) = components.first() else {
         if !current.as_os_str().is_empty() {
-            resolved.push(budget.resolve(current)?);
+            context.resolved.push(context.budget.resolve(current)?);
         }
         return Ok(());
     };
@@ -903,7 +903,7 @@ fn resolve_follow_components(
             .entries()
             .map_err(|error| filesystem_error("read followpaths directory", current, error))?
         {
-            budget.inspect()?;
+            context.budget.inspect()?;
             let entry = entry
                 .map_err(|error| filesystem_error("read followpaths entry", current, error))?;
             names.push(entry.file_name());
@@ -915,30 +915,19 @@ fn resolve_follow_components(
                 continue;
             };
             if component_pattern.matches(name) {
-                resolve_follow_entry(
-                    root,
-                    current,
-                    name,
-                    &components[1..],
-                    visited,
-                    resolved,
-                    budget,
-                    depth + 1,
-                )?;
+                resolve_follow_entry(root, current, name, &components[1..], context, depth + 1)?;
             }
         }
         return Ok(());
     }
 
-    budget.inspect()?;
+    context.budget.inspect()?;
     resolve_follow_entry(
         root,
         current,
         component,
         &components[1..],
-        visited,
-        resolved,
-        budget,
+        context,
         depth + 1,
     )
 }
@@ -948,9 +937,7 @@ fn resolve_follow_entry(
     current: &Path,
     name: &str,
     remaining: &[String],
-    visited: &mut HashSet<String>,
-    resolved: &mut Vec<String>,
-    budget: &mut FollowPathBudget,
+    context: &mut FollowPathContext,
     depth: usize,
 ) -> Result<(), Status> {
     let next = current.join(name);
@@ -961,10 +948,10 @@ fn resolve_follow_entry(
     };
     let next_string = path_string(&next)?;
     if metadata.file_type().is_symlink() {
-        if !visited.insert(next_string.clone()) {
+        if !context.visited.insert(next_string.clone()) {
             return Ok(());
         }
-        resolved.push(budget.resolve(&next)?);
+        context.resolved.push(context.budget.resolve(&next)?);
         let parent = next.parent().unwrap_or_else(|| Path::new(""));
         let link = root
             .read_link_contents(&next)
@@ -973,7 +960,7 @@ fn resolve_follow_entry(
             return Ok(());
         };
         if target.as_os_str().is_empty() {
-            resolved.push(String::from("."));
+            context.resolved.push(String::from("."));
             return Ok(());
         }
         let mut target_components = target
@@ -988,18 +975,16 @@ fn resolve_follow_entry(
             root,
             Path::new(""),
             &target_components,
-            visited,
-            resolved,
-            budget,
+            context,
             depth + 1,
         );
     }
     if remaining.is_empty() {
-        resolved.push(budget.resolve(&next)?);
+        context.resolved.push(context.budget.resolve(&next)?);
     } else if !metadata.file_type().is_dir() {
         return Ok(());
     } else {
-        resolve_follow_components(root, &next, remaining, visited, resolved, budget, depth)?;
+        resolve_follow_components(root, &next, remaining, context, depth)?;
     }
     Ok(())
 }
