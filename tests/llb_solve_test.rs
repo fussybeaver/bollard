@@ -2,10 +2,13 @@
 
 use bollard::errors::Error;
 use bollard::grpc::driver::docker_container::DockerContainerBuilder;
-use bollard::grpc::driver::{DefinitionExporter, DefinitionSolveRequest, SolveDefinition};
+use bollard::grpc::driver::{
+    DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
+};
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
 use prost::Message;
+use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
@@ -39,6 +42,65 @@ fn minimal_mkfile_definition() -> pb::Definition {
         })
         .collect::<Vec<_>>();
     pb::Definition::decode(bytes.as_slice()).expect("minimal definition is valid protobuf")
+}
+
+fn local_source_fixture_definition() -> pb::Definition {
+    let source_operation = pb::Op {
+        op: Some(pb::op::Op::Source(pb::SourceOp {
+            identifier: String::from("local://context"),
+            attrs: Default::default(),
+        })),
+        ..Default::default()
+    };
+    let source_bytes = source_operation.encode_to_vec();
+    let source_digest = format!("sha256:{:x}", Sha256::digest(&source_bytes));
+    let copy = pb::FileActionCopy {
+        src: String::from("/"),
+        dest: String::from("/"),
+        owner: None,
+        mode: -1,
+        follow_symlink: false,
+        dir_copy_contents: true,
+        attempt_unpack_docker_compatibility: false,
+        create_dest_path: true,
+        allow_wildcard: false,
+        allow_empty_wildcard: false,
+        timestamp: -1,
+        include_patterns: Vec::new(),
+        exclude_patterns: Vec::new(),
+        always_replace_existing_dest_paths: false,
+        mode_str: String::new(),
+        required_paths: Vec::new(),
+    };
+    let root_operation = pb::Op {
+        inputs: vec![pb::Input {
+            digest: source_digest,
+            index: 0,
+        }],
+        op: Some(pb::op::Op::File(pb::FileOp {
+            actions: vec![pb::FileAction {
+                input: -1,
+                secondary_input: 0,
+                output: 0,
+                action: Some(pb::file_action::Action::Copy(copy)),
+            }],
+        })),
+        ..Default::default()
+    };
+    let root_bytes = root_operation.encode_to_vec();
+    let wrapper_operation = pb::Op {
+        inputs: vec![pb::Input {
+            digest: format!("sha256:{:x}", Sha256::digest(&root_bytes)),
+            index: 0,
+        }],
+        ..Default::default()
+    };
+
+    pb::Definition {
+        def: vec![source_bytes, root_bytes, wrapper_operation.encode_to_vec()],
+        metadata: Default::default(),
+        source: None,
+    }
 }
 
 fn unique_builder_name() -> String {
@@ -92,6 +154,56 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
     result
 }
 
+async fn local_source_filesync_test(docker: Docker) -> Result<(), Error> {
+    let name = format!("bollard_llb_gate_f_{}", unique_builder_name());
+    let volume_name = format!("{name}_state");
+    let source = tempfile::tempdir()?;
+    let output = tempfile::tempdir()?;
+    std::fs::create_dir(source.path().join("nested"))?;
+    std::fs::write(source.path().join("nested/input.txt"), b"local source")?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("nested/input.txt", source.path().join("link"))?;
+
+    let result = async {
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+        let options = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", source.path())
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("local mount setup failed: {error}")),
+            })?
+            .build();
+        let request = DefinitionSolveRequest::new(
+            local_source_fixture_definition(),
+            DefinitionExporter::Local(output.path().to_path_buf()),
+        )
+        .with_options(options);
+        SolveDefinition::solve_definition(&driver, request)
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("local source solve failed: {error}")),
+            })?;
+        assert_eq!(
+            std::fs::read(output.path().join("nested/input.txt"))?,
+            b"local source"
+        );
+        assert!(output.path().join("nested").is_dir());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::read_link(output.path().join("link"))?,
+            std::path::Path::new("nested/input.txt")
+        );
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
+}
+
 async fn driver_cleanup(docker: &Docker, name: &str, volume_name: &str) -> Result<(), Error> {
     use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
 
@@ -114,6 +226,12 @@ async fn driver_cleanup(docker: &Docker, name: &str, volume_name: &str) -> Resul
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_direct_definition_solve() {
     connect_to_docker_and_run!(direct_definition_solve_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_local_source_filesync() {
+    connect_to_docker_and_run!(local_source_filesync_test);
 }
 
 #[test]

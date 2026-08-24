@@ -10,6 +10,7 @@ pub mod driver;
 pub mod error;
 /// End-user buildkit export functions
 pub mod export;
+mod filesync;
 mod fsutil;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
@@ -50,6 +51,7 @@ use bollard_buildkit_proto::moby::filesync::packet::file_send_server::{
 };
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
+use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
 use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::Bytes;
@@ -122,6 +124,7 @@ pub(crate) enum GrpcServer {
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
     FileSendPacket(FileSendPacketServer<FileSendPacketImpl>),
+    FileSync(FileSyncServer<filesync::FileSyncImpl>),
     Secrets(SecretsServer<SecretProvider>),
     Ssh(SshServer<SshProvider>),
 }
@@ -138,6 +141,7 @@ impl GrpcServer {
             GrpcServer::FileSendPacket(file_send_packet_server) => {
                 builder.add_service(file_send_packet_server)
             }
+            GrpcServer::FileSync(file_sync_server) => builder.add_service(file_sync_server),
             GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
             GrpcServer::Ssh(ssh_server) => builder.add_service(ssh_server),
         }
@@ -165,6 +169,12 @@ impl GrpcServer {
                 vec![format!(
                     "/{}/diffcopy",
                     FileSendPacketServer::<FileSendPacketImpl>::NAME
+                )]
+            }
+            GrpcServer::FileSync(_file_sync_server) => {
+                vec![format!(
+                    "/{}/DiffCopy",
+                    FileSyncServer::<filesync::FileSyncImpl>::NAME
                 )]
             }
             GrpcServer::Secrets(_secret_server) => {
