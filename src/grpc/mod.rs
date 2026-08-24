@@ -1038,12 +1038,16 @@ async fn prepare_file_receive_state(
 }
 
 async fn cleanup_staging_guard(guard: &mut Option<StagingGuard>, context: &str) {
-    if let Some(guard) = guard.as_mut() {
-        if let Err(error) = guard.cleanup().await {
-            warn!("failed to clean up {context}: {error}");
-        } else {
-            *guard = None;
-        }
+    let result = if let Some(staging_guard) = guard.as_mut() {
+        staging_guard.cleanup().await
+    } else {
+        return;
+    };
+
+    if let Err(error) = result {
+        warn!("failed to clean up {context}: {error}");
+    } else {
+        *guard = None;
     }
 }
 
