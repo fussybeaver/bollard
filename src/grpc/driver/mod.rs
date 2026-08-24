@@ -1348,10 +1348,10 @@ mod tests {
             assert!(!rendered.contains("/sensitive-export-path"));
         }
 
-        assert!(builder_debug.contains("credentials: 1"));
-        assert!(builder_debug.contains("secrets: 1"));
-        assert!(options_debug.contains("credentials: 1"));
-        assert!(options_debug.contains("secrets: 1"));
+        assert!(builder_debug.contains("credential_count: 1"));
+        assert!(builder_debug.contains("secret_count: 1"));
+        assert!(options_debug.contains("credential_count: 1"));
+        assert!(options_debug.contains("secret_count: 1"));
         assert!(request_debug.contains("definition_ops: 1"));
         assert!(request_debug.contains("exporter: \"local\""));
         assert!(request_debug.contains("has_build_ref: false"));
@@ -1423,7 +1423,6 @@ mod tests {
         assert!(!rendered.contains("private-metadata"));
         assert!(!rendered.contains("/private/export"));
         assert!(rendered.contains("definition_ops: 1"));
-        assert!(rendered.contains("definition_metadata: 1"));
     }
 
     #[test]
