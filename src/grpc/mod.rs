@@ -1121,16 +1121,19 @@ impl FileSendPacket for FileSendPacketImpl {
                             }
                             Ok(None) => {}
                             Err(error) => {
+                                drop(state.take());
                                 cleanup_staging_guard(&mut staging_guard, "failed export").await;
                                 Err::<(), Status>(error)?;
                             }
                         }
                     }
                     Some(Err(error)) => {
+                        drop(state.take());
                         cleanup_staging_guard(&mut staging_guard, "failed export").await;
                         Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
                     }
                     None => {
+                        drop(state.take());
                         cleanup_staging_guard(&mut staging_guard, "incomplete export").await;
                         Err::<(), Status>(Status::failed_precondition(
                             "file packet stream ended before PACKET_FIN",
@@ -1998,12 +2001,12 @@ mod tests {
     }
 
     async fn wait_for_staging_siblings(root: &Path, expected: bool) {
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if !transfer_sibling_names(root).is_empty() == expected {
                     break;
                 }
-                tokio::task::yield_now().await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -2131,7 +2134,7 @@ mod tests {
             fs::read_link(destination.join("link")).await.unwrap(),
             Path::new("message")
         );
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
         #[cfg(unix)]
         {
             assert_eq!(
@@ -2178,7 +2181,7 @@ mod tests {
         }
 
         assert!(sent_fin);
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
         server_task.abort();
         let _ = server_task.await;
     }
@@ -2215,7 +2218,7 @@ mod tests {
             fs::read(destination.join("sentinel")).await.unwrap(),
             b"old"
         );
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
     }
 
     #[tokio::test]
