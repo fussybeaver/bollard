@@ -906,20 +906,23 @@ impl StagingGuard {
             .expect("staging guard owns a path before publication")
     }
 
-    async fn cleanup(mut self) -> Result<(), Status> {
-        let staging = self
-            .staging
-            .take()
-            .expect("staging guard owns a path before cleanup");
-        remove_path(&staging).await
+    async fn cleanup(&mut self) -> Result<(), Status> {
+        let Some(staging) = self.staging.clone() else {
+            return Ok(());
+        };
+        remove_path(&staging).await?;
+        self.staging = None;
+        Ok(())
     }
 
     async fn publish(mut self, destination: &Path) -> Result<(), Status> {
         let staging = self
             .staging
-            .take()
+            .as_ref()
             .expect("staging guard owns a path before publication");
-        publish_staging_directory(&staging, destination).await
+        publish_staging_directory(staging, destination).await?;
+        self.staging = None;
+        Ok(())
     }
 }
 
@@ -946,7 +949,7 @@ async fn prepare_file_receive_state(
     destination: &Path,
     limits: FileTransferLimits,
 ) -> Result<(StagingGuard, FileReceiveState), Status> {
-    let staging_guard = StagingGuard::new(destination).await?;
+    let mut staging_guard = StagingGuard::new(destination).await?;
     let staging = staging_guard.path().to_owned();
     match FileReceiveState::with_limits(staging, limits).await {
         Ok(state) => Ok((staging_guard, state)),
@@ -960,9 +963,11 @@ async fn prepare_file_receive_state(
 }
 
 async fn cleanup_staging_guard(guard: &mut Option<StagingGuard>, context: &str) {
-    if let Some(guard) = guard.take() {
+    if let Some(guard) = guard.as_mut() {
         if let Err(error) = guard.cleanup().await {
             warn!("failed to clean up {context}: {error}");
+        } else {
+            *guard = None;
         }
     }
 }
@@ -1903,7 +1908,7 @@ mod tests {
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
         FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, SshAgentSource, SshProvider,
-        MAX_FILE_SIZE,
+        StagingGuard, MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1998,6 +2003,17 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("staging cleanup did not finish after runtime shutdown");
+    }
+
+    #[tokio::test]
+    async fn staging_guard_retains_path_after_cleanup_failure() {
+        let staging = PathBuf::from("invalid\0staging");
+        let mut guard = StagingGuard {
+            staging: Some(staging.clone()),
+        };
+
+        assert!(guard.cleanup().await.is_err());
+        assert_eq!(guard.staging.as_ref(), Some(&staging));
     }
 
     async fn wait_for_staging_siblings(root: &Path, expected: bool) {

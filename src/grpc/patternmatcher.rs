@@ -73,6 +73,10 @@ impl PatternMatcher {
 }
 
 pub(crate) fn match_component(pattern: &str, value: &str) -> bool {
+    compile_component(pattern).is_some_and(|pattern| pattern.matches(value))
+}
+
+pub(crate) fn compile_component(pattern: &str) -> Option<glob::Pattern> {
     let pattern = if cfg!(not(windows)) {
         let mut normalized = String::new();
         let mut characters = pattern.chars();
@@ -91,7 +95,7 @@ pub(crate) fn match_component(pattern: &str, value: &str) -> bool {
     } else {
         pattern.to_owned()
     };
-    glob::Pattern::new(&pattern).is_ok_and(|pattern| pattern.matches(value))
+    glob::Pattern::new(&pattern).ok()
 }
 
 fn clean_pattern(value: &str) -> Result<String, String> {
