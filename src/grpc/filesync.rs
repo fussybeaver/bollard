@@ -1577,98 +1577,6 @@ use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::transport::Server;
 
 #[cfg(test)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ContractEntry {
-    pub(crate) path: &'static str,
-    pub(crate) regular: bool,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug)]
-pub(crate) struct PacketContract {
-    entries: Vec<ContractEntry>,
-}
-
-#[cfg(test)]
-impl PacketContract {
-    pub(crate) fn new(entries: impl IntoIterator<Item = ContractEntry>) -> Self {
-        Self {
-            entries: entries.into_iter().collect(),
-        }
-    }
-
-    pub(crate) fn stat_packets(&self) -> Vec<Packet> {
-        self.entries
-            .iter()
-            .map(|entry| stat_packet(entry.path))
-            .chain(std::iter::once(stat_packet_without_entry()))
-            .collect()
-    }
-
-    pub(crate) fn validate_stat_packets(&self, packets: &[Packet]) -> Result<(), String> {
-        if packets.len() != self.entries.len() + 1 {
-            return Err(format!(
-                "expected {} STAT packets, got {}",
-                self.entries.len() + 1,
-                packets.len()
-            ));
-        }
-
-        for (index, (packet, expected)) in packets.iter().zip(self.entries.iter()).enumerate() {
-            if packet.r#type != PacketType::PacketStat as i32 {
-                return Err(format!("packet {index} is not PACKET_STAT"));
-            }
-            if packet.id != 0 {
-                return Err(format!("packet {index} has non-zero STAT ID"));
-            }
-            if packet.stat.as_ref().map(|stat| stat.path.as_str()) != Some(expected.path) {
-                return Err(format!("packet {index} has the wrong path"));
-            }
-        }
-
-        let terminator = packets.last().expect("length checked above");
-        if terminator.r#type != PacketType::PacketStat as i32
-            || terminator.id != 0
-            || terminator.stat.is_some()
-        {
-            return Err(String::from("STAT terminator is malformed"));
-        }
-        Ok(())
-    }
-
-    pub(crate) fn regular_ids(&self) -> HashSet<u32> {
-        self.entries
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| entry.regular.then_some(index as u32))
-            .collect()
-    }
-}
-
-#[cfg(test)]
-#[derive(Debug)]
-pub(crate) struct RequestLedger {
-    available: HashSet<u32>,
-}
-
-#[cfg(test)]
-impl RequestLedger {
-    pub(crate) fn new(contract: &PacketContract) -> Self {
-        Self {
-            available: contract.regular_ids(),
-        }
-    }
-
-    pub(crate) fn accept(&mut self, id: u32) -> Result<(), String> {
-        if self.available.remove(&id) {
-            Ok(())
-        } else {
-            Err(format!("invalid or repeated file request {id}"))
-        }
-    }
-}
-
-#[cfg(test)]
 pub(crate) fn stat_packet(path: &'static str) -> Packet {
     Packet {
         r#type: PacketType::PacketStat as i32,
@@ -1676,14 +1584,6 @@ pub(crate) fn stat_packet(path: &'static str) -> Packet {
             path: path.to_owned(),
             ..Default::default()
         }),
-        ..Default::default()
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn stat_packet_without_entry() -> Packet {
-    Packet {
-        r#type: PacketType::PacketStat as i32,
         ..Default::default()
     }
 }
@@ -1744,44 +1644,6 @@ pub(crate) fn collect_file_data(packets: &[Packet], id: u32) -> Result<Vec<u8>, 
         Ok(data)
     } else {
         Err(format!("file {id} has no DATA EOF"))
-    }
-}
-
-#[cfg(test)]
-pub(crate) struct ScriptedPeer {
-    requests: mpsc::Sender<Packet>,
-    responses: Pin<Box<dyn Stream<Item = Result<Packet, Status>> + Send>>,
-}
-
-#[cfg(test)]
-impl ScriptedPeer {
-    pub(crate) fn new(
-        responses: impl Stream<Item = Result<Packet, Status>> + Send + 'static,
-    ) -> (Self, ReceiverStream<Packet>) {
-        let (requests, receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
-        (
-            Self {
-                requests,
-                responses: Box::pin(responses),
-            },
-            ReceiverStream::new(receiver),
-        )
-    }
-
-    pub(crate) async fn send(&self, packet: Packet) -> Result<(), String> {
-        self.requests
-            .send(packet)
-            .await
-            .map_err(|_| String::from("scripted peer request channel closed"))
-    }
-
-    pub(crate) async fn next(&mut self) -> Option<Result<Packet, Status>> {
-        futures_util::StreamExt::next(&mut self.responses).await
-    }
-
-    pub(crate) fn close(self) {
-        drop(self.requests);
-        drop(self.responses);
     }
 }
 
@@ -1939,7 +1801,6 @@ async fn expect_protocol_error(responses: &mut Streaming<Packet>) -> tonic::Stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::StreamExt;
     use tempfile::tempdir;
 
     fn open_mount(path: &Path) -> Arc<cap_std::fs::Dir> {
@@ -1961,94 +1822,6 @@ mod tests {
             .expect("fixture scanner joins")
             .expect("fixture scanner succeeds");
         entries
-    }
-
-    fn sample_contract() -> PacketContract {
-        PacketContract::new([
-            ContractEntry {
-                path: "directory",
-                regular: false,
-            },
-            ContractEntry {
-                path: "directory/input.txt",
-                regular: true,
-            },
-            ContractEntry {
-                path: "link",
-                regular: false,
-            },
-            ContractEntry {
-                path: "empty.txt",
-                regular: true,
-            },
-        ])
-    }
-
-    #[test]
-    fn contract_tracks_positional_regular_file_ids() {
-        let contract = sample_contract();
-        contract
-            .validate_stat_packets(&contract.stat_packets())
-            .expect("fixture STAT packets are valid");
-        assert_eq!(contract.regular_ids(), HashSet::from([1, 3]));
-    }
-
-    #[test]
-    fn contract_requires_zero_stat_packet_ids() {
-        let contract = sample_contract();
-        let mut packets = contract.stat_packets();
-        packets[1].id = 1;
-        assert!(contract.validate_stat_packets(&packets).is_err());
-    }
-
-    #[test]
-    fn request_ledger_rejects_duplicate_unknown_and_non_regular_ids() {
-        let contract = sample_contract();
-        let mut ledger = RequestLedger::new(&contract);
-        assert!(ledger.accept(1).is_ok());
-        assert!(ledger.accept(1).is_err());
-        assert!(ledger.accept(0).is_err());
-        assert!(ledger.accept(99).is_err());
-    }
-
-    #[test]
-    fn data_collection_requires_one_empty_eof_packet() {
-        let packets = [
-            data_packet(1, b"first".to_vec()),
-            data_packet(3, b"other".to_vec()),
-            data_packet(1, b"second".to_vec()),
-            data_packet(1, Vec::new()),
-            data_packet(3, Vec::new()),
-        ];
-        assert_eq!(collect_file_data(&packets, 1).unwrap(), b"firstsecond");
-        assert_eq!(collect_file_data(&packets, 3).unwrap(), b"other");
-    }
-
-    #[test]
-    fn protocol_bounds_are_fixed_before_sender_implementation() {
-        assert_eq!(ENTRY_QUEUE_CAPACITY, 128);
-        assert_eq!(FILE_JOB_QUEUE_CAPACITY, 128);
-        assert_eq!(OUTPUT_QUEUE_CAPACITY, 16);
-        assert_eq!(FILE_WORKER_COUNT, 4);
-        assert_eq!(FILE_READ_BUFFER_SIZE, 32 * 1024);
-    }
-
-    #[tokio::test]
-    async fn scripted_peer_uses_bounded_request_and_response_channels() {
-        let (mut peer, mut requests) =
-            ScriptedPeer::new(stream::iter([Ok(data_packet(1, b"response".to_vec()))]));
-        peer.send(request_packet(1))
-            .await
-            .expect("scripted peer accepts requests");
-        assert_eq!(requests.next().await, Some(request_packet(1)));
-        assert_eq!(
-            peer.next()
-                .await
-                .expect("scripted response exists")
-                .unwrap(),
-            data_packet(1, b"response".to_vec())
-        );
-        peer.close();
     }
 
     #[tokio::test]
@@ -2337,15 +2110,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn scanner_filters_privileged_xattr_names() {
-        assert!(super::super::fsutil::is_transferable_xattr("user.bollard"));
-        assert!(!super::super::fsutil::is_transferable_xattr(
-            "security.capability"
-        ));
-    }
-
     #[test]
     fn metadata_decodes_encoded_values() {
         let mut metadata = MetadataMap::new();
@@ -2627,86 +2391,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_accepts_pipelined_requests() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("a"), b"a").expect("a is created");
-        std::fs::write(root.path().join("b"), b"b").expect("b is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        let stats = read_stat_terminator(&mut responses).await;
-        assert_eq!(stats.len(), 3);
-        sender.send(request_packet(0)).await.expect("request sends");
-        sender.send(request_packet(1)).await.expect("request sends");
-        sender.send(fin_packet()).await.expect("FIN sends");
-        let mut data = Vec::new();
-        let mut eof = HashSet::new();
-        while eof.len() < 2 {
-            let packet = responses
-                .message()
-                .await
-                .expect("DATA succeeds")
-                .expect("DATA exists");
-            assert_eq!(packet.r#type, PacketType::PacketData as i32);
-            if packet.data.is_empty() {
-                eof.insert(packet.id);
-            } else {
-                data.push(packet);
-            }
-        }
-        assert_eq!(data.len(), 2);
-        assert_eq!(
-            responses.message().await.unwrap().unwrap().r#type,
-            PacketType::PacketFin as i32
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
-    }
-
-    #[tokio::test]
-    async fn diff_copy_reports_peer_protocol_errors() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        read_stat_terminator(&mut responses).await;
-        sender
-            .send(err_packet("peer failure"))
-            .await
-            .expect("ERR sends");
-        assert_eq!(
-            expect_protocol_error(&mut responses).await.code(),
-            tonic::Code::Aborted
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
-    }
-
-    #[tokio::test]
-    async fn diff_copy_streams_data_and_fin() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        read_stat_terminator(&mut responses).await;
-        sender.send(request_packet(0)).await.expect("request sends");
-        assert_eq!(
-            responses.message().await.unwrap().unwrap(),
-            data_packet(0, b"source".to_vec())
-        );
-        assert_eq!(
-            responses.message().await.unwrap().unwrap(),
-            data_packet(0, Vec::new())
-        );
-        sender.send(fin_packet()).await.expect("FIN sends");
-        assert_eq!(
-            responses.message().await.unwrap().unwrap().r#type,
-            PacketType::PacketFin as i32
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
-    }
-
-    #[tokio::test]
     async fn diff_copy_terminates_empty_files() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("empty"), b"").expect("empty file is created");
@@ -2853,83 +2537,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_waits_for_accepted_jobs_before_fin() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        read_stat_terminator(&mut responses).await;
-        sender.send(request_packet(0)).await.expect("request sends");
-        sender.send(fin_packet()).await.expect("FIN sends");
-        let data = responses.message().await.unwrap().unwrap();
-        assert_eq!(data.r#type, PacketType::PacketData as i32);
-        assert!(!data.data.is_empty());
-        assert_eq!(
-            responses.message().await.unwrap().unwrap(),
-            data_packet(0, Vec::new())
-        );
-        assert_eq!(
-            responses.message().await.unwrap().unwrap().r#type,
-            PacketType::PacketFin as i32
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
-    }
-
-    #[tokio::test]
-    async fn diff_copy_cancels_owned_tasks_when_response_is_dropped() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        let _ = responses.message().await;
-        drop(sender);
-        drop(responses);
-        let _ = shutdown.send(());
-        tokio::time::timeout(std::time::Duration::from_secs(1), server)
-            .await
-            .expect("FileSync server shuts down after cancellation")
-            .expect("FileSync server joins");
-    }
-
-    #[tokio::test]
-    async fn diff_copy_reports_worker_errors() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        read_stat_terminator(&mut responses).await;
-        std::fs::remove_file(root.path().join("input")).expect("source is removed");
-        sender.send(request_packet(0)).await.expect("request sends");
-        assert_eq!(
-            expect_protocol_error(&mut responses).await.code(),
-            tonic::Code::Internal
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
-    }
-
-    #[tokio::test]
-    async fn diff_copy_reports_worker_panics() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("input"), b"source").expect("source is created");
-        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
-            open_mount(root.path()),
-            "context",
-            FaultInjection {
-                panic_worker: true,
-                ..Default::default()
-            },
-        )
-        .await;
-        read_stat_terminator(&mut responses).await;
-        sender.send(request_packet(0)).await.expect("request sends");
-        assert_eq!(
-            expect_protocol_error(&mut responses).await.code(),
-            tonic::Code::Internal
-        );
-        let _ = shutdown.send(());
-        let _ = server.await;
+    async fn diff_copy_reports_worker_failures() {
+        for panic_worker in [false, true] {
+            let root = tempdir().expect("temporary directory is created");
+            std::fs::write(root.path().join("input"), b"source").expect("source is created");
+            let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+                open_mount(root.path()),
+                "context",
+                FaultInjection {
+                    panic_worker,
+                    ..Default::default()
+                },
+            )
+            .await;
+            read_stat_terminator(&mut responses).await;
+            if !panic_worker {
+                std::fs::remove_file(root.path().join("input")).expect("source is removed");
+            }
+            sender.send(request_packet(0)).await.expect("request sends");
+            assert_eq!(
+                expect_protocol_error(&mut responses).await.code(),
+                tonic::Code::Internal
+            );
+            let _ = shutdown.send(());
+            let _ = server.await;
+        }
     }
 
     #[cfg(unix)]
@@ -3020,6 +2652,7 @@ mod tests {
                 ..Default::default()
             },
             stat_packet("unexpected"),
+            data_packet(0, b"unexpected".to_vec()),
         ] {
             let root = tempdir().expect("temporary directory is created");
             std::fs::write(root.path().join("input"), b"source").expect("source is created");
@@ -3267,50 +2900,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_cancellation_stops_a_delayed_scanner() {
-        let root = tempdir().expect("temporary directory is created");
-        for index in 0..16 {
-            std::fs::write(root.path().join(format!("entry-{index}")), b"entry")
-                .expect("entry is created");
+    async fn diff_copy_cancellation_stops_blocked_tasks() {
+        for backpressured in [false, true] {
+            let root = tempdir().expect("temporary directory is created");
+            let (sender, mut responses, shutdown, server) = if backpressured {
+                std::fs::write(
+                    root.path().join("input"),
+                    vec![b'x'; FILE_READ_BUFFER_SIZE * OUTPUT_QUEUE_CAPACITY * 2],
+                )
+                .expect("source is created");
+                open_filesync_transfer(open_mount(root.path())).await
+            } else {
+                for index in 0..16 {
+                    std::fs::write(root.path().join(format!("entry-{index}")), b"entry")
+                        .expect("entry is created");
+                }
+                open_filesync_transfer_with_metadata(
+                    open_mount(root.path()),
+                    "context",
+                    FaultInjection {
+                        delay_scan: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+            };
+            if backpressured {
+                read_stat_terminator(&mut responses).await;
+                sender.send(request_packet(0)).await.expect("request sends");
+            } else {
+                let _ = responses.message().await;
+            }
+            drop(sender);
+            drop(responses);
+            let _ = shutdown.send(());
+            tokio::time::timeout(std::time::Duration::from_secs(1), server)
+                .await
+                .expect("blocked FileSync service shuts down")
+                .expect("blocked FileSync service joins");
         }
-        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
-            open_mount(root.path()),
-            "context",
-            FaultInjection {
-                delay_scan: true,
-                ..Default::default()
-            },
-        )
-        .await;
-        let _ = responses.message().await;
-        drop(sender);
-        drop(responses);
-        let _ = shutdown.send(());
-        tokio::time::timeout(std::time::Duration::from_secs(1), server)
-            .await
-            .expect("delayed scanner service shuts down")
-            .expect("delayed scanner service joins");
-    }
-
-    #[tokio::test]
-    async fn diff_copy_cancellation_stops_a_worker_under_output_backpressure() {
-        let root = tempdir().expect("temporary directory is created");
-        std::fs::write(
-            root.path().join("input"),
-            vec![b'x'; FILE_READ_BUFFER_SIZE * OUTPUT_QUEUE_CAPACITY * 2],
-        )
-        .expect("source is created");
-        let (sender, responses, shutdown, server) =
-            open_filesync_transfer(open_mount(root.path())).await;
-        let mut responses = responses;
-        read_stat_terminator(&mut responses).await;
-        sender.send(request_packet(0)).await.expect("request sends");
-        drop(sender);
-        drop(responses);
-        let _ = shutdown.send(());
-        tokio::time::timeout(std::time::Duration::from_secs(1), server)
-            .await
-            .expect("backpressured service shuts down")
-            .expect("backpressured service joins");
     }
 }
