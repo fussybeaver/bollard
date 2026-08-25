@@ -805,6 +805,11 @@ fn scan_selection(
     }
     let mut include_patterns = options.include_patterns.clone();
     let follow_patterns = resolve_follow_paths(root, &options.follow_paths)?;
+    if include_patterns.len().saturating_add(follow_patterns.len()) > MAX_FILESYNC_PATTERNS {
+        return Err(Status::resource_exhausted(
+            "FileSync request resolves to too many filter patterns",
+        ));
+    }
     if follow_patterns.iter().any(|path| path == ".") {
         return ScanSelection::from_patterns(&include_patterns, &options.exclude_patterns);
     }
@@ -2473,6 +2478,22 @@ mod tests {
         assert_eq!(
             resolve_follow_paths(&mount, &[too_deep])
                 .expect_err("deep followpaths are rejected")
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
+    }
+
+    #[test]
+    fn scan_selection_bounds_resolved_filter_patterns() {
+        let root = tempdir().expect("temporary directory is created");
+        let options = FileSyncOptions {
+            include_patterns: vec![String::from("included"); MAX_FILESYNC_PATTERNS],
+            follow_paths: vec![String::from("followed")],
+            ..Default::default()
+        };
+        assert_eq!(
+            scan_selection(&open_mount(root.path()), &options)
+                .expect_err("effective pattern limit is enforced")
                 .code(),
             tonic::Code::ResourceExhausted
         );
