@@ -313,8 +313,8 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
     assert_eq!(expected_entries, actual_entries);
 
     for relative in &expected_entries {
-        let expected_path = expected.join(&relative);
-        let actual_path = actual.join(&relative);
+        let expected_path = expected.join(relative);
+        let actual_path = actual.join(relative);
         let expected_type = std::fs::symlink_metadata(&expected_path)?.file_type();
         let actual_type = std::fs::symlink_metadata(&actual_path)?.file_type();
         assert_eq!(expected_type.is_dir(), actual_type.is_dir(), "{relative:?}");
