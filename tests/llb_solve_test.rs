@@ -234,6 +234,11 @@ fn create_application_fixture() -> Result<tempfile::TempDir, Error> {
     let source = tempfile::tempdir()?;
     std::fs::create_dir(source.path().join("nested"))?;
     std::fs::write(source.path().join("nested/input.txt"), b"local source")?;
+    #[cfg(unix)]
+    std::fs::hard_link(
+        source.path().join("nested/input.txt"),
+        source.path().join("nested/input.hard"),
+    )?;
     std::fs::write(source.path().join("empty.txt"), [])?;
     std::fs::write(source.path().join("mode.txt"), b"mode")?;
     std::fs::write(source.path().join("café.txt"), b"unicode")?;
@@ -307,7 +312,7 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
     let actual_entries = relative_entries(actual)?;
     assert_eq!(expected_entries, actual_entries);
 
-    for relative in expected_entries {
+    for relative in &expected_entries {
         let expected_path = expected.join(&relative);
         let actual_path = actual.join(&relative);
         let expected_type = std::fs::symlink_metadata(&expected_path)?.file_type();
@@ -360,6 +365,38 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
                 "{relative:?} mode"
             );
         }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        fn hardlink_groups(
+            root: &Path,
+            entries: &BTreeSet<PathBuf>,
+        ) -> Result<BTreeSet<BTreeSet<PathBuf>>, Error> {
+            let mut groups = BTreeMap::<(u64, u64), BTreeSet<PathBuf>>::new();
+            for relative in entries {
+                let path = root.join(relative);
+                let metadata = std::fs::symlink_metadata(&path)?;
+                if metadata.file_type().is_file() && metadata.nlink() > 1 {
+                    groups
+                        .entry((metadata.dev(), metadata.ino()))
+                        .or_default()
+                        .insert(relative.clone());
+                }
+            }
+            Ok(groups
+                .into_values()
+                .filter(|paths| paths.len() > 1)
+                .collect::<BTreeSet<_>>())
+        }
+
+        assert_eq!(
+            hardlink_groups(expected, &expected_entries)?,
+            hardlink_groups(actual, &actual_entries)?,
+            "hardlink topology"
+        );
     }
     Ok(())
 }
