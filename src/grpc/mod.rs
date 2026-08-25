@@ -182,7 +182,7 @@ impl GrpcServer {
             }
             GrpcServer::FileSync(_file_sync_server) => {
                 vec![format!(
-                    "/{}/DiffCopy",
+                    "/{}/diffcopy",
                     FileSyncServer::<filesync::FileSyncImpl>::NAME
                 )]
             }
@@ -2451,7 +2451,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn test_file_receive_state_restores_xattrs() {
+    async fn test_file_receive_state_restores_and_filters_xattrs() {
         let dir = tempfile::tempdir().unwrap();
         let mut state = FileReceiveState::new(dir.path().to_path_buf())
             .await
@@ -2475,7 +2475,7 @@ mod tests {
                     0o644,
                     5,
                     "",
-                    &[("user.file", b"value")],
+                    &[("user.file", b"value"), ("security.capability", b"blocked")],
                 ))))
                 .await
                 .unwrap()
@@ -2485,6 +2485,18 @@ mod tests {
         );
         state.handle_packet(packet_data(1, b"hello")).await.unwrap();
         state.handle_packet(packet_data(1, &[])).await.unwrap();
+        assert_eq!(
+            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "security.capability").unwrap(),
+            None
+        );
         state.handle_packet(packet_stat(None)).await.unwrap();
         state.finalize().await.unwrap();
 
@@ -2496,82 +2508,8 @@ mod tests {
             xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
             Some(b"value".to_vec())
         );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_file_receive_state_applies_xattrs_before_finalize() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut state = FileReceiveState::new(dir.path().to_path_buf())
-            .await
-            .unwrap();
-        let directory_mode = fsutil::FileMode::Dir.bits() | 0o755;
-
-        state
-            .handle_packet(packet_stat(Some(stat_with_xattrs(
-                "nested",
-                directory_mode,
-                0,
-                "",
-                &[("user.directory", b"value")],
-            ))))
-            .await
-            .unwrap();
         assert_eq!(
-            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
-            Some(b"value".to_vec())
-        );
-
-        let request = state
-            .handle_packet(packet_stat(Some(stat_with_xattrs(
-                "nested/file",
-                0o644,
-                5,
-                "",
-                &[("user.file", b"value")],
-            ))))
-            .await
-            .unwrap()
-            .unwrap();
-        state
-            .handle_packet(packet_data(request.id, b"hello"))
-            .await
-            .unwrap();
-        assert_eq!(
-            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
-            Some(b"value".to_vec())
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_file_receive_state_filters_privileged_xattrs() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut state = FileReceiveState::new(dir.path().to_path_buf())
-            .await
-            .unwrap();
-        let request = state
-            .handle_packet(packet_stat(Some(stat_with_xattrs(
-                "file",
-                0o644,
-                0,
-                "",
-                &[("user.file", b"value"), ("security.capability", b"blocked")],
-            ))))
-            .await
-            .unwrap()
-            .unwrap();
-        state
-            .handle_packet(packet_data(request.id, &[]))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            xattr::get(dir.path().join("file"), "user.file").unwrap(),
-            Some(b"value".to_vec())
-        );
-        assert_eq!(
-            xattr::get(dir.path().join("file"), "security.capability").unwrap(),
+            xattr::get(dir.path().join("nested/file"), "security.capability").unwrap(),
             None
         );
     }
