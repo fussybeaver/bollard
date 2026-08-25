@@ -1455,7 +1455,7 @@ fn entry_xattrs(
         let Some(name_str) = name.to_str() else {
             continue;
         };
-        if name_str.starts_with("com.apple.") || !super::fsutil::is_transferable_xattr(name_str) {
+        if !super::fsutil::is_transferable_xattr(name_str) {
             continue;
         }
         if let Some(value) = file
