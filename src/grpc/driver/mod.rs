@@ -1479,7 +1479,7 @@ mod tests {
             assert_eq!(
                 names
                     .iter()
-                    .filter(|name| name.as_str() == "/moby.filesync.v1.FileSync/DiffCopy")
+                    .filter(|name| name.as_str() == "/moby.filesync.v1.FileSync/diffcopy")
                     .count(),
                 usize::from(with_local_mount)
             );
