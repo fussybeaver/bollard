@@ -139,7 +139,7 @@ impl FileSyncSession {
         root: Arc<cap_std::fs::Dir>,
         selection: ScanSelection,
         faults: FaultInjection,
-    ) -> FileSyncStart {
+    ) -> Result<FileSyncStart, Status> {
         let cancellation = CancellationToken::new();
         let scanner_root = root.clone();
         let (entries_sender, entries_receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
@@ -168,8 +168,7 @@ impl FileSyncSession {
                 let result = result.map_err(|_| Status::internal("FileSync scanner panicked"));
                 let _ = completion_sender.send(result);
             })
-            .map_err(|error| Status::internal(format!("FileSync scanner task failed: {error}")))
-            .expect("FileSync scanner thread starts");
+            .map_err(|error| Status::internal(format!("FileSync scanner task failed: {error}")))?;
 
         let jobs_receiver = Arc::new(Mutex::new(jobs_receiver));
         let mut workers = tokio::task::JoinSet::new();
@@ -200,7 +199,7 @@ impl FileSyncSession {
         }
         drop(output_sender);
 
-        (
+        Ok((
             Self {
                 cancellation,
                 scanner: Some(ScannerHandle {
@@ -212,7 +211,7 @@ impl FileSyncSession {
             entries_receiver,
             jobs_sender,
             output_receiver,
-        )
+        ))
     }
 
     async fn shutdown(
@@ -453,7 +452,7 @@ impl FileSync for FileSyncImpl {
         #[cfg(not(test))]
         let faults = FaultInjection::default();
         let (mut session, mut entries_receiver, jobs_sender, mut output_receiver) =
-            FileSyncSession::start(root, selection, faults);
+            FileSyncSession::start(root, selection, faults)?;
         let mut jobs_sender = Some(jobs_sender);
         let mut input = Box::pin(request.into_inner());
 
