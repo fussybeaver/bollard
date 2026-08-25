@@ -1402,6 +1402,11 @@ fn source_stat(
         (linkname, size)
     };
 
+    // Symlink xattrs require path-based no-follow calls. The mount retains only
+    // a capability directory, so deriving an ambient path would weaken that
+    // boundary; cap-std's no-follow file handle cannot read symlink xattrs.
+    // Keep this divergence from fsutil explicit until a capability-relative
+    // llistxattr/lgetxattr implementation is available.
     #[cfg(unix)]
     let xattrs = if file_type.is_dir() || regular {
         entry_xattrs(directory, name, file_type.is_dir())?
