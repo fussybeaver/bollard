@@ -746,11 +746,23 @@ impl FileReceiveState {
             })?;
             drop(directory);
             #[cfg(unix)]
-            apply_xattrs(&permission_parent, &permission_name, &stat.xattrs).map_err(|error| {
-                Status::internal(format!(
-                    "failed to set directory extended attributes: {error}"
-                ))
-            })?;
+            {
+                let xattr_parent = permission_parent.try_clone().map_err(|error| {
+                    Status::internal(format!("failed to retain export directory: {error}"))
+                })?;
+                let xattr_name = permission_name.clone();
+                let xattrs = stat.xattrs.clone();
+                tokio::task::spawn_blocking(move || {
+                    apply_xattrs(&xattr_parent, &xattr_name, &xattrs)
+                })
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| {
+                    Status::internal(format!(
+                        "failed to set directory extended attributes: {error}"
+                    ))
+                })?;
+            }
             self.directories.insert(
                 path,
                 PendingDirectory {
@@ -798,11 +810,19 @@ impl FileReceiveState {
                     Status::invalid_argument(format!("failed to create hardlink: {error}"))
                 })?;
             #[cfg(unix)]
-            apply_xattrs(&xattr_parent, &name, &stat.xattrs).map_err(|error| {
-                Status::internal(format!(
-                    "failed to set hardlink extended attributes: {error}"
-                ))
-            })?;
+            {
+                let xattrs = stat.xattrs.clone();
+                tokio::task::spawn_blocking(move || apply_xattrs(&xattr_parent, &name, &xattrs))
+                    .await
+                    .map_err(|error| {
+                        Status::internal(format!("filesystem worker failed: {error}"))
+                    })?
+                    .map_err(|error| {
+                        Status::internal(format!(
+                            "failed to set hardlink extended attributes: {error}"
+                        ))
+                    })?;
+            }
             self.file_count += 1;
             return Ok(false);
         }
