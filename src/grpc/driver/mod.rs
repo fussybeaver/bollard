@@ -1328,6 +1328,9 @@ mod tests {
         let request = DefinitionSolveRequest::new(
             bollard_buildkit_proto::pb::Definition {
                 def: vec![b"sensitive-definition-bytes".to_vec()],
+                metadata: [(String::from("private-metadata"), Default::default())]
+                    .into_iter()
+                    .collect(),
                 ..Default::default()
             },
             DefinitionExporter::Local(PathBuf::from("/sensitive-export-path")),
@@ -1345,6 +1348,7 @@ mod tests {
             assert!(!rendered.contains("sensitive-secret-id"));
             assert!(!rendered.contains("sensitive-secret-source"));
             assert!(!rendered.contains("sensitive-definition-bytes"));
+            assert!(!rendered.contains("private-metadata"));
             assert!(!rendered.contains("/sensitive-export-path"));
         }
 
@@ -1381,48 +1385,6 @@ mod tests {
         assert!(options.ssh);
         assert_eq!(options.timeout, Some(Duration::from_secs(3)));
         assert_eq!(options.file_transfer_limits.max_files, Some(2));
-    }
-
-    #[test]
-    fn definition_options_debug_redacts_credentials_and_secrets() {
-        let options = DefinitionSolveOptionsBuilder::new()
-            .credential(
-                "registry.example",
-                DockerCredentials {
-                    username: Some(String::from("user")),
-                    password: Some(String::from("super-secret-password")),
-                    auth: Some(String::from("super-secret-auth")),
-                    ..Default::default()
-                },
-            )
-            .secret("token", SecretSource::Env(String::from("super-secret-env")))
-            .build();
-
-        let rendered = format!("{options:?}");
-        assert!(!rendered.contains("super-secret"));
-        assert!(!rendered.contains("registry.example"));
-        assert!(rendered.contains("credential_count: 1"));
-        assert!(rendered.contains("secret_count: 1"));
-    }
-
-    #[test]
-    fn definition_solve_request_debug_redacts_definition_and_export_path() {
-        let request = DefinitionSolveRequest::new(
-            bollard_buildkit_proto::pb::Definition {
-                def: vec![b"embedded command and environment".to_vec()],
-                metadata: [(String::from("private-metadata"), Default::default())]
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
-            },
-            DefinitionExporter::Local(PathBuf::from("/private/export")),
-        );
-
-        let rendered = format!("{request:?}");
-        assert!(!rendered.contains("embedded command"));
-        assert!(!rendered.contains("private-metadata"));
-        assert!(!rendered.contains("/private/export"));
-        assert!(rendered.contains("definition_ops: 1"));
     }
 
     #[test]
@@ -1494,55 +1456,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn definition_solve_registers_shared_services_without_upload() {
-        let driver = failing_test_driver();
-        let service_names = Arc::clone(&driver.service_names);
-        let request = DefinitionSolveRequest::new(
-            bollard_buildkit_proto::pb::Definition::default(),
-            DefinitionExporter::Local(PathBuf::from("/out")),
-        )
-        .with_options(
-            DefinitionSolveOptionsBuilder::new()
-                .enable_ssh(true)
-                .build(),
-        );
+    async fn definition_solve_registers_expected_services() {
+        for with_local_mount in [false, true] {
+            let root = tempdir().expect("temporary local mount exists");
+            let driver = failing_test_driver();
+            let service_names = Arc::clone(&driver.service_names);
+            let mut options = DefinitionSolveOptionsBuilder::new().enable_ssh(true);
+            if with_local_mount {
+                options = options
+                    .local_mount("context", root.path())
+                    .expect("local mount opens");
+            }
+            let request = DefinitionSolveRequest::new(
+                bollard_buildkit_proto::pb::Definition::default(),
+                DefinitionExporter::Local(PathBuf::from("/out")),
+            )
+            .with_options(options.build());
 
-        assert!(solve_definition(&driver, request).await.is_err());
-        let names = service_names.lock().unwrap();
-        assert!(names.iter().any(|name| name.contains("credentials")));
-        assert!(names.iter().any(|name| name.contains("GetSecret")));
-        assert!(names.iter().any(|name| name.contains("ForwardAgent")));
-        assert!(names.iter().any(|name| name.contains("diffcopy")));
-        assert!(!names.iter().any(|name| name.contains("upload")));
-        assert!(!names
-            .iter()
-            .any(|name| name == "/moby.filesync.v1.FileSync/DiffCopy"));
-    }
-
-    #[tokio::test]
-    async fn definition_solve_registers_filesync_for_local_mounts() {
-        let root = tempdir().expect("temporary local mount exists");
-        let driver = failing_test_driver();
-        let service_names = Arc::clone(&driver.service_names);
-        let request = DefinitionSolveRequest::new(
-            bollard_buildkit_proto::pb::Definition::default(),
-            DefinitionExporter::Local(PathBuf::from("/out")),
-        )
-        .with_options(
-            DefinitionSolveOptionsBuilder::new()
-                .local_mount("context", root.path())
-                .expect("local mount opens")
-                .build(),
-        );
-
-        assert!(solve_definition(&driver, request).await.is_err());
-        let names = service_names.lock().unwrap();
-        assert!(names
-            .iter()
-            .any(|name| name == "/moby.filesync.v1.FileSync/DiffCopy"));
-        assert!(!names
-            .iter()
-            .any(|name| name == "/moby.filesync.v1.FileSync/TarStream"));
+            assert!(solve_definition(&driver, request).await.is_err());
+            let names = service_names.lock().unwrap();
+            assert!(names.iter().any(|name| name.contains("credentials")));
+            assert!(names.iter().any(|name| name.contains("GetSecret")));
+            assert!(names.iter().any(|name| name.contains("ForwardAgent")));
+            assert!(names.iter().any(|name| name.contains("diffcopy")));
+            assert!(!names.iter().any(|name| name.contains("upload")));
+            assert_eq!(
+                names
+                    .iter()
+                    .filter(|name| name.as_str() == "/moby.filesync.v1.FileSync/DiffCopy")
+                    .count(),
+                usize::from(with_local_mount)
+            );
+            assert!(!names
+                .iter()
+                .any(|name| name == "/moby.filesync.v1.FileSync/TarStream"));
+        }
     }
 
     #[tokio::test]
