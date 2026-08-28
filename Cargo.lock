@@ -183,7 +183,7 @@ dependencies = [
  "async-stream",
  "base64 0.23.1",
  "bitflags",
- "bollard-buildkit-proto 0.8.1",
+ "bollard-buildkit-proto 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bollard-stubs 1.53.1-rc.29.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
  "cap-std",
@@ -252,11 +252,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bollard-buildkit-proto"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dde1c1fa6e91b511b1a00293b6add7bba4e97a81c3b50499728a2de30d440a4b"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-prost",
+]
+
+[[package]]
 name = "bollard-stubs"
 version = "1.53.1-rc.29.3.1"
 dependencies = [
  "base64 0.23.1",
- "bollard-buildkit-proto 0.8.1",
+ "bollard-buildkit-proto 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
  "chrono",
  "prost",
@@ -486,7 +498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1593,7 +1605,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1924,7 +1936,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
