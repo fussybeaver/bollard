@@ -1389,12 +1389,10 @@ fn source_stat(
     #[cfg(unix)]
     let (linkname, size) = {
         let mut linkname = linkname;
-        let mut size = size;
         if regular && metadata.nlink() > 1 {
             let identity = (metadata.dev(), metadata.ino());
             if let Some(first) = _seen_hardlinks.get(&identity) {
                 linkname = first.clone();
-                size = 0;
             } else {
                 _seen_hardlinks.insert(identity, path.to_owned());
             }
@@ -2084,7 +2082,7 @@ mod tests {
         assert!(first.stat.linkname.is_empty());
         assert_eq!(first.stat.size, 6);
         assert_eq!(second.stat.linkname, "a");
-        assert_eq!(second.stat.size, 0);
+        assert_eq!(second.stat.size, 6);
     }
 
     #[cfg(unix)]
