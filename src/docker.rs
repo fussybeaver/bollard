@@ -559,17 +559,22 @@ impl Docker {
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
         let native_certs = rustls_native_certs::load_native_certs();
 
+        // A partial failure loading the OS trust store (one unreadable
+        // entry among many -- not uncommon on some platforms) must not
+        // discard every certificate that DID load, nor prevent the
+        // explicit `ssl_ca` added just below from being trusted. Add
+        // whatever loaded successfully and proceed, the same way `curl`
+        // and the `docker` CLI itself tolerate the same condition.
+        // Previously any non-empty `native_certs.errors` was treated as
+        // fatal here, returning `LoadNativeCertsErrors` and discarding the
+        // whole native trust store -- including a case where the only
+        // consequence should have been "one fewer CA available", since the
+        // caller's own `ssl_ca` is unaffected either way.
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        if native_certs.errors.is_empty() {
-            for cert in native_certs.certs {
-                root_store
-                    .add(cert)
-                    .map_err(|err| NoNativeCertsError { err })?
-            }
-        } else {
-            return Err(LoadNativeCertsErrors {
-                errors: native_certs.errors,
-            });
+        for cert in native_certs.certs {
+            root_store
+                .add(cert)
+                .map_err(|err| NoNativeCertsError { err })?
         }
         #[cfg(any(feature = "test_ssl", feature = "webpki"))]
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
