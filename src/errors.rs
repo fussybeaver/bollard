@@ -43,7 +43,14 @@ pub enum Error {
         #[from]
         err: rustls::Error,
     },
-    /// Error emitted when the client is unable to load native certs for SSL
+    /// Error emitted when the client is unable to load native certs for SSL.
+    ///
+    /// No longer constructed by this crate as of the `connect_with_ssl` fix
+    /// for a partial trust-store load (a single unreadable entry used to
+    /// discard every certificate that loaded successfully, including the
+    /// caller's own explicit `ssl_ca`): such errors are now logged via
+    /// `log::warn!` and otherwise ignored, since the certificates that did
+    /// load are still usable. Left defined for API compatibility.
     #[cfg(feature = "ssl_providerless")]
     #[error("Could not load native certs")]
     LoadNativeCertsErrors {
