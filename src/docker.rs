@@ -30,7 +30,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 #[cfg(feature = "ssl_providerless")]
 use rustls::{crypto::CryptoProvider, sign::CertifiedKey};
 #[cfg(feature = "ssl_providerless")]
@@ -570,6 +570,15 @@ impl Docker {
         // whole native trust store -- including a case where the only
         // consequence should have been "one fewer CA available", since the
         // caller's own `ssl_ca` is unaffected either way.
+        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
+        if !native_certs.errors.is_empty() {
+            warn!(
+                "ignoring {} error(s) loading native certs: {:?}",
+                native_certs.errors.len(),
+                native_certs.errors
+            );
+        }
+
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
         for cert in native_certs.certs {
             root_store
