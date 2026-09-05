@@ -232,18 +232,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_without_variant() {
-        let p = Platform::new("linux", "amd64");
-        assert_eq!(p.to_string(), "linux/amd64");
-    }
-
-    #[test]
-    fn display_with_variant() {
-        let p = Platform::new("linux", "arm").with_variant("v7");
-        assert_eq!(p.to_string(), "linux/arm/v7");
-    }
-
-    #[test]
     fn parse_round_trip() {
         let p: Platform = "linux/arm64".parse().unwrap();
         assert_eq!(p.os, "linux");

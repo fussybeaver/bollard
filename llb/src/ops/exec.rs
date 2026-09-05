@@ -1,15 +1,13 @@
 //! Execution-operation types: mounts, secrets, cache mounts, run options, and
 //! [`ExecOp`] serialization.
 
-use std::collections::HashMap;
-
 use crate::error::LlbError;
-use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
-use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput, OutputIdx};
+use crate::ops::{Context, InputPlan, Operation, OperationOutput, SerializedOp};
 use crate::platform::Platform;
 use crate::state::{ExecState, RunOpts, State};
 use bollard_buildkit_proto::pb;
+use indexmap::IndexMap;
 
 /// How a cache mount is shared between concurrent builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -340,58 +338,17 @@ impl ExecOp {
 }
 
 impl Operation for ExecOp {
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
         // Collect operation inputs. The base state is input 0 when it is a real
         // operation; an empty (scratch) base is encoded as input index -1.
         // Additional inputs are deduplicated by content digest so that two
         // mounts referencing the same source share an input index.
-        let mut input_keys: Vec<(Digest, OutputIdx)> = Vec::new();
-        let mut input_indices: HashMap<(Digest, OutputIdx), i64> = HashMap::new();
-        let mut mount_input_indices: Vec<i64> = Vec::with_capacity(self.run.mounts.len() + 1);
-
-        if self.base.is_empty() {
-            mount_input_indices.push(-1);
-        } else {
-            let node_ref = ctx.register(&self.base)?;
-            let key = (node_ref.digest().clone(), node_ref.index());
-            input_indices.insert(key.clone(), 0);
-            input_keys.push(key);
-            mount_input_indices.push(0);
-        }
-
-        for mount in &self.run.mounts {
-            if let Some(source) = &mount.source {
-                if source.output().is_empty() {
-                    mount_input_indices.push(-1);
-                } else {
-                    let output = source.output().clone();
-                    let node_ref = ctx.register(&output)?;
-                    let key = (node_ref.digest().clone(), node_ref.index());
-                    if let Some(pos) = input_indices.get(&key) {
-                        mount_input_indices.push(*pos);
-                    } else {
-                        let pos = input_keys.len() as i64;
-                        input_indices.insert(key.clone(), pos);
-                        input_keys.push(key);
-                        mount_input_indices.push(pos);
-                    }
-                }
-            } else {
-                mount_input_indices.push(-1);
-            }
-        }
-
-        let pb_inputs: Vec<pb::Input> = input_keys
-            .into_iter()
-            .map(|(digest, index)| pb::Input {
-                digest: digest.as_str().to_string(),
-                index: index.0 as i64,
-            })
-            .collect();
+        let input_plan = ExecInputPlan::new(&self.base, &self.run.mounts, ctx)?;
+        let pb_inputs = input_plan.pb_inputs();
 
         // The rootfs is always the first mount and produces the primary output.
         let mut pb_mounts: Vec<pb::Mount> = vec![pb::Mount {
-            input: mount_input_indices[0],
+            input: input_plan.mount_input_indices[0],
             selector: String::new(),
             dest: "/".to_string(),
             output: 0,
@@ -406,7 +363,12 @@ impl Operation for ExecOp {
         }];
 
         let mut next_output = 1_i64;
-        for (mount, input) in self.run.mounts.iter().zip(&mount_input_indices[1..]) {
+        for (mount, input) in self
+            .run
+            .mounts
+            .iter()
+            .zip(&input_plan.mount_input_indices[1..])
+        {
             let mut pb_mount = build_pb_mount(mount, *input);
             if pb_mount.output < 0
                 && !mount.readonly
@@ -493,12 +455,39 @@ impl Operation for ExecOp {
             op: Some(pb::op::Op::Exec(exec)),
         };
 
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(ctx.insert_node(Node {
-            bytes,
-            digest,
+        Ok(SerializedOp {
+            op: pb_op,
             metadata: self.metadata.clone(),
-        }))
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ExecInputPlan {
+    inputs: InputPlan,
+    mount_input_indices: Vec<i64>,
+}
+
+impl ExecInputPlan {
+    fn new(base: &OperationOutput, mounts: &[Mount], ctx: &mut Context) -> Result<Self, LlbError> {
+        let mut plan = Self {
+            inputs: InputPlan::default(),
+            mount_input_indices: Vec::with_capacity(mounts.len() + 1),
+        };
+        let base_input = plan.inputs.register(base, ctx)?;
+        plan.mount_input_indices.push(base_input);
+        for mount in mounts {
+            let input = match &mount.source {
+                Some(source) => plan.inputs.register(source.output(), ctx)?,
+                None => -1,
+            };
+            plan.mount_input_indices.push(input);
+        }
+        Ok(plan)
+    }
+
+    fn pb_inputs(&self) -> Vec<pb::Input> {
+        self.inputs.pb_inputs()
     }
 }
 
@@ -564,18 +553,17 @@ fn build_pb_mount(mount: &Mount, input: i64) -> pb::Mount {
 }
 
 fn merge_env(base: &[(String, String)], run: &[(String, String)]) -> Vec<(String, String)> {
-    let mut positions = HashMap::<String, usize>::new();
-    let mut merged: Vec<(String, String)> = Vec::with_capacity(base.len() + run.len());
-
-    for (key, value) in base.iter().chain(run) {
-        if let Some(pos) = positions.get(key) {
-            merged[*pos].1 = value.clone();
-        } else {
-            positions.insert(key.clone(), merged.len());
-            merged.push((key.clone(), value.clone()));
-        }
-    }
-    merged
+    base.iter()
+        .chain(run)
+        .fold(
+            IndexMap::with_capacity(base.len() + run.len()),
+            |mut merged, (key, value)| {
+                merged.insert(key.clone(), value.clone());
+                merged
+            },
+        )
+        .into_iter()
+        .collect()
 }
 
 fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
@@ -928,27 +916,18 @@ mod tests {
     }
 
     #[test]
-    fn shlex_rejects_unclosed_quote_with_position() {
-        let error = shlex("echo 'hello").unwrap_err();
-        assert!(matches!(
-            error,
-            crate::error::LlbError::InvalidShell {
-                position: 5,
-                kind: "unclosed single quote"
-            }
-        ));
-    }
-
-    #[test]
-    fn shlex_rejects_trailing_escape_with_position() {
-        let error = shlex("echo \\").unwrap_err();
-        assert!(matches!(
-            error,
-            crate::error::LlbError::InvalidShell {
-                position: 5,
-                kind: "trailing escape"
-            }
-        ));
+    fn shlex_rejects_malformed_commands_with_position() {
+        for (command, expected_position, expected_kind) in [
+            ("echo 'hello", 5, "unclosed single quote"),
+            ("echo \\", 5, "trailing escape"),
+        ] {
+            let Err(crate::error::LlbError::InvalidShell { position, kind }) = shlex(command)
+            else {
+                panic!("expected malformed shell command");
+            };
+            assert_eq!(position, expected_position);
+            assert_eq!(kind, expected_kind);
+        }
     }
 
     #[test]
@@ -996,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_env_merge_deduplicates_base_keys() {
+    fn exec_env_merge_preserves_order_and_last_value() {
         let merged = merge_env(
             &[
                 ("K".to_string(), "V1".to_string()),
@@ -1005,10 +984,7 @@ mod tests {
             &[],
         );
         assert_eq!(merged, vec![("K".to_string(), "V2".to_string())]);
-    }
 
-    #[test]
-    fn exec_env_merge_preserves_first_key_order_when_overriding() {
         let merged = merge_env(
             &[
                 ("K".to_string(), "V1".to_string()),
