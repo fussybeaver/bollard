@@ -30,6 +30,8 @@ pub(crate) mod marshal;
 pub(crate) mod metadata;
 /// Core operation graph types.
 pub(crate) mod ops;
+/// POSIX path helpers used during LLB marshalling.
+pub(crate) mod path;
 /// OCI platform constraints and well-known constants.
 pub mod platform;
 /// The central builder types: [`State`], [`ExecState`], [`Constraints`].
