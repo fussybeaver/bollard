@@ -3,9 +3,8 @@
 use bollard_buildkit_proto::pb;
 
 use crate::error::LlbError;
-use crate::marshal::Digest;
 use crate::metadata::{attr, cap, OpMetadata};
-use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput, OutputIdx};
+use crate::ops::{Context, InputPlan, Operation, OperationOutput, SerializedOp};
 use crate::state::State;
 
 /// A single file-system action chained into a `FileOp`.
@@ -379,36 +378,22 @@ impl FileOp {
 }
 
 impl Operation for FileOp {
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
-        let base_empty = self.base.is_empty();
-        let mut inputs: Vec<OperationOutput> = Vec::new();
-        let mut input_keys: Vec<(Digest, OutputIdx)> = Vec::new();
-
-        if !base_empty {
-            let node_ref = ctx.register(&self.base)?;
-            inputs.push(self.base.clone());
-            input_keys.push((node_ref.digest().clone(), node_ref.index()));
-        }
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
+        let mut inputs = InputPlan::default();
+        let base_input = inputs.register(&self.base, ctx)?;
 
         let pb_action = build_pb_file_action(
             &self.action,
-            base_empty,
+            base_input,
             self.cwd.as_deref().unwrap_or(""),
             &mut inputs,
-            &mut input_keys,
             ctx,
         )?;
         let file_op = pb::FileOp {
             actions: vec![pb_action],
         };
 
-        let pb_inputs: Vec<pb::Input> = input_keys
-            .into_iter()
-            .map(|(digest, index)| pb::Input {
-                digest: digest.as_str().to_string(),
-                index: index.0 as i64,
-            })
-            .collect();
+        let pb_inputs = inputs.pb_inputs();
 
         let pb_op = pb::Op {
             inputs: pb_inputs,
@@ -419,24 +404,20 @@ impl Operation for FileOp {
             op: Some(pb::op::Op::File(file_op)),
         };
 
-        let (digest, bytes) = crate::marshal::encode_and_hash(&pb_op)?;
-        Ok(ctx.insert_node(Node {
-            bytes,
-            digest,
+        Ok(SerializedOp {
+            op: pb_op,
             metadata: self.metadata.clone(),
-        }))
+        })
     }
 }
 
 fn build_pb_file_action(
     action: &FileAction,
-    base_empty: bool,
+    base_input: i64,
     parent: &str,
-    inputs: &mut Vec<OperationOutput>,
-    input_keys: &mut Vec<(Digest, OutputIdx)>,
+    inputs: &mut InputPlan,
     ctx: &mut Context,
 ) -> Result<pb::FileAction, LlbError> {
-    let base_input = if base_empty { -1 } else { 0 };
     match action {
         FileAction::Copy {
             src,
@@ -444,21 +425,7 @@ fn build_pb_file_action(
             dest_path,
             info,
         } => {
-            let secondary = if src.output().is_empty() {
-                -1
-            } else {
-                let output = src.output().clone();
-                let node_ref = ctx.register(&output)?;
-                let key = (node_ref.digest().clone(), node_ref.index());
-                if let Some(pos) = input_keys.iter().position(|k| *k == key) {
-                    pos as i64
-                } else {
-                    let pos = inputs.len() as i64;
-                    inputs.push(output);
-                    input_keys.push(key);
-                    pos
-                }
-            };
+            let secondary = inputs.register(src.output(), ctx)?;
 
             let copy = pb::FileActionCopy {
                 src: crate::path::copy_source(src.cwd(), src_path),

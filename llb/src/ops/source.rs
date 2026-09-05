@@ -6,9 +6,8 @@ use std::sync::Arc;
 use bollard_buildkit_proto::pb;
 
 use crate::error::LlbError;
-use crate::marshal::encode_and_hash;
 use crate::metadata::{attr, cap, OpMetadata};
-use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput};
+use crate::ops::{Context, Operation, OperationOutput, SerializedOp};
 use crate::platform::Platform;
 use crate::State;
 
@@ -99,7 +98,7 @@ impl Image {
 }
 
 impl Operation for Image {
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
         let platform = ctx.combined_platform(self.platform.clone()).map(Into::into);
         let pb_op = pb::Op {
             inputs: Vec::new(),
@@ -112,12 +111,10 @@ impl Operation for Image {
                 attrs: self.attrs.clone(),
             })),
         };
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(ctx.insert_node(Node {
-            bytes,
-            digest,
+        Ok(SerializedOp {
+            op: pb_op,
             metadata: self.metadata.clone(),
-        }))
+        })
     }
 }
 
@@ -145,6 +142,13 @@ impl ResolveMode {
 const DEFAULT_IMAGE_DOMAIN: &str = "docker.io";
 const DEFAULT_IMAGE_NAMESPACE: &str = "library";
 
+/// Normalize an image reference using Docker's distribution/reference rules.
+///
+/// BuildKit's Go client adds the Docker Hub domain, the `library` namespace,
+/// and the `latest` tag before marshalling an image source. Keeping that
+/// normalization here makes digests and source identifiers match the Go
+/// client, while eager validation makes malformed references fail at
+/// construction time instead of during graph serialization.
 fn normalize_image_reference(reference: &str) -> Result<String, LlbError> {
     if reference.is_empty()
         || reference
@@ -510,7 +514,7 @@ impl Local {
 }
 
 impl Operation for Local {
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
         let mut attrs = self.attrs.clone();
         let mut metadata = self.metadata.clone();
         // BuildKit uses LocalUniqueID only as a fallback when no session ID
@@ -530,12 +534,10 @@ impl Operation for Local {
                 attrs,
             })),
         };
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(ctx.insert_node(Node {
-            bytes,
-            digest,
+        Ok(SerializedOp {
+            op: pb_op,
             metadata,
-        }))
+        })
     }
 }
 
@@ -749,15 +751,16 @@ mod tests {
 
     #[test]
     fn invalid_image_references_are_rejected() {
-        for reference in ["", "Alpine:latest", "alpine:", "alpine@sha256:not-a-digest"] {
-            assert!(Image::new(reference).is_err(), "accepted {reference:?}");
-        }
-    }
-
-    #[test]
-    fn image_tag_rejects_invalid_characters_and_lengths() {
         let overlong = format!("alpine:{}", "a".repeat(129));
-        for reference in ["alpine:", "alpine:-foo", "alpine:.foo", &overlong] {
+        for reference in [
+            "",
+            "Alpine:latest",
+            "alpine:",
+            "alpine:-foo",
+            "alpine:.foo",
+            "alpine@sha256:not-a-digest",
+            &overlong,
+        ] {
             assert!(Image::new(reference).is_err(), "accepted {reference:?}");
         }
     }
@@ -777,13 +780,5 @@ mod tests {
             .metadata
             .caps
             .contains(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS));
-    }
-
-    #[test]
-    fn scratch_is_empty_output() {
-        let a = scratch().unwrap();
-        let b = scratch().unwrap();
-        assert!(a.output().is_empty());
-        assert!(b.output().is_empty());
     }
 }

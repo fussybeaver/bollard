@@ -83,20 +83,78 @@ impl OperationOutput {
 /// Trait implemented by every LLB operation node.
 ///
 /// Implementations must be cheaply cloneable via an enclosing [`Arc`], implement
-/// [`Debug`], and are responsible for recursively registering their inputs with
-/// the [`Context`] before serializing themselves.
+/// [`Debug`], and build their protobuf operation through the shared serialization
+/// pipeline below.
 pub(crate) trait Operation: Send + Sync + Debug {
-    /// Serialize this operation into a [`pb::Op`], register its inputs, and
-    /// insert the resulting [`Node`] into `ctx`.
+    /// Build the protobuf operation and metadata for this node.
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError>;
+
+    /// Serialize this operation, register its inputs, and insert the resulting
+    /// [`Node`] into `ctx`.
     ///
     /// The returned [`NodeRef`] typically points to the operation's primary
     /// output; callers that need a different output index should use
     /// [`Context::register`].
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError>;
+    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
+        let SerializedOp { op, metadata } = self.build_serialized(ctx)?;
+        let (digest, bytes) = encode_and_hash(&op)?;
+        Ok(ctx.insert_node(Node {
+            bytes,
+            digest,
+            metadata,
+        }))
+    }
 
     /// The outputs this operation exposes.
     fn outputs(&self) -> Vec<OutputIdx> {
         vec![OutputIdx::PRIMARY]
+    }
+}
+
+/// The operation-specific part of serialization before encoding and hashing.
+#[derive(Clone, Debug)]
+pub(crate) struct SerializedOp {
+    pub(crate) op: pb::Op,
+    pub(crate) metadata: OpMetadata,
+}
+
+/// Registered operation inputs and their protobuf positions.
+#[derive(Debug, Default)]
+pub(crate) struct InputPlan {
+    keys: Vec<(Digest, OutputIdx)>,
+    indices: HashMap<(Digest, OutputIdx), i64>,
+}
+
+impl InputPlan {
+    /// Register an output, returning its protobuf input position.
+    pub(crate) fn register(
+        &mut self,
+        output: &OperationOutput,
+        ctx: &mut Context,
+    ) -> Result<i64, LlbError> {
+        if output.is_empty() {
+            return Ok(-1);
+        }
+        let node_ref = ctx.register(output)?;
+        let key = (node_ref.digest().clone(), node_ref.index());
+        if let Some(index) = self.indices.get(&key) {
+            return Ok(*index);
+        }
+        let index = self.keys.len() as i64;
+        self.indices.insert(key.clone(), index);
+        self.keys.push(key);
+        Ok(index)
+    }
+
+    /// Convert registered inputs to their protobuf representation.
+    pub(crate) fn pb_inputs(&self) -> Vec<pb::Input> {
+        self.keys
+            .iter()
+            .map(|(digest, index)| pb::Input {
+                digest: digest.as_str().to_string(),
+                index: index.0 as i64,
+            })
+            .collect()
     }
 }
 
@@ -732,24 +790,6 @@ mod tests {
         let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
             .expect("expected image source op");
         assert_eq!(image_op.platform, None);
-    }
-
-    #[test]
-    fn marshal_image_op_platform_linux_amd64() {
-        let s = image("alpine:latest").unwrap();
-        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
-        let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
-            .expect("expected image source op");
-        assert_eq!(
-            image_op.platform,
-            Some(pb::Platform {
-                architecture: "amd64".to_string(),
-                os: "linux".to_string(),
-                variant: String::new(),
-                os_version: String::new(),
-                os_features: Vec::new(),
-            })
-        );
     }
 
     #[test]

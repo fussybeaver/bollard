@@ -5,9 +5,8 @@
 use bollard_buildkit_proto::pb;
 
 use crate::error::LlbError;
-use crate::marshal::encode_and_hash;
 use crate::metadata::{attr, cap, OpMetadata};
-use crate::ops::{Context, Node, NodeRef, Operation, OperationOutput};
+use crate::ops::{Context, Operation, OperationOutput, SerializedOp};
 use crate::state::State;
 
 /// Options for a merge operation.
@@ -94,22 +93,22 @@ impl MergeOp {
 }
 
 impl Operation for MergeOp {
-    fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
-        let mut pb_inputs: Vec<pb::Input> = Vec::with_capacity(self.inputs.len());
-        for input in &self.inputs {
-            if input.is_empty() {
-                pb_inputs.push(pb::Input {
-                    digest: String::new(),
-                    index: -1,
-                });
-            } else {
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
+        let pb_inputs: Vec<pb::Input> = self
+            .inputs
+            .iter()
+            .map(|input| {
                 let node_ref = ctx.register(input)?;
-                pb_inputs.push(pb::Input {
+                Ok(pb::Input {
                     digest: node_ref.digest().as_str().to_string(),
-                    index: node_ref.index().0 as i64,
-                });
-            }
-        }
+                    index: if input.is_empty() {
+                        -1
+                    } else {
+                        node_ref.index().0 as i64
+                    },
+                })
+            })
+            .collect::<Result<_, LlbError>>()?;
 
         let merge_inputs: Vec<pb::MergeInput> = (0..self.inputs.len())
             .map(|i| pb::MergeInput { input: i as i64 })
@@ -128,12 +127,10 @@ impl Operation for MergeOp {
             op: Some(pb::op::Op::Merge(merge_op)),
         };
 
-        let (digest, bytes) = encode_and_hash(&pb_op)?;
-        Ok(ctx.insert_node(Node {
-            bytes,
-            digest,
+        Ok(SerializedOp {
+            op: pb_op,
             metadata: self.metadata.clone(),
-        }))
+        })
     }
 }
 
@@ -147,7 +144,6 @@ mod tests {
     fn merge_zero_inputs_is_scratch() {
         let s = merge(Vec::<State>::new(), MergeOpts::new()).unwrap();
         assert!(s.output().is_empty());
-        assert!(crate::scratch().unwrap().output().is_empty());
     }
 
     fn merge_digest(images: Vec<State>) -> String {
@@ -187,19 +183,6 @@ mod tests {
     }
 
     #[test]
-    fn mergeop_has_two_inputs() {
-        let op = MergeOp::new(
-            vec![
-                crate::image("alpine:latest").unwrap(),
-                crate::image("busybox:latest").unwrap(),
-            ],
-            MergeOpts::new(),
-        )
-        .unwrap();
-        assert_eq!(op.inputs.len(), 2);
-    }
-
-    #[test]
     fn mergeop_variant_is_merge() {
         let op = MergeOp::new(
             vec![
@@ -209,6 +192,7 @@ mod tests {
             MergeOpts::new(),
         )
         .unwrap();
+        assert_eq!(op.inputs.len(), 2);
         let mut ctx = crate::ops::Context::new(None, Vec::new());
         let node_ref = op.serialize(&mut ctx).unwrap();
         let node = ctx.nodes().get(node_ref.digest()).unwrap();

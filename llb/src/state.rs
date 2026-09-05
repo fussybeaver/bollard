@@ -46,26 +46,32 @@ impl State {
     }
 
     /// Set the working directory for subsequent exec steps.
-    pub fn dir<S: Into<String>>(mut self, path: S) -> Self {
-        let path = path.into();
-        self.constraints.cwd = Some(if crate::path::is_abs(&path) {
-            path
+    pub fn dir(mut self, path: impl AsRef<str>) -> Self {
+        let path = path.as_ref();
+        self.constraints.cwd = Some(if crate::path::is_abs(path) {
+            path.to_string()
         } else {
             let previous = self.constraints.cwd.clone().unwrap_or_default();
-            crate::path::join(&[if previous.is_empty() { "/" } else { &previous }, &path])
+            crate::path::join(&[if previous.is_empty() { "/" } else { &previous }, path])
         });
         self
     }
 
     /// Add an environment variable for subsequent exec steps.
-    pub fn add_env<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        replace_env(&mut self.constraints.env, key.into(), value.into());
+    pub fn add_env(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
+        replace_env(
+            &mut self.constraints.env,
+            key.as_ref().to_string(),
+            value.as_ref().to_string(),
+        );
         self
     }
 
     /// Add an environment variable whose value is formatted.
-    pub fn add_envf<K: Into<String>, V: Display>(mut self, key: K, value: V) -> Self {
-        self.constraints.env.push((key.into(), format!("{value}")));
+    pub fn add_envf(mut self, key: impl AsRef<str>, value: impl Display) -> Self {
+        self.constraints
+            .env
+            .push((key.as_ref().to_string(), format!("{value}")));
         self
     }
 
@@ -104,8 +110,10 @@ impl State {
     }
 
     /// Add a worker constraint filter for operations created from this state.
-    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
-        self.constraints.worker_filters.push(filter.into());
+    pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
+        self.constraints
+            .worker_filters
+            .push(filter.as_ref().to_string());
         self
     }
 
@@ -139,8 +147,8 @@ impl State {
     }
 
     /// Set a custom name for the operation that produces this state.
-    pub fn with_custom_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.constraints.custom_name = Some(name.into());
+    pub fn with_custom_name(mut self, name: impl AsRef<str>) -> Self {
+        self.constraints.custom_name = Some(name.as_ref().to_string());
         self
     }
 
@@ -169,8 +177,8 @@ impl Constraints {
     }
 
     /// Add a worker constraint filter.
-    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
-        self.worker_filters.push(filter.into());
+    pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
+        self.worker_filters.push(filter.as_ref().to_string());
         self
     }
 }
@@ -209,8 +217,8 @@ impl MarshalOpts {
     }
 
     /// Marshal with the given worker constraint filter.
-    pub fn with_worker_filter<S: Into<String>>(mut self, filter: S) -> Self {
-        self.worker_filters.push(filter.into());
+    pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
+        self.worker_filters.push(filter.as_ref().to_string());
         self
     }
 }
@@ -240,9 +248,9 @@ impl ExecState {
     }
 
     /// Add a bind mount from a source state.
-    pub fn add_mount<S: Into<String>>(mut self, target: S, src: State) -> Self {
+    pub fn add_mount(mut self, target: impl AsRef<str>, src: State) -> Self {
         self.run.mounts.push(Mount {
-            target: target.into(),
+            target: target.as_ref().to_string(),
             source: Some(src),
             mount_type: MountType::Bind,
             readonly: false,
@@ -252,9 +260,9 @@ impl ExecState {
     }
 
     /// Add a scratch mount at the given target.
-    pub fn add_mount_scratch<S: Into<String>>(mut self, target: S) -> Self {
+    pub fn add_mount_scratch(mut self, target: impl AsRef<str>) -> Self {
         self.run.mounts.push(Mount {
-            target: target.into(),
+            target: target.as_ref().to_string(),
             source: None,
             mount_type: MountType::Scratch,
             readonly: false,
@@ -264,17 +272,17 @@ impl ExecState {
     }
 
     /// Add a cache mount at the given target.
-    pub fn add_mount_cache<S: Into<String>>(
+    pub fn add_mount_cache(
         mut self,
-        target: S,
-        id: S,
+        target: impl AsRef<str>,
+        id: impl AsRef<str>,
         mode: CacheSharingMode,
     ) -> Self {
         self.run.mounts.push(Mount {
-            target: target.into(),
+            target: target.as_ref().to_string(),
             source: None,
             mount_type: MountType::Cache {
-                id: id.into(),
+                id: id.as_ref().to_string(),
                 mode,
             },
             readonly: false,
@@ -284,16 +292,16 @@ impl ExecState {
     }
 
     /// Add a secret mount and/or environment variable.
-    pub fn add_secret<S: Into<String>>(mut self, id: S, opts: impl Into<AddSecret>) -> Self {
+    pub fn add_secret(mut self, id: impl AsRef<str>, opts: impl Into<AddSecret>) -> Self {
         let mut opts = opts.into();
-        opts.id = id.into();
+        opts.id = id.as_ref().to_string();
         self.run.secrets.push(opts);
         self
     }
 
     /// Set a custom name for this exec step.
-    pub fn with_custom_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.run.custom_name = Some(name.into());
+    pub fn with_custom_name(mut self, name: impl AsRef<str>) -> Self {
+        self.run.custom_name = Some(name.as_ref().to_string());
         self
     }
 
@@ -331,20 +339,24 @@ impl RunOpts {
     }
 
     /// Add a command argument.
-    pub fn with_arg<S: Into<String>>(mut self, arg: S) -> Self {
-        self.args.push(arg.into());
+    pub fn with_arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.args.push(arg.as_ref().to_string());
         self
     }
 
     /// Add an environment variable.
-    pub fn with_env<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        replace_env(&mut self.env, key.into(), value.into());
+    pub fn with_env(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
+        replace_env(
+            &mut self.env,
+            key.as_ref().to_string(),
+            value.as_ref().to_string(),
+        );
         self
     }
 
     /// Set a custom name.
-    pub fn with_custom_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.custom_name = Some(name.into());
+    pub fn with_custom_name(mut self, name: impl AsRef<str>) -> Self {
+        self.custom_name = Some(name.as_ref().to_string());
         self
     }
 
@@ -361,9 +373,9 @@ impl RunOpts {
     }
 
     /// Add a bind mount.
-    pub fn with_mount<S: Into<String>>(mut self, target: S, src: crate::State) -> Self {
+    pub fn with_mount(mut self, target: impl AsRef<str>, src: crate::State) -> Self {
         self.mounts.push(Mount {
-            target: target.into(),
+            target: target.as_ref().to_string(),
             source: Some(src),
             mount_type: MountType::Bind,
             readonly: false,
