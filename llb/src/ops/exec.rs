@@ -597,9 +597,10 @@ fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
 
     for mount in &run.mounts {
         match &mount.mount_type {
-            MountType::Bind | MountType::Scratch => {
+            MountType::Bind => {
                 metadata.caps.insert(cap::CAP_EXEC_MOUNT_BIND.to_string());
             }
+            MountType::Scratch => {}
             MountType::Cache { .. } => {
                 metadata.caps.insert(cap::CAP_EXEC_MOUNT_CACHE.to_string());
                 metadata
@@ -791,7 +792,7 @@ mod tests {
 
     #[test]
     fn scratch_bind_mount_uses_empty_input_and_output() {
-        let state = crate::image("alpine:latest")
+        let state = scratch()
             .unwrap()
             .run(shlex("echo").unwrap())
             .add_mount_scratch("/scratch")
@@ -812,6 +813,12 @@ mod tests {
 
         assert_eq!(exec.mounts[1].input, -1);
         assert_eq!(exec.mounts[1].output, 1);
+        let metadata = def
+            .metadata
+            .values()
+            .find(|metadata| metadata.caps.contains_key(cap::CAP_EXEC_META_BASE))
+            .expect("expected exec metadata");
+        assert!(!metadata.caps.contains_key(cap::CAP_EXEC_MOUNT_BIND));
     }
 
     #[test]
