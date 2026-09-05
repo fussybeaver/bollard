@@ -44,3 +44,10 @@ maintained in [`xtask/Cargo.toml`](xtask/Cargo.toml) and
 [`xtask/src/provenance.rs`](xtask/src/provenance.rs). It records the generation
 contract in [`provenance.lock.toml`](provenance.lock.toml). Do not set `PROTOC`
 or `PROTOC_INCLUDE` while running xtask.
+
+## Features
+
+The `grpc` feature is enabled by default and exposes the generated gRPC clients
+and servers. Disable default features when only protobuf messages and
+provenance are needed; this avoids resolving the gRPC transport dependency
+stack.

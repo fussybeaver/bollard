@@ -67,7 +67,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: docker build -t bollard .
-      - run: docker run -ti --rm bollard bash -c "cargo xtask buildkit check && cargo test -p xtask && cargo test -p bollard-buildkit-proto --all-features"
+      - run: docker run -ti --rm bollard bash -c "cargo xtask buildkit check && cargo test -p xtask && cargo test -p bollard-buildkit-proto --all-features && cargo test -p bollard-buildkit-proto --no-default-features"
       - run: resources/dockerfiles/bin/run_integration_tests.sh --features buildkit,chrono --tests
       - run:
           name: Clean up Bollard BuildKit resources

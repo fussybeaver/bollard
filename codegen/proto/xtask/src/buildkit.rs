@@ -459,7 +459,9 @@ fn compile(
     let builder = tonic_prost_build::configure()
         .out_dir(output_directory)
         .compile_well_known_types(true)
-        .btree_map(".pb");
+        .btree_map(".pb")
+        .client_mod_attribute(".", r##"#[cfg(feature = "grpc")]"##)
+        .server_mod_attribute(".", r##"#[cfg(feature = "grpc")]"##);
     builder.compile_with_config(
         config,
         proto_files,
