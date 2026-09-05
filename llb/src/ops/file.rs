@@ -493,7 +493,7 @@ fn build_pb_file_action(
         } => {
             let mkdir = pb::FileActionMkDir {
                 path: crate::path::normalize(parent, path, false),
-                mode: *mode as i32,
+                mode: (*mode & 0o777) as i32,
                 make_parents: *parents,
                 owner: None,
                 timestamp: -1,
@@ -508,7 +508,7 @@ fn build_pb_file_action(
         FileAction::MkFile { path, mode, data } => {
             let mkfile = pb::FileActionMkFile {
                 path: crate::path::normalize(parent, path, false),
-                mode: *mode as i32,
+                mode: (*mode & 0o777) as i32,
                 data: data.clone(),
                 owner: None,
                 timestamp: -1,
@@ -784,5 +784,37 @@ mod tests {
         };
         assert_eq!(symlink.oldpath, "../target");
         assert_eq!(symlink.newpath, "links/current");
+    }
+
+    #[test]
+    fn file_modes_mask_special_bits_before_marshalling() {
+        let base = scratch().unwrap().output().clone();
+
+        let mkdir = FileOp::new(
+            base.clone(),
+            mkdir("dir", 0o4755),
+            FileOpts::default(),
+            None,
+        )
+        .unwrap();
+        let (file, _) = serialize_file_op(mkdir);
+        let Some(pb::file_action::Action::Mkdir(mkdir)) = file.actions[0].action.as_ref() else {
+            panic!("expected mkdir action");
+        };
+        assert_eq!(mkdir.mode, 0o755);
+
+        let mkfile = FileOp::new(
+            base,
+            mkfile("file", u32::MAX, "data"),
+            FileOpts::default(),
+            None,
+        )
+        .unwrap();
+        let (file, _) = serialize_file_op(mkfile);
+        let Some(pb::file_action::Action::Mkfile(mkfile)) = file.actions[0].action.as_ref() else {
+            panic!("expected mkfile action");
+        };
+        assert_eq!(mkfile.mode, 0o777);
+        assert!(mkfile.mode >= 0);
     }
 }
