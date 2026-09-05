@@ -45,6 +45,13 @@ pub enum LlbError {
         kind: &'static str,
     },
 
+    /// An exec operation is missing its command arguments.
+    #[error("invalid exec operation: {reason}")]
+    InvalidExec {
+        /// Description of the invalid exec operation.
+        reason: &'static str,
+    },
+
     /// An I/O error occurred while writing the LLB dump.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
