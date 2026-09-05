@@ -207,7 +207,7 @@ fn split_image_tag<'a>(
     let tag = &tag[1..];
     if tag.is_empty()
         || tag.len() > 128
-        || !tag.as_bytes()[0].is_ascii_alphanumeric()
+        || !(tag.as_bytes()[0].is_ascii_alphanumeric() || tag.as_bytes()[0] == b'_')
         || !tag
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'.' || c == b'-')
@@ -636,6 +636,10 @@ mod tests {
                 "docker-image://ghcr.io/example/app:latest",
             ),
             (
+                "alpine:_foo",
+                "docker-image://docker.io/library/alpine:_foo",
+            ),
+            (
                 "localhost:5000/example/app",
                 "docker-image://localhost:5000/example/app:latest",
             ),
@@ -746,6 +750,14 @@ mod tests {
     #[test]
     fn invalid_image_references_are_rejected() {
         for reference in ["", "Alpine:latest", "alpine:", "alpine@sha256:not-a-digest"] {
+            assert!(Image::new(reference).is_err(), "accepted {reference:?}");
+        }
+    }
+
+    #[test]
+    fn image_tag_rejects_invalid_characters_and_lengths() {
+        let overlong = format!("alpine:{}", "a".repeat(129));
+        for reference in ["alpine:", "alpine:-foo", "alpine:.foo", &overlong] {
             assert!(Image::new(reference).is_err(), "accepted {reference:?}");
         }
     }
