@@ -41,9 +41,19 @@ impl State {
         &self.constraints
     }
 
+    pub(crate) fn cwd(&self) -> Option<&str> {
+        self.constraints.cwd.as_deref()
+    }
+
     /// Set the working directory for subsequent exec steps.
     pub fn dir<S: Into<String>>(mut self, path: S) -> Self {
-        self.constraints.cwd = Some(path.into());
+        let path = path.into();
+        self.constraints.cwd = Some(if crate::path::is_abs(&path) {
+            path
+        } else {
+            let previous = self.constraints.cwd.clone().unwrap_or_default();
+            crate::path::join(&[if previous.is_empty() { "/" } else { &previous }, &path])
+        });
         self
     }
 
@@ -70,7 +80,7 @@ impl State {
     /// Apply a file action to this state.
     pub fn file(self, action: FileAction, opts: impl Into<FileOpts>) -> Result<Self, LlbError> {
         let opts = opts.into();
-        let file_op = FileOp::new(self.output, action, opts)?;
+        let file_op = FileOp::new(self.output, action, opts, self.constraints.cwd.clone())?;
         Ok(Self {
             output: OperationOutput::Owned(Arc::new(file_op)),
             constraints: self.constraints,
@@ -392,5 +402,27 @@ impl From<Shlex> for RunOpts {
             args: value.args,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dir_accumulates_relative_paths_like_go() {
+        assert_eq!(State::scratch().unwrap().dir("foo").cwd(), Some("/foo"));
+        assert_eq!(
+            State::scratch().unwrap().dir("/work").dir("foo").cwd(),
+            Some("/work/foo")
+        );
+        assert_eq!(
+            State::scratch().unwrap().dir("/work").dir("/abs").cwd(),
+            Some("/abs")
+        );
+        assert_eq!(
+            State::scratch().unwrap().dir("a").dir("../b").cwd(),
+            Some("/b")
+        );
     }
 }
