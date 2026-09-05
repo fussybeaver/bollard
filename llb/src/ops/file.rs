@@ -351,6 +351,7 @@ pub(crate) struct FileOp {
     base: OperationOutput,
     action: FileAction,
     opts: FileOpts,
+    cwd: Option<String>,
     metadata: OpMetadata,
 }
 
@@ -364,12 +365,14 @@ impl FileOp {
         base: OperationOutput,
         action: FileAction,
         opts: FileOpts,
+        cwd: Option<String>,
     ) -> Result<Self, LlbError> {
         let metadata = build_file_metadata(&action, &opts);
         Ok(Self {
             base,
             action,
             opts,
+            cwd,
             metadata,
         })
     }
@@ -387,8 +390,14 @@ impl Operation for FileOp {
             input_keys.push((node_ref.digest().clone(), node_ref.index()));
         }
 
-        let pb_action =
-            build_pb_file_action(&self.action, base_empty, &mut inputs, &mut input_keys, ctx)?;
+        let pb_action = build_pb_file_action(
+            &self.action,
+            base_empty,
+            self.cwd.as_deref().unwrap_or(""),
+            &mut inputs,
+            &mut input_keys,
+            ctx,
+        )?;
         let file_op = pb::FileOp {
             actions: vec![pb_action],
         };
@@ -422,6 +431,7 @@ impl Operation for FileOp {
 fn build_pb_file_action(
     action: &FileAction,
     base_empty: bool,
+    parent: &str,
     inputs: &mut Vec<OperationOutput>,
     input_keys: &mut Vec<(Digest, OutputIdx)>,
     ctx: &mut Context,
@@ -451,8 +461,8 @@ fn build_pb_file_action(
             };
 
             let copy = pb::FileActionCopy {
-                src: src_path.clone(),
-                dest: dest_path.clone(),
+                src: crate::path::copy_source(src.cwd(), src_path),
+                dest: crate::path::normalize(parent, dest_path, true),
                 owner: None,
                 mode: -1,
                 follow_symlink: info.follow_symlinks,
@@ -482,7 +492,7 @@ fn build_pb_file_action(
             parents,
         } => {
             let mkdir = pb::FileActionMkDir {
-                path: path.clone(),
+                path: crate::path::normalize(parent, path, false),
                 mode: *mode as i32,
                 make_parents: *parents,
                 owner: None,
@@ -497,7 +507,7 @@ fn build_pb_file_action(
         }
         FileAction::MkFile { path, mode, data } => {
             let mkfile = pb::FileActionMkFile {
-                path: path.clone(),
+                path: crate::path::normalize(parent, path, false),
                 mode: *mode as i32,
                 data: data.clone(),
                 owner: None,
@@ -516,7 +526,7 @@ fn build_pb_file_action(
             allow_wildcard,
         } => {
             let rm = pb::FileActionRm {
-                path: path.clone(),
+                path: crate::path::normalize(parent, path, false),
                 allow_not_found: *allow_not_found,
                 allow_wildcard: *allow_wildcard,
             };
@@ -584,8 +594,21 @@ mod tests {
         (file, ctx)
     }
 
+    fn marshal_state_file(state: crate::State) -> pb::FileAction {
+        let definition = state.marshal(crate::state::MarshalOpts::default()).unwrap();
+        definition
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find_map(|op| match op.op {
+                Some(pb::op::Op::File(file)) => file.actions.into_iter().next(),
+                _ => None,
+            })
+            .expect("expected file action")
+    }
+
     fn file_op_digest(base: OperationOutput, action: FileAction) -> String {
-        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
         let mut ctx = crate::ops::Context::new(None, Vec::new());
         let node_ref = op.serialize(&mut ctx).unwrap();
         node_ref.digest().to_string()
@@ -598,7 +621,7 @@ mod tests {
         ));
         let src = crate::image("busybox:latest").unwrap();
         let action = copy(src, "/src", "/dest");
-        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
         let (file, ctx) = serialize_file_op(op);
         let node = ctx.nodes().values().last().unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
@@ -610,7 +633,7 @@ mod tests {
     fn fileop_mkdir_has_zero_inputs_for_scratch() {
         let base = scratch().unwrap().output().clone();
         let action = mkdir("/app", 0o755).with_parents(true);
-        let op = FileOp::new(base, action, FileOpts::default()).unwrap();
+        let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
         let (file, ctx) = serialize_file_op(op);
         let node = ctx.nodes().values().last().unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
@@ -669,6 +692,7 @@ mod tests {
             base,
             rm("/tmp/file").with_allow_not_found(true),
             FileOpts::default(),
+            None,
         )
         .unwrap();
         let (file, _) = serialize_file_op(op);
@@ -687,5 +711,78 @@ mod tests {
         let _ = s
             .file(mkfile("/app/foo", 0o644, "hi"), FileOpts::default())
             .unwrap();
+    }
+
+    #[test]
+    fn state_file_normalizes_paths_against_cwd() {
+        let state = crate::scratch()
+            .unwrap()
+            .dir("/work")
+            .file(mkdir("foo", 0o755), FileOpts::default())
+            .unwrap();
+        let action = marshal_state_file(state);
+        let Some(pb::file_action::Action::Mkdir(mkdir)) = action.action else {
+            panic!("expected mkdir action");
+        };
+        assert_eq!(mkdir.path, "/work/foo");
+    }
+
+    #[test]
+    fn copy_normalizes_source_and_destination_paths() {
+        let source = crate::scratch().unwrap().dir("/ced");
+        let state = crate::scratch()
+            .unwrap()
+            .dir("/work")
+            .file(copy(source, "foo", "dest/"), FileOpts::default())
+            .unwrap();
+        let action = marshal_state_file(state);
+        let Some(pb::file_action::Action::Copy(copy)) = action.action else {
+            panic!("expected copy action");
+        };
+        assert_eq!(copy.src, "/ced/foo");
+        assert_eq!(copy.dest, "/work/dest/");
+    }
+
+    #[test]
+    fn copy_preserves_destination_dot_suffix() {
+        let state = crate::scratch()
+            .unwrap()
+            .dir("/work")
+            .file(
+                copy(crate::scratch().unwrap(), "foo", "dest/."),
+                FileOpts::default(),
+            )
+            .unwrap();
+        let action = marshal_state_file(state);
+        let Some(pb::file_action::Action::Copy(copy)) = action.action else {
+            panic!("expected copy action");
+        };
+        assert_eq!(copy.dest, "/work/dest/.");
+    }
+
+    #[test]
+    fn rm_cleans_relative_paths_and_symlinks_remain_raw() {
+        let rm_state = crate::scratch()
+            .unwrap()
+            .dir("/work")
+            .file(rm(".."), FileOpts::default())
+            .unwrap();
+        let rm_action = marshal_state_file(rm_state);
+        let Some(pb::file_action::Action::Rm(rm)) = rm_action.action else {
+            panic!("expected rm action");
+        };
+        assert_eq!(rm.path, "/");
+
+        let symlink_state = crate::scratch()
+            .unwrap()
+            .dir("/work")
+            .file(symlink("../target", "links/current"), FileOpts::default())
+            .unwrap();
+        let symlink_action = marshal_state_file(symlink_state);
+        let Some(pb::file_action::Action::Symlink(symlink)) = symlink_action.action else {
+            panic!("expected symlink action");
+        };
+        assert_eq!(symlink.oldpath, "../target");
+        assert_eq!(symlink.newpath, "links/current");
     }
 }
