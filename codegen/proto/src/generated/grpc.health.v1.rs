@@ -67,6 +67,7 @@ pub struct HealthListResponse {
     >,
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod health_client {
     #![allow(
         unused_variables,
@@ -268,6 +269,7 @@ pub mod health_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod health_server {
     #![allow(
         unused_variables,
