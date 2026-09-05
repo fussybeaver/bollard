@@ -314,6 +314,12 @@ impl ExecOp {
         env: Vec<(String, String)>,
         mut run: RunOpts,
     ) -> Result<Self, LlbError> {
+        if run.args.is_empty() {
+            return Err(LlbError::InvalidExec {
+                reason: "arguments are required",
+            });
+        }
+
         // Sort mounts by target path to match Go's moby/buildkit client/llb
         // ExecOp.Marshal behavior (github.com/moby/buildkit@v0.31.1,
         // client/llb/exec.go:145-148). This canonicalization keeps cache keys
@@ -733,6 +739,20 @@ mod tests {
     }
 
     #[test]
+    fn exec_rejects_empty_argument_lists() {
+        let base = scratch().unwrap().output().clone();
+        for run in [RunOpts::default(), RunOpts::from(shlex("").unwrap())] {
+            let error = ExecOp::new(base.clone(), None, None, Vec::new(), run).unwrap_err();
+            assert!(matches!(
+                error,
+                LlbError::InvalidExec {
+                    reason: "arguments are required"
+                }
+            ));
+        }
+    }
+
+    #[test]
     fn exec_default_meta_removes_mount_stubs_recursively() {
         let op = ExecOp::new(
             scratch().unwrap().output().clone(),
@@ -844,7 +864,7 @@ mod tests {
                     mode: 0o440,
                     ..AddSecret::from("license")
                 }],
-                ..RunOpts::default()
+                ..RunOpts::default().with_arg("cat")
             },
         )
         .unwrap();
@@ -876,7 +896,7 @@ mod tests {
                     env_name: Some("TOKEN".to_string()),
                     ..AddSecret::from("token")
                 }],
-                ..RunOpts::default()
+                ..RunOpts::default().with_arg("env")
             },
         )
         .unwrap();
@@ -953,7 +973,7 @@ mod tests {
     #[test]
     fn execop_env_merge_run_overrides_base() {
         let base = scratch().unwrap().output().clone();
-        let run = RunOpts::default().with_env("K", "V2");
+        let run = RunOpts::default().with_arg("env").with_env("K", "V2");
         let op = ExecOp::new(
             base,
             None,
