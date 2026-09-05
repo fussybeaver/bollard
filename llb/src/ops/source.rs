@@ -74,6 +74,7 @@ impl Image {
     /// Set a checksum for the image.
     pub fn with_checksum<S: Into<String>>(mut self, checksum: S) -> Result<Self, LlbError> {
         let checksum = checksum.into();
+        validate_digest(&checksum, &checksum)?;
         self.attrs
             .insert(attr::IMAGE_CHECKSUM.to_string(), checksum);
         self.metadata
@@ -360,13 +361,20 @@ fn validate_digest(digest: &str, original: &str) -> Result<(), LlbError> {
             reference: original.to_string(),
         });
     };
-    if algorithm.is_empty()
-        || !algorithm.as_bytes()[0].is_ascii_alphabetic()
-        || !algorithm
+    let expected_len = match algorithm {
+        "sha256" => 64,
+        "sha384" => 96,
+        "sha512" => 128,
+        _ => {
+            return Err(LlbError::InvalidReference {
+                reference: original.to_string(),
+            });
+        }
+    };
+    if encoded.len() != expected_len
+        || !encoded
             .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'+' | b'.'))
-        || encoded.len() < 32
-        || !encoded.bytes().all(|c| c.is_ascii_hexdigit())
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     {
         return Err(LlbError::InvalidReference {
             reference: original.to_string(),
@@ -649,6 +657,41 @@ mod tests {
             source.identifier,
             format!("docker-image://docker.io/library/alpine@{digest}")
         );
+    }
+
+    #[test]
+    fn image_digest_rejects_non_go_digests() {
+        let invalid = [
+            "sha256:short",
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+            "sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef",
+            "md5:0123456789abcdef0123456789abcdef",
+        ];
+        for digest in invalid {
+            assert!(
+                Image::new(format!("alpine@{digest}")).is_err(),
+                "accepted {digest:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn image_checksum_uses_digest_validation() {
+        let digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert!(Image::new("alpine").unwrap().with_checksum(digest).is_ok());
+
+        for checksum in [
+            "sha256:short",
+            "sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef",
+        ] {
+            assert!(
+                Image::new("alpine")
+                    .unwrap()
+                    .with_checksum(checksum)
+                    .is_err(),
+                "accepted {checksum:?}"
+            );
+        }
     }
 
     #[test]
