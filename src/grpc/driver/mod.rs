@@ -779,7 +779,7 @@ pub(crate) async fn solve_definition(
         build_ref,
     } = request;
 
-    validate_definition(&definition)?;
+    validate_definition(&definition, &options.ssh)?;
 
     let mut auth_provider = super::AuthProvider::new();
     for (host, credentials) in options.credentials.clone() {
@@ -897,6 +897,7 @@ fn build_definition_solve_request(
 
 fn validate_definition(
     definition: &bollard_buildkit_proto::pb::Definition,
+    registered_ssh: &HashMap<String, super::SshAgentSource>,
 ) -> Result<(), GrpcError> {
     for (index, bytes) in definition.def.iter().enumerate() {
         let operation =
@@ -907,17 +908,48 @@ fn validate_definition(
                 }
             })?;
 
-        if let Some(bollard_buildkit_proto::pb::op::Op::Source(source)) = operation.op {
-            if source.identifier.starts_with("local://")
-                && source.attrs.contains_key("local.session")
-            {
-                return Err(GrpcError::InvalidDefinition {
-                    index,
-                    reason: String::from(
-                        "direct solves do not support an explicit `local.session`; omit the attribute so the active solve session is used",
-                    ),
-                });
+        match operation.op {
+            Some(bollard_buildkit_proto::pb::op::Op::Source(source)) => {
+                if source.identifier.starts_with("local://")
+                    && source.attrs.contains_key("local.session")
+                {
+                    return Err(GrpcError::InvalidDefinition {
+                        index,
+                        reason: String::from(
+                            "direct solves do not support an explicit `local.session`; omit the attribute so the active solve session is used",
+                        ),
+                    });
+                }
             }
+            Some(bollard_buildkit_proto::pb::op::Op::Exec(exec)) => {
+                for mount in &exec.mounts {
+                    if mount.mount_type != bollard_buildkit_proto::pb::MountType::Ssh as i32 {
+                        continue;
+                    }
+
+                    let (id, optional) = mount.ssh_opt.as_ref().map_or(
+                        (super::DEFAULT_SSH_AGENT_ID, false),
+                        |ssh| {
+                            let id = if ssh.id.is_empty() {
+                                super::DEFAULT_SSH_AGENT_ID
+                            } else {
+                                ssh.id.as_str()
+                            };
+                            (id, ssh.optional)
+                        },
+                    );
+
+                    if !optional && !registered_ssh.contains_key(id) {
+                        return Err(GrpcError::InvalidDefinition {
+                            index,
+                            reason: String::from(
+                                "a non-optional SSH mount requires a registered agent; register one with `set_ssh_agent` or `enable_ssh(true)`, or mark the mount optional",
+                            ),
+                        });
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1622,6 +1654,60 @@ mod tests {
             .expect_err("explicit local session is unsupported");
         assert!(matches!(error, GrpcError::InvalidDefinition { .. }));
         assert!(error.to_string().contains("local.session"));
+    }
+
+    fn ssh_definition(id: &str, optional: bool) -> bollard_buildkit_proto::pb::Definition {
+        let operation = bollard_buildkit_proto::pb::Op {
+            op: Some(bollard_buildkit_proto::pb::op::Op::Exec(
+                bollard_buildkit_proto::pb::ExecOp {
+                    mounts: vec![bollard_buildkit_proto::pb::Mount {
+                        mount_type: bollard_buildkit_proto::pb::MountType::Ssh as i32,
+                        ssh_opt: Some(bollard_buildkit_proto::pb::SshOpt {
+                            id: String::from(id),
+                            optional,
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+
+        bollard_buildkit_proto::pb::Definition {
+            def: vec![operation.encode_to_vec()],
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn definition_solve_rejects_required_ssh_without_provider() {
+        let request = DefinitionSolveRequest::new(
+            ssh_definition("deploy", false),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        );
+
+        let error = solve_definition(&failing_test_driver(), request)
+            .await
+            .expect_err("required SSH provider is missing");
+        assert!(matches!(error, GrpcError::InvalidDefinition { .. }));
+        assert!(error.to_string().contains("non-optional SSH mount"));
+    }
+
+    #[tokio::test]
+    async fn definition_solve_allows_optional_ssh_without_provider() {
+        let (address, shutdown_sender, handle) = start_test_server(None).await;
+        let request = DefinitionSolveRequest::new(
+            ssh_definition("deploy", true),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        );
+
+        solve_definition(&test_driver(address), request)
+            .await
+            .expect("optional SSH provider may be absent");
+
+        stop_test_server(shutdown_sender, handle).await;
     }
 
     #[test]
