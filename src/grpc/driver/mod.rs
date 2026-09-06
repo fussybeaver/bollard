@@ -397,10 +397,7 @@ impl DefinitionSolveOptionsBuilder {
     /// `false` removes only the `default` entry and leaves named agents intact.
     pub fn enable_ssh(mut self, enable: bool) -> Self {
         if enable {
-            return self.set_ssh_agent(
-                super::DEFAULT_SSH_AGENT_ID,
-                &super::SshAgentSource::DefaultAgentSocket,
-            );
+            return self.set_ssh_agent(None, &super::SshAgentSource::DefaultAgentSocket);
         }
         self.options.ssh.remove(super::DEFAULT_SSH_AGENT_ID);
         self
@@ -408,15 +405,13 @@ impl DefinitionSolveOptionsBuilder {
 
     /// Register an SSH agent source under a BuildKit SSH mount ID.
     ///
-    /// An empty ID is normalized to BuildKit's implicit `default` ID.
-    pub fn set_ssh_agent(mut self, id: impl Into<String>, source: &super::SshAgentSource) -> Self {
-        let id = id.into();
-        let id = if id.is_empty() {
-            String::from(super::DEFAULT_SSH_AGENT_ID)
-        } else {
-            id
-        };
-        self.options.ssh.insert(id, source.clone());
+    /// `None` selects BuildKit's implicit `default` ID. An empty ID is also
+    /// normalized to `default` to match BuildKit's protocol behavior.
+    pub fn set_ssh_agent(mut self, id: Option<&str>, source: &super::SshAgentSource) -> Self {
+        let id = id
+            .filter(|id| !id.is_empty())
+            .unwrap_or(super::DEFAULT_SSH_AGENT_ID);
+        self.options.ssh.insert(String::from(id), source.clone());
         self
     }
 
@@ -1552,7 +1547,7 @@ mod tests {
             .secret("token", SecretSource::Env(String::from("TOKEN")))
             .enable_ssh(true)
             .set_ssh_agent(
-                "deploy",
+                Some("deploy"),
                 &super::super::SshAgentSource::Socket(PathBuf::from("/tmp/deploy-agent.sock")),
             )
             .enable_ssh(false)
@@ -1684,33 +1679,16 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn definition_solve_rejects_required_ssh_without_provider() {
-        let request = DefinitionSolveRequest::new(
-            ssh_definition("deploy", false),
-            DefinitionExporter::Local(PathBuf::from("/out")),
-        );
-
-        let error = solve_definition(&failing_test_driver(), request)
-            .await
+    #[test]
+    fn definition_validation_requires_an_agent_only_for_non_optional_ssh_mounts() {
+        let registered_ssh = HashMap::new();
+        let error = validate_definition(&ssh_definition("deploy", false), &registered_ssh)
             .expect_err("required SSH provider is missing");
         assert!(matches!(error, GrpcError::InvalidDefinition { .. }));
         assert!(error.to_string().contains("non-optional SSH mount"));
-    }
 
-    #[tokio::test]
-    async fn definition_solve_allows_optional_ssh_without_provider() {
-        let (address, shutdown_sender, handle) = start_test_server(None).await;
-        let request = DefinitionSolveRequest::new(
-            ssh_definition("deploy", true),
-            DefinitionExporter::Local(PathBuf::from("/out")),
-        );
-
-        solve_definition(&test_driver(address), request)
-            .await
+        validate_definition(&ssh_definition("deploy", true), &registered_ssh)
             .expect("optional SSH provider may be absent");
-
-        stop_test_server(shutdown_sender, handle).await;
     }
 
     #[test]

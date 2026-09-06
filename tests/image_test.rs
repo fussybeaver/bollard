@@ -1136,7 +1136,7 @@ async fn build_buildkit_named_ssh_test(docker: Docker) -> Result<(), Error> {
     let socket =
         std::env::var_os("SSH_AUTH_SOCK").expect("SSH_AUTH_SOCK is set by test_sshforward");
     let providers = ImageBuildSessionProviders::default()
-        .set_ssh_agent("deploy", &SshAgentSource::Socket(socket.into()));
+        .set_ssh_agent(Some("deploy"), &SshAgentSource::Socket(socket.into()));
     let options = BuildImageOptionsBuilder::default()
         .dockerfile("Dockerfile")
         .t(name)

@@ -95,7 +95,9 @@ impl ImageBuildSessionProviders {
 
     /// Register an ssh agent, keyed by the id a Dockerfile's
     /// `RUN --mount=type=ssh,id=<id>` instruction references. An instruction
-    /// naming no id gets `default`.
+    /// naming no id gets `default`; pass `None` to register that default agent.
+    /// An empty ID is also normalized to `default` to match BuildKit's
+    /// protocol behavior.
     ///
     /// Registering the same id twice keeps the last source given.
     ///
@@ -105,10 +107,13 @@ impl ImageBuildSessionProviders {
     /// use bollard::grpc::SshAgentSource;
     ///
     /// let providers = ImageBuildSessionProviders::default()
-    ///     .set_ssh_agent("default", &SshAgentSource::DefaultAgentSocket)
-    ///     .set_ssh_agent("deploy", &SshAgentSource::Socket(PathBuf::from("/tmp/deploy-agent.sock")));
+    ///     .set_ssh_agent(None, &SshAgentSource::DefaultAgentSocket)
+    ///     .set_ssh_agent(Some("deploy"), &SshAgentSource::Socket(PathBuf::from("/tmp/deploy-agent.sock")));
     /// ```
-    pub fn set_ssh_agent(mut self, id: &str, value: &SshAgentSource) -> Self {
+    pub fn set_ssh_agent(mut self, id: Option<&str>, value: &SshAgentSource) -> Self {
+        let id = id
+            .filter(|id| !id.is_empty())
+            .unwrap_or(DEFAULT_SSH_AGENT_ID);
         self.ssh
             .insert(String::from(id), SshAgentSource::clone(value));
         self
@@ -119,13 +124,13 @@ impl ImageBuildSessionProviders {
     /// `RUN --mount=type=ssh` instructions.
     ///
     /// Exactly equivalent to
-    /// [`set_ssh_agent`](Self::set_ssh_agent)`("default",
+    /// [`set_ssh_agent`](Self::set_ssh_agent)`(None,
     /// &`[`SshAgentSource::DefaultAgentSocket`]`)` — defined in terms of it
     /// rather than alongside it, so the two can't drift apart. `false`
     /// unregisters that one id and leaves any other named agent alone.
     pub fn enable_ssh(mut self, value: bool) -> Self {
         if value {
-            return self.set_ssh_agent(DEFAULT_SSH_AGENT_ID, &SshAgentSource::DefaultAgentSocket);
+            return self.set_ssh_agent(None, &SshAgentSource::DefaultAgentSocket);
         }
         self.ssh.remove(DEFAULT_SSH_AGENT_ID);
         self
