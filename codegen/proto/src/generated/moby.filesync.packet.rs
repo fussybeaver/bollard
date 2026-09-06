@@ -6,6 +6,7 @@ pub struct BytesMessage {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod file_sync_client {
     #![allow(
         unused_variables,
@@ -160,6 +161,7 @@ pub mod file_sync_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod file_sync_server {
     #![allow(
         unused_variables,
@@ -423,6 +425,7 @@ pub mod file_sync_server {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod file_send_client {
     #![allow(
         unused_variables,
@@ -547,6 +550,7 @@ pub mod file_send_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod file_send_server {
     #![allow(
         unused_variables,

@@ -15,6 +15,7 @@ pub struct GetSecretResponse {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod secrets_client {
     #![allow(
         unused_variables,
@@ -134,6 +135,7 @@ pub mod secrets_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod secrets_server {
     #![allow(
         unused_variables,

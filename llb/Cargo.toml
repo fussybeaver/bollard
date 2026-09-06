@@ -13,7 +13,7 @@ edition = "2021"
 dump_json = []
 
 [dependencies]
-bollard-buildkit-proto = { version = "0.9.0", default-features = false }
+bollard-buildkit-proto = { version = "0.9.1", default-features = false }
 hex = "0.4"
 indexmap = "2"
 prost = "0.14"

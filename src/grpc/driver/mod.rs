@@ -1,10 +1,16 @@
 use std::time::Duration;
-use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt,
+    path::PathBuf,
+    sync::Arc,
+    time::Instant,
+};
 
 use bollard_buildkit_proto::moby::{
     buildkit::{
         secrets::v1::secrets_server::SecretsServer,
-        v1::{control_client::ControlClient, CacheOptions, Exporter, SolveRequest},
+        v1::{control_client::ControlClient, CacheOptions, Exporter, SolveRequest, SolveResponse},
     },
     filesync::{
         packet::file_send_server::FileSendServer as FileSendPacketServer,
@@ -18,6 +24,7 @@ use bollard_buildkit_proto::moby::{
 };
 use futures_util::TryFutureExt;
 use log::{debug, warn};
+use prost::Message;
 // use tonic::service::Interceptor;
 use tonic::{
     codegen::InterceptedService, metadata::MetadataValue, service::Interceptor, transport::Channel,
@@ -223,6 +230,62 @@ impl std::fmt::Debug for DefinitionExporter {
     }
 }
 
+/// An entitlement explicitly granted to a direct LLB solve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Entitlement {
+    /// Allow BuildKit operations that request host networking.
+    NetworkHost,
+    /// Allow BuildKit operations that request insecure security mode.
+    SecurityInsecure,
+}
+
+impl Entitlement {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NetworkHost => "network.host",
+            Self::SecurityInsecure => "security.insecure",
+        }
+    }
+
+    pub(crate) fn daemon_argument(self) -> &'static str {
+        match self {
+            Self::NetworkHost => "--allow-insecure-entitlement=network.host",
+            Self::SecurityInsecure => "--allow-insecure-entitlement=security.insecure",
+        }
+    }
+}
+
+/// The result of solving a direct LLB definition.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct DefinitionSolveResult {
+    build_ref: BuildRef,
+    exporter_response: HashMap<String, String>,
+}
+
+impl fmt::Debug for DefinitionSolveResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DefinitionSolveResult")
+            .field("build_ref", &self.build_ref)
+            .field("exporter_response_count", &self.exporter_response.len())
+            .finish()
+    }
+}
+
+impl DefinitionSolveResult {
+    /// Return the effective BuildKit build reference used for the solve.
+    pub fn build_ref(&self) -> &BuildRef {
+        &self.build_ref
+    }
+
+    /// Return the complete response emitted by the BuildKit exporter.
+    pub fn exporter_response(&self) -> &HashMap<String, String> {
+        &self.exporter_response
+    }
+}
+
 /// Options for a direct LLB definition solve.
 #[derive(Clone)]
 pub struct DefinitionSolveOptions {
@@ -230,7 +293,8 @@ pub struct DefinitionSolveOptions {
     cache_from: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
     credentials: HashMap<String, DockerCredentials>,
     secrets: HashMap<String, SecretSource>,
-    ssh: bool,
+    ssh: HashMap<String, super::SshAgentSource>,
+    entitlements: BTreeSet<Entitlement>,
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
     local_mounts: HashMap<String, LocalMount>,
@@ -244,7 +308,8 @@ impl std::fmt::Debug for DefinitionSolveOptions {
             .field("cache_from_count", &self.cache_from.len())
             .field("credential_count", &self.credentials.len())
             .field("secret_count", &self.secrets.len())
-            .field("ssh", &self.ssh)
+            .field("ssh_agent_count", &self.ssh.len())
+            .field("entitlement_count", &self.entitlements.len())
             .field("timeout", &self.timeout)
             .field("file_transfer_limits", &self.file_transfer_limits)
             .field("local_mount_count", &self.local_mounts.len())
@@ -274,7 +339,8 @@ impl Default for DefinitionSolveOptions {
             cache_from: Vec::new(),
             credentials: HashMap::new(),
             secrets: HashMap::new(),
-            ssh: false,
+            ssh: HashMap::new(),
+            entitlements: BTreeSet::new(),
             timeout: Some(DEFAULT_DEFINITION_SOLVE_TIMEOUT),
             file_transfer_limits: FileTransferLimits::default(),
             local_mounts: HashMap::new(),
@@ -326,7 +392,34 @@ impl DefinitionSolveOptionsBuilder {
 
     /// Enable SSH agent forwarding for the solve.
     pub fn enable_ssh(mut self, enable: bool) -> Self {
-        self.options.ssh = enable;
+        if enable {
+            self.options.ssh.insert(
+                String::from(super::DEFAULT_SSH_AGENT_ID),
+                super::SshAgentSource::DefaultAgentSocket,
+            );
+        } else {
+            self.options.ssh.remove(super::DEFAULT_SSH_AGENT_ID);
+        }
+        self
+    }
+
+    /// Register an SSH agent source under a BuildKit SSH mount ID.
+    ///
+    /// An empty ID is normalized to BuildKit's implicit `default` ID.
+    pub fn set_ssh_agent(mut self, id: impl Into<String>, source: &super::SshAgentSource) -> Self {
+        let id = id.into();
+        let id = if id.is_empty() {
+            String::from(super::DEFAULT_SSH_AGENT_ID)
+        } else {
+            id
+        };
+        self.options.ssh.insert(id, source.clone());
+        self
+    }
+
+    /// Explicitly grant an entitlement required by the direct solve.
+    pub fn entitlement(mut self, entitlement: Entitlement) -> Self {
+        self.options.entitlements.insert(entitlement);
         self
     }
 
@@ -498,7 +591,10 @@ impl DefinitionSolveRequest {
 /// Trait for solving a pre-built LLB definition without a frontend.
 pub trait SolveDefinition {
     /// Solve a direct LLB definition and export its result.
-    async fn solve_definition(&self, request: DefinitionSolveRequest) -> Result<(), GrpcError>;
+    async fn solve_definition(
+        &self,
+        request: DefinitionSolveRequest,
+    ) -> Result<DefinitionSolveResult, GrpcError>;
 }
 
 /// Trait enabling container exports.
@@ -656,12 +752,13 @@ pub(crate) async fn solve(
         None,
     )
     .await
+    .map(|_| ())
 }
 
 pub(crate) async fn solve_definition(
     driver: &impl Driver,
     request: DefinitionSolveRequest,
-) -> Result<(), GrpcError> {
+) -> Result<DefinitionSolveResult, GrpcError> {
     let session_id = crate::grpc::new_id();
     let deadline = request
         .options
@@ -682,6 +779,8 @@ pub(crate) async fn solve_definition(
         build_ref,
     } = request;
 
+    validate_definition(&definition)?;
+
     let mut auth_provider = super::AuthProvider::new();
     for (host, credentials) in options.credentials.clone() {
         auth_provider.set_docker_credentials(&host, credentials);
@@ -693,13 +792,10 @@ pub(crate) async fn solve_definition(
         .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
     let mut services = vec![GrpcServer::Auth(auth), GrpcServer::Secrets(secret)];
 
-    if options.ssh {
-        let ssh = SshServer::new(super::SshProvider::new(HashMap::from([(
-            String::from(super::DEFAULT_SSH_AGENT_ID),
-            super::SshAgentSource::DefaultAgentSocket,
-        )])))
-        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+    if !options.ssh.is_empty() {
+        let ssh = SshServer::new(super::SshProvider::new(options.ssh.clone()))
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
         services.push(GrpcServer::Ssh(ssh));
     }
 
@@ -728,10 +824,10 @@ pub(crate) async fn solve_definition(
     }
 
     let tear_down_handler = driver.begin_solve()?;
-    let solve_request =
+    let (solve_request, build_ref) =
         build_definition_solve_request(definition, &exporter, &options, &session_id, build_ref);
 
-    execute_solve(
+    let response = execute_solve(
         driver,
         &session_id,
         solve_request,
@@ -739,7 +835,12 @@ pub(crate) async fn solve_definition(
         tear_down_handler,
         deadline,
     )
-    .await
+    .await?;
+
+    Ok(DefinitionSolveResult {
+        build_ref,
+        exporter_response: response.exporter_response,
+    })
 }
 
 fn build_definition_solve_request(
@@ -748,8 +849,9 @@ fn build_definition_solve_request(
     options: &DefinitionSolveOptions,
     session_id: &str,
     build_ref: Option<BuildRef>,
-) -> SolveRequest {
+) -> (SolveRequest, BuildRef) {
     normalize_empty_source_locations(&mut definition);
+    let build_ref = build_ref.unwrap_or_default();
 
     let (exporter_type, exporter_attrs, exporters) = match exporter {
         DefinitionExporter::Local(_) => {
@@ -761,29 +863,65 @@ fn build_definition_solve_request(
         }
     };
 
-    SolveRequest {
-        r#ref: build_ref.unwrap_or_default().into(),
-        cache: Some(CacheOptions {
-            export_ref_deprecated: String::new(),
-            import_refs_deprecated: Vec::new(),
-            export_attrs_deprecated: HashMap::new(),
-            exports: options.cache_to.clone(),
-            imports: options.cache_from.clone(),
-        }),
-        definition: Some(definition),
-        entitlements: vec![],
-        exporter_deprecated: exporter_type,
-        exporter_attrs_deprecated: exporter_attrs,
-        frontend: String::new(),
-        frontend_attrs: HashMap::new(),
-        frontend_inputs: HashMap::new(),
-        session: String::from(session_id),
-        exporters,
-        internal: false,
-        source_policy: None,
-        enable_session_exporter: false,
-        source_policy_session: String::new(),
+    (
+        SolveRequest {
+            r#ref: String::from(build_ref.clone()),
+            cache: Some(CacheOptions {
+                export_ref_deprecated: String::new(),
+                import_refs_deprecated: Vec::new(),
+                export_attrs_deprecated: HashMap::new(),
+                exports: options.cache_to.clone(),
+                imports: options.cache_from.clone(),
+            }),
+            definition: Some(definition),
+            entitlements: options
+                .entitlements
+                .iter()
+                .map(|entitlement| entitlement.as_str().to_string())
+                .collect(),
+            exporter_deprecated: exporter_type,
+            exporter_attrs_deprecated: exporter_attrs,
+            frontend: String::new(),
+            frontend_attrs: HashMap::new(),
+            frontend_inputs: HashMap::new(),
+            session: String::from(session_id),
+            exporters,
+            internal: false,
+            source_policy: None,
+            enable_session_exporter: false,
+            source_policy_session: String::new(),
+        },
+        build_ref,
+    )
+}
+
+fn validate_definition(
+    definition: &bollard_buildkit_proto::pb::Definition,
+) -> Result<(), GrpcError> {
+    for (index, bytes) in definition.def.iter().enumerate() {
+        let operation =
+            bollard_buildkit_proto::pb::Op::decode(bytes.as_slice()).map_err(|error| {
+                GrpcError::InvalidDefinition {
+                    index,
+                    reason: format!("operation protobuf could not be decoded: {error}"),
+                }
+            })?;
+
+        if let Some(bollard_buildkit_proto::pb::op::Op::Source(source)) = operation.op {
+            if source.identifier.starts_with("local://")
+                && source.attrs.contains_key("local.session")
+            {
+                return Err(GrpcError::InvalidDefinition {
+                    index,
+                    reason: String::from(
+                        "direct solves do not support an explicit `local.session`; omit the attribute so the active solve session is used",
+                    ),
+                });
+            }
+        }
     }
+
+    Ok(())
 }
 
 fn normalize_empty_source_locations(definition: &mut bollard_buildkit_proto::pb::Definition) {
@@ -801,7 +939,7 @@ async fn execute_solve<D: Driver>(
     services: Vec<GrpcServer>,
     tear_down_handler: Box<dyn DriverTearDownHandler>,
     deadline: Option<Instant>,
-) -> Result<(), GrpcError> {
+) -> Result<SolveResponse, GrpcError> {
     execute_solve_with_teardown_timeout(
         driver,
         session_id,
@@ -822,7 +960,7 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     tear_down_handler: Box<dyn DriverTearDownHandler>,
     deadline: Option<Instant>,
     teardown_timeout: Duration,
-) -> Result<(), GrpcError> {
+) -> Result<SolveResponse, GrpcError> {
     let mut tear_down_guard = TearDownGuard::with_timeout(tear_down_handler, teardown_timeout);
     let mut control_client = match run_until(deadline, driver.grpc_handle(session_id, services))
         .await
@@ -849,7 +987,7 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     )
     .await
     {
-        Ok(_) => Ok(()),
+        Ok(response) => Ok(response.into_inner()),
         Err(error) => Err(error),
     };
     debug!("solve completed: success={}", solve_result.is_ok());
@@ -864,7 +1002,7 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
             }
             Err(error)
         }
-        Ok(_) => tear_down_result,
+        Ok(response) => tear_down_result.map(|_| response),
     }
 }
 
@@ -1060,7 +1198,12 @@ mod tests {
             }
             match &self.solve_error {
                 Some(error) => Err(error.clone()),
-                None => Ok(Response::new(SolveResponse::default())),
+                None => Ok(Response::new(SolveResponse {
+                    exporter_response: HashMap::from([(
+                        String::from("exported-ref"),
+                        String::from("sha256:test"),
+                    )]),
+                })),
             }
         }
 
@@ -1223,7 +1366,7 @@ mod tests {
         })
     }
 
-    fn status_code(result: Result<(), GrpcError>) -> tonic::Code {
+    fn status_code<T: std::fmt::Debug>(result: Result<T, GrpcError>) -> tonic::Code {
         match result {
             Err(GrpcError::TonicStatus { err }) => err.code(),
             other => panic!("expected tonic status error, got {other:?}"),
@@ -1256,7 +1399,7 @@ mod tests {
 
     #[test]
     fn definition_solve_request_has_definition_and_empty_frontend() {
-        let request = build_definition_solve_request(
+        let (request, _) = build_definition_solve_request(
             bollard_buildkit_proto::pb::Definition::default(),
             &DefinitionExporter::Local(PathBuf::from("/out")),
             &DefinitionSolveOptions::default(),
@@ -1373,6 +1516,11 @@ mod tests {
             .credential("registry.example", DockerCredentials::default())
             .secret("token", SecretSource::Env(String::from("TOKEN")))
             .enable_ssh(true)
+            .set_ssh_agent(
+                "deploy",
+                &super::super::SshAgentSource::Socket(PathBuf::from("/tmp/deploy-agent.sock")),
+            )
+            .enable_ssh(false)
             .timeout(Duration::from_secs(3))
             .max_files(2)
             .max_bytes(8)
@@ -1382,9 +1530,98 @@ mod tests {
         assert_eq!(options.cache_from.len(), 1);
         assert!(options.credentials.contains_key("registry.example"));
         assert!(options.secrets.contains_key("token"));
-        assert!(options.ssh);
+        assert!(!options.ssh.contains_key(super::super::DEFAULT_SSH_AGENT_ID));
+        assert!(options.ssh.contains_key("deploy"));
         assert_eq!(options.timeout, Some(Duration::from_secs(3)));
         assert_eq!(options.file_transfer_limits.max_files, Some(2));
+    }
+
+    #[test]
+    fn definition_options_enable_ssh_is_default_agent_sugar() {
+        let options = DefinitionSolveOptionsBuilder::new()
+            .enable_ssh(true)
+            .build();
+
+        assert_eq!(
+            options.ssh.get(super::super::DEFAULT_SSH_AGENT_ID),
+            Some(&super::super::SshAgentSource::DefaultAgentSocket)
+        );
+    }
+
+    #[test]
+    fn definition_solve_request_encodes_sorted_unique_entitlements() {
+        let options = DefinitionSolveOptionsBuilder::new()
+            .entitlement(Entitlement::SecurityInsecure)
+            .entitlement(Entitlement::NetworkHost)
+            .entitlement(Entitlement::SecurityInsecure)
+            .build();
+        let (request, _) = build_definition_solve_request(
+            bollard_buildkit_proto::pb::Definition::default(),
+            &DefinitionExporter::Local(PathBuf::from("/out")),
+            &options,
+            "session-id",
+            None,
+        );
+
+        assert_eq!(
+            request.entitlements,
+            vec![
+                String::from("network.host"),
+                String::from("security.insecure")
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn definition_solve_returns_build_ref_and_exporter_response() {
+        let (address, shutdown_sender, handle) = start_test_server(None).await;
+        let supplied_ref = BuildRef::random();
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition::default(),
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        )
+        .with_build_ref(supplied_ref.clone());
+
+        let result = solve_definition(&test_driver(address), request)
+            .await
+            .expect("direct solve returns its result");
+
+        stop_test_server(shutdown_sender, handle).await;
+        assert_eq!(result.build_ref(), &supplied_ref);
+        assert_eq!(
+            result.exporter_response().get("exported-ref"),
+            Some(&String::from("sha256:test"))
+        );
+        assert!(!format!("{result:?}").contains("sha256:test"));
+    }
+
+    #[tokio::test]
+    async fn definition_solve_rejects_explicit_local_session() {
+        let operation = bollard_buildkit_proto::pb::Op {
+            op: Some(bollard_buildkit_proto::pb::op::Op::Source(
+                bollard_buildkit_proto::pb::SourceOp {
+                    identifier: String::from("local://context"),
+                    attrs: std::collections::BTreeMap::from([(
+                        String::from("local.session"),
+                        String::from("caller-session"),
+                    )]),
+                },
+            )),
+            ..Default::default()
+        };
+        let request = DefinitionSolveRequest::new(
+            bollard_buildkit_proto::pb::Definition {
+                def: vec![operation.encode_to_vec()],
+                ..Default::default()
+            },
+            DefinitionExporter::Local(PathBuf::from("/out")),
+        );
+
+        let error = solve_definition(&failing_test_driver(), request)
+            .await
+            .expect_err("explicit local session is unsupported");
+        assert!(matches!(error, GrpcError::InvalidDefinition { .. }));
+        assert!(error.to_string().contains("local.session"));
     }
 
     #[test]

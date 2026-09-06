@@ -1,14 +1,17 @@
 [package]
 name = "bollard-buildkit-proto"
 description = "Protobuf definitions to interact with buildkit using Bollard"
-version = "0.9.0"
+version = "0.9.1"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 repository = "https://github.com/fussybeaver/bollard"
 edition = "2021"
 
+[features]
+default = ["grpc"]
+grpc = ["dep:tonic", "dep:tonic-prost"]
+
 [dependencies]
-tonic = { version = "0.14" }
 prost = { version = "0.14" }
-prost-types = "0.14"
-tonic-prost = { version = "0.14" }
+tonic = { version = "0.14", optional = true }
+tonic-prost = { version = "0.14", optional = true }

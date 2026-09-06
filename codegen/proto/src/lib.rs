@@ -116,6 +116,8 @@ impl AsRef<[u8]> for moby::buildkit::v1::BytesMessage {
 
 #[cfg(test)]
 mod tests {
+    use prost::Message;
+
     use super::provenance;
 
     #[test]
@@ -127,5 +129,16 @@ mod tests {
         assert_eq!(provenance::BUILDKIT_COMMIT.len(), 40);
         assert_eq!(provenance::OPS_PROTO_SHA256.len(), 64);
         assert!(provenance::MOBY_TAG.starts_with("docker-v"));
+    }
+
+    #[test]
+    fn llb_definition_is_available_without_grpc() {
+        let definition = super::pb::Definition {
+            def: vec![vec![1, 2, 3]],
+            ..Default::default()
+        };
+
+        let encoded = definition.encode_to_vec();
+        assert_eq!(super::pb::Definition::decode(encoded.as_slice()), Ok(definition));
     }
 }
