@@ -2,9 +2,9 @@ use std::pin::Pin;
 
 pub use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 
-use crate::grpc::driver::ImageBuildFrontendOptions;
 use crate::grpc::driver::ImageBuildLoadInput;
 use crate::grpc::driver::ImageExporterEnum;
+use crate::grpc::driver::{DefinitionSolveResult, ImageBuildFrontendOptions};
 use crate::grpc::BuildRef;
 
 use crate::grpc::registry::ImageRegistryOutput;
@@ -145,7 +145,7 @@ impl super::SolveDefinition for BuildkitDaemon {
     async fn solve_definition(
         &self,
         request: super::DefinitionSolveRequest,
-    ) -> Result<(), GrpcError> {
+    ) -> Result<DefinitionSolveResult, GrpcError> {
         super::solve_definition(self, request).await
     }
 }
