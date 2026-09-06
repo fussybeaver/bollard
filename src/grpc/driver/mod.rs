@@ -1581,7 +1581,7 @@ mod tests {
             .entitlement(Entitlement::NetworkHost)
             .entitlement(Entitlement::SecurityInsecure)
             .build();
-        let (request, _) = build_definition_solve_request(
+        let (request, build_ref) = build_definition_solve_request(
             bollard_buildkit_proto::pb::Definition::default(),
             &DefinitionExporter::Local(PathBuf::from("/out")),
             &options,
@@ -1589,6 +1589,8 @@ mod tests {
             None,
         );
 
+        assert!(!build_ref.as_ref().is_empty());
+        assert_eq!(request.r#ref, build_ref.as_ref());
         assert_eq!(
             request.entitlements,
             vec![
