@@ -1899,6 +1899,7 @@ mod tests {
         let mut builder = builder();
         builder.name("project-builder");
         builder.network("host");
+        builder.allow_entitlement(Entitlement::SecurityInsecure);
 
         let host_config = builder.inner.desired_host_config_for_test();
         let mut existing_host_config = host_config.clone();
@@ -1934,6 +1935,23 @@ mod tests {
             &builder.inner.resource_id
         )
         .is_ok());
+
+        let mut incompatible = inspect;
+        incompatible
+            .config
+            .as_mut()
+            .expect("container config")
+            .cmd
+            .as_mut()
+            .expect("container command")
+            .retain(|arg| arg != Entitlement::SecurityInsecure.daemon_argument());
+        assert!(compatible_container(
+            &builder.inner,
+            &incompatible,
+            &host_config,
+            &builder.inner.resource_id
+        )
+        .is_err());
     }
 
     #[test]
