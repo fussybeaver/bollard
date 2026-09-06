@@ -391,15 +391,18 @@ impl DefinitionSolveOptionsBuilder {
     }
 
     /// Enable SSH agent forwarding for the solve.
+    ///
+    /// `true` is exactly equivalent to registering `DefaultAgentSocket` under
+    /// the `default` ID. Registering an ID again replaces its previous source;
+    /// `false` removes only the `default` entry and leaves named agents intact.
     pub fn enable_ssh(mut self, enable: bool) -> Self {
         if enable {
-            self.options.ssh.insert(
-                String::from(super::DEFAULT_SSH_AGENT_ID),
-                super::SshAgentSource::DefaultAgentSocket,
+            return self.set_ssh_agent(
+                super::DEFAULT_SSH_AGENT_ID,
+                &super::SshAgentSource::DefaultAgentSocket,
             );
-        } else {
-            self.options.ssh.remove(super::DEFAULT_SSH_AGENT_ID);
         }
+        self.options.ssh.remove(super::DEFAULT_SSH_AGENT_ID);
         self
     }
 
