@@ -967,7 +967,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
 
         let named_options =
             local_source_options_builder("context", source.path(), image_registry.as_deref())?
-                .set_ssh_agent("deploy", &SshAgentSource::Socket(socket))
+                .set_ssh_agent(Some("deploy"), &SshAgentSource::Socket(socket))
                 .build();
         SolveDefinition::solve_definition(
             &driver,
