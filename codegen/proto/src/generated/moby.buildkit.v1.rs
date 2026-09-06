@@ -426,6 +426,7 @@ impl BuildHistoryEventType {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod control_client {
     #![allow(
         unused_variables,
@@ -733,6 +734,7 @@ pub mod control_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod control_server {
     #![allow(
         unused_variables,

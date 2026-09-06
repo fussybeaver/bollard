@@ -13,6 +13,7 @@ pub struct CheckAgentRequest {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CheckAgentResponse {}
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod ssh_client {
     #![allow(
         unused_variables,
@@ -154,6 +155,7 @@ pub mod ssh_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod ssh_server {
     #![allow(
         unused_variables,

@@ -243,10 +243,9 @@ dependencies = [
 
 [[package]]
 name = "bollard-buildkit-proto"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "prost",
- "prost-types",
  "tonic",
  "tonic-prost",
 ]

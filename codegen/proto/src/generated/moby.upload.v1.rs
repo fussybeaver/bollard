@@ -6,6 +6,7 @@ pub struct BytesMessage {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod upload_client {
     #![allow(
         unused_variables,
@@ -123,6 +124,7 @@ pub mod upload_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod upload_server {
     #![allow(
         unused_variables,
