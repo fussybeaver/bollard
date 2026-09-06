@@ -221,6 +221,12 @@ impl MarshalOpts {
         self
     }
 
+    /// Marshal without a graph-wide default platform.
+    pub fn without_platform(mut self) -> Self {
+        self.platform = None;
+        self
+    }
+
     /// Marshal with the given worker constraint filter.
     pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
         self.worker_filters.push(filter.as_ref().to_string());
@@ -532,6 +538,12 @@ impl From<Shlex> for RunOpts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_builder_supports_platformless_marshalling() {
+        let opts = MarshalOpts::default().without_platform();
+        assert_eq!(opts.platform(), None);
+    }
 
     #[test]
     fn dir_accumulates_relative_paths_like_go() {
