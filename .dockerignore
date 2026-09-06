@@ -9,3 +9,4 @@ main.rs
 **/.settings
 **/.project
 **/.factorypath
+codegen/llb-parity/go-parity

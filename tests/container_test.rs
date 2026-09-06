@@ -568,21 +568,25 @@ async fn prune_containers_test(docker: Docker) -> Result<(), Error> {
         ))
         .await?;
 
+    #[allow(unused_mut)]
+    let mut known_images = vec![
+        "bollard",
+        "registry:2",
+        "stefanscherer/registry-windows",
+        // Containers existing on CircleCI after a prune
+        "docker.io/library/docker:29.3",
+        "public.ecr.aws/eks-distro/kubernetes/pause:3.6",
+    ];
+    #[cfg(feature = "buildkit_providerless")]
+    known_images.push(bollard::grpc::driver::docker_container::DEFAULT_IMAGE);
+
     assert_eq!(
         0,
         result
             .iter()
-            .filter(|r| vec![
-                "bollard",
-                "registry:2",
-                "stefanscherer/registry-windows",
-                "moby/buildkit:master",
-                // Containers existing on CircleCI after a prune
-                "docker.io/library/docker:29.3",
-                "public.ecr.aws/eks-distro/kubernetes/pause:3.6"
-            ]
-            .into_iter()
-            .all(|v| v != r.image.as_ref().unwrap()))
+            .filter(|r| known_images
+                .iter()
+                .all(|image| *image != r.image.as_deref().unwrap_or_default()))
             .count()
     );
 
