@@ -1,0 +1,288 @@
+{
+  "generator_version": "2",
+  "buildkit_version": "v0.29.0",
+  "fixtures": [
+    {
+      "file": "image_run.llb.pb",
+      "fixture": "image_run",
+      "sha256": "dc6300e91d32f61618daa8a08da95383f0deaffb51c09db0074344d07fd6e9da",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "image_resolve_force_pull.llb.pb",
+      "fixture": "image_resolve_force_pull",
+      "sha256": "64f5fc74f42a10aea13129e2d604117e49e7e6c10ed0fcd1313ee7c3694f484a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "image_resolve_prefer_local.llb.pb",
+      "fixture": "image_resolve_prefer_local",
+      "sha256": "2fc8a49c5a4ed83adc942d904c78b4cf1e65e3a820c0e67af8b93c2b140c20ab",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_arm64.llb.pb",
+      "fixture": "platform_arm64",
+      "sha256": "000a13b90f056d790c4e716a9123a5d96a8f9fdf6070e96dc9c84f37b44a4ff5",
+      "platform": "linux/arm64"
+    },
+    {
+      "file": "platform_arm_v7.llb.pb",
+      "fixture": "platform_arm_v7",
+      "sha256": "eb3360276e80d75dd1d75cef89e19392561043d1934a80d34a1c1f984c95c02e",
+      "platform": "linux/arm/v7"
+    },
+    {
+      "file": "platform_image_override.llb.pb",
+      "fixture": "platform_image_override",
+      "sha256": "0669795e1465196cbf84f49979c1880f62f6eec3d4c9cba35c31fbbe9cd3529c",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_state_override.llb.pb",
+      "fixture": "platform_state_override",
+      "sha256": "eaaf0075d83b3f7b4f2455ea84b5e7b2d950690c6f734f67b114e7bb58e447b8",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_mixed.llb.pb",
+      "fixture": "platform_mixed",
+      "sha256": "f09ac367561f9bde2568dbaa2d8014ec256107445d5016e90842814a087f84d1",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "platform_shared_subgraph.llb.pb",
+      "fixture": "platform_shared_subgraph",
+      "sha256": "fe182adf30c057134dd9bcab8115e13154428e9eb90b7492e7dc5d265b2289cd",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "exec_default_meta.llb.pb",
+      "fixture": "exec_default_meta",
+      "sha256": "86f5dd83103474bce3c06654db0f0ae3d9dd6bdf823ef942d930baaefbce7fe3",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "exec_custom_name_ignore_cache.llb.pb",
+      "fixture": "exec_custom_name_ignore_cache",
+      "sha256": "eaa3e80502558c58529e7aa0112f32b0ac3664bba44fa35076746f48cef4fde7",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "merge.llb.pb",
+      "fixture": "merge",
+      "sha256": "070aa9fa3c98020818dd5d7b76088625884ec3169ba6444dc4f8b7d6373b926c",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "merge_custom_name.llb.pb",
+      "fixture": "merge_custom_name",
+      "sha256": "90ce7a51de62056e84012dc09153df1e70d96548102297309b8777017a25ff69",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "copy_all_flags.llb.pb",
+      "fixture": "copy_all_flags",
+      "sha256": "bfd274226440b3366292e88caa01034b079800ef85c8dbd706e96b65c51cd3d6",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "mkdir_parents.llb.pb",
+      "fixture": "mkdir_parents",
+      "sha256": "155476da12df33ebd01a2b58b8b4a63f8e752e676f19016657075f56bcb9a49a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "mkfile.llb.pb",
+      "fixture": "mkfile",
+      "sha256": "2ded9497595cdcd6123812904eb46749b4772db47b7b659c5a6b05a752674100",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "rm_wildcard.llb.pb",
+      "fixture": "rm_wildcard",
+      "sha256": "c9bf38ddb8c1a54363668710b3f348eb70a29f665eb741c9a1deb5b8670c3a76",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "symlink.llb.pb",
+      "fixture": "symlink",
+      "sha256": "f19ebdb464906f553c2a32aa5acb8cde7a33a74b24d470f1a3f9ca7db08b373d",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_mkdir.llb.pb",
+      "fixture": "file_ops_mkdir",
+      "sha256": "04b947dfb1fce3559f9dcb93f6ab159d598409317cd0652710cb02d7af03ec69",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_mkfile.llb.pb",
+      "fixture": "file_ops_mkfile",
+      "sha256": "fc1d4e9fc2a3105d558f38ed4b411d7ef777810a5b1cf50fb171c56beacf4f0a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_symlink.llb.pb",
+      "fixture": "file_ops_symlink",
+      "sha256": "63989eefe1daab2c67983f9c998bf69c78c68a25479b012efd799fdb2d71352a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_copy.llb.pb",
+      "fixture": "file_ops_copy",
+      "sha256": "01e4611abdbe66f0121b57389b586dace2e4160def61bf6472a8f3149fc53b96",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_rm.llb.pb",
+      "fixture": "file_ops_rm",
+      "sha256": "2bfc793925c9b157e5b2a7a2e02d571780634f3d24f0fe3f1d13cfc7ea441a6a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_ops_rm_allow_not_found.llb.pb",
+      "fixture": "file_ops_rm_allow_not_found",
+      "sha256": "1cf88ea8230742bbbd2904373ae3312e46cc26498528f1ba4e556491a6ce6cae",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "secret_file_default.llb.pb",
+      "fixture": "secret_file_default",
+      "sha256": "e31f973f39bfa351bf543c3ac425e57e589d4996ee499365fbb19df17d5fb34a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "secret_file_optional.llb.pb",
+      "fixture": "secret_file_optional",
+      "sha256": "692b315ee9a4bb6964a8d0b86a07de9fa36129c99041104d03c8209db1a1bd4a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "secret_file_permissions.llb.pb",
+      "fixture": "secret_file_permissions",
+      "sha256": "ac22f25b450998ea5387e420ccd374d268cf471107f7a95918b8bd907aa71b86",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "secret_as_env.llb.pb",
+      "fixture": "secret_as_env",
+      "sha256": "a852674c4137bf2c4c9c97d3c57fdff8de86e02f69ed29b62d76786953c3c0e2",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "secret_env_explicit_name.llb.pb",
+      "fixture": "secret_env_explicit_name",
+      "sha256": "a34e759995c86733da1a685b0c0fb32123c8d3384a3c2f5843de7fdc1d51d2d3",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "local_all_attrs.llb.pb",
+      "fixture": "local_all_attrs",
+      "sha256": "9742c00e8985ffeaf018bd48c2129ac43ff7df65f684a61856001c361e5ee1f1",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "cache_mount_shared.llb.pb",
+      "fixture": "cache_mount_shared",
+      "sha256": "6e1bdc324ab37fc19b6f42e51b6cc605e3f729e9fa4d7ff8e6a0934b02c8db17",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "cache_mount_private.llb.pb",
+      "fixture": "cache_mount_private",
+      "sha256": "809cf830167b4085167cd36b9653f4bff158d5b26bb2f093eed3836e8bc49f4c",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "cache_mount_locked.llb.pb",
+      "fixture": "cache_mount_locked",
+      "sha256": "73d5a14ad2a50f4ea2d40337f1efb89eceb6fdd091a0535a8f2b346074a33944",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "multi_mount_ordering.llb.pb",
+      "fixture": "multi_mount_ordering",
+      "sha256": "e00e8df95aee7f5c5830d7e219981a2864157cda41ae3fcd7379568ef3fc00e2",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "file_operations_chain.llb.pb",
+      "fixture": "file_operations_chain",
+      "sha256": "cafcd75337f6807dd342f68d2a271c103af84880b1d3af800c77b631df9fd32c",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_image.llb.pb",
+      "fixture": "differential_image",
+      "sha256": "88196df819acce4a6cb92e581b7a76f7ac384a06bb712e8d919ec9435715ad4f",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_merge_alpine.llb.pb",
+      "fixture": "differential_merge_alpine",
+      "sha256": "2441bf4d20a91f87b63a16d1387a859869486ba835bd30c674d2de8790087513",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_file_secret.llb.pb",
+      "fixture": "differential_file_secret",
+      "sha256": "6c098291a7d3469f9a29fb8b6d70966137caadbdbefc68003e921b700f62b1d0",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_env_secret.llb.pb",
+      "fixture": "differential_env_secret",
+      "sha256": "c58f8993d247ad358151dcb5211f8f8ea7c6a07cb58b23aee7806257c24beac7",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "differential_file_operations_allow_not_found.llb.pb",
+      "fixture": "differential_file_operations_allow_not_found",
+      "sha256": "1cf88ea8230742bbbd2904373ae3312e46cc26498528f1ba4e556491a6ce6cae",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "scratch_direct.llb.pb",
+      "fixture": "scratch_direct",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "scratch_exec_root.llb.pb",
+      "fixture": "scratch_exec_root",
+      "sha256": "95be0200c12148d85828d0005626f0e3924d4f7360db6d5640fc552405c99e6c",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "scratch_bind_mount.llb.pb",
+      "fixture": "scratch_bind_mount",
+      "sha256": "69c659d4d2016b5c779141518eee261679f81fbbfa204e8d6bf30e7b983c245a",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "ssh_default.llb.pb",
+      "fixture": "ssh_default",
+      "sha256": "da5b51edcf3ca7d215c66207eb4f88e40fb8e6df8b853926fabb7ad16d938cea",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "ssh_explicit_ordering.llb.pb",
+      "fixture": "ssh_explicit_ordering",
+      "sha256": "bd7fa2fc1c1c6ff8adcbf491f4c00c2db8f92b987aec879999c1518f0ed2ffd5",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "exec_network_host.llb.pb",
+      "fixture": "exec_network_host",
+      "sha256": "3d61c5081c278f491adc0418094710c216334b55d1047073057440ebdd1fbb99",
+      "platform": "linux/amd64"
+    },
+    {
+      "file": "exec_security_insecure.llb.pb",
+      "fixture": "exec_security_insecure",
+      "sha256": "2f9f2e100e33a79684950b433ce6d10692635c540aac7a19bc80bad7f0c5d8d0",
+      "platform": "linux/amd64"
+    }
+  ]
+}
