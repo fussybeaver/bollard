@@ -24,7 +24,7 @@ members = [
 default = ["http", "pipe"]
 # Enable Buildkit-enabled docker image building
 buildkit = ["buildkit_providerless", "ssl"]
-buildkit_providerless = ["num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl_providerless", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags", "dep:cap-std", "dep:cap-fs-ext", "dep:glob", "dep:regex", "dep:xattr"]
+buildkit_providerless = ["num", "rand", "tokio/fs", "tokio-stream", "tokio-util/io", "tonic", "tower-service", "ssl_providerless", "bollard-stubs/buildkit", "bollard-buildkit-proto", "dep:async-stream", "dep:bitflags", "dep:cap-std", "dep:cap-fs-ext", "dep:glob", "dep:regex", "dep:xattr", "dep:prost"]
 # Enable tests specifically for the http connector
 test_http = []
 # Enable tests specifically for the ssh connector
@@ -80,6 +80,7 @@ hyper-util = { version = "0.1.5", optional = true, features = ["http1", "client-
 log = "0.4"
 openssh = { version = "0.11.5", optional = true }
 pin-project-lite = "0.2"
+prost = { version = "0.14", optional = true }
 num = { version = "0.4", optional = true }
 rand = { version = "0.10", default-features = false, features = ["thread_rng"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["std"], optional = true}

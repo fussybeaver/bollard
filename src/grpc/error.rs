@@ -5,6 +5,15 @@ use std::{num::TryFromIntError, path::PathBuf};
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
+    /// A direct LLB definition could not be decoded or contains an unsupported
+    /// direct-solve source configuration.
+    #[error("invalid direct LLB definition at operation {index}: {reason}")]
+    InvalidDefinition {
+        /// The zero-based operation index in the definition.
+        index: usize,
+        /// The validation failure.
+        reason: String,
+    },
     /// A named local source mount could not be opened as a directory.
     #[error("invalid local mount `{name}` at `{path}`: {reason}")]
     InvalidLocalMount {

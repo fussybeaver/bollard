@@ -6,6 +6,7 @@
 pub mod build;
 /// A package of GRPC buildkit connection implementations
 pub mod driver;
+pub use driver::Entitlement;
 /// Errors for the GRPC modules
 pub mod error;
 /// End-user buildkit export functions
@@ -1795,6 +1796,7 @@ impl SshProvider {
 
 #[tonic::async_trait]
 impl Ssh for SshProvider {
+    #[cfg(not(windows))]
     async fn check_agent(
         &self,
         request: Request<CheckAgentRequest>,
@@ -1806,6 +1808,16 @@ impl Ssh for SshProvider {
         self.socket_for(id)
             .map_err(|e| Status::from(std::io::Error::other(e)))?;
         Ok(Response::new(CheckAgentResponse {}))
+    }
+
+    #[cfg(windows)]
+    async fn check_agent(
+        &self,
+        _request: Request<CheckAgentRequest>,
+    ) -> Result<Response<CheckAgentResponse>, Status> {
+        Err(Status::unimplemented(
+            "SSH agent forwarding is not supported on Windows",
+        ))
     }
 
     /// Server streaming response type for the ForwardAgent method.
@@ -1908,7 +1920,9 @@ impl Ssh for SshProvider {
         &self,
         _request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
-        unimplemented!();
+        Err(Status::unimplemented(
+            "SSH agent forwarding is not supported on Windows",
+        ))
     }
 }
 
@@ -2999,6 +3013,7 @@ mod tests {
         )]))
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn check_agent_accepts_a_registered_named_agent() {
         let provider = provider_with("deploy", "/tmp/deploy.sock");
@@ -3013,6 +3028,7 @@ mod tests {
 
     /// BuildKit sends an empty id for a `RUN --mount=type=ssh` that names
     /// none, so this is the path `enable_ssh(true)` alone has to serve.
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn check_agent_maps_an_empty_id_onto_the_default_agent() {
         let provider = provider_with("default", "/tmp/default.sock");
@@ -3023,6 +3039,7 @@ mod tests {
             .expect("an empty id must resolve to the default agent");
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn check_agent_rejects_an_agent_that_was_never_registered() {
         let provider = provider_with("deploy", "/tmp/deploy.sock");
@@ -3039,6 +3056,19 @@ mod tests {
             "the error should name the id the build asked for, got: {}",
             status.message()
         );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn ssh_agent_forwarding_is_structured_as_unsupported_on_windows() {
+        let provider = provider_with("default", "/tmp/default.sock");
+
+        let status = provider
+            .check_agent(Request::new(CheckAgentRequest { id: String::new() }))
+            .await
+            .expect_err("SSH forwarding is unsupported on Windows");
+
+        assert_eq!(status.code(), tonic::Code::Unimplemented);
     }
 
     /// A failed dial has to say *which* agent failed, or a build with several
