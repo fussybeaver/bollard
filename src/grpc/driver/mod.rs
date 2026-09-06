@@ -79,6 +79,10 @@ pub(crate) trait Driver {
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
 }
 
+mod private {
+    pub trait SolveDefinitionSealed {}
+}
+
 /// Cleans up driver resources created for a solve.
 ///
 /// Implementations must be idempotent: when a solve future is cancelled while
@@ -207,6 +211,7 @@ impl Interceptor for DriverInterceptor {
 /// Parameterises the [`docker_container::DockerContainer`] or [`moby::Moby`] driver with an exporter configuration. See
 /// <https://docs.docker.com/build/exporters/oci-docker/>
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ImageExporterEnum {
     /// Export using the `oci` exporter.
     OCI(ImageExporterRequest),
@@ -488,9 +493,9 @@ impl DefinitionSolveOptionsBuilder {
 #[derive(Clone)]
 pub struct DefinitionSolveRequest {
     /// The pre-built LLB definition to solve.
-    pub definition: bollard_buildkit_proto::pb::Definition,
+    pub(crate) definition: bollard_buildkit_proto::pb::Definition,
     /// Where to export the result.
-    pub exporter: DefinitionExporter,
+    pub(crate) exporter: DefinitionExporter,
     options: DefinitionSolveOptions,
     build_ref: Option<BuildRef>,
 }
@@ -584,10 +589,30 @@ impl DefinitionSolveRequest {
         self.build_ref = Some(build_ref);
         self
     }
+
+    /// Return the pre-built LLB definition.
+    pub fn definition(&self) -> &bollard_buildkit_proto::pb::Definition {
+        &self.definition
+    }
+
+    /// Return the configured exporter.
+    pub fn exporter(&self) -> &DefinitionExporter {
+        &self.exporter
+    }
+
+    /// Return the configured solve options.
+    pub fn options(&self) -> &DefinitionSolveOptions {
+        &self.options
+    }
+
+    /// Return the optional BuildKit build reference.
+    pub fn build_ref(&self) -> Option<&BuildRef> {
+        self.build_ref.as_ref()
+    }
 }
 
 /// Trait for solving a pre-built LLB definition without a frontend.
-pub trait SolveDefinition {
+pub trait SolveDefinition: private::SolveDefinitionSealed {
     /// Solve a direct LLB definition and export its result.
     async fn solve_definition(
         &self,

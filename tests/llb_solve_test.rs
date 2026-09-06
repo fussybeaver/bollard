@@ -1098,5 +1098,5 @@ fn direct_definition_request_accepts_known_valid_protobuf() {
         minimal_mkfile_definition(),
         DefinitionExporter::Local(std::path::PathBuf::from("/tmp/output")),
     );
-    assert_eq!(request.definition.def.len(), 2);
+    assert_eq!(request.definition().def.len(), 2);
 }

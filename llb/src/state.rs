@@ -7,11 +7,16 @@ use std::sync::Arc;
 use crate::definition::Definition;
 use crate::error::LlbError;
 use crate::ops::exec::{
-    AddSecret, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode, Shlex,
+    AddSecret, AddSshSocket, CacheSharingMode, ExecOp, Mount, MountType, NetMode, SecurityMode,
+    Shlex,
 };
 use crate::ops::file::{FileAction, FileOp, FileOpts};
 use crate::ops::{Context, OperationOutput};
 use crate::platform::Platform;
+
+pub(crate) mod private {
+    pub trait RunOptSealed {}
+}
 
 /// A filesystem state in the LLB graph. Cheaply cloneable (Arc-backed).
 #[derive(Clone, Debug)]
@@ -188,9 +193,9 @@ impl Constraints {
 pub struct MarshalOpts {
     /// Graph-wide default platform for real operation vertices without a
     /// state-local platform.
-    pub platform: Option<Platform>,
+    pub(crate) platform: Option<Platform>,
     /// Worker constraint filters applied to real operation vertices.
-    pub worker_filters: Vec<String>,
+    pub(crate) worker_filters: Vec<String>,
 }
 
 impl Default for MarshalOpts {
@@ -220,6 +225,16 @@ impl MarshalOpts {
     pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
         self.worker_filters.push(filter.as_ref().to_string());
         self
+    }
+
+    /// Return the graph-wide default platform.
+    pub fn platform(&self) -> Option<&Platform> {
+        self.platform.as_ref()
+    }
+
+    /// Return the worker constraint filters.
+    pub fn worker_filters(&self) -> &[String] {
+        &self.worker_filters
     }
 }
 
@@ -299,6 +314,12 @@ impl ExecState {
         self
     }
 
+    /// Add an SSH agent socket to this exec step.
+    pub fn add_ssh_socket(mut self, opts: impl Into<AddSshSocket>) -> Self {
+        self.run.ssh.push(opts.into());
+        self
+    }
+
     /// Set a custom name for this exec step.
     pub fn with_custom_name(mut self, name: impl AsRef<str>) -> Self {
         self.run.custom_name = Some(name.as_ref().to_string());
@@ -315,21 +336,23 @@ impl ExecState {
 #[derive(Clone, Debug, Default)]
 pub struct RunOpts {
     /// Command arguments.
-    pub args: Vec<String>,
+    pub(crate) args: Vec<String>,
     /// Environment variables.
-    pub env: Vec<(String, String)>,
+    pub(crate) env: Vec<(String, String)>,
     /// Mounts.
-    pub mounts: Vec<Mount>,
+    pub(crate) mounts: Vec<Mount>,
     /// Secret mounts / env vars.
-    pub secrets: Vec<AddSecret>,
+    pub(crate) secrets: Vec<AddSecret>,
+    /// SSH agent sockets, retained in declaration order.
+    pub(crate) ssh: Vec<AddSshSocket>,
     /// Custom name for the exec vertex.
-    pub custom_name: Option<String>,
+    pub(crate) custom_name: Option<String>,
     /// Network mode.
-    pub net: NetMode,
+    pub(crate) net: NetMode,
     /// Security mode.
-    pub security: SecurityMode,
+    pub(crate) security: SecurityMode,
     /// Ignore cache.
-    pub ignore_cache: bool,
+    pub(crate) ignore_cache: bool,
 }
 
 impl RunOpts {
@@ -372,6 +395,12 @@ impl RunOpts {
         self
     }
 
+    /// Ignore the cache for this exec vertex.
+    pub fn with_ignore_cache(mut self, ignore_cache: bool) -> Self {
+        self.ignore_cache = ignore_cache;
+        self
+    }
+
     /// Add a bind mount.
     pub fn with_mount(mut self, target: impl AsRef<str>, src: crate::State) -> Self {
         self.mounts.push(Mount {
@@ -384,10 +413,93 @@ impl RunOpts {
         self
     }
 
+    /// Add a scratch mount.
+    pub fn with_mount_scratch(mut self, target: impl AsRef<str>) -> Self {
+        self.mounts.push(Mount {
+            target: target.as_ref().to_string(),
+            source: None,
+            mount_type: MountType::Scratch,
+            readonly: false,
+            output: None,
+        });
+        self
+    }
+
+    /// Add a cache mount.
+    pub fn with_mount_cache(
+        mut self,
+        target: impl AsRef<str>,
+        id: impl AsRef<str>,
+        mode: CacheSharingMode,
+    ) -> Self {
+        self.mounts.push(Mount {
+            target: target.as_ref().to_string(),
+            source: None,
+            mount_type: MountType::Cache {
+                id: id.as_ref().to_string(),
+                mode,
+            },
+            readonly: false,
+            output: None,
+        });
+        self
+    }
+
     /// Add a secret.
     pub fn with_secret(mut self, opts: impl Into<AddSecret>) -> Self {
         self.secrets.push(opts.into());
         self
+    }
+
+    /// Add an SSH agent socket.
+    pub fn with_ssh_socket(mut self, opts: impl Into<AddSshSocket>) -> Self {
+        self.ssh.push(opts.into());
+        self
+    }
+
+    /// Return the command arguments.
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// Return the environment variables.
+    pub fn env(&self) -> &[(String, String)] {
+        &self.env
+    }
+
+    /// Return the ordinary mounts.
+    pub fn mounts(&self) -> &[Mount] {
+        &self.mounts
+    }
+
+    /// Return the secret options.
+    pub fn secrets(&self) -> &[AddSecret] {
+        &self.secrets
+    }
+
+    /// Return the SSH socket options in declaration order.
+    pub fn ssh_sockets(&self) -> &[AddSshSocket] {
+        &self.ssh
+    }
+
+    /// Return the custom name, if any.
+    pub fn custom_name(&self) -> Option<&str> {
+        self.custom_name.as_deref()
+    }
+
+    /// Return the network mode.
+    pub fn net(&self) -> NetMode {
+        self.net
+    }
+
+    /// Return the security mode.
+    pub fn security(&self) -> SecurityMode {
+        self.security
+    }
+
+    /// Return whether this vertex ignores the cache.
+    pub fn ignore_cache(&self) -> bool {
+        self.ignore_cache
     }
 }
 
@@ -403,7 +515,7 @@ fn replace_env(env: &mut Vec<(String, String)>, key: String, value: String) {
 }
 
 /// Marker trait for types that can be applied to an [`ExecState`].
-pub trait RunOpt {
+pub trait RunOpt: private::RunOptSealed {
     /// Apply this option to the exec state.
     fn apply(self, exec: &mut ExecState);
 }

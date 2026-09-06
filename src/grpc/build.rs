@@ -49,6 +49,7 @@ pub struct ImageBuildFrontendOptions {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 /// Specifies how secrets are populated into the buildkit build without persisting into the final image.
 pub enum SecretSource {
     /// Sets the secret source as a local file, must be associated with appropriate Dockerfile

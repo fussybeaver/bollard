@@ -1620,6 +1620,8 @@ impl super::SolveDefinition for DockerContainer {
     }
 }
 
+impl super::private::SolveDefinitionSealed for DockerContainer {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

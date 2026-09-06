@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 
 /// How a cache mount is shared between concurrent builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CacheSharingMode {
     /// Concurrent reads, no write locking (default; matches Go's
     /// `AsPersistentCacheDir` default).
@@ -35,6 +36,7 @@ impl CacheSharingMode {
 
 /// Network mode for an exec step.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum NetMode {
     /// Use a sandboxed network (default for most builds).
     #[default]
@@ -59,6 +61,7 @@ impl NetMode {
 
 /// Security mode for an exec step.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SecurityMode {
     /// Run in a sandbox (default).
     #[default]
@@ -81,19 +84,47 @@ impl SecurityMode {
 #[derive(Clone, Debug)]
 pub struct Mount {
     /// Mount destination path inside the container.
-    pub target: String,
+    pub(crate) target: String,
     /// Source state, if any (`None` for scratch mounts).
-    pub source: Option<State>,
+    pub(crate) source: Option<State>,
     /// Mount type.
-    pub mount_type: MountType,
+    pub(crate) mount_type: MountType,
     /// Whether the mount is read-only.
-    pub readonly: bool,
+    pub(crate) readonly: bool,
     /// Output index exposed by this mount, if it is an output mount.
-    pub output: Option<u32>,
+    pub(crate) output: Option<u32>,
+}
+
+impl Mount {
+    /// Return the mount destination.
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// Return the source state, if this mount has one.
+    pub fn source(&self) -> Option<&State> {
+        self.source.as_ref()
+    }
+
+    /// Return the mount type.
+    pub fn mount_type(&self) -> &MountType {
+        &self.mount_type
+    }
+
+    /// Return whether the mount is read-only.
+    pub fn readonly(&self) -> bool {
+        self.readonly
+    }
+
+    /// Return the output index, if this mount exposes one.
+    pub fn output(&self) -> Option<u32> {
+        self.output
+    }
 }
 
 /// Mount type for [`Mount`].
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum MountType {
     /// Bind mount from an input state.
     Bind,
@@ -121,29 +152,27 @@ pub enum MountType {
         /// File mode for a file-mounted secret.
         mode: u32,
     },
-    /// SSH agent mount.
-    Ssh,
 }
 
 /// Add a secret to an exec step.
 #[derive(Clone, Debug)]
 pub struct AddSecret {
     /// ID of the secret.
-    pub id: String,
+    pub(crate) id: String,
     /// Also expose the secret as an environment variable.
-    pub as_env: bool,
+    pub(crate) as_env: bool,
     /// Name of the environment variable when `as_env` is true.
-    pub env_name: Option<String>,
+    pub(crate) env_name: Option<String>,
     /// Optional file mount path when not exposed only as an env var.
-    pub target: Option<String>,
+    pub(crate) target: Option<String>,
     /// Whether the secret is optional.
-    pub optional: bool,
+    pub(crate) optional: bool,
     /// UID for a file-mounted secret.
-    pub uid: u32,
+    pub(crate) uid: u32,
     /// GID for a file-mounted secret.
-    pub gid: u32,
+    pub(crate) gid: u32,
     /// File mode for a file-mounted secret.
-    pub mode: u32,
+    pub(crate) mode: u32,
 }
 
 impl Default for AddSecret {
@@ -170,11 +199,215 @@ impl<S: Into<String>> From<S> for AddSecret {
     }
 }
 
+impl AddSecret {
+    /// Create secret options for the given secret ID.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Expose the secret as an environment variable.
+    pub fn with_as_env(mut self, as_env: bool) -> Self {
+        self.as_env = as_env;
+        self
+    }
+
+    /// Set the environment variable name.
+    pub fn with_env_name(mut self, name: impl Into<String>) -> Self {
+        self.env_name = Some(name.into());
+        self
+    }
+
+    /// Set the file mount target.
+    pub fn with_target(mut self, target: impl Into<String>) -> Self {
+        self.target = Some(target.into());
+        self
+    }
+
+    /// Set whether the secret may be unavailable.
+    pub fn with_optional(mut self, optional: bool) -> Self {
+        self.optional = optional;
+        self
+    }
+
+    /// Set the file mount UID.
+    pub fn with_uid(mut self, uid: u32) -> Self {
+        self.uid = uid;
+        self
+    }
+
+    /// Set the file mount GID.
+    pub fn with_gid(mut self, gid: u32) -> Self {
+        self.gid = gid;
+        self
+    }
+
+    /// Set the file mount mode.
+    pub fn with_mode(mut self, mode: u32) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Return the secret ID.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Return whether the secret is exposed as an environment variable.
+    pub fn as_env(&self) -> bool {
+        self.as_env
+    }
+
+    /// Return the configured environment variable name.
+    pub fn env_name(&self) -> Option<&str> {
+        self.env_name.as_deref()
+    }
+
+    /// Return the configured file mount target.
+    pub fn target(&self) -> Option<&str> {
+        self.target.as_deref()
+    }
+
+    /// Return whether the secret is optional.
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+
+    /// Return the file mount UID.
+    pub fn uid(&self) -> u32 {
+        self.uid
+    }
+
+    /// Return the file mount GID.
+    pub fn gid(&self) -> u32 {
+        self.gid
+    }
+
+    /// Return the file mount mode.
+    pub fn mode(&self) -> u32 {
+        self.mode
+    }
+}
+
+/// Add an SSH agent socket to an exec step.
+///
+/// This mirrors BuildKit's `llb.AddSSHSocket` option. An empty ID is resolved
+/// to BuildKit's `default` provider by the session layer.
+#[derive(Clone, Debug)]
+pub struct AddSshSocket {
+    /// BuildKit SSH provider ID. Empty selects the default provider.
+    pub(crate) id: String,
+    /// Socket target. An absent or empty target receives BuildKit's default.
+    pub(crate) target: Option<String>,
+    /// UID for the mounted socket.
+    pub(crate) uid: u32,
+    /// GID for the mounted socket.
+    pub(crate) gid: u32,
+    /// File mode for the mounted socket.
+    pub(crate) mode: u32,
+    /// Whether an unavailable provider is allowed.
+    pub(crate) optional: bool,
+}
+
+impl Default for AddSshSocket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AddSshSocket {
+    /// Create an SSH socket option with BuildKit-compatible defaults.
+    pub fn new() -> Self {
+        Self {
+            id: String::new(),
+            target: None,
+            uid: 0,
+            gid: 0,
+            mode: 0o600,
+            optional: false,
+        }
+    }
+
+    /// Set the BuildKit SSH provider ID.
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
+    }
+
+    /// Set the socket target path.
+    pub fn with_target(mut self, target: impl Into<String>) -> Self {
+        self.target = Some(target.into());
+        self
+    }
+
+    /// Set the socket UID.
+    pub fn with_uid(mut self, uid: u32) -> Self {
+        self.uid = uid;
+        self
+    }
+
+    /// Set the socket GID.
+    pub fn with_gid(mut self, gid: u32) -> Self {
+        self.gid = gid;
+        self
+    }
+
+    /// Set the socket file mode.
+    pub fn with_mode(mut self, mode: u32) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Set whether the provider may be unavailable.
+    pub fn with_optional(mut self, optional: bool) -> Self {
+        self.optional = optional;
+        self
+    }
+
+    /// Return the configured provider ID.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Return the configured target, if one was supplied.
+    pub fn target(&self) -> Option<&str> {
+        self.target.as_deref()
+    }
+
+    /// Return the configured UID.
+    pub fn uid(&self) -> u32 {
+        self.uid
+    }
+
+    /// Return the configured GID.
+    pub fn gid(&self) -> u32 {
+        self.gid
+    }
+
+    /// Return the configured file mode.
+    pub fn mode(&self) -> u32 {
+        self.mode
+    }
+
+    /// Return whether the provider is optional.
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+}
+
+impl<S: Into<String>> From<S> for AddSshSocket {
+    fn from(id: S) -> Self {
+        Self::new().with_id(id)
+    }
+}
+
 /// Command arguments for an exec step.
 #[derive(Clone, Debug)]
 pub struct Shlex {
     /// Argument vector.
-    pub args: Vec<String>,
+    pub(crate) args: Vec<String>,
 }
 
 impl Shlex {
@@ -198,6 +431,11 @@ impl Shlex {
         Self {
             args: args.into_iter().map(Into::into).collect(),
         }
+    }
+
+    /// Return the parsed argument vector.
+    pub fn args(&self) -> &[String] {
+        &self.args
     }
 }
 
@@ -265,27 +503,91 @@ fn validate_shell(command: &str) -> Result<(), LlbError> {
 #[derive(Clone, Debug)]
 pub struct AddMount {
     /// Destination path inside the container.
-    pub target: String,
+    pub(crate) target: String,
     /// Source state to mount.
-    pub source: State,
+    pub(crate) source: State,
     /// Mount options.
-    pub mount_type: MountType,
+    pub(crate) mount_type: MountType,
+}
+
+impl AddMount {
+    /// Create a bind mount option.
+    pub fn new(target: impl Into<String>, source: State) -> Self {
+        Self {
+            target: target.into(),
+            source,
+            mount_type: MountType::Bind,
+        }
+    }
+
+    /// Set the mount type.
+    pub fn with_mount_type(mut self, mount_type: MountType) -> Self {
+        self.mount_type = mount_type;
+        self
+    }
+
+    /// Return the mount target.
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// Return the source state.
+    pub fn source(&self) -> &State {
+        &self.source
+    }
+
+    /// Return the mount type.
+    pub fn mount_type(&self) -> &MountType {
+        &self.mount_type
+    }
 }
 
 /// Add an environment variable to an exec step.
 #[derive(Clone, Debug)]
 pub struct AddEnv {
     /// Environment variable name.
-    pub key: String,
+    pub(crate) key: String,
     /// Environment variable value.
-    pub value: String,
+    pub(crate) value: String,
+}
+
+impl AddEnv {
+    /// Create an environment-variable option.
+    pub fn new(key: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Return the environment variable name.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Return the environment variable value.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
 }
 
 /// Set a custom name (description) on an operation.
 #[derive(Clone, Debug)]
 pub struct WithCustomName {
     /// Human-readable name.
-    pub name: String,
+    pub(crate) name: String,
+}
+
+impl WithCustomName {
+    /// Create a custom-name option.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// Return the custom name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 /// A fully assembled execution operation.
@@ -380,6 +682,25 @@ impl Operation for ExecOp {
             pb_mounts.push(pb_mount);
         }
 
+        // SSH sockets are kept separate from ordinary mounts because Go
+        // numbers their default targets in declaration order, not sorted
+        // target order.
+        let ssh_mounts: Vec<(String, &AddSshSocket)> = self
+            .run
+            .ssh
+            .iter()
+            .enumerate()
+            .map(|(index, socket)| {
+                let target = socket
+                    .target
+                    .as_deref()
+                    .filter(|target| !target.is_empty())
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| format!("/run/buildkit/ssh_agent.{index}"));
+                (target, socket)
+            })
+            .collect();
+
         // File secrets are separate mounts in Go's ExecOp. The default wire
         // destination is the secret ID; environment-only secrets have no file
         // mount unless an explicit target is supplied.
@@ -407,7 +728,35 @@ impl Operation for ExecOp {
             ));
         }
 
-        let merged_env = merge_env(&self.env, &self.run.env);
+        for (target, socket) in &ssh_mounts {
+            pb_mounts.push(pb::Mount {
+                input: -1,
+                selector: String::new(),
+                dest: target.clone(),
+                output: 0,
+                readonly: false,
+                mount_type: pb::MountType::Ssh as i32,
+                tmpfs_opt: None,
+                cache_opt: None,
+                secret_opt: None,
+                ssh_opt: Some(pb::SshOpt {
+                    id: socket.id.clone(),
+                    uid: socket.uid,
+                    gid: socket.gid,
+                    mode: socket.mode,
+                    optional: socket.optional,
+                }),
+                result_id: String::new(),
+                content_cache: 0,
+            });
+        }
+
+        let mut merged_env = merge_env(&self.env, &self.run.env);
+        if let Some((target, _)) = ssh_mounts.first() {
+            if !merged_env.iter().any(|(key, _)| key == "SSH_AUTH_SOCK") {
+                merged_env.push((String::from("SSH_AUTH_SOCK"), target.clone()));
+            }
+        }
         let meta = pb::Meta {
             args: self.run.args.clone(),
             env: merged_env
@@ -522,18 +871,6 @@ fn build_pb_mount(mount: &Mount, input: i64) -> pb::Mount {
             }),
             None,
         ),
-        MountType::Ssh => (
-            pb::MountType::Ssh as i32,
-            None,
-            None,
-            Some(pb::SshOpt {
-                id: String::new(),
-                uid: 0,
-                gid: 0,
-                mode: 0,
-                optional: false,
-            }),
-        ),
     };
 
     pb::Mount {
@@ -598,10 +935,11 @@ fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
             MountType::Secret { .. } => {
                 metadata.caps.insert(cap::CAP_EXEC_MOUNT_SECRET.to_string());
             }
-            MountType::Ssh => {
-                metadata.caps.insert(cap::CAP_EXEC_MOUNT_SSH.to_string());
-            }
         }
+    }
+
+    if !run.ssh.is_empty() {
+        metadata.caps.insert(cap::CAP_EXEC_MOUNT_SSH.to_string());
     }
 
     if !run.secrets.is_empty() {
@@ -625,11 +963,15 @@ fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
     metadata
 }
 
+impl crate::state::private::RunOptSealed for Shlex {}
+
 impl crate::state::RunOpt for Shlex {
     fn apply(self, exec: &mut ExecState) {
         exec.run.args = self.args;
     }
 }
+
+impl crate::state::private::RunOptSealed for AddMount {}
 
 impl crate::state::RunOpt for AddMount {
     fn apply(self, exec: &mut ExecState) {
@@ -643,17 +985,31 @@ impl crate::state::RunOpt for AddMount {
     }
 }
 
+impl crate::state::private::RunOptSealed for AddSecret {}
+
 impl crate::state::RunOpt for AddSecret {
     fn apply(self, exec: &mut ExecState) {
         exec.run.secrets.push(self);
     }
 }
 
+impl crate::state::private::RunOptSealed for AddSshSocket {}
+
+impl crate::state::RunOpt for AddSshSocket {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.ssh.push(self);
+    }
+}
+
+impl crate::state::private::RunOptSealed for AddEnv {}
+
 impl crate::state::RunOpt for AddEnv {
     fn apply(self, exec: &mut ExecState) {
         exec.run.env.push((self.key, self.value));
     }
 }
+
+impl crate::state::private::RunOptSealed for WithCustomName {}
 
 impl crate::state::RunOpt for WithCustomName {
     fn apply(self, exec: &mut ExecState) {
@@ -876,6 +1232,124 @@ mod tests {
         assert_eq!(secret_opt.gid, 1001);
         assert_eq!(secret_opt.mode, 0o440);
         assert!(secret_opt.optional);
+    }
+
+    #[test]
+    fn ssh_mount_uses_go_defaults_and_declaration_order() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default()
+                .with_arg("true")
+                .with_mount_scratch("/z")
+                .with_mount_scratch("/a")
+                .with_ssh_socket(AddSshSocket::new())
+                .with_ssh_socket(AddSshSocket::new().with_id("deploy")),
+        )
+        .unwrap();
+        let (exec, ctx) = serialize_exec_op(op);
+        let ssh_mounts: Vec<&pb::Mount> = exec
+            .mounts
+            .iter()
+            .filter(|mount| mount.mount_type == pb::MountType::Ssh as i32)
+            .collect();
+
+        assert_eq!(ssh_mounts.len(), 2);
+        assert_eq!(ssh_mounts[0].dest, "/run/buildkit/ssh_agent.0");
+        assert_eq!(ssh_mounts[1].dest, "/run/buildkit/ssh_agent.1");
+        assert_eq!(ssh_mounts[0].input, -1);
+        assert_eq!(ssh_mounts[0].output, 0);
+        assert_eq!(ssh_mounts[0].ssh_opt.as_ref().unwrap().id, "");
+        assert_eq!(ssh_mounts[0].ssh_opt.as_ref().unwrap().mode, 0o600);
+        assert_eq!(ssh_mounts[1].ssh_opt.as_ref().unwrap().id, "deploy");
+        assert!(
+            exec.mounts
+                .iter()
+                .position(|mount| mount.dest == "/a")
+                .unwrap()
+                < exec
+                    .mounts
+                    .iter()
+                    .position(|mount| mount.dest == "/z")
+                    .unwrap()
+        );
+
+        let node = ctx.nodes().values().last().unwrap();
+        assert!(node.metadata.caps.contains(cap::CAP_EXEC_MOUNT_SSH));
+    }
+
+    #[test]
+    fn ssh_mount_preserves_explicit_options_and_target() {
+        let socket = AddSshSocket::new()
+            .with_id("deploy")
+            .with_target("/run/deploy.sock")
+            .with_uid(1000)
+            .with_gid(1001)
+            .with_mode(0o640)
+            .with_optional(true);
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default().with_arg("true").with_ssh_socket(socket),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let ssh = exec
+            .mounts
+            .iter()
+            .find(|mount| mount.mount_type == pb::MountType::Ssh as i32)
+            .unwrap();
+        let options = ssh.ssh_opt.as_ref().unwrap();
+
+        assert_eq!(ssh.dest, "/run/deploy.sock");
+        assert_eq!(options.id, "deploy");
+        assert_eq!(options.uid, 1000);
+        assert_eq!(options.gid, 1001);
+        assert_eq!(options.mode, 0o640);
+        assert!(options.optional);
+    }
+
+    #[test]
+    fn ssh_mount_sets_auth_sock_only_when_missing() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default()
+                .with_arg("true")
+                .with_ssh_socket(AddSshSocket::new().with_target("/run/agent.sock")),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let meta = exec.meta.as_ref().unwrap();
+        assert!(meta
+            .env
+            .contains(&String::from("SSH_AUTH_SOCK=/run/agent.sock")));
+
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::default()
+                .with_arg("true")
+                .with_env("SSH_AUTH_SOCK", "/caller/agent.sock")
+                .with_ssh_socket(AddSshSocket::new()),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let meta = exec.meta.as_ref().unwrap();
+        assert!(meta
+            .env
+            .contains(&String::from("SSH_AUTH_SOCK=/caller/agent.sock")));
+        assert!(!meta
+            .env
+            .contains(&String::from("SSH_AUTH_SOCK=/run/buildkit/ssh_agent.0")));
     }
 
     #[test]

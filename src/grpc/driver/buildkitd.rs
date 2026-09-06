@@ -149,3 +149,5 @@ impl super::SolveDefinition for BuildkitDaemon {
         super::solve_definition(self, request).await
     }
 }
+
+impl super::private::SolveDefinitionSealed for BuildkitDaemon {}
