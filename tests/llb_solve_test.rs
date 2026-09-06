@@ -7,6 +7,7 @@ use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 use bollard::grpc::driver::{
     DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
 };
+use bollard::grpc::{Entitlement, SshAgentSource};
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
 use futures_util::TryStreamExt;
@@ -136,6 +137,20 @@ fn local_source_copy_definition_with_patterns(
 }
 
 fn local_source_exec_definition(image_identifier: &str, name: &str) -> pb::Definition {
+    local_source_exec_definition_with_modes(
+        image_identifier,
+        name,
+        pb::NetMode::Unset,
+        pb::SecurityMode::Sandbox,
+    )
+}
+
+fn local_source_exec_definition_with_modes(
+    image_identifier: &str,
+    name: &str,
+    network: pb::NetMode,
+    security: pb::SecurityMode,
+) -> pb::Definition {
     let (local_bytes, local_digest) = source_operation(format!("local://{name}"));
     let (image_bytes, image_digest) = source_operation(image_identifier);
     let exec_operation = pb::Op {
@@ -178,6 +193,8 @@ fn local_source_exec_definition(image_identifier: &str, name: &str) -> pb::Defin
                     ..Default::default()
                 },
             ],
+            network: network as i32,
+            security: security as i32,
             ..Default::default()
         })),
         ..Default::default()
@@ -202,6 +219,68 @@ fn local_source_exec_definition(image_identifier: &str, name: &str) -> pb::Defin
     }
 }
 
+fn local_source_ssh_definition(
+    image_identifier: &str,
+    name: &str,
+    id: &str,
+    optional: bool,
+) -> pb::Definition {
+    let mut definition = local_source_exec_definition(image_identifier, name);
+    let mut operation = pb::Op::decode(definition.def[2].as_slice())
+        .expect("local source exec operation is valid protobuf");
+    if let Some(pb::op::Op::Exec(exec)) = operation.op.as_mut() {
+        exec.meta
+            .as_mut()
+            .expect("local source exec operation has metadata")
+            .args = vec![
+            String::from("/bin/sh"),
+            String::from("-c"),
+            String::from("test -S /run/buildkit/ssh_agent.0"),
+        ];
+        exec.mounts.push(pb::Mount {
+            dest: String::from("/run/buildkit/ssh_agent.0"),
+            mount_type: pb::MountType::Ssh as i32,
+            ssh_opt: Some(pb::SshOpt {
+                id: String::from(id),
+                optional,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+    }
+    definition.def[2] = operation.encode_to_vec();
+
+    let mut wrapper = pb::Op::decode(definition.def[3].as_slice())
+        .expect("local source wrapper operation is valid protobuf");
+    wrapper.inputs[0].digest = operation_digest(&operation);
+    definition.def[3] = wrapper.encode_to_vec();
+    definition
+}
+
+fn local_source_session_definition(name: &str) -> pb::Definition {
+    let mut definition = local_source_copy_definition(name, "/");
+    let mut source = pb::Op::decode(definition.def[0].as_slice())
+        .expect("local source operation is valid protobuf");
+    if let Some(pb::op::Op::Source(source)) = source.op.as_mut() {
+        source.attrs.insert(
+            String::from("local.session"),
+            String::from("caller-session"),
+        );
+    }
+    definition.def[0] = source.encode_to_vec();
+
+    let mut copy = pb::Op::decode(definition.def[1].as_slice())
+        .expect("local copy operation is valid protobuf");
+    copy.inputs[0].digest = operation_digest(&source);
+    definition.def[1] = copy.encode_to_vec();
+
+    let mut wrapper = pb::Op::decode(definition.def[2].as_slice())
+        .expect("local wrapper operation is valid protobuf");
+    wrapper.inputs[0].digest = operation_digest(&copy);
+    definition.def[2] = wrapper.encode_to_vec();
+    definition
+}
+
 fn alpine_image_reference() -> (String, Option<String>) {
     if std::env::var_os("DISABLE_REGISTRY").is_some() {
         return (String::from("docker.io/library/alpine:latest"), None);
@@ -214,11 +293,11 @@ fn alpine_image_reference() -> (String, Option<String>) {
     (format!("{host}/alpine:latest"), Some(host))
 }
 
-fn local_source_options(
+fn local_source_options_builder(
     source_name: &str,
     source_path: &Path,
     image_registry: Option<&str>,
-) -> Result<bollard::grpc::driver::DefinitionSolveOptions, Error> {
+) -> Result<DefinitionSolveOptionsBuilder, Error> {
     let mut builder = DefinitionSolveOptionsBuilder::new()
         .local_mount(source_name, source_path)
         .map_err(|error| Error::IOError {
@@ -227,7 +306,15 @@ fn local_source_options(
     if let Some(host) = image_registry {
         builder = builder.credential(host, integration_test_registry_credentials());
     }
-    Ok(builder.build())
+    Ok(builder)
+}
+
+fn local_source_options(
+    source_name: &str,
+    source_path: &Path,
+    image_registry: Option<&str>,
+) -> Result<bollard::grpc::driver::DefinitionSolveOptions, Error> {
+    Ok(local_source_options_builder(source_name, source_path, image_registry)?.build())
 }
 
 fn create_application_fixture() -> Result<tempfile::TempDir, Error> {
@@ -495,12 +582,13 @@ async fn direct_definition_solve_test(docker: Docker) -> Result<(), Error> {
                 definition.clone(),
                 DefinitionExporter::Local(output.to_path_buf()),
             );
-            SolveDefinition::solve_definition(&driver, request)
+            let result = SolveDefinition::solve_definition(&driver, request)
                 .await
                 .map_err(|error| Error::IOError {
                     err: std::io::Error::other(format!("direct definition solve failed: {error}")),
                 })?;
 
+            assert!(!result.build_ref().as_ref().is_empty());
             assert_eq!(std::fs::read(output.join("hello"))?, b"world");
         }
 
@@ -786,6 +874,158 @@ async fn local_source_unknown_name_test(docker: Docker) -> Result<(), Error> {
     result
 }
 
+async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error> {
+    let name = unique_builder_name();
+    let volume_name = format!("{name}_state");
+    let source = create_application_fixture()?;
+    let output = tempfile::tempdir()?;
+    let (image_ref, image_registry) = alpine_image_reference();
+
+    let result = async {
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name).network("host");
+        builder.allow_entitlement(Entitlement::SecurityInsecure);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+        let options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .entitlement(Entitlement::NetworkHost)
+                .entitlement(Entitlement::SecurityInsecure)
+                .build();
+        let request = DefinitionSolveRequest::new(
+            local_source_exec_definition_with_modes(
+                &format!("docker-image://{image_ref}"),
+                "context",
+                pb::NetMode::Host,
+                pb::SecurityMode::Insecure,
+            ),
+            DefinitionExporter::Local(output.path().to_path_buf()),
+        )
+        .with_options(options);
+
+        SolveDefinition::solve_definition(&driver, request)
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("entitled direct solve failed: {error}")),
+            })?;
+        assert_eq!(
+            std::fs::read(output.path().join("result.txt"))?,
+            b"local source"
+        );
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
+}
+
+async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
+    let socket = match std::env::var_os("SSH_AUTH_SOCK") {
+        Some(socket) => PathBuf::from(socket),
+        None => {
+            eprintln!("skipping SSH direct-solve integration test: SSH_AUTH_SOCK is unset");
+            return Ok(());
+        }
+    };
+    let name = unique_builder_name();
+    let volume_name = format!("{name}_state");
+    let source = create_application_fixture()?;
+    let default_output = tempfile::tempdir()?;
+    let named_output = tempfile::tempdir()?;
+    let (image_ref, image_registry) = alpine_image_reference();
+
+    let result = async {
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+
+        let default_options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .enable_ssh(true)
+                .build();
+        SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                local_source_ssh_definition(
+                    &format!("docker-image://{image_ref}"),
+                    "context",
+                    "",
+                    false,
+                ),
+                DefinitionExporter::Local(default_output.path().to_path_buf()),
+            )
+            .with_options(default_options),
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("default SSH direct solve failed: {error}")),
+        })?;
+
+        let named_options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .set_ssh_agent("deploy", &SshAgentSource::Socket(socket))
+                .build();
+        SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                local_source_ssh_definition(
+                    &format!("docker-image://{image_ref}"),
+                    "context",
+                    "deploy",
+                    false,
+                ),
+                DefinitionExporter::Local(named_output.path().to_path_buf()),
+            )
+            .with_options(named_options),
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("named SSH direct solve failed: {error}")),
+        })?;
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
+}
+
+async fn direct_definition_local_session_rejection_test(docker: Docker) -> Result<(), Error> {
+    let name = unique_builder_name();
+    let volume_name = format!("{name}_state");
+    let source = create_application_fixture()?;
+    let output = tempfile::tempdir()?;
+    let result = async {
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name);
+        let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
+        })?;
+        let options = local_source_options("context", source.path(), None)?;
+        let error = SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                local_source_session_definition("context"),
+                DefinitionExporter::Local(output.path().to_path_buf()),
+            )
+            .with_options(options),
+        )
+        .await
+        .expect_err("explicit local.session must be rejected before solving");
+        assert!(error.to_string().contains("local.session"));
+        assert!(relative_entries(output.path())?.is_empty());
+        Ok::<(), Error>(())
+    }
+    .await;
+
+    let _ = driver_cleanup(&docker, &name, &volume_name).await;
+    result
+}
+
 async fn driver_cleanup(docker: &Docker, name: &str, volume_name: &str) -> Result<(), Error> {
     use bollard::query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder};
 
@@ -832,6 +1072,24 @@ fn integration_test_local_source_filter_and_metadata() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_unknown_local_source_isolated() {
     connect_to_docker_and_run!(local_source_unknown_name_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_direct_definition_entitlements() {
+    connect_to_docker_and_run!(direct_definition_entitlements_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_direct_definition_ssh_agent() {
+    connect_to_docker_and_run!(direct_definition_ssh_agent_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_direct_definition_local_session_rejection() {
+    connect_to_docker_and_run!(direct_definition_local_session_rejection_test);
 }
 
 #[test]
