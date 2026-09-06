@@ -4,8 +4,8 @@
 definitions. It emits `bollard-buildkit-proto::pb::Definition` values and can
 write them as binary protobuf for `buildctl`.
 
-The compatibility baseline is BuildKit `v0.29.0` from commit
-`8543ce4428265d547cb009e5ad62348284497a88`.
+The current BuildKit compatibility baseline is recorded in the repository's
+[provenance lock](https://github.com/fussybeaver/bollard/blob/master/codegen/proto/provenance.lock.toml).
 
 ## Supported Graph Surface
 
