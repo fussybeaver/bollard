@@ -4,6 +4,7 @@ use std::{num::TryFromIntError, path::PathBuf};
 
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum GrpcError {
     /// A direct LLB definition could not be decoded or contains an unsupported
     /// direct-solve source configuration.
