@@ -454,3 +454,6 @@ pub use bollard_buildkit_proto::health;
 
 #[cfg(feature = "buildkit_providerless")]
 pub use bollard_buildkit_proto::moby;
+
+#[cfg(feature = "buildkit_providerless")]
+pub use bollard_buildkit_proto::pb;

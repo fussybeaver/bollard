@@ -44,8 +44,8 @@ pub use dump::dump_text;
 pub use error::LlbError;
 pub use marshal::Digest;
 pub use ops::exec::{
-    shlex, AddEnv, AddMount, AddSecret, CacheSharingMode, Mount, MountType, NetMode, SecurityMode,
-    Shlex, WithCustomName,
+    shlex, AddEnv, AddMount, AddSecret, AddSshSocket, CacheSharingMode, Mount, MountType, NetMode,
+    SecurityMode, Shlex, WithCustomName,
 };
 pub use ops::file::{copy, mkdir, mkfile, rm, symlink, CopyInfo, FileAction, FileOpts};
 pub use ops::merge::{merge, MergeOpts};

@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// Errors that can occur while constructing or marshalling an LLB graph.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum LlbError {
     /// Failed to encode an operation into its protobuf representation.
     #[error("failed to encode protobuf for {op}: {source}")]

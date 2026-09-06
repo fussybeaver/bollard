@@ -10,6 +10,7 @@ use crate::state::State;
 /// A single file-system action chained into a `FileOp`.
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum FileAction {
     /// Copy files or directories from a source state.
     Copy {
@@ -211,17 +212,17 @@ impl FileAction {
 #[derive(Clone, Debug, Default)]
 pub struct CopyInfo {
     /// Create destination parent directories if missing.
-    pub create_dest_path: bool,
+    pub(crate) create_dest_path: bool,
     /// Follow symlinks in the source.
-    pub follow_symlinks: bool,
+    pub(crate) follow_symlinks: bool,
     /// Copy only the contents of a directory, not the directory itself.
-    pub copy_dir_contents_only: bool,
+    pub(crate) copy_dir_contents_only: bool,
     /// Allow wildcard patterns in source paths.
-    pub allow_wildcard: bool,
+    pub(crate) allow_wildcard: bool,
     /// Allow wildcard patterns that match nothing.
-    pub allow_empty_wildcard: bool,
+    pub(crate) allow_empty_wildcard: bool,
     /// Patterns to exclude.
-    pub exclude_patterns: Vec<String>,
+    pub(crate) exclude_patterns: Vec<String>,
 }
 
 impl CopyInfo {
@@ -265,15 +266,45 @@ impl CopyInfo {
         self.exclude_patterns.push(p.into());
         self
     }
+
+    /// Return whether destination parents are created.
+    pub fn create_dest_path(&self) -> bool {
+        self.create_dest_path
+    }
+
+    /// Return whether source symlinks are followed.
+    pub fn follow_symlinks(&self) -> bool {
+        self.follow_symlinks
+    }
+
+    /// Return whether only directory contents are copied.
+    pub fn copy_dir_contents_only(&self) -> bool {
+        self.copy_dir_contents_only
+    }
+
+    /// Return whether wildcard patterns are allowed.
+    pub fn allow_wildcard(&self) -> bool {
+        self.allow_wildcard
+    }
+
+    /// Return whether empty wildcard matches are allowed.
+    pub fn allow_empty_wildcard(&self) -> bool {
+        self.allow_empty_wildcard
+    }
+
+    /// Return the configured exclude patterns.
+    pub fn exclude_patterns(&self) -> &[String] {
+        &self.exclude_patterns
+    }
 }
 
 /// Options for a `State::file` call.
 #[derive(Clone, Debug, Default)]
 pub struct FileOpts {
     /// Custom name for the file operation vertex.
-    pub custom_name: Option<String>,
+    pub(crate) custom_name: Option<String>,
     /// Ignore the build cache for this vertex.
-    pub ignore_cache: bool,
+    pub(crate) ignore_cache: bool,
 }
 
 impl FileOpts {
@@ -292,6 +323,16 @@ impl FileOpts {
     pub fn with_ignore_cache(mut self, v: bool) -> Self {
         self.ignore_cache = v;
         self
+    }
+
+    /// Return the custom name, if any.
+    pub fn custom_name(&self) -> Option<&str> {
+        self.custom_name.as_deref()
+    }
+
+    /// Return whether this file operation ignores the cache.
+    pub fn ignore_cache(&self) -> bool {
+        self.ignore_cache
     }
 }
 
