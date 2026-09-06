@@ -87,6 +87,7 @@ pub enum GrpcError {
 
 /// Errors related to the Grpc Registry authentication functionality
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum GrpcAuthError {
     /// Error triggered when the registry responds with a status code less than 200 or more than or
     /// equal to 400
@@ -161,6 +162,7 @@ pub enum GrpcAuthError {
 
 /// Errors related to the Grpc SSH forwarding functionality
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum GrpcSshError {
     /// Message validation error during SSH forwarding
     #[error("Message validation failed: {0}")]
