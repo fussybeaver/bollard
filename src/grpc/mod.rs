@@ -3099,7 +3099,13 @@ mod tests {
         assert_eq!(
             ImageBuildSessionProviders::default().enable_ssh(true),
             ImageBuildSessionProviders::default()
-                .set_ssh_agent("default", &SshAgentSource::DefaultAgentSocket)
+                .set_ssh_agent(None, &SshAgentSource::DefaultAgentSocket)
+        );
+        assert_eq!(
+            ImageBuildSessionProviders::default()
+                .set_ssh_agent(Some(""), &SshAgentSource::DefaultAgentSocket),
+            ImageBuildSessionProviders::default()
+                .set_ssh_agent(None, &SshAgentSource::DefaultAgentSocket)
         );
     }
 
@@ -3109,7 +3115,7 @@ mod tests {
     fn disabling_ssh_leaves_named_agents_registered() {
         let providers = ImageBuildSessionProviders::default()
             .set_ssh_agent(
-                "deploy",
+                Some("deploy"),
                 &SshAgentSource::Socket(PathBuf::from("/tmp/d.sock")),
             )
             .enable_ssh(true)
@@ -3118,8 +3124,8 @@ mod tests {
         assert_eq!(
             providers,
             ImageBuildSessionProviders::default().set_ssh_agent(
-                "deploy",
-                &SshAgentSource::Socket(PathBuf::from("/tmp/d.sock"))
+                Some("deploy"),
+                &SshAgentSource::Socket(PathBuf::from("/tmp/d.sock")),
             )
         );
         assert!(
