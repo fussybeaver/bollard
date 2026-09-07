@@ -596,9 +596,12 @@ pub(crate) async fn solve_definition(
     let mut services = vec![GrpcServer::Auth(auth), GrpcServer::Secrets(secret)];
 
     if options.ssh {
-        let ssh = SshServer::new(super::SshProvider::new())
-            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+        let ssh = SshServer::new(super::SshProvider::new(HashMap::from([(
+            String::from(super::DEFAULT_SSH_AGENT_ID),
+            super::SshAgentSource::DefaultAgentSocket,
+        )])))
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
         services.push(GrpcServer::Ssh(ssh));
     }
 
