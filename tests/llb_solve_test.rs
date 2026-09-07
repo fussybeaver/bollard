@@ -1255,6 +1255,7 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
         )
         .await
         .expect_err("solve entitlements must be required by direct solve");
+        assert!(relative_entries(negative_output.path())?.is_empty());
         let options =
             local_source_options_builder("context", source.path(), image_registry.as_deref())?
                 .entitlement(Entitlement::NetworkHost)
