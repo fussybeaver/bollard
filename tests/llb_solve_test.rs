@@ -1471,12 +1471,6 @@ fn integration_test_direct_definition_entitlements() {
 
 #[test]
 #[cfg(all(feature = "buildkit_providerless", feature = "test_sshforward"))]
-fn integration_test_direct_definition_ssh_agent() {
-    connect_to_docker_and_run!(direct_definition_ssh_agent_test);
-}
-
-#[test]
-#[cfg(all(feature = "buildkit_providerless", feature = "test_sshforward"))]
 fn integration_test_build_buildkit_ssh_direct_definition() {
     connect_to_docker_and_run!(direct_definition_ssh_agent_test);
 }
