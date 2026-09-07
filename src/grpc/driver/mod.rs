@@ -965,8 +965,8 @@ fn validate_definition(
                     if !optional && !registered_ssh.contains_key(id) {
                         return Err(GrpcError::InvalidDefinition {
                             index,
-                            reason: String::from(
-                                "a non-optional SSH mount requires a registered agent; register one with `set_ssh_agent` or `enable_ssh(true)`, or mark the mount optional",
+                            reason: format!(
+                                "a non-optional SSH mount requires agent `{id}`; register one with `set_ssh_agent` or `enable_ssh(true)`, or mark the mount optional"
                             ),
                         });
                     }
@@ -1713,6 +1713,7 @@ mod tests {
             .expect_err("required SSH provider is missing");
         assert!(matches!(error, GrpcError::InvalidDefinition { .. }));
         assert!(error.to_string().contains("non-optional SSH mount"));
+        assert!(error.to_string().contains("deploy"));
 
         validate_definition(&ssh_definition("deploy", true), &registered_ssh)
             .expect("optional SSH provider may be absent");
