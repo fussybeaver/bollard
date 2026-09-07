@@ -418,8 +418,8 @@ pub mod buildkit_test {
             if self.cleaned {
                 return Ok(());
             }
-            self.cleaned = true;
             let Some(driver) = self.driver.as_ref() else {
+                self.cleaned = true;
                 return Ok(());
             };
             let result = driver
@@ -430,8 +430,7 @@ pub mod buildkit_test {
                 });
             if result.is_ok() {
                 self.driver = None;
-            } else {
-                self.cleaned = false;
+                self.cleaned = true;
             }
             result
         }
@@ -479,8 +478,15 @@ pub mod buildkit_test {
                         ),
                     }
                 });
-            if let Err(error) = thread {
-                eprintln!("failed to spawn BuildKit fixture cleanup for {name}: {error}");
+            match thread {
+                Ok(handle) => {
+                    if handle.join().is_err() {
+                        eprintln!("BuildKit fixture cleanup thread panicked for {name}");
+                    }
+                }
+                Err(error) => {
+                    eprintln!("failed to spawn BuildKit fixture cleanup for {name}: {error}");
+                }
             }
         }
     }
