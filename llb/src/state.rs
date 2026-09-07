@@ -546,6 +546,27 @@ mod tests {
     }
 
     #[test]
+    fn add_ssh_socket_changes_marshaled_operations() {
+        let plain = State::scratch()
+            .unwrap()
+            .run(RunOpts::new().with_arg("true"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap();
+        let with_ssh = State::scratch()
+            .unwrap()
+            .run(RunOpts::new().with_arg("true"))
+            .add_ssh_socket(AddSshSocket::from("deploy"))
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap();
+
+        assert_ne!(plain.operations(), with_ssh.operations());
+    }
+
+    #[test]
     fn dir_accumulates_relative_paths_like_go() {
         assert_eq!(State::scratch().unwrap().dir("foo").cwd(), Some("/foo"));
         assert_eq!(
