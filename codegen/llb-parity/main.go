@@ -42,7 +42,7 @@ type manifest struct {
 	Fixtures         []manifestEntry `json:"fixtures"`
 }
 
-const generatorVersion = "2"
+const generatorVersion = "3"
 
 const differentialImageReference = "localhost:5000/alpine:latest"
 
@@ -500,7 +500,10 @@ func differentialEnvSecret() llb.State {
 
 func differentialFileOperationsAllowNotFound() llb.State {
 	base := fileOpsSymlink()
-	return base.File(llb.Rm("/app/current-config", llb.WithAllowNotFound(true)))
+	withCopy := base.File(llb.Copy(base, "/app/config.toml", "/app/config.toml.bak", &llb.CopyInfo{
+		CreateDestPath: true,
+	}))
+	return withCopy.File(llb.Rm("/app/current-config", llb.WithAllowNotFound(true)))
 }
 
 func scratchDirect() llb.State {

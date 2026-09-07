@@ -847,7 +847,35 @@ fn parity_differential_file_operations_allow_not_found() {
     assert_rm_parity(
         "differential_file_operations_allow_not_found",
         include_bytes!("../testdata/golden/differential_file_operations_allow_not_found.llb.pb"),
-        || parity_file_ops_rm_definition(true),
+        || {
+            let base = parity_file_ops_base()
+                .file(
+                    mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .file(
+                    symlink("/app/config.toml", "/app/current-config"),
+                    FileOpts::new(),
+                )
+                .unwrap();
+            let with_copy = base
+                .clone()
+                .file(
+                    copy(base, "/app/config.toml", "/app/config.toml.bak")
+                        .with_create_dest_path(true),
+                    FileOpts::new(),
+                )
+                .unwrap();
+            with_copy
+                .file(
+                    rm("/app/current-config").with_allow_not_found(true),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
         true,
     );
 }
