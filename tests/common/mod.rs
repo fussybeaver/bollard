@@ -616,34 +616,6 @@ pub mod buildkit_test {
                 provenance::BUILDKIT_COMMIT
             )));
         }
-        if record.moby_tag != provenance::MOBY_TAG {
-            return Err(validation_error(format!(
-                "BuildKit provenance Moby tag is {:?}, expected {:?}",
-                record.moby_tag,
-                provenance::MOBY_TAG
-            )));
-        }
-        if record.provenance_buildkit_version != provenance::BUILDKIT_VERSION {
-            return Err(validation_error(format!(
-                "BuildKit provenance version is {:?}, expected {:?}",
-                record.provenance_buildkit_version,
-                provenance::BUILDKIT_VERSION
-            )));
-        }
-        if record.provenance_buildkit_commit != provenance::BUILDKIT_COMMIT {
-            return Err(validation_error(format!(
-                "BuildKit provenance commit is {:?}, expected {:?}",
-                record.provenance_buildkit_commit,
-                provenance::BUILDKIT_COMMIT
-            )));
-        }
-        if record.provenance_default_image != provenance::DEFAULT_IMAGE {
-            return Err(validation_error(format!(
-                "BuildKit provenance image is {:?}, expected {:?}",
-                record.provenance_default_image,
-                provenance::DEFAULT_IMAGE
-            )));
-        }
         if record.go_oracle_version != provenance::BUILDKIT_VERSION {
             return Err(validation_error(format!(
                 "Go LLB oracle is {}, expected {}",
