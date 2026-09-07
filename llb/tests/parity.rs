@@ -17,6 +17,7 @@ use bollard_llb::{
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 mod common;
 
@@ -661,6 +662,196 @@ fn parity_file_ops_rm_allow_not_found() {
     );
 }
 
+fn parity_file_ops_base() -> State {
+    scratch()
+        .unwrap()
+        .file(mkdir("/app", 0o755).with_parents(true), FileOpts::new())
+        .unwrap()
+}
+
+#[test]
+fn parity_file_ops_mkdir() {
+    assert_go_parity(
+        "file_ops_mkdir",
+        include_bytes!("../testdata/golden/file_ops_mkdir.llb.pb"),
+        || {
+            parity_file_ops_base()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_file_ops_mkfile() {
+    assert_go_parity(
+        "file_ops_mkfile",
+        include_bytes!("../testdata/golden/file_ops_mkfile.llb.pb"),
+        || {
+            parity_file_ops_base()
+                .file(
+                    mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_file_ops_symlink() {
+    assert_go_parity(
+        "file_ops_symlink",
+        include_bytes!("../testdata/golden/file_ops_symlink.llb.pb"),
+        || {
+            parity_file_ops_base()
+                .file(
+                    mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .file(
+                    symlink("/app/config.toml", "/app/current-config"),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_file_ops_copy() {
+    assert_go_parity(
+        "file_ops_copy",
+        include_bytes!("../testdata/golden/file_ops_copy.llb.pb"),
+        || {
+            let base = parity_file_ops_base()
+                .file(
+                    mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+                    FileOpts::new(),
+                )
+                .unwrap();
+            base.clone()
+                .file(
+                    copy(base, "/app/config.toml", "/app/config.toml.bak")
+                        .with_create_dest_path(true),
+                    FileOpts::new(),
+                )
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+fn differential_image() -> State {
+    State::from(Image::new("localhost:5000/alpine:latest").unwrap())
+}
+
+#[test]
+fn parity_differential_image() {
+    assert_go_parity(
+        "differential_image",
+        include_bytes!("../testdata/golden/differential_image.llb.pb"),
+        || {
+            differential_image()
+                .run(shlex("echo hello").expect("valid parity shell command"))
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_differential_merge_alpine() {
+    assert_go_parity(
+        "differential_merge_alpine",
+        include_bytes!("../testdata/golden/differential_merge_alpine.llb.pb"),
+        || {
+            merge(
+                vec![differential_image(), differential_image()],
+                MergeOpts::new(),
+            )
+            .unwrap()
+            .run(
+                RunOpts::new()
+                    .with_arg("sh")
+                    .with_arg("-c")
+                    .with_arg("echo differential > /differential")
+                    .with_ignore_cache(true),
+            )
+            .root()
+            .unwrap()
+            .marshal(MarshalOpts::linux_amd64())
+            .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_differential_file_secret() {
+    assert_secret_exec_parity(
+        "differential_file_secret",
+        include_bytes!("../testdata/golden/differential_file_secret.llb.pb"),
+        || {
+            differential_image()
+                .run(
+                    RunOpts::new()
+                        .with_arg("sh")
+                        .with_arg("-c")
+                        .with_arg("sha256sum /run/secrets/token > /derived")
+                        .with_secret(AddSecret::new("token").with_target("/run/secrets/token")),
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_differential_env_secret() {
+    assert_secret_exec_parity(
+        "differential_env_secret",
+        include_bytes!("../testdata/golden/differential_env_secret.llb.pb"),
+        || {
+            differential_image()
+                .run(
+                    RunOpts::new()
+                        .with_arg("sh")
+                        .with_arg("-c")
+                        .with_arg("printf %s \"$MY_SECRET\" | sha256sum > /derived")
+                        .with_secret(
+                            AddSecret::new("mysecret")
+                                .with_as_env(true)
+                                .with_env_name("MY_SECRET"),
+                        ),
+                )
+                .root()
+                .unwrap()
+                .marshal(MarshalOpts::linux_amd64())
+                .unwrap()
+        },
+    );
+}
+
+#[test]
+fn parity_differential_file_operations_allow_not_found() {
+    assert_rm_parity(
+        "differential_file_operations_allow_not_found",
+        include_bytes!("../testdata/golden/differential_file_operations_allow_not_found.llb.pb"),
+        || parity_file_ops_rm_definition(true),
+        true,
+    );
+}
+
 #[test]
 fn parity_symlink() {
     assert_go_parity(
@@ -969,6 +1160,74 @@ fn parity_provenance_self_check() {
         Some(47),
         "golden manifest should describe all generated fixtures"
     );
+}
+
+#[test]
+fn parity_manifest_fixture_coverage() {
+    const PARITY_FIXTURES: &[&str] = &[
+        "image_run",
+        "image_resolve_force_pull",
+        "image_resolve_prefer_local",
+        "platform_arm64",
+        "platform_arm_v7",
+        "platform_image_override",
+        "platform_state_override",
+        "platform_mixed",
+        "platform_shared_subgraph",
+        "exec_default_meta",
+        "exec_custom_name_ignore_cache",
+        "merge",
+        "merge_custom_name",
+        "copy_all_flags",
+        "mkdir_parents",
+        "mkfile",
+        "rm_wildcard",
+        "symlink",
+        "file_ops_mkdir",
+        "file_ops_mkfile",
+        "file_ops_symlink",
+        "file_ops_copy",
+        "file_ops_rm",
+        "file_ops_rm_allow_not_found",
+        "secret_file_default",
+        "secret_file_optional",
+        "secret_file_permissions",
+        "secret_as_env",
+        "secret_env_explicit_name",
+        "local_all_attrs",
+        "cache_mount_shared",
+        "cache_mount_private",
+        "cache_mount_locked",
+        "multi_mount_ordering",
+        "file_operations_chain",
+        "differential_image",
+        "differential_merge_alpine",
+        "differential_file_secret",
+        "differential_env_secret",
+        "differential_file_operations_allow_not_found",
+        "scratch_direct",
+        "scratch_exec_root",
+        "scratch_bind_mount",
+        "ssh_default",
+        "ssh_explicit_ordering",
+        "exec_network_host",
+        "exec_security_insecure",
+    ];
+    let manifest_value = manifest();
+    let manifest_fixtures: BTreeSet<_> = manifest_value
+        .get("fixtures")
+        .and_then(serde_json::Value::as_array)
+        .expect("golden manifest should contain fixtures")
+        .iter()
+        .map(|fixture| {
+            fixture
+                .get("fixture")
+                .and_then(serde_json::Value::as_str)
+                .expect("golden fixture should have a name")
+        })
+        .collect();
+    let parity_fixtures = PARITY_FIXTURES.iter().copied().collect();
+    assert_eq!(manifest_fixtures, parity_fixtures);
 }
 
 #[test]
