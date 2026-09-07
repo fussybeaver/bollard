@@ -719,7 +719,7 @@ fn llb_entitlement_definition(image_ref: &str) -> Result<pb::Definition, Error> 
             bollard_llb::RunOpts::new()
                 .with_arg("sh")
                 .with_arg("-c")
-                .with_arg("echo local source > /result.txt")
+                .with_arg("printf '%s' 'local source' > /result.txt")
                 .with_net(bollard_llb::NetMode::Host)
                 .with_security(bollard_llb::SecurityMode::Insecure),
         )
