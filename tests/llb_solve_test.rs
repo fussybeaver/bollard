@@ -232,44 +232,6 @@ fn local_source_exec_definition_with_modes(
     }
 }
 
-fn local_source_ssh_definition(
-    image_identifier: &str,
-    name: &str,
-    id: &str,
-    optional: bool,
-) -> pb::Definition {
-    let mut definition = local_source_exec_definition(image_identifier, name);
-    let mut operation = pb::Op::decode(definition.def[2].as_slice())
-        .expect("local source exec operation is valid protobuf");
-    if let Some(pb::op::Op::Exec(exec)) = operation.op.as_mut() {
-        exec.meta
-            .as_mut()
-            .expect("local source exec operation has metadata")
-            .args = vec![
-            String::from("/bin/sh"),
-            String::from("-c"),
-            String::from("test -S /run/buildkit/ssh_agent.0"),
-        ];
-        exec.mounts.push(pb::Mount {
-            dest: String::from("/run/buildkit/ssh_agent.0"),
-            mount_type: pb::MountType::Ssh as i32,
-            ssh_opt: Some(pb::SshOpt {
-                id: String::from(id),
-                optional,
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
-    }
-    definition.def[2] = operation.encode_to_vec();
-
-    let mut wrapper = pb::Op::decode(definition.def[3].as_slice())
-        .expect("local source wrapper operation is valid protobuf");
-    wrapper.inputs[0].digest = operation_digest(&operation);
-    definition.def[3] = wrapper.encode_to_vec();
-    definition
-}
-
 fn local_source_session_definition(name: &str) -> pb::Definition {
     let mut definition = local_source_copy_definition(name, "/");
     let mut source = pb::Op::decode(definition.def[0].as_slice())
@@ -739,6 +701,24 @@ fn llb_ssh_provider_definition(
                         .with_id(id)
                         .with_optional(optional),
                 ),
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn llb_entitlement_definition(image_ref: &str) -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(image_ref)
+        .map_err(llb_error)?
+        .run(
+            bollard_llb::RunOpts::new()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("echo local source > /result.txt")
+                .with_net(bollard_llb::NetMode::Host)
+                .with_security(bollard_llb::SecurityMode::Insecure),
         )
         .root()
         .map_err(llb_error)?
@@ -1260,12 +1240,7 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
         })?;
-        let definition = local_source_exec_definition_with_modes(
-            &format!("docker-image://{image_ref}"),
-            "context",
-            pb::NetMode::Host,
-            pb::SecurityMode::Insecure,
-        );
+        let definition = llb_entitlement_definition(&image_ref)?;
         let negative_output = tempfile::tempdir()?;
         let negative_options =
             local_source_options_builder("context", source.path(), image_registry.as_deref())?
@@ -1335,12 +1310,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         SolveDefinition::solve_definition(
             &driver,
             DefinitionSolveRequest::new(
-                local_source_ssh_definition(
-                    &format!("docker-image://{image_ref}"),
-                    "context",
-                    "",
-                    false,
-                ),
+                llb_ssh_provider_definition(&image_ref, "", false)?,
                 DefinitionExporter::Local(default_output.path().to_path_buf()),
             )
             .with_options(default_options),
@@ -1357,12 +1327,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         SolveDefinition::solve_definition(
             &driver,
             DefinitionSolveRequest::new(
-                local_source_ssh_definition(
-                    &format!("docker-image://{image_ref}"),
-                    "context",
-                    "deploy",
-                    false,
-                ),
+                llb_ssh_provider_definition(&image_ref, "deploy", false)?,
                 DefinitionExporter::Local(named_output.path().to_path_buf()),
             )
             .with_options(named_options),
@@ -1376,7 +1341,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         let missing_options =
             local_source_options_builder("context", source.path(), image_registry.as_deref())?
                 .build();
-        let _missing_error = SolveDefinition::solve_definition(
+        let missing_error = SolveDefinition::solve_definition(
             &driver,
             DefinitionSolveRequest::new(
                 llb_ssh_provider_definition(&image_ref, "unregistered", false)?,
@@ -1386,6 +1351,10 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         )
         .await
         .expect_err("required unregistered SSH provider should fail");
+        assert!(
+            missing_error.to_string().contains("unregistered"),
+            "failure did not identify the missing SSH provider: {missing_error}"
+        );
         assert!(relative_entries(missing_output.path())?.is_empty());
 
         let optional_output = tempfile::tempdir()?;
