@@ -1314,6 +1314,47 @@ mod tests {
     }
 
     #[test]
+    fn ssh_public_conversions_preserve_options() {
+        let defaulted = AddSshSocket::default();
+        assert_eq!(defaulted.id(), "");
+        assert_eq!(defaulted.target(), None);
+        assert_eq!(defaulted.uid(), 0);
+        assert_eq!(defaulted.gid(), 0);
+        assert_eq!(defaulted.mode(), 0o600);
+        assert!(!defaulted.optional());
+
+        let converted: AddSshSocket = String::from("deploy").into();
+        assert_eq!(converted.id(), "deploy");
+    }
+
+    #[test]
+    fn ssh_mount_follows_secret_mounts() {
+        let op = ExecOp::new(
+            scratch().unwrap().output().clone(),
+            None,
+            None,
+            Vec::new(),
+            RunOpts::new()
+                .with_arg("true")
+                .with_secret(AddSecret::new("token"))
+                .with_ssh_socket(AddSshSocket::from("deploy")),
+        )
+        .unwrap();
+        let (exec, _) = serialize_exec_op(op);
+        let secret = exec
+            .mounts
+            .iter()
+            .position(|mount| mount.mount_type == pb::MountType::Secret as i32)
+            .expect("secret mount should be emitted");
+        let ssh = exec
+            .mounts
+            .iter()
+            .position(|mount| mount.mount_type == pb::MountType::Ssh as i32)
+            .expect("SSH mount should be emitted");
+        assert!(secret < ssh);
+    }
+
+    #[test]
     fn ssh_mount_sets_auth_sock_only_when_missing() {
         let op = ExecOp::new(
             scratch().unwrap().output().clone(),
