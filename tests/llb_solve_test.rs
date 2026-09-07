@@ -8,7 +8,9 @@ use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 use bollard::grpc::driver::{
     DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
 };
-use bollard::grpc::{Entitlement, SshAgentSource};
+use bollard::grpc::Entitlement;
+#[cfg(feature = "test_sshforward")]
+use bollard::grpc::SshAgentSource;
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
 use futures_util::TryStreamExt;
@@ -686,6 +688,7 @@ fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
         .to_pb())
 }
 
+#[cfg(feature = "test_sshforward")]
 fn llb_ssh_provider_definition(
     image_ref: &str,
     id: &str,
@@ -1284,6 +1287,7 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
     result
 }
 
+#[cfg(feature = "test_sshforward")]
 async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
     let socket = std::env::var_os("SSH_AUTH_SOCK")
         .map(PathBuf::from)
