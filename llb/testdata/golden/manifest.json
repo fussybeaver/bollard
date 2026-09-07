@@ -1,5 +1,5 @@
 {
-  "generator_version": "2",
+  "generator_version": "3",
   "buildkit_version": "v0.29.0",
   "fixtures": [
     {
@@ -239,7 +239,7 @@
     {
       "file": "differential_file_operations_allow_not_found.llb.pb",
       "fixture": "differential_file_operations_allow_not_found",
-      "sha256": "1cf88ea8230742bbbd2904373ae3312e46cc26498528f1ba4e556491a6ce6cae",
+      "sha256": "43d1e19375ca4eb385b18fe0c6bd58163cc7d16bde463b8ce425981725d787cf",
       "platform": "linux/amd64"
     },
     {

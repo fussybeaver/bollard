@@ -687,7 +687,7 @@ fn differential_env_secret_definition() -> Result<pb::Definition, Error> {
 }
 
 fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
-    let state = bollard_llb::scratch()
+    let base = bollard_llb::scratch()
         .map_err(llb_error)?
         .file(
             bollard_llb::mkdir("/app", 0o755).with_parents(true),
@@ -701,6 +701,14 @@ fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
         .map_err(llb_error)?
         .file(
             bollard_llb::symlink("/app/config.toml", "/app/current-config"),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?;
+    let state = base
+        .clone()
+        .file(
+            bollard_llb::copy(base, "/app/config.toml", "/app/config.toml.bak")
+                .with_create_dest_path(true),
             bollard_llb::FileOpts::new(),
         )
         .map_err(llb_error)?
