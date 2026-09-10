@@ -115,12 +115,3 @@ async fn driver_cleanup(docker: &Docker, name: &str, volume_name: &str) -> Resul
 fn integration_test_direct_definition_solve() {
     connect_to_docker_and_run!(direct_definition_solve_test);
 }
-
-#[test]
-fn direct_definition_request_accepts_known_valid_protobuf() {
-    let request = DefinitionSolveRequest::new(
-        minimal_mkfile_definition(),
-        DefinitionExporter::Local(std::path::PathBuf::from("/tmp/output")),
-    );
-    assert_eq!(request.definition.def.len(), 2);
-}

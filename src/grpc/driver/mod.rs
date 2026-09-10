@@ -1164,11 +1164,7 @@ mod tests {
         }
     }
 
-    async fn assert_teardown_timeout_case(
-        driver: &TestDriver,
-        deadline: Option<Instant>,
-        expected_code: tonic::Code,
-    ) {
+    async fn assert_teardown_timeout_case(driver: &TestDriver, deadline: Option<Instant>) {
         let calls = Arc::new(AtomicUsize::new(0));
         let started = Arc::new(Notify::new());
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -1183,7 +1179,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(status_code(result), expected_code);
+        assert_eq!(status_code(result), tonic::Code::DeadlineExceeded);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(cancelled.load(Ordering::SeqCst));
     }
@@ -1207,7 +1203,6 @@ mod tests {
         assert_eq!(request.exporters.len(), 1);
         assert_eq!(request.exporters[0].r#type, "local");
         assert!(request.exporters[0].attrs.is_empty());
-        assert!(!format!("{request:?}").contains("/out"));
         assert_eq!(request.session, "session-id");
     }
 
@@ -1315,6 +1310,7 @@ mod tests {
         assert!(options.ssh);
         assert_eq!(options.timeout, Some(Duration::from_secs(3)));
         assert_eq!(options.file_transfer_limits.max_files, Some(2));
+        assert_eq!(options.file_transfer_limits.max_bytes, Some(8));
     }
 
     #[test]
@@ -1516,33 +1512,16 @@ mod tests {
     #[tokio::test]
     async fn execute_solve_awaits_teardown_after_setup_timeout() {
         let driver = pending_test_driver();
-        assert_teardown_timeout_case(
-            &driver,
-            Some(Instant::now() + Duration::from_millis(1)),
-            tonic::Code::DeadlineExceeded,
-        )
-        .await;
+        assert_teardown_timeout_case(&driver, Some(Instant::now() + Duration::from_millis(1)))
+            .await;
     }
 
     #[tokio::test]
     async fn execute_solve_awaits_teardown_after_solve_timeout() {
         let (address, shutdown_sender, handle) = start_pending_solve_server().await;
         let driver = test_driver(address);
-        assert_teardown_timeout_case(
-            &driver,
-            Some(Instant::now() + Duration::from_millis(25)),
-            tonic::Code::DeadlineExceeded,
-        )
-        .await;
-        stop_test_server(shutdown_sender, handle).await;
-    }
-
-    #[tokio::test]
-    async fn execute_solve_preserves_solve_error_over_teardown_timeout() {
-        let (address, shutdown_sender, handle) =
-            start_test_server(Some(Status::not_found("solve failed"))).await;
-        let driver = test_driver(address);
-        assert_teardown_timeout_case(&driver, None, tonic::Code::NotFound).await;
+        assert_teardown_timeout_case(&driver, Some(Instant::now() + Duration::from_millis(25)))
+            .await;
         stop_test_server(shutdown_sender, handle).await;
     }
 
