@@ -284,12 +284,18 @@ impl FileSend for FileSendImpl {
 #[derive(Clone, Debug)]
 pub(crate) struct FileSendPacketImpl {
     pub(crate) dest: PathBuf,
+    pub(crate) limits: FileTransferLimits,
 }
 
 impl FileSendPacketImpl {
     pub fn new(dest: &Path) -> Self {
+        Self::with_limits(dest, FileTransferLimits::default())
+    }
+
+    pub(crate) fn with_limits(dest: &Path, limits: FileTransferLimits) -> Self {
         Self {
             dest: dest.to_owned(),
+            limits,
         }
     }
 
@@ -350,6 +356,13 @@ impl FileSendPacketImpl {
     }
 }
 
+/// Aggregate limits for one packet-based local export.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct FileTransferLimits {
+    max_files: Option<u64>,
+    max_bytes: Option<u64>,
+}
+
 const MAX_PATH_LENGTH: usize = 4096;
 const MAX_LINKNAME_LENGTH: usize = 4096;
 const MAX_FILE_COUNT: usize = 100_000;
@@ -367,6 +380,7 @@ struct FileReceiveState {
     next_stat_id: u32,
     file_count: usize,
     total_size: u64,
+    limits: FileTransferLimits,
 }
 
 struct PendingFile {
@@ -377,6 +391,10 @@ struct PendingFile {
 
 impl FileReceiveState {
     async fn new(base: PathBuf) -> Result<Self, Status> {
+        Self::with_limits(base, FileTransferLimits::default()).await
+    }
+
+    async fn with_limits(base: PathBuf, limits: FileTransferLimits) -> Result<Self, Status> {
         let root = tokio::task::spawn_blocking(move || {
             cap_std::fs::Dir::open_ambient_dir(&base, cap_std::ambient_authority())
         })
@@ -400,6 +418,7 @@ impl FileReceiveState {
             next_stat_id: 0,
             file_count: 0,
             total_size: 0,
+            limits,
         })
     }
 
@@ -547,6 +566,33 @@ impl FileReceiveState {
     }
 
     async fn receive_stat(&mut self, request_id: u32, stat: &Stat) -> Result<bool, Status> {
+        let declared_size = u64::try_from(stat.size)
+            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
+        if self
+            .limits
+            .max_files
+            .is_some_and(|max_files| self.file_count as u64 >= max_files)
+        {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the maximum entry count",
+            ));
+        }
+        let total = self.total_size.checked_add(declared_size).ok_or_else(|| {
+            Status::resource_exhausted(if self.limits.max_bytes.is_some() {
+                "file transfer byte count overflow"
+            } else {
+                "export size overflow"
+            })
+        })?;
+        if self
+            .limits
+            .max_bytes
+            .is_some_and(|max_bytes| total > max_bytes)
+        {
+            return Err(Status::resource_exhausted(
+                "file transfer exceeds the maximum byte count",
+            ));
+        }
         if self.file_count >= MAX_FILE_COUNT {
             return Err(Status::resource_exhausted("too many files in export"));
         }
@@ -558,12 +604,7 @@ impl FileReceiveState {
             )));
         }
 
-        let size = u64::try_from(stat.size)
-            .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
-        self.total_size = self
-            .total_size
-            .checked_add(size)
-            .ok_or_else(|| Status::resource_exhausted("export size overflow"))?;
+        self.total_size = total;
         if self.total_size > MAX_TOTAL_SIZE {
             return Err(Status::resource_exhausted(
                 "export exceeds the maximum size",
@@ -793,8 +834,84 @@ async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status
     Ok(staging)
 }
 
-async fn remove_path(path: &Path) -> Result<(), Status> {
-    let metadata = match fs::symlink_metadata(path).await {
+struct StagingGuard {
+    staging: Option<PathBuf>,
+    runtime: tokio::runtime::Handle,
+}
+
+impl StagingGuard {
+    async fn new(destination: &Path) -> Result<Self, Status> {
+        Ok(Self {
+            staging: Some(prepare_staging_directory(destination).await?),
+            runtime: tokio::runtime::Handle::current(),
+        })
+    }
+
+    fn path(&self) -> &Path {
+        self.staging
+            .as_deref()
+            .expect("staging guard owns a path before publication")
+    }
+
+    async fn cleanup(mut self) -> Result<(), Status> {
+        let staging = self
+            .staging
+            .take()
+            .expect("staging guard owns a path before cleanup");
+        remove_path(&staging).await
+    }
+
+    async fn publish(mut self, destination: &Path) -> Result<(), Status> {
+        let staging = self
+            .staging
+            .take()
+            .expect("staging guard owns a path before publication");
+        publish_staging_directory(&staging, destination).await
+    }
+}
+
+impl Drop for StagingGuard {
+    fn drop(&mut self) {
+        let Some(staging) = self.staging.take() else {
+            return;
+        };
+
+        let runtime = self.runtime.clone();
+        runtime.spawn(async move {
+            if let Err(error) = remove_path(&staging).await {
+                warn!("failed to clean up cancelled FileSend staging directory: {error}");
+            }
+        });
+    }
+}
+
+async fn prepare_file_receive_state(
+    destination: &Path,
+    limits: FileTransferLimits,
+) -> Result<(StagingGuard, FileReceiveState), Status> {
+    let staging_guard = StagingGuard::new(destination).await?;
+    let staging = staging_guard.path().to_owned();
+    match FileReceiveState::with_limits(staging, limits).await {
+        Ok(state) => Ok((staging_guard, state)),
+        Err(error) => {
+            if let Err(cleanup_error) = staging_guard.cleanup().await {
+                warn!("failed to clean up staging directory: {cleanup_error}");
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn cleanup_staging_guard(guard: &mut Option<StagingGuard>, context: &str) {
+    if let Some(guard) = guard.take() {
+        if let Err(error) = guard.cleanup().await {
+            warn!("failed to clean up {context}: {error}");
+        }
+    }
+}
+
+fn remove_path_blocking(path: &Path) -> Result<(), Status> {
+    let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
@@ -804,55 +921,81 @@ async fn remove_path(path: &Path) -> Result<(), Status> {
         }
     };
     let result = if metadata.is_dir() && !metadata.file_type().is_symlink() {
-        fs::remove_dir_all(path).await
+        std::fs::remove_dir_all(path)
     } else {
-        fs::remove_file(path).await
+        std::fs::remove_file(path)
     };
     result.map_err(|error| Status::internal(format!("failed to clean up export path: {error}")))
 }
 
-async fn publish_staging_directory(staging: &Path, destination: &Path) -> Result<(), Status> {
-    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-    let name = destination
-        .file_name()
-        .ok_or_else(|| Status::invalid_argument("export destination has no filename"))?
-        .to_string_lossy();
-    let backup = parent.join(format!(".{name}.bollard-backup-{}", crate::grpc::new_id()));
-    let destination_exists = match fs::symlink_metadata(destination).await {
-        Ok(_) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(error) => {
-            return Err(Status::internal(format!(
-                "failed to inspect export destination: {error}"
-            )))
-        }
-    };
+async fn remove_path(path: &Path) -> Result<(), Status> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || remove_path_blocking(&path))
+        .await
+        .map_err(|error| Status::internal(format!("filesystem cleanup worker failed: {error}")))?
+}
 
-    if destination_exists {
-        fs::rename(destination, &backup).await.map_err(|error| {
-            Status::internal(format!("failed to stage existing export: {error}"))
-        })?;
-    }
+fn publish_staging_directory_blocking(staging: &Path, destination: &Path) -> Result<(), Status> {
+    let result = (|| {
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let name = destination
+            .file_name()
+            .ok_or_else(|| Status::invalid_argument("export destination has no filename"))?
+            .to_string_lossy();
+        let backup = parent.join(format!(".{name}.bollard-backup-{}", crate::grpc::new_id()));
+        let destination_exists = match std::fs::symlink_metadata(destination) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(Status::internal(format!(
+                    "failed to inspect export destination: {error}"
+                )))
+            }
+        };
 
-    if let Err(error) = fs::rename(staging, destination).await {
         if destination_exists {
-            if let Err(rollback_error) = fs::rename(&backup, destination).await {
-                error!(
-                    "failed to publish export and roll back destination: publish={error}; rollback={rollback_error}"
-                );
+            std::fs::rename(destination, &backup).map_err(|error| {
+                Status::internal(format!("failed to stage existing export: {error}"))
+            })?;
+        }
+
+        if let Err(error) = std::fs::rename(staging, destination) {
+            if destination_exists {
+                if let Err(rollback_error) = std::fs::rename(&backup, destination) {
+                    error!(
+                        "failed to publish export and roll back destination: publish={error}; rollback={rollback_error}"
+                    );
+                }
+            }
+            return Err(Status::internal(format!(
+                "failed to publish export: {error}"
+            )));
+        }
+
+        if destination_exists {
+            if let Err(error) = remove_path_blocking(&backup) {
+                warn!("published export but failed to remove backup: {error}");
             }
         }
-        return Err(Status::internal(format!(
-            "failed to publish export: {error}"
-        )));
-    }
+        Ok(())
+    })();
 
-    if destination_exists {
-        if let Err(error) = remove_path(&backup).await {
-            warn!("published export but failed to remove backup: {error}");
+    if result.is_err() {
+        if let Err(cleanup_error) = remove_path_blocking(staging) {
+            warn!("failed to clean up unpublished export: {cleanup_error}");
         }
     }
-    Ok(())
+    result
+}
+
+async fn publish_staging_directory(staging: &Path, destination: &Path) -> Result<(), Status> {
+    let staging = staging.to_owned();
+    let destination = destination.to_owned();
+    tokio::task::spawn_blocking(move || publish_staging_directory_blocking(&staging, &destination))
+        .await
+        .map_err(|error| {
+            Status::internal(format!("filesystem publication worker failed: {error}"))
+        })?
 }
 
 #[tonic::async_trait]
@@ -863,36 +1006,19 @@ impl FileSendPacket for FileSendPacketImpl {
         request: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::DiffCopyStream>, Status> {
         let destination = self.dest.clone();
+        let limits = self.limits;
         let mut in_stream = request.into_inner();
 
         // protocol reference: https://github.com/tonistiigi/fsutil/blob/91a3fc46842c58b62dd4630b688662842364da49/receive.go#L1-L15
         let out_stream = async_stream::try_stream! {
             debug!("starting FileSend packet export");
-            let staging = prepare_staging_directory(&destination).await?;
-            let mut state = Some(match FileReceiveState::new(staging.clone()).await {
-                Ok(state) => state,
-                Err(error) => {
-                    if let Err(cleanup_error) = remove_path(&staging).await {
-                        warn!("failed to clean up staging directory: {cleanup_error}");
-                    }
-                    Err::<FileReceiveState, Status>(error)?;
-                    unreachable!();
-                }
-            });
+            let (staging_guard, state) = prepare_file_receive_state(&destination, limits).await?;
+            let mut staging_guard = Some(staging_guard);
+            let mut state = Some(state);
 
-            let mut receiver_sent_fin = false;
             loop {
                 match in_stream.next().await {
                     Some(Ok(packet)) => {
-                        if receiver_sent_fin {
-                            if packet.r#type != PacketType::PacketFin as i32 {
-                                Err::<(), Status>(Status::failed_precondition(
-                                    "packet received after PACKET_FIN",
-                                    ))?;
-                            }
-                            break;
-                        }
-
                         let packet_result = state
                             .as_mut()
                             .expect("receiver state is present before PACKET_FIN")
@@ -905,68 +1031,57 @@ impl FileSendPacket for FileSendPacketImpl {
                                         .take()
                                         .expect("receiver state is present before finalization");
                                     if let Err(error) = completed_state.finalize().await {
-                                        if let Err(cleanup_error) = remove_path(&staging).await {
-                                            warn!("failed to clean up unfinalized export: {cleanup_error}");
-                                        }
+                                        cleanup_staging_guard(&mut staging_guard, "unfinalized export")
+                                            .await;
                                         Err::<(), Status>(error)?;
                                     }
 
-                                    if let Err(error) = publish_staging_directory(&staging, &destination).await {
-                                        if let Err(cleanup_error) = remove_path(&staging).await {
-                                            warn!("failed to clean up unpublished export: {cleanup_error}");
-                                        }
-                                        Err::<(), Status>(error)?;
-                                    }
-
-                                    receiver_sent_fin = true;
+                                    staging_guard
+                                        .take()
+                                        .expect("staging guard is armed before publication")
+                                        .publish(&destination)
+                                        .await?;
                                     yield out;
+
+                                    match in_stream.next().await {
+                                        Some(Ok(packet)) if packet.r#type == PacketType::PacketFin as i32 => {}
+                                        Some(Ok(_)) => {
+                                            Err::<(), Status>(Status::failed_precondition(
+                                                "packet received after PACKET_FIN",
+                                            ))?;
+                                        }
+                                        Some(Err(error)) => {
+                                            warn!("packet stream ended after export publish: {error}");
+                                        }
+                                        None => {
+                                            warn!("packet stream ended after export publish");
+                                        }
+                                    }
+                                    break;
                                 } else {
                                     yield out;
                                 }
                             }
                             Ok(None) => {}
                             Err(error) => {
-                                if let Err(cleanup_error) = remove_path(&staging).await {
-                                    warn!("failed to clean up failed export: {cleanup_error}");
-                                }
+                                cleanup_staging_guard(&mut staging_guard, "failed export").await;
                                 Err::<(), Status>(error)?;
                             }
                         }
                     }
                     Some(Err(error)) => {
-                        if receiver_sent_fin {
-                            warn!("packet stream ended after export publish: {error}");
-                            break;
-                        }
-                        if let Err(cleanup_error) = remove_path(&staging).await {
-                            warn!("failed to clean up failed export: {cleanup_error}");
-                        }
+                        cleanup_staging_guard(&mut staging_guard, "failed export").await;
                         Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
                     }
                     None => {
-                        if receiver_sent_fin {
-                            warn!("packet stream ended after export publish");
-                        } else {
-                            if let Err(cleanup_error) = remove_path(&staging).await {
-                                warn!("failed to clean up incomplete export: {cleanup_error}");
-                            }
-                            Err::<(), Status>(Status::failed_precondition(
-                                "file packet stream ended before PACKET_FIN",
-                            ))?;
-                        }
-                        break;
+                        cleanup_staging_guard(&mut staging_guard, "incomplete export").await;
+                        Err::<(), Status>(Status::failed_precondition(
+                            "file packet stream ended before PACKET_FIN",
+                        ))?;
                     }
                 }
             }
 
-            if !receiver_sent_fin {
-                if let Err(cleanup_error) = remove_path(&staging).await {
-                    warn!("failed to clean up incomplete export: {cleanup_error}");
-                }
-                Err::<(), Status>(Status::failed_precondition(
-                    "file packet stream ended before PACKET_FIN",
-                ))?;
-            }
             info!("published FileSend packet export");
         };
 
@@ -1711,13 +1826,14 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
     use std::path::{Path, PathBuf};
+    use std::time::Duration;
 
     use bollard_buildkit_proto::fsutil::types::packet::PacketType;
     use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
     use bollard_buildkit_proto::moby::filesync::packet::file_send_client::FileSendClient;
     use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::Ssh;
     use bollard_buildkit_proto::moby::sshforward::v1::CheckAgentRequest;
-    use tokio::net::TcpListener;
+    use tokio::{net::TcpListener, sync::mpsc};
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::metadata::MetadataMap;
     use tonic::transport::Server;
@@ -1726,7 +1842,8 @@ mod tests {
     use super::build::ImageBuildSessionProviders;
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
-        FileSendPacketImpl, FileSendPacketServer, SshAgentSource, SshProvider, MAX_FILE_SIZE,
+        FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, SshAgentSource, SshProvider,
+        MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1799,6 +1916,19 @@ mod tests {
             .collect()
     }
 
+    async fn wait_for_staging_siblings(root: &Path, expected: bool) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if !transfer_sibling_names(root).is_empty() == expected {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("FileSend staging state became observable");
+    }
+
     #[test]
     fn test_new_id() {
         let s = super::new_id();
@@ -1810,6 +1940,45 @@ mod tests {
         for path in ["", ".", "..", "../escape", "/absolute", "foo/../bar"] {
             assert!(FileSendPacketImpl::validate_path(path).is_err(), "{path:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_file_receive_state_enforces_transfer_limits() {
+        let root = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::with_limits(
+            root.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: Some(1),
+                max_bytes: Some(4),
+            },
+        )
+        .await
+        .unwrap();
+
+        state
+            .handle_packet(packet_stat(Some(stat("first", 0o644, 4, ""))))
+            .await
+            .unwrap();
+        let error = state
+            .handle_packet(packet_stat(Some(stat("second", 0o644, 0, ""))))
+            .await
+            .unwrap_err();
+        assert!(error.message().contains("maximum entry count"));
+
+        let mut state = FileReceiveState::with_limits(
+            root.path().to_path_buf(),
+            FileTransferLimits {
+                max_files: None,
+                max_bytes: Some(3),
+            },
+        )
+        .await
+        .unwrap();
+        let error = state
+            .handle_packet(packet_stat(Some(stat("too-large", 0o644, 4, ""))))
+            .await
+            .unwrap_err();
+        assert!(error.message().contains("maximum byte count"));
     }
 
     #[cfg(unix)]
@@ -1966,6 +2135,38 @@ mod tests {
             b"old"
         );
         assert!(transfer_sibling_names(root.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_file_send_packet_grpc_cleans_staging_after_stream_cancellation() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        let (address, server_task) = start_file_send_server(destination).await;
+        let mut client = FileSendClient::connect(format!("http://{address}"))
+            .await
+            .unwrap();
+        let (sender, receiver) = mpsc::channel(1);
+        let response = client
+            .diff_copy(tokio_stream::wrappers::ReceiverStream::new(receiver))
+            .await
+            .unwrap();
+        let mut response_stream = response.into_inner();
+        let response_task =
+            tokio::spawn(async move { while response_stream.message().await.is_ok() {} });
+
+        sender
+            .send(packet_stat(Some(stat("partial", 0o600, 5, ""))))
+            .await
+            .unwrap();
+        sender.send(packet_data(0, b"hi")).await.unwrap();
+        wait_for_staging_siblings(root.path(), true).await;
+        response_task.abort();
+        let _ = response_task.await;
+        drop(sender);
+        wait_for_staging_siblings(root.path(), false).await;
+
+        server_task.abort();
+        let _ = server_task.await;
     }
 
     #[tokio::test]
