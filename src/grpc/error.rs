@@ -1,10 +1,20 @@
 #![cfg(feature = "buildkit_providerless")]
 
-use std::num::TryFromIntError;
+use std::{num::TryFromIntError, path::PathBuf};
 
 /// Errors related to the Grpc functionality
 #[derive(Debug, thiserror::Error)]
 pub enum GrpcError {
+    /// A named local source mount could not be opened as a directory.
+    #[error("invalid local mount `{name}` at `{path}`: {reason}")]
+    InvalidLocalMount {
+        /// The BuildKit local source name.
+        name: String,
+        /// The path supplied by the caller.
+        path: PathBuf,
+        /// The validation or opening failure.
+        reason: String,
+    },
     /// A Docker-container BuildKit resource exists but does not match the requested builder.
     #[error("BuildKit Docker-container {resource} `{name}` is incompatible: {reason}")]
     DockerContainerResourceConflict {
@@ -25,8 +35,8 @@ pub enum GrpcError {
         /// The Docker-container builder name.
         name: String,
     },
-    /// The driver teardown task was unavailable when cleanup was requested.
-    #[error("driver teardown task was unavailable")]
+    /// The driver teardown already ran when cleanup was requested again.
+    #[error("driver teardown was already completed")]
     TearDownTaskUnavailable,
     /// Generic error emitted by the bollard codebase.
     #[error(transparent)]

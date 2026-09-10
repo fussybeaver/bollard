@@ -1,5 +1,22 @@
 use bitflags::bitflags;
 
+pub(crate) fn is_transferable_xattr(name: &str) -> bool {
+    name.starts_with("user.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_transferable_xattr;
+
+    #[test]
+    fn only_user_xattrs_are_transferable() {
+        assert!(is_transferable_xattr("user.bollard"));
+        assert!(!is_transferable_xattr("security.capability"));
+        assert!(!is_transferable_xattr("trusted.overlay.opaque"));
+        assert!(!is_transferable_xattr("system.posix_acl_access"));
+    }
+}
+
 bitflags! { // source: https://pkg.go.dev/io/fs#FileMode
     pub struct FileMode: u32 {
         const Dir        = 1 << (32 -  1); // d: is a directory

@@ -8,7 +8,10 @@ use bollard_buildkit_proto::moby::{
     },
     filesync::{
         packet::file_send_server::FileSendServer as FileSendPacketServer,
-        v1::{auth_server::AuthServer, file_send_server::FileSendServer},
+        v1::{
+            auth_server::AuthServer, file_send_server::FileSendServer,
+            file_sync_server::FileSyncServer,
+        },
     },
     sshforward::v1::ssh_server::SshServer,
     upload::v1::upload_server::UploadServer,
@@ -69,6 +72,12 @@ pub(crate) trait Driver {
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
 }
 
+/// Cleans up driver resources created for a solve.
+///
+/// Implementations must be idempotent: when a solve future is cancelled while
+/// teardown is in flight, the guard retries teardown once from a fresh
+/// runtime, so `tear_down` may observe partially torn-down state or run more
+/// than once for the same solve.
 pub(crate) trait DriverTearDownHandler: Send + Sync {
     fn tear_down(
         &self,
@@ -77,11 +86,9 @@ pub(crate) trait DriverTearDownHandler: Send + Sync {
 
 struct TearDownGuard {
     handler: Arc<dyn DriverTearDownHandler>,
-    runtime: tokio::runtime::Handle,
-    task: Option<tokio::task::JoinHandle<Result<(), GrpcError>>>,
     timeout: Duration,
     armed: bool,
-    started: bool,
+    completed: bool,
 }
 
 impl TearDownGuard {
@@ -92,11 +99,9 @@ impl TearDownGuard {
     fn with_timeout(handler: Box<dyn DriverTearDownHandler>, timeout: Duration) -> Self {
         Self {
             handler: Arc::from(handler),
-            runtime: tokio::runtime::Handle::current(),
-            task: None,
             timeout,
             armed: true,
-            started: false,
+            completed: false,
         }
     }
 
@@ -104,27 +109,13 @@ impl TearDownGuard {
         self.armed = false;
     }
 
-    fn start(&mut self) {
-        if self.started {
-            return;
-        }
-
-        self.started = true;
-        let handler = Arc::clone(&self.handler);
-        self.task = Some(self.runtime.spawn(run_tear_down(handler, self.timeout)));
-    }
-
     async fn tear_down(&mut self) -> Result<(), GrpcError> {
-        self.start();
-        let result = {
-            let task = self
-                .task
-                .as_mut()
-                .ok_or_else(|| GrpcError::TearDownTaskUnavailable)?;
-            task.await
-        };
-        self.task.take();
-        result.map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?
+        if self.completed {
+            return Err(GrpcError::TearDownTaskUnavailable);
+        }
+        let result = run_tear_down(Arc::clone(&self.handler), self.timeout).await;
+        self.completed = true;
+        result
     }
 }
 
@@ -132,17 +123,11 @@ async fn run_tear_down(
     handler: Arc<dyn DriverTearDownHandler>,
     timeout: Duration,
 ) -> Result<(), GrpcError> {
-    let mut task = tokio::spawn(async move { handler.tear_down().await });
-    match tokio::time::timeout(timeout, &mut task).await {
-        Ok(result) => result
-            .map_err(|error| tonic::Status::internal(format!("teardown task failed: {error}")))?,
-        Err(_) => {
-            task.abort();
-            let _ = task.await;
-            Err(GrpcError::from(tonic::Status::deadline_exceeded(
-                "driver teardown exceeded its timeout",
-            )))
-        }
+    match tokio::time::timeout(timeout, handler.tear_down()).await {
+        Ok(result) => result,
+        Err(_) => Err(GrpcError::from(tonic::Status::deadline_exceeded(
+            "driver teardown exceeded its timeout",
+        ))),
     }
 }
 
@@ -152,28 +137,33 @@ impl Drop for TearDownGuard {
             return;
         }
 
-        if let Some(task) = self.task.take() {
-            self.runtime.spawn(async move {
-                match task.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        warn!("failed to tear down BuildKit driver after cancellation: {error}");
+        if self.completed {
+            return;
+        }
+
+        let handler = Arc::clone(&self.handler);
+        let timeout = self.timeout;
+        let thread = std::thread::Builder::new()
+            .name(String::from("bollard-buildkit-teardown"))
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                match runtime {
+                    Ok(runtime) => {
+                        if let Err(error) = runtime.block_on(run_tear_down(handler, timeout)) {
+                            warn!(
+                                "failed to tear down BuildKit driver after cancellation: {error}"
+                            );
+                        }
                     }
                     Err(error) => {
-                        warn!(
-                            "failed to join BuildKit driver teardown after cancellation: {error}"
-                        );
+                        warn!("failed to create BuildKit teardown runtime: {error}");
                     }
                 }
             });
-        } else if !self.started {
-            let handler = Arc::clone(&self.handler);
-            let timeout = self.timeout;
-            self.runtime.spawn(async move {
-                if let Err(error) = run_tear_down(handler, timeout).await {
-                    warn!("failed to tear down BuildKit driver after cancellation: {error}");
-                }
-            });
+        if let Err(error) = thread {
+            warn!("failed to spawn BuildKit teardown thread: {error}");
         }
     }
 }
@@ -218,11 +208,19 @@ pub enum ImageExporterEnum {
 }
 
 /// Exporter selection for a direct LLB definition solve.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum DefinitionExporter {
     /// Export the solved filesystem into a local directory.
     Local(PathBuf),
+}
+
+impl std::fmt::Debug for DefinitionExporter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
+        }
+    }
 }
 
 /// Options for a direct LLB definition solve.
@@ -235,20 +233,37 @@ pub struct DefinitionSolveOptions {
     ssh: bool,
     timeout: Option<Duration>,
     file_transfer_limits: FileTransferLimits,
+    local_mounts: HashMap<String, LocalMount>,
 }
 
-impl fmt::Debug for DefinitionSolveOptions {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for DefinitionSolveOptions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("DefinitionSolveOptions")
-            .field("cache_to", &self.cache_to.len())
-            .field("cache_from", &self.cache_from.len())
-            .field("credentials", &self.credentials.len())
-            .field("secrets", &self.secrets.len())
+            .field("cache_to_count", &self.cache_to.len())
+            .field("cache_from_count", &self.cache_from.len())
+            .field("credential_count", &self.credentials.len())
+            .field("secret_count", &self.secrets.len())
             .field("ssh", &self.ssh)
             .field("timeout", &self.timeout)
             .field("file_transfer_limits", &self.file_transfer_limits)
+            .field("local_mount_count", &self.local_mounts.len())
             .finish()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct LocalMount {
+    pub(crate) root: Arc<cap_std::fs::Dir>,
+    pub(crate) path: PathBuf,
+}
+
+impl std::fmt::Debug for LocalMount {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LocalMount")
+            .field("path", &self.path)
+            .finish_non_exhaustive()
     }
 }
 
@@ -262,6 +277,7 @@ impl Default for DefinitionSolveOptions {
             ssh: false,
             timeout: Some(DEFAULT_DEFINITION_SOLVE_TIMEOUT),
             file_transfer_limits: FileTransferLimits::default(),
+            local_mounts: HashMap::new(),
         }
     }
 }
@@ -332,6 +348,43 @@ impl DefinitionSolveOptionsBuilder {
     pub fn max_bytes(mut self, max_bytes: u64) -> Self {
         self.options.file_transfer_limits.max_bytes = Some(max_bytes);
         self
+    }
+
+    /// Expose a host directory under a BuildKit `local://` source name.
+    ///
+    /// On Windows, local-source paths remain subject to the host's long-path
+    /// configuration and the underlying filesystem runtime. Enable Windows
+    /// long-path support when exposing deeply nested directories.
+    pub fn local_mount(
+        mut self,
+        name: impl Into<String>,
+        path: impl Into<PathBuf>,
+    ) -> Result<Self, GrpcError> {
+        let name = name.into();
+        let path = path.into();
+        if name.is_empty() {
+            return Err(GrpcError::InvalidLocalMount {
+                name,
+                path,
+                reason: String::from("mount name must not be empty"),
+            });
+        }
+
+        let root = cap_std::fs::Dir::open_ambient_dir(&path, cap_std::ambient_authority())
+            .map_err(|error| GrpcError::InvalidLocalMount {
+                name: name.clone(),
+                path: path.clone(),
+                reason: error.to_string(),
+            })?;
+
+        self.options.local_mounts.insert(
+            name,
+            LocalMount {
+                root: Arc::new(root),
+                path,
+            },
+        );
+        Ok(self)
     }
 
     /// Consume the builder and return immutable solve options.
@@ -650,6 +703,18 @@ pub(crate) async fn solve_definition(
         services.push(GrpcServer::Ssh(ssh));
     }
 
+    if !options.local_mounts.is_empty() {
+        let mounts = options
+            .local_mounts
+            .iter()
+            .map(|(name, mount)| (name.clone(), Arc::clone(&mount.root)))
+            .collect();
+        let filesync = FileSyncServer::new(super::filesync::FileSyncImpl::new(mounts))
+            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+        services.push(GrpcServer::FileSync(filesync));
+    }
+
     match &exporter {
         DefinitionExporter::Local(path) => {
             let filesend = FileSendPacketServer::new(super::FileSendPacketImpl::with_limits(
@@ -837,6 +902,7 @@ mod tests {
         UpdateBuildHistoryResponse, UsageRecord,
     };
     use futures_util::{stream::Empty, FutureExt};
+    use tempfile::tempdir;
     use tokio::{
         net::TcpListener,
         sync::{oneshot, Notify},
@@ -1257,6 +1323,9 @@ mod tests {
         let request = DefinitionSolveRequest::new(
             bollard_buildkit_proto::pb::Definition {
                 def: vec![b"sensitive-definition-bytes".to_vec()],
+                metadata: [(String::from("private-metadata"), Default::default())]
+                    .into_iter()
+                    .collect(),
                 ..Default::default()
             },
             DefinitionExporter::Local(PathBuf::from("/sensitive-export-path")),
@@ -1274,13 +1343,14 @@ mod tests {
             assert!(!rendered.contains("sensitive-secret-id"));
             assert!(!rendered.contains("sensitive-secret-source"));
             assert!(!rendered.contains("sensitive-definition-bytes"));
+            assert!(!rendered.contains("private-metadata"));
             assert!(!rendered.contains("/sensitive-export-path"));
         }
 
-        assert!(builder_debug.contains("credentials: 1"));
-        assert!(builder_debug.contains("secrets: 1"));
-        assert!(options_debug.contains("credentials: 1"));
-        assert!(options_debug.contains("secrets: 1"));
+        assert!(builder_debug.contains("credential_count: 1"));
+        assert!(builder_debug.contains("secret_count: 1"));
+        assert!(options_debug.contains("credential_count: 1"));
+        assert!(options_debug.contains("secret_count: 1"));
         assert!(request_debug.contains("definition_ops: 1"));
         assert!(request_debug.contains("exporter: \"local\""));
         assert!(request_debug.contains("has_build_ref: false"));
@@ -1314,6 +1384,45 @@ mod tests {
     }
 
     #[test]
+    fn definition_options_open_and_retain_local_mount_capabilities() {
+        let root = tempdir().expect("temporary local mount exists");
+        let path = root.path().to_path_buf();
+        let options = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", &path)
+            .expect("local mount opens")
+            .build();
+
+        let mount = options
+            .local_mounts
+            .get("context")
+            .expect("local mount is stored");
+        assert_eq!(mount.path, path);
+        assert!(mount.root.open_dir(".").is_ok());
+    }
+
+    #[test]
+    fn local_mount_rejects_empty_missing_and_non_directory_paths() {
+        let root = tempdir().expect("temporary local mount exists");
+        let file = root.path().join("file");
+        std::fs::write(&file, b"not a directory").expect("temporary file is created");
+
+        let empty_name = DefinitionSolveOptionsBuilder::new()
+            .local_mount("", root.path())
+            .expect_err("empty mount names are rejected");
+        assert!(matches!(empty_name, GrpcError::InvalidLocalMount { .. }));
+
+        let missing_path = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", root.path().join("missing"))
+            .expect_err("missing mount paths are rejected");
+        assert!(matches!(missing_path, GrpcError::InvalidLocalMount { .. }));
+
+        let regular_file = DefinitionSolveOptionsBuilder::new()
+            .local_mount("context", &file)
+            .expect_err("regular files are rejected as mount roots");
+        assert!(matches!(regular_file, GrpcError::InvalidLocalMount { .. }));
+    }
+
+    #[test]
     fn definition_options_have_a_bounded_default_timeout() {
         assert_eq!(
             DefinitionSolveOptions::default().timeout,
@@ -1343,26 +1452,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn definition_solve_registers_shared_services_without_upload() {
-        let driver = failing_test_driver();
-        let service_names = Arc::clone(&driver.service_names);
-        let request = DefinitionSolveRequest::new(
-            bollard_buildkit_proto::pb::Definition::default(),
-            DefinitionExporter::Local(PathBuf::from("/out")),
-        )
-        .with_options(
-            DefinitionSolveOptionsBuilder::new()
-                .enable_ssh(true)
-                .build(),
-        );
+    async fn definition_solve_registers_expected_services() {
+        for with_local_mount in [false, true] {
+            let root = tempdir().expect("temporary local mount exists");
+            let driver = failing_test_driver();
+            let service_names = Arc::clone(&driver.service_names);
+            let mut options = DefinitionSolveOptionsBuilder::new().enable_ssh(true);
+            if with_local_mount {
+                options = options
+                    .local_mount("context", root.path())
+                    .expect("local mount opens");
+            }
+            let request = DefinitionSolveRequest::new(
+                bollard_buildkit_proto::pb::Definition::default(),
+                DefinitionExporter::Local(PathBuf::from("/out")),
+            )
+            .with_options(options.build());
 
-        assert!(solve_definition(&driver, request).await.is_err());
-        let names = service_names.lock().unwrap();
-        assert!(names.iter().any(|name| name.contains("credentials")));
-        assert!(names.iter().any(|name| name.contains("GetSecret")));
-        assert!(names.iter().any(|name| name.contains("ForwardAgent")));
-        assert!(names.iter().any(|name| name.contains("diffcopy")));
-        assert!(!names.iter().any(|name| name.contains("upload")));
+            assert!(solve_definition(&driver, request).await.is_err());
+            let names = service_names.lock().unwrap();
+            assert!(names.iter().any(|name| name.contains("credentials")));
+            assert!(names.iter().any(|name| name.contains("GetSecret")));
+            assert!(names.iter().any(|name| name.contains("ForwardAgent")));
+            assert!(names.iter().any(|name| name.contains("diffcopy")));
+            assert!(!names.iter().any(|name| name.contains("upload")));
+            assert_eq!(
+                names
+                    .iter()
+                    .filter(|name| name.as_str() == "/moby.filesync.v1.FileSync/diffcopy")
+                    .count(),
+                usize::from(with_local_mount)
+            );
+            assert!(!names
+                .iter()
+                .any(|name| name == "/moby.filesync.v1.FileSync/TarStream"));
+        }
     }
 
     #[tokio::test]
@@ -1480,6 +1604,66 @@ mod tests {
         assert!(session_ids[..2]
             .iter()
             .all(|session_id| !session_ids[2..].contains(session_id)));
+    }
+
+    #[test]
+    fn teardown_guard_drop_survives_runtime_shutdown() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let guard = {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                TearDownGuard::new(Box::new(TestTearDown {
+                    calls: Arc::clone(&calls),
+                    error: None,
+                    started: None,
+                }))
+            })
+        };
+
+        drop(guard);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            if calls.load(Ordering::SeqCst) == 1 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("teardown cleanup did not start after runtime shutdown");
+    }
+
+    #[tokio::test]
+    async fn teardown_guard_retries_cleanup_cancelled_in_progress() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let guard = TearDownGuard::with_timeout(
+            Box::new(BlockingTearDown {
+                calls: Arc::clone(&calls),
+                started: Arc::clone(&started),
+                cancelled: Arc::new(AtomicBool::new(false)),
+            }),
+            Duration::from_millis(10),
+        );
+        let task = tokio::spawn(async move {
+            let mut guard = guard;
+            let _ = guard.tear_down().await;
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("initial teardown starts");
+        task.abort();
+        let _ = task.await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if calls.load(Ordering::SeqCst) == 2 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled teardown is retried once");
     }
 
     #[tokio::test]

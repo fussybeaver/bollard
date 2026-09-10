@@ -10,9 +10,11 @@ pub mod driver;
 pub mod error;
 /// End-user buildkit export functions
 pub mod export;
+mod filesync;
 mod fsutil;
 /// Internal interfaces to convert types for GRPC communication
 pub(crate) mod io;
+mod patternmatcher;
 /// End-user buildkit registry functions
 pub mod registry;
 mod ssh;
@@ -31,6 +33,8 @@ use crate::moby::filesync::v1::{
 };
 use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
+#[cfg(unix)]
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
@@ -39,6 +43,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+#[cfg(unix)]
+use xattr::FileExt;
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
 use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
@@ -50,6 +56,7 @@ use bollard_buildkit_proto::moby::filesync::packet::file_send_server::{
 };
 use bollard_buildkit_proto::moby::filesync::v1::auth_server::AuthServer;
 use bollard_buildkit_proto::moby::filesync::v1::file_send_server::FileSendServer;
+use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
 use bollard_buildkit_proto::moby::sshforward::v1::ssh_server::{Ssh, SshServer};
 use bollard_buildkit_proto::moby::sshforward::v1::{CheckAgentRequest, CheckAgentResponse};
 use bytes::Bytes;
@@ -62,9 +69,13 @@ use hyper_util::rt::TokioExecutor;
 use log::{debug, error, info, trace, warn};
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
+#[cfg(not(windows))]
 use ssh::SshAgentPacketDecoder;
+#[cfg(not(windows))]
 use tokio::sync::mpsc;
+#[cfg(not(windows))]
 use tokio_util::codec::FramedRead;
+#[cfg(not(windows))]
 use tokio_util::io::{ReaderStream, StreamReader};
 use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
@@ -122,6 +133,7 @@ pub(crate) enum GrpcServer {
     Upload(UploadServer<UploadProvider>),
     FileSend(FileSendServer<FileSendImpl>),
     FileSendPacket(FileSendPacketServer<FileSendPacketImpl>),
+    FileSync(FileSyncServer<filesync::FileSyncImpl>),
     Secrets(SecretsServer<SecretProvider>),
     Ssh(SshServer<SshProvider>),
 }
@@ -138,6 +150,7 @@ impl GrpcServer {
             GrpcServer::FileSendPacket(file_send_packet_server) => {
                 builder.add_service(file_send_packet_server)
             }
+            GrpcServer::FileSync(file_sync_server) => builder.add_service(file_sync_server),
             GrpcServer::Secrets(secret_server) => builder.add_service(secret_server),
             GrpcServer::Ssh(ssh_server) => builder.add_service(ssh_server),
         }
@@ -165,6 +178,12 @@ impl GrpcServer {
                 vec![format!(
                     "/{}/diffcopy",
                     FileSendPacketServer::<FileSendPacketImpl>::NAME
+                )]
+            }
+            GrpcServer::FileSync(_file_sync_server) => {
+                vec![format!(
+                    "/{}/diffcopy",
+                    FileSyncServer::<filesync::FileSyncImpl>::NAME
                 )]
             }
             GrpcServer::Secrets(_secret_server) => {
@@ -347,9 +366,10 @@ impl FileSendPacketImpl {
         if mode.contains(fsutil::FileMode::Symlink) {
             Self::validate_linkname(&stat.linkname)?;
         } else if !mode.intersects(fsutil::FileMode::Type) && !stat.linkname.is_empty() {
-            return Err(Status::invalid_argument(
-                "regular file has an unexpected symlink target",
-            ));
+            let target = FileSendPacketImpl::validate_path(&stat.linkname)?;
+            if target == path {
+                return Err(Status::invalid_argument("hardlink cannot target itself"));
+            }
         }
 
         Ok((path, mode))
@@ -370,11 +390,47 @@ const MAX_PENDING_FILES: usize = 4096;
 const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_TOTAL_SIZE: u64 = 16 * 1024 * 1024 * 1024;
 
+#[cfg(unix)]
+fn apply_xattrs(
+    parent: &cap_std::fs::Dir,
+    name: &std::ffi::OsStr,
+    xattrs: &HashMap<String, Vec<u8>>,
+) -> std::io::Result<()> {
+    if xattrs.is_empty() {
+        return Ok(());
+    }
+
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = parent.open_with(name, &options)?.into_std();
+    for (name, value) in xattrs {
+        if !fsutil::is_transferable_xattr(name) {
+            continue;
+        }
+        file.set_xattr(name, value)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_xattrs_to_file(
+    file: &std::fs::File,
+    xattrs: &HashMap<String, Vec<u8>>,
+) -> std::io::Result<()> {
+    for (name, value) in xattrs {
+        if !fsutil::is_transferable_xattr(name) {
+            continue;
+        }
+        file.set_xattr(name, value)?;
+    }
+    Ok(())
+}
+
 struct FileReceiveState {
     root: cap_std::fs::Dir,
     stats: HashMap<u32, PendingFile>,
     declared_paths: HashSet<PathBuf>,
-    directories: HashMap<PathBuf, (u32, cap_std::fs::Dir, OsString)>,
+    directories: HashMap<PathBuf, PendingDirectory>,
     received_all_stats: bool,
     received_fin: bool,
     next_stat_id: u32,
@@ -384,9 +440,16 @@ struct FileReceiveState {
 }
 
 struct PendingFile {
-    stat: Stat,
+    size: i64,
+    mode: u32,
     file: File,
     received_bytes: u64,
+}
+
+struct PendingDirectory {
+    mode: u32,
+    parent: cap_std::fs::Dir,
+    name: OsString,
 }
 
 impl FileReceiveState {
@@ -539,12 +602,14 @@ impl FileReceiveState {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                         let permission_parent = current.try_clone()?;
                         let permission_name = name.to_owned();
-                        let mut builder = cap_std::fs::DirBuilder::new();
+                        let builder = cap_std::fs::DirBuilder::new();
                         #[cfg(unix)]
-                        {
+                        let builder = {
+                            let mut builder = builder;
                             use cap_std::fs::DirBuilderExt;
                             builder.mode(0o700);
-                        }
+                            builder
+                        };
                         current.create_dir_with(name, &builder).map_err(|error| {
                             std::io::Error::new(
                                 error.kind(),
@@ -615,7 +680,11 @@ impl FileReceiveState {
         for (directory, parent, name) in created {
             self.directories
                 .entry(directory)
-                .or_insert((0o700, parent, name));
+                .or_insert(PendingDirectory {
+                    mode: 0o700,
+                    parent,
+                    name,
+                });
         }
 
         let name = path.file_name().ok_or_else(|| {
@@ -624,23 +693,25 @@ impl FileReceiveState {
 
         if mode.contains(fsutil::FileMode::Symlink) {
             #[cfg(unix)]
-            tokio::task::spawn_blocking({
-                let linkname = stat.linkname.clone();
-                let parent = parent.try_clone().map_err(|error| {
-                    Status::internal(format!("failed to retain export directory: {error}"))
-                })?;
-                let name = name.to_owned();
-                move || parent.symlink_contents(linkname, name)
-            })
-            .await
-            .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
-            .map_err(|error| Status::internal(format!("failed to create symlink: {error}")))?;
+            {
+                tokio::task::spawn_blocking({
+                    let linkname = stat.linkname.clone();
+                    let parent = parent.try_clone().map_err(|error| {
+                        Status::internal(format!("failed to retain export directory: {error}"))
+                    })?;
+                    let name = name.to_owned();
+                    move || parent.symlink_contents(linkname, name)
+                })
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| Status::internal(format!("failed to create symlink: {error}")))?;
+                self.file_count += 1;
+                return Ok(false);
+            }
             #[cfg(not(unix))]
             return Err(Status::unimplemented(
                 "symlink export is only supported on Unix",
             ));
-            self.file_count += 1;
-            return Ok(false);
         }
 
         if mode.contains(fsutil::FileMode::Dir) {
@@ -655,12 +726,14 @@ impl FileReceiveState {
             let directory = tokio::task::spawn_blocking(move || match parent.open_dir(&name) {
                 Ok(directory) => Ok(directory),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    let mut builder = cap_std::fs::DirBuilder::new();
+                    let builder = cap_std::fs::DirBuilder::new();
                     #[cfg(unix)]
-                    {
+                    let builder = {
+                        let mut builder = builder;
                         use cap_std::fs::DirBuilderExt;
                         builder.mode(0o700);
-                    }
+                        builder
+                    };
                     parent.create_dir_with(&name, &builder)?;
                     parent.open_dir(&name)
                 }
@@ -672,10 +745,84 @@ impl FileReceiveState {
                 Status::already_exists(format!("cannot create export directory: {error}"))
             })?;
             drop(directory);
+            #[cfg(unix)]
+            {
+                let xattr_parent = permission_parent.try_clone().map_err(|error| {
+                    Status::internal(format!("failed to retain export directory: {error}"))
+                })?;
+                let xattr_name = permission_name.clone();
+                let xattrs = stat.xattrs.clone();
+                tokio::task::spawn_blocking(move || {
+                    apply_xattrs(&xattr_parent, &xattr_name, &xattrs)
+                })
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| {
+                    Status::internal(format!(
+                        "failed to set directory extended attributes: {error}"
+                    ))
+                })?;
+            }
             self.directories.insert(
                 path,
-                (stat.mode & 0o777, permission_parent, permission_name),
+                PendingDirectory {
+                    mode: stat.mode & 0o777,
+                    parent: permission_parent,
+                    name: permission_name,
+                },
             );
+            self.file_count += 1;
+            return Ok(false);
+        }
+
+        if !mode.intersects(fsutil::FileMode::Type) && !stat.linkname.is_empty() {
+            let target = FileSendPacketImpl::validate_path(&stat.linkname)?;
+            if !self.declared_paths.contains(&target) {
+                return Err(Status::invalid_argument(format!(
+                    "hardlink target has not been declared: {:?}",
+                    stat.linkname
+                )));
+            }
+            let root = self.root.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let target_metadata = root.symlink_metadata(&target).map_err(|error| {
+                Status::invalid_argument(format!("invalid hardlink target: {error}"))
+            })?;
+            if !target_metadata.file_type().is_file() {
+                return Err(Status::invalid_argument(
+                    "hardlink target is not a regular file",
+                ));
+            }
+            #[cfg(unix)]
+            let xattr_parent = parent.try_clone().map_err(|error| {
+                Status::internal(format!("failed to retain export directory: {error}"))
+            })?;
+            let name = name.to_owned();
+            let hardlink_name = name.clone();
+            tokio::task::spawn_blocking(move || root.hard_link(&target, &parent, &hardlink_name))
+                .await
+                .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
+                .map_err(|error| {
+                    Status::invalid_argument(format!("failed to create hardlink: {error}"))
+                })?;
+            #[cfg(unix)]
+            {
+                let xattrs = stat.xattrs.clone();
+                tokio::task::spawn_blocking(move || apply_xattrs(&xattr_parent, &name, &xattrs))
+                    .await
+                    .map_err(|error| {
+                        Status::internal(format!("filesystem worker failed: {error}"))
+                    })?
+                    .map_err(|error| {
+                        Status::internal(format!(
+                            "failed to set hardlink extended attributes: {error}"
+                        ))
+                    })?;
+            }
             self.file_count += 1;
             return Ok(false);
         }
@@ -697,6 +844,7 @@ impl FileReceiveState {
             Status::internal(format!("failed to retain export directory: {error}"))
         })?;
         let name = name.to_owned();
+        let xattrs = stat.xattrs.clone();
         let file = tokio::task::spawn_blocking(move || {
             let mut options = cap_std::fs::OpenOptions::new();
             options.write(true).create_new(true);
@@ -705,9 +853,10 @@ impl FileReceiveState {
                 use cap_std::fs::OpenOptionsExt;
                 options.mode(0o600);
             }
-            parent
-                .open_with(&name, &options)
-                .map(|file| file.into_std())
+            let file = parent.open_with(&name, &options)?.into_std();
+            #[cfg(unix)]
+            apply_xattrs_to_file(&file, &xattrs)?;
+            Ok::<_, std::io::Error>(file)
         })
         .await
         .map_err(|error| Status::internal(format!("filesystem worker failed: {error}")))?
@@ -717,7 +866,8 @@ impl FileReceiveState {
         self.stats.insert(
             request_id,
             PendingFile {
-                stat: stat.clone(),
+                size: stat.size,
+                mode: stat.mode,
                 file: File::from_std(file),
                 received_bytes: 0,
             },
@@ -736,7 +886,7 @@ impl FileReceiveState {
             .received_bytes
             .checked_add(data_len)
             .ok_or_else(|| Status::resource_exhausted("file byte count overflow"))?;
-        let expected_bytes = u64::try_from(pending.stat.size)
+        let expected_bytes = u64::try_from(pending.size)
             .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
         if received_bytes > expected_bytes {
             return Err(Status::resource_exhausted(
@@ -757,7 +907,7 @@ impl FileReceiveState {
             .stats
             .remove(&id)
             .ok_or_else(|| Status::invalid_argument("end-of-file packet for unknown file"))?;
-        let expected_bytes = u64::try_from(pending.stat.size)
+        let expected_bytes = u64::try_from(pending.size)
             .map_err(|_| Status::invalid_argument("file stat has a negative size"))?;
         if pending.received_bytes != expected_bytes {
             return Err(Status::invalid_argument(format!(
@@ -772,13 +922,13 @@ impl FileReceiveState {
             .await
             .map_err(|error| Status::internal(format!("failed to flush file data: {error}")))?;
         #[cfg(unix)]
-        pending
-            .file
-            .set_permissions(std::fs::Permissions::from_mode(pending.stat.mode & 0o777))
-            .await
-            .map_err(|error| {
-                Status::internal(format!("failed to set file permissions: {error}"))
-            })?;
+        {
+            let file = pending.file.into_std().await;
+            file.set_permissions(std::fs::Permissions::from_mode(pending.mode & 0o777))
+                .map_err(|error| {
+                    Status::internal(format!("failed to set file permissions: {error}"))
+                })?;
+        }
         Ok(())
     }
 
@@ -791,14 +941,16 @@ impl FileReceiveState {
         self.stats.clear();
         let directories: Vec<_> = self.directories.into_values().collect();
         tokio::task::spawn_blocking(move || {
-            for (mode, parent, name) in directories {
+            for directory in directories {
                 #[cfg(unix)]
-                parent.set_permissions(
-                    name,
-                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(mode)),
+                directory.parent.set_permissions(
+                    &directory.name,
+                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(
+                        directory.mode,
+                    )),
                 )?;
                 #[cfg(not(unix))]
-                let _ = (parent, name, mode);
+                let _ = directory;
             }
             Ok::<(), std::io::Error>(())
         })
@@ -836,14 +988,12 @@ async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status
 
 struct StagingGuard {
     staging: Option<PathBuf>,
-    runtime: tokio::runtime::Handle,
 }
 
 impl StagingGuard {
     async fn new(destination: &Path) -> Result<Self, Status> {
         Ok(Self {
             staging: Some(prepare_staging_directory(destination).await?),
-            runtime: tokio::runtime::Handle::current(),
         })
     }
 
@@ -853,19 +1003,20 @@ impl StagingGuard {
             .expect("staging guard owns a path before publication")
     }
 
-    async fn cleanup(mut self) -> Result<(), Status> {
-        let staging = self
-            .staging
-            .take()
-            .expect("staging guard owns a path before cleanup");
-        remove_path(&staging).await
+    async fn cleanup(&mut self) -> Result<(), Status> {
+        let Some(staging) = self.staging.clone() else {
+            return Ok(());
+        };
+        remove_path(&staging).await?;
+        self.staging = None;
+        Ok(())
     }
 
     async fn publish(mut self, destination: &Path) -> Result<(), Status> {
         let staging = self
             .staging
             .take()
-            .expect("staging guard owns a path before publication");
+            .ok_or_else(|| Status::failed_precondition("staging directory is not available"))?;
         publish_staging_directory(&staging, destination).await
     }
 }
@@ -876,12 +1027,16 @@ impl Drop for StagingGuard {
             return;
         };
 
-        let runtime = self.runtime.clone();
-        runtime.spawn(async move {
-            if let Err(error) = remove_path(&staging).await {
-                warn!("failed to clean up cancelled FileSend staging directory: {error}");
-            }
-        });
+        let thread = std::thread::Builder::new()
+            .name(String::from("bollard-filesend-cleanup"))
+            .spawn(move || {
+                if let Err(error) = remove_path_blocking(&staging) {
+                    warn!("failed to clean up cancelled FileSend staging directory: {error}");
+                }
+            });
+        if let Err(error) = thread {
+            warn!("failed to spawn FileSend cleanup thread: {error}");
+        }
     }
 }
 
@@ -889,7 +1044,7 @@ async fn prepare_file_receive_state(
     destination: &Path,
     limits: FileTransferLimits,
 ) -> Result<(StagingGuard, FileReceiveState), Status> {
-    let staging_guard = StagingGuard::new(destination).await?;
+    let mut staging_guard = StagingGuard::new(destination).await?;
     let staging = staging_guard.path().to_owned();
     match FileReceiveState::with_limits(staging, limits).await {
         Ok(state) => Ok((staging_guard, state)),
@@ -903,10 +1058,16 @@ async fn prepare_file_receive_state(
 }
 
 async fn cleanup_staging_guard(guard: &mut Option<StagingGuard>, context: &str) {
-    if let Some(guard) = guard.take() {
-        if let Err(error) = guard.cleanup().await {
-            warn!("failed to clean up {context}: {error}");
-        }
+    let result = if let Some(staging_guard) = guard.as_mut() {
+        staging_guard.cleanup().await
+    } else {
+        return;
+    };
+
+    if let Err(error) = result {
+        warn!("failed to clean up {context}: {error}");
+    } else {
+        *guard = None;
     }
 }
 
@@ -988,14 +1149,28 @@ fn publish_staging_directory_blocking(staging: &Path, destination: &Path) -> Res
     result
 }
 
+struct StagingPublication {
+    path: PathBuf,
+}
+
+impl Drop for StagingPublication {
+    fn drop(&mut self) {
+        if let Err(error) = remove_path_blocking(&self.path) {
+            warn!("failed to clean up unpublished export: {error}");
+        }
+    }
+}
+
 async fn publish_staging_directory(staging: &Path, destination: &Path) -> Result<(), Status> {
-    let staging = staging.to_owned();
+    let staging = StagingPublication {
+        path: staging.to_owned(),
+    };
     let destination = destination.to_owned();
-    tokio::task::spawn_blocking(move || publish_staging_directory_blocking(&staging, &destination))
-        .await
-        .map_err(|error| {
-            Status::internal(format!("filesystem publication worker failed: {error}"))
-        })?
+    tokio::task::spawn_blocking(move || {
+        publish_staging_directory_blocking(&staging.path, &destination)
+    })
+    .await
+    .map_err(|error| Status::internal(format!("filesystem publication worker failed: {error}")))?
 }
 
 #[tonic::async_trait]
@@ -1064,16 +1239,19 @@ impl FileSendPacket for FileSendPacketImpl {
                             }
                             Ok(None) => {}
                             Err(error) => {
+                                drop(state.take());
                                 cleanup_staging_guard(&mut staging_guard, "failed export").await;
                                 Err::<(), Status>(error)?;
                             }
                         }
                     }
                     Some(Err(error)) => {
+                        drop(state.take());
                         cleanup_staging_guard(&mut staging_guard, "failed export").await;
                         Err::<(), Status>(Status::internal(format!("packet stream error: {error}")))?;
                     }
                     None => {
+                        drop(state.take());
                         cleanup_staging_guard(&mut staging_guard, "incomplete export").await;
                         Err::<(), Status>(Status::failed_precondition(
                             "file packet stream ended before PACKET_FIN",
@@ -1728,7 +1906,7 @@ impl Ssh for SshProvider {
     #[cfg(windows)]
     async fn forward_agent(
         &self,
-        request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
+        _request: Request<Streaming<bollard_buildkit_proto::moby::sshforward::v1::BytesMessage>>,
     ) -> Result<Response<Self::ForwardAgentStream>, Status> {
         unimplemented!();
     }
@@ -1843,7 +2021,7 @@ mod tests {
     use super::{
         fs, fsutil, prepare_staging_directory, publish_staging_directory, FileReceiveState,
         FileSendPacketImpl, FileSendPacketServer, FileTransferLimits, SshAgentSource, SshProvider,
-        MAX_FILE_SIZE,
+        StagingGuard, MAX_FILE_SIZE,
     };
 
     fn packet_stat(stat: Option<Stat>) -> Packet {
@@ -1888,6 +2066,22 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    fn stat_with_xattrs(
+        path: &str,
+        mode: u32,
+        size: i64,
+        linkname: &str,
+        xattrs: &[(&str, &[u8])],
+    ) -> Stat {
+        let mut stat = stat(path, mode, size, linkname);
+        stat.xattrs = xattrs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_vec()))
+            .collect();
+        stat
+    }
+
     async fn start_file_send_server(
         destination: std::path::PathBuf,
     ) -> (
@@ -1916,13 +2110,48 @@ mod tests {
             .collect()
     }
 
+    #[test]
+    fn staging_guard_cleans_after_runtime_shutdown() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("output");
+        let guard = {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime
+                .block_on(super::StagingGuard::new(&destination))
+                .expect("staging directory is created")
+        };
+
+        assert!(!transfer_sibling_names(root.path()).is_empty());
+        drop(guard);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            if transfer_sibling_names(root.path()).is_empty() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("staging cleanup did not finish after runtime shutdown");
+    }
+
+    #[tokio::test]
+    async fn staging_guard_retains_path_after_cleanup_failure() {
+        let staging = PathBuf::from("invalid\0staging");
+        let mut guard = StagingGuard {
+            staging: Some(staging.clone()),
+        };
+
+        assert!(guard.cleanup().await.is_err());
+        assert_eq!(guard.staging.as_ref(), Some(&staging));
+    }
+
     async fn wait_for_staging_siblings(root: &Path, expected: bool) {
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if !transfer_sibling_names(root).is_empty() == expected {
                     break;
                 }
-                tokio::task::yield_now().await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -2050,7 +2279,7 @@ mod tests {
             fs::read_link(destination.join("link")).await.unwrap(),
             Path::new("message")
         );
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
         #[cfg(unix)]
         {
             assert_eq!(
@@ -2097,7 +2326,7 @@ mod tests {
         }
 
         assert!(sent_fin);
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
         server_task.abort();
         let _ = server_task.await;
     }
@@ -2134,7 +2363,7 @@ mod tests {
             fs::read(destination.join("sentinel")).await.unwrap(),
             b"old"
         );
-        assert!(transfer_sibling_names(root.path()).is_empty());
+        wait_for_staging_siblings(root.path(), false).await;
     }
 
     #[tokio::test]
@@ -2186,6 +2415,103 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_preserves_hardlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(stat("first", 0o644, 5, ""))))
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            0
+        );
+        state.handle_packet(packet_data(0, b"hello")).await.unwrap();
+        state.handle_packet(packet_data(0, &[])).await.unwrap();
+        state
+            .handle_packet(packet_stat(Some(stat("second", 0o644, 0, "first"))))
+            .await
+            .unwrap();
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.finalize().await.unwrap();
+
+        let first = std::fs::metadata(dir.path().join("first")).unwrap();
+        let second = std::fs::metadata(dir.path().join("second")).unwrap();
+        assert_eq!(first.ino(), second.ino());
+        assert_eq!(std::fs::read(dir.path().join("second")).unwrap(), b"hello");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_file_receive_state_restores_and_filters_xattrs() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = FileReceiveState::new(dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let directory_mode = fsutil::FileMode::Dir.bits() | 0o755;
+
+        state
+            .handle_packet(packet_stat(Some(stat_with_xattrs(
+                "nested",
+                directory_mode,
+                0,
+                "",
+                &[("user.directory", b"value")],
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .handle_packet(packet_stat(Some(stat_with_xattrs(
+                    "nested/file",
+                    0o644,
+                    5,
+                    "",
+                    &[("user.file", b"value"), ("security.capability", b"blocked")],
+                ))))
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            1
+        );
+        state.handle_packet(packet_data(1, b"hello")).await.unwrap();
+        state.handle_packet(packet_data(1, &[])).await.unwrap();
+        assert_eq!(
+            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "security.capability").unwrap(),
+            None
+        );
+        state.handle_packet(packet_stat(None)).await.unwrap();
+        state.finalize().await.unwrap();
+
+        assert_eq!(
+            xattr::get(dir.path().join("nested"), "user.directory").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "user.file").unwrap(),
+            Some(b"value".to_vec())
+        );
+        assert_eq!(
+            xattr::get(dir.path().join("nested/file"), "security.capability").unwrap(),
+            None
+        );
     }
 
     #[tokio::test]
