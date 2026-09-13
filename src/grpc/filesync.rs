@@ -3000,6 +3000,55 @@ mod tests {
         let _ = server.await;
     }
 
+    #[tokio::test]
+    async fn diff_copy_preserves_pipelined_requests_during_batched_stats() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("a"), b"entry").expect("entry is created");
+        std::fs::write(root.path().join("b"), b"entry").expect("entry is created");
+        let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
+            open_mount(root.path()),
+            "context",
+            FaultInjection {
+                delay_scan: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let first_stat = tokio::time::timeout(Duration::from_secs(10), responses.message())
+            .await
+            .expect("first STAT does not stall")
+            .expect("first STAT succeeds")
+            .expect("first STAT exists");
+        assert_eq!(first_stat.r#type, PacketType::PacketStat as i32);
+        sender
+            .send(request_packet(first_stat.id))
+            .await
+            .expect("in-flight request sends");
+
+        let mut data_eofs = 0;
+        let mut stats_finished = false;
+        while !stats_finished || data_eofs == 0 {
+            let packet = tokio::time::timeout(Duration::from_secs(10), responses.message())
+                .await
+                .expect("FileSync response does not stall")
+                .expect("FileSync response succeeds")
+                .expect("FileSync response exists");
+            match PacketType::try_from(packet.r#type).expect("response type is known") {
+                PacketType::PacketData if packet.data.is_empty() => data_eofs += 1,
+                PacketType::PacketStat if packet.stat.is_none() => stats_finished = true,
+                _ => {}
+            }
+        }
+        sender.send(fin_packet()).await.expect("FIN sends");
+        assert_eq!(
+            responses.message().await.unwrap().unwrap().r#type,
+            PacketType::PacketFin as i32
+        );
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn diff_copy_rejects_replaced_regular_files() {
