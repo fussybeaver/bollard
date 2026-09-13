@@ -44,6 +44,7 @@ const MAX_FOLLOW_PATHS: usize = 1024;
 const MAX_FOLLOW_RESOLVED_PATHS: usize = MAX_ENTRIES;
 const MAX_FOLLOW_INSPECTED_ENTRIES: usize = MAX_ENTRIES;
 const MAX_FOLLOW_DEPTH: usize = 256;
+#[cfg(test)]
 const ENTRY_QUEUE_CAPACITY: usize = 128;
 const SCAN_BATCH_SIZE: usize = 128;
 const FILE_JOB_QUEUE_CAPACITY: usize = 128;
@@ -1241,6 +1242,7 @@ fn validate_options(metadata: &MetadataMap) -> Result<(), Status> {
     Ok(())
 }
 
+#[cfg(test)]
 fn scan_entries(
     root: Arc<cap_std::fs::Dir>,
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
@@ -1255,6 +1257,7 @@ fn scan_entries(
     )
 }
 
+#[cfg(test)]
 fn scan_entries_with_selection(
     root: Arc<cap_std::fs::Dir>,
     sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
