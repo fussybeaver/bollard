@@ -586,7 +586,6 @@ impl FileSync for FileSyncImpl {
                 if phase == TransferPhase::Enumerating
                     && scan_request.is_none()
                     && pending_entries.is_empty()
-                    && (!scan_completion_pending || pending_jobs.is_empty())
                 {
                     let scanner = session
                         .scanner
