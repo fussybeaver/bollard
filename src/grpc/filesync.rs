@@ -454,43 +454,24 @@ async fn next_session_event(
     scan_request: Option<&mut ScanRequest>,
     input: &mut Pin<Box<Streaming<Packet>>>,
     output: &mut tokio::sync::mpsc::Receiver<Result<Packet, Status>>,
-    jobs: Option<&tokio::sync::mpsc::Sender<FileJob>>,
+    jobs: &JobSender,
     queued_job: Option<&FileJob>,
     pending_stat: bool,
 ) -> SessionEvent {
-    if let (Some(sender), Some(job)) = (jobs, queued_job) {
+    let mut pending_scan: ScanRequest = Box::pin(std::future::pending());
+    let scan_request = scan_request.unwrap_or(&mut pending_scan);
+
+    if let Some(job) = queued_job {
         let job = job.clone();
         let sent_job = job.clone();
-        if let Some(scan_request) = scan_request {
-            tokio::select! {
-                biased;
-                result = sender.send(job) => {
-                    match result {
-                        Ok(()) => SessionEvent::Job(Ok(sent_job)),
-                        Err(error) => SessionEvent::Job(Err(error.0)),
-                    }
-                }
-                _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
-                batch = scan_request => SessionEvent::Scan(batch),
-                packet = output.recv() => SessionEvent::Output(packet),
-            }
-        } else {
-            tokio::select! {
-                biased;
-                result = sender.send(job) => {
-                    match result {
-                        Ok(()) => SessionEvent::Job(Ok(sent_job)),
-                        Err(error) => SessionEvent::Job(Err(error.0)),
-                    }
-                }
-                _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
-                packet = output.recv() => SessionEvent::Output(packet),
-            }
-        }
-    } else if let Some(scan_request) = scan_request {
         tokio::select! {
             biased;
-            packet = input.next() => SessionEvent::Packet(packet),
+            result = jobs.send(job) => {
+                match result {
+                    Ok(()) => SessionEvent::Job(Ok(sent_job)),
+                    Err(error) => SessionEvent::Job(Err(error.0)),
+                }
+            }
             _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
             batch = scan_request => SessionEvent::Scan(batch),
             packet = output.recv() => SessionEvent::Output(packet),
@@ -500,6 +481,7 @@ async fn next_session_event(
             biased;
             packet = input.next() => SessionEvent::Packet(packet),
             _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
+            batch = scan_request => SessionEvent::Scan(batch),
             packet = output.recv() => SessionEvent::Output(packet),
         }
     }
@@ -609,7 +591,9 @@ impl FileSync for FileSyncImpl {
                     scan_request.as_mut(),
                     &mut input,
                     &mut output_receiver,
-                    jobs_sender.as_ref(),
+                    jobs_sender
+                        .as_ref()
+                        .expect("FileSync jobs remain available during transfer"),
                     queued_job.as_ref(),
                     !pending_entries.is_empty(),
                 ).await;
