@@ -583,9 +583,14 @@ impl FileSync for FileSyncImpl {
             }
 
             loop {
+                let need_batch = if scan_completion_pending {
+                    pending_entries.is_empty()
+                } else {
+                    pending_entries.len() < SCAN_BATCH_SIZE
+                };
                 if phase == TransferPhase::Enumerating
                     && scan_request.is_none()
-                    && pending_entries.is_empty()
+                    && need_batch
                 {
                     let scanner = session
                         .scanner
