@@ -139,6 +139,7 @@ impl ScannerHandle {
         })
     }
 
+    // Cancellation is also enforced by the token and dropping the command sender.
     fn cancel(&self) {
         let _ = self.commands.try_send(ScannerCommand::Cancel);
     }
