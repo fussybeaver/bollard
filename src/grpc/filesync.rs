@@ -2993,9 +2993,12 @@ mod tests {
 
     #[tokio::test]
     async fn diff_copy_preserves_pipelined_requests_during_batched_stats() {
+        let file_count = SCAN_BATCH_SIZE * 2;
         let root = tempdir().expect("temporary directory is created");
-        std::fs::write(root.path().join("a"), b"entry").expect("entry is created");
-        std::fs::write(root.path().join("b"), b"entry").expect("entry is created");
+        for index in 0..file_count {
+            std::fs::write(root.path().join(format!("entry-{index:03}")), b"entry")
+                .expect("entry is created");
+        }
         let (sender, mut responses, shutdown, server) = open_filesync_transfer_with_metadata(
             open_mount(root.path()),
             "context",
@@ -3012,14 +3015,13 @@ mod tests {
             .expect("first STAT succeeds")
             .expect("first STAT exists");
         assert_eq!(first_stat.r#type, PacketType::PacketStat as i32);
-        sender
-            .send(request_packet(first_stat.id))
-            .await
-            .expect("in-flight request sends");
+        assert!(first_stat.stat.is_some());
+        sender.send(request_packet(0)).await.expect("request sends");
 
         let mut data_eofs = 0;
         let mut stats_finished = false;
-        while !stats_finished || data_eofs == 0 {
+        let mut next_request_id = 1;
+        while !stats_finished || data_eofs < file_count {
             let packet = tokio::time::timeout(Duration::from_secs(10), responses.message())
                 .await
                 .expect("FileSync response does not stall")
@@ -3027,6 +3029,16 @@ mod tests {
                 .expect("FileSync response exists");
             match PacketType::try_from(packet.r#type).expect("response type is known") {
                 PacketType::PacketData if packet.data.is_empty() => data_eofs += 1,
+                PacketType::PacketStat if packet.stat.is_some() => {
+                    if next_request_id < file_count as u32 {
+                        let id = next_request_id;
+                        next_request_id += 1;
+                        sender
+                            .send(request_packet(id))
+                            .await
+                            .expect("request sends");
+                    }
+                }
                 PacketType::PacketStat if packet.stat.is_none() => stats_finished = true,
                 _ => {}
             }
