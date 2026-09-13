@@ -483,7 +483,6 @@ async fn next_session_event(
                         Err(error) => SessionEvent::Job(Err(error.0)),
                     }
                 }
-                packet = input.next() => SessionEvent::Packet(packet),
                 _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
                 packet = output.recv() => SessionEvent::Output(packet),
             }
@@ -704,6 +703,10 @@ impl FileSync for FileSyncImpl {
                                     relative: target.relative,
                                 };
                                 if jobs_sender.is_some() {
+                                    debug_assert!(
+                                        queued_job.is_none(),
+                                        "queued FileJob would be overwritten"
+                                    );
                                     queued_job = Some(job);
                                 } else {
                                     fail!(Status::failed_precondition(
