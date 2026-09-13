@@ -1414,8 +1414,7 @@ impl Scanner {
                 &metadata,
                 &mut self.seen_hardlinks,
             )?;
-            let pending_entries = self.pending.drain(..).collect::<Vec<_>>();
-            for pending_entry in pending_entries {
+            for pending_entry in std::mem::take(&mut self.pending) {
                 let entry = self.source_entry(
                     pending_entry.stat,
                     pending_entry.regular,
