@@ -1,6 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     ffi::{OsStr, OsString},
+    future::Future,
     panic::AssertUnwindSafe,
     path::{Path, PathBuf},
     pin::Pin,
@@ -44,16 +45,22 @@ const MAX_FOLLOW_RESOLVED_PATHS: usize = MAX_ENTRIES;
 const MAX_FOLLOW_INSPECTED_ENTRIES: usize = MAX_ENTRIES;
 const MAX_FOLLOW_DEPTH: usize = 256;
 const ENTRY_QUEUE_CAPACITY: usize = 128;
+const SCAN_BATCH_SIZE: usize = 128;
 const FILE_JOB_QUEUE_CAPACITY: usize = 128;
 const OUTPUT_QUEUE_CAPACITY: usize = 16;
 const FILE_WORKER_COUNT: usize = 4;
 const FILE_READ_BUFFER_SIZE: usize = 32 * 1024;
 const FILESYNC_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
-type EntryReceiver = tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>;
 type JobSender = tokio::sync::mpsc::Sender<FileJob>;
 type OutputReceiver = tokio::sync::mpsc::Receiver<Result<Packet, Status>>;
-type FileSyncStart = (FileSyncSession, EntryReceiver, JobSender, OutputReceiver);
+type ScanRequest = Pin<Box<dyn Future<Output = Result<ScanBatch, Status>> + Send>>;
+
+struct FileSyncStart {
+    session: FileSyncSession,
+    jobs: JobSender,
+    output: OutputReceiver,
+}
 
 #[cfg(test)]
 use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
@@ -111,12 +118,33 @@ struct FileSyncSession {
 }
 
 struct ScannerHandle {
+    commands: tokio::sync::mpsc::Sender<ScannerCommand>,
     completion: tokio::sync::oneshot::Receiver<Result<(), Status>>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl ScannerHandle {
+    fn next_batch(&self, limit: usize) -> ScanRequest {
+        let commands = self.commands.clone();
+        Box::pin(async move {
+            let (reply, response) = tokio::sync::oneshot::channel();
+            commands
+                .send(ScannerCommand::NextBatch { limit, reply })
+                .await
+                .map_err(|_| Status::internal("FileSync scanner stopped"))?;
+            response
+                .await
+                .map_err(|_| Status::internal("FileSync scanner dropped its response"))?
+        })
+    }
+
+    fn cancel(&self) {
+        let _ = self.commands.try_send(ScannerCommand::Cancel);
+    }
+
     async fn join(mut self) -> Result<(), Status> {
+        let commands = self.commands;
+        drop(commands);
         self.completion
             .await
             .map_err(|_| Status::internal("FileSync scanner task failed"))??;
@@ -142,7 +170,7 @@ impl FileSyncSession {
     ) -> Result<FileSyncStart, Status> {
         let cancellation = CancellationToken::new();
         let scanner_root = root.clone();
-        let (entries_sender, entries_receiver) = mpsc::channel(ENTRY_QUEUE_CAPACITY);
+        let (commands_sender, mut commands_receiver) = mpsc::channel(1);
         let (jobs_sender, jobs_receiver) = mpsc::channel(FILE_JOB_QUEUE_CAPACITY);
         let (output_sender, output_receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
         let scanner_cancellation = cancellation.clone();
@@ -150,22 +178,51 @@ impl FileSyncSession {
         let scanner_thread = std::thread::Builder::new()
             .name(String::from("bollard-filesync-scanner"))
             .spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if faults.panic_scanner {
                         panic!("injected FileSync scanner panic");
                     }
-                    let result = scan_entries_with_selection(
-                        scanner_root,
-                        entries_sender.clone(),
-                        selection,
-                        scanner_cancellation,
-                        faults,
-                    );
-                    if let Err(error) = result {
-                        let _ = entries_sender.blocking_send(Err(error));
+                    let mut scanner = None::<Scanner>;
+                    let mut scanner_root = Some(scanner_root);
+                    let mut selection = Some(selection);
+                    while let Some(command) = commands_receiver.blocking_recv() {
+                        match command {
+                            ScannerCommand::NextBatch { limit, reply } => {
+                                let result = if let Some(scanner) = scanner.as_mut() {
+                                    scanner.take_batch(limit, &scanner_cancellation, faults)
+                                } else {
+                                    match Scanner::new(
+                                        scanner_root
+                                            .take()
+                                            .expect("scanner root is initialized once"),
+                                        selection
+                                            .take()
+                                            .expect("scanner selection is initialized once"),
+                                        &scanner_cancellation,
+                                    ) {
+                                        Ok(new_scanner) => {
+                                            scanner = Some(new_scanner);
+                                            scanner
+                                                .as_mut()
+                                                .expect("scanner was just initialized")
+                                                .take_batch(limit, &scanner_cancellation, faults)
+                                        }
+                                        Err(error) => Err(error),
+                                    }
+                                };
+                                let failed = result.is_err();
+                                if reply.send(result).is_err() || failed {
+                                    break;
+                                }
+                            }
+                            ScannerCommand::Cancel => break,
+                        }
                     }
-                }));
-                let result = result.map_err(|_| Status::internal("FileSync scanner panicked"));
+                    Ok(())
+                })) {
+                    Ok(result) => result,
+                    Err(_) => Err(Status::internal("FileSync scanner panicked")),
+                };
                 let _ = completion_sender.send(result);
             })
             .map_err(|error| Status::internal(format!("FileSync scanner task failed: {error}")))?;
@@ -199,29 +256,30 @@ impl FileSyncSession {
         }
         drop(output_sender);
 
-        Ok((
-            Self {
+        Ok(FileSyncStart {
+            session: Self {
                 cancellation,
                 scanner: Some(ScannerHandle {
+                    commands: commands_sender,
                     completion: completion_receiver,
                     thread: Some(scanner_thread),
                 }),
                 workers,
             },
-            entries_receiver,
-            jobs_sender,
-            output_receiver,
-        ))
+            jobs: jobs_sender,
+            output: output_receiver,
+        })
     }
 
     async fn shutdown(
         &mut self,
-        entries: &mut tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>,
         jobs: &mut Option<tokio::sync::mpsc::Sender<FileJob>>,
         output: &mut tokio::sync::mpsc::Receiver<Result<Packet, Status>>,
     ) -> Result<(), Status> {
         self.cancellation.cancel();
-        entries.close();
+        if let Some(scanner) = self.scanner.as_ref() {
+            scanner.cancel();
+        }
         output.close();
         jobs.take();
 
@@ -315,11 +373,6 @@ struct PendingEntry {
     relative: PathBuf,
 }
 
-enum EmitResult {
-    Sent,
-    ReceiverClosed,
-}
-
 struct ScanBudget {
     inspected: usize,
 }
@@ -369,40 +422,85 @@ struct FollowPathContext {
     budget: FollowPathBudget,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransferPhase {
+    Enumerating,
+    AwaitingFin,
+    Finishing,
+}
+
+enum ScannerCommand {
+    NextBatch {
+        limit: usize,
+        reply: tokio::sync::oneshot::Sender<Result<ScanBatch, Status>>,
+    },
+    Cancel,
+}
+
+struct ScanBatch {
+    entries: Vec<SourceEntry>,
+    finished: bool,
+}
+
 enum SessionEvent {
-    Entry(Option<Result<SourceEntry, Status>>),
+    Scan(Result<ScanBatch, Status>),
+    Stat,
     Packet(Option<Result<Packet, Status>>),
     Output(Option<Result<Packet, Status>>),
     Job(Result<FileJob, FileJob>),
 }
 
 async fn next_session_event(
-    entries: &mut tokio::sync::mpsc::Receiver<Result<SourceEntry, Status>>,
+    scan_request: Option<&mut ScanRequest>,
     input: &mut Pin<Box<Streaming<Packet>>>,
     output: &mut tokio::sync::mpsc::Receiver<Result<Packet, Status>>,
     jobs: Option<&tokio::sync::mpsc::Sender<FileJob>>,
     queued_job: Option<&FileJob>,
-    enumeration_finished: bool,
+    pending_stat: bool,
 ) -> SessionEvent {
     if let (Some(sender), Some(job)) = (jobs, queued_job) {
         let job = job.clone();
         let sent_job = job.clone();
+        if let Some(scan_request) = scan_request {
+            tokio::select! {
+                biased;
+                result = sender.send(job) => {
+                    match result {
+                        Ok(()) => SessionEvent::Job(Ok(sent_job)),
+                        Err(error) => SessionEvent::Job(Err(error.0)),
+                    }
+                }
+                _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
+                batch = scan_request => SessionEvent::Scan(batch),
+                packet = output.recv() => SessionEvent::Output(packet),
+            }
+        } else {
+            tokio::select! {
+                biased;
+                result = sender.send(job) => {
+                    match result {
+                        Ok(()) => SessionEvent::Job(Ok(sent_job)),
+                        Err(error) => SessionEvent::Job(Err(error.0)),
+                    }
+                }
+                packet = input.next() => SessionEvent::Packet(packet),
+                _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
+                packet = output.recv() => SessionEvent::Output(packet),
+            }
+        }
+    } else if let Some(scan_request) = scan_request {
         tokio::select! {
             biased;
-            result = sender.send(job) => {
-                match result {
-                    Ok(()) => SessionEvent::Job(Ok(sent_job)),
-                    Err(error) => SessionEvent::Job(Err(error.0)),
-                }
-            }
-            event = entries.recv(), if !enumeration_finished => SessionEvent::Entry(event),
+            packet = input.next() => SessionEvent::Packet(packet),
+            _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
+            batch = scan_request => SessionEvent::Scan(batch),
             packet = output.recv() => SessionEvent::Output(packet),
         }
     } else {
         tokio::select! {
             biased;
             packet = input.next() => SessionEvent::Packet(packet),
-            event = entries.recv(), if !enumeration_finished => SessionEvent::Entry(event),
+            _stat = std::future::ready(()), if pending_stat => SessionEvent::Stat,
             packet = output.recv() => SessionEvent::Output(packet),
         }
     }
@@ -451,8 +549,11 @@ impl FileSync for FileSyncImpl {
         let faults = FaultInjection::from_metadata(request.metadata());
         #[cfg(not(test))]
         let faults = FaultInjection::default();
-        let (mut session, mut entries_receiver, jobs_sender, mut output_receiver) =
-            FileSyncSession::start(root, selection, faults)?;
+        let FileSyncStart {
+            mut session,
+            jobs: jobs_sender,
+            output: mut output_receiver,
+        } = FileSyncSession::start(root, selection, faults)?;
         let mut jobs_sender = Some(jobs_sender);
         let mut input = Box::pin(request.into_inner());
 
@@ -460,15 +561,19 @@ impl FileSync for FileSyncImpl {
             let mut positions = HashMap::<u32, FileTarget>::new();
             let mut pending_jobs = HashMap::<u32, ()>::new();
             let mut queued_job = None::<FileJob>;
-            let mut enumeration_finished = false;
-            let mut fin_requested = false;
+            let mut phase = TransferPhase::Enumerating;
+            let mut scan_request = None::<ScanRequest>;
+            let mut pending_entries = VecDeque::<SourceEntry>::new();
+            // Finalize STAT only after the final batch has been emitted.
+            let mut scan_completion_pending = false;
 
             macro_rules! fail {
                 ($error:expr) => {{
                     let error = $error;
                     yield Ok(error_packet(&error));
+                    let _ = scan_request.take();
                     if let Err(cleanup_error) = session
-                        .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                        .shutdown(&mut jobs_sender, &mut output_receiver)
                         .await
                     {
                         warn!("FileSync cleanup failed after protocol error: {cleanup_error}");
@@ -479,13 +584,31 @@ impl FileSync for FileSyncImpl {
             }
 
             loop {
+                if phase == TransferPhase::Enumerating
+                    && scan_request.is_none()
+                    && pending_entries.is_empty()
+                    && (!scan_completion_pending || pending_jobs.is_empty())
+                {
+                    let scanner = session
+                        .scanner
+                        .as_ref()
+                        .expect("scanner remains available while enumerating");
+                    scan_request = Some(if scan_completion_pending {
+                        Box::pin(std::future::ready(Ok(ScanBatch {
+                            entries: Vec::new(),
+                            finished: true,
+                        })))
+                    } else {
+                        scanner.next_batch(SCAN_BATCH_SIZE)
+                    });
+                }
                 let event = next_session_event(
-                    &mut entries_receiver,
+                    scan_request.as_mut(),
                     &mut input,
                     &mut output_receiver,
                     jobs_sender.as_ref(),
                     queued_job.as_ref(),
-                    enumeration_finished,
+                    !pending_entries.is_empty(),
                 ).await;
                 match event {
                     SessionEvent::Job(job) => match job {
@@ -498,42 +621,44 @@ impl FileSync for FileSyncImpl {
                             job.id
                         ))),
                     },
-                    SessionEvent::Entry(event) => match event {
-                        Some(Ok(entry)) => {
-                            let SourceEntry {
-                                stat,
-                                position,
-                                regular,
-                                relative,
-                            } = entry;
-                            positions.insert(position, FileTarget { regular, relative });
-                            yield Ok(stat_entry_packet(stat));
-                        }
-                        Some(Err(error)) => {
-                            fail!(error);
-                        }
-                        None => {
-                            if let Some(scanner) = session.scanner.take() {
-                                if let Err(join_error) = scanner.join().await {
-                                    fail!(Status::internal(format!(
-                                        "FileSync scanner task failed: {join_error}"
-                                    )));
+                    SessionEvent::Stat => {
+                        let entry = pending_entries
+                            .pop_front()
+                            .expect("STAT event has a pending entry");
+                        let SourceEntry {
+                            stat,
+                            position,
+                            regular,
+                            relative,
+                        } = entry;
+                        positions.insert(position, FileTarget { regular, relative });
+                        yield Ok(stat_entry_packet(stat));
+                    }
+                    SessionEvent::Scan(result) => {
+                        scan_request = None;
+                        match result {
+                        Ok(ScanBatch { entries, finished }) => {
+                            pending_entries.extend(entries);
+                            if finished {
+                                if scan_completion_pending {
+                                    scan_completion_pending = false;
+                                    if let Some(scanner) = session.scanner.take() {
+                                        if let Err(join_error) = scanner.join().await {
+                                            fail!(Status::internal(format!(
+                                                "FileSync scanner task failed: {join_error}"
+                                            )));
+                                        }
+                                    }
+                                    yield Ok(stat_terminator());
+                                    phase = TransferPhase::AwaitingFin;
+                                } else {
+                                    scan_completion_pending = true;
                                 }
                             }
-                            yield Ok(stat_terminator());
-                            enumeration_finished = true;
-                            if fin_requested && pending_jobs.is_empty() {
-                                yield Ok(fin_response_packet());
-                                match session
-                                    .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
-                                    .await
-                                {
-                                    Ok(()) => break,
-                                    Err(error) => fail!(error),
-                                }
-                            }
                         }
-                    },
+                        Err(error) => fail!(error),
+                        }
+                    }
                     SessionEvent::Packet(packet) => {
                         let packet = match packet {
                             Some(Ok(packet)) => packet,
@@ -555,7 +680,7 @@ impl FileSync for FileSyncImpl {
                                 ));
                             }
                             PacketType::PacketReq => {
-                                if fin_requested {
+                                if phase == TransferPhase::Finishing {
                                     fail!(Status::failed_precondition(
                                         "FileSync received PACKET_REQ after PACKET_FIN",
                                     ));
@@ -587,21 +712,21 @@ impl FileSync for FileSyncImpl {
                                 }
                             }
                             PacketType::PacketFin => {
-                                if !enumeration_finished {
+                                if phase == TransferPhase::Enumerating {
                                     fail!(Status::failed_precondition(
                                         "FileSync received PACKET_FIN before STAT termination",
                                     ));
                                 }
-                                if fin_requested {
+                                if phase == TransferPhase::Finishing {
                                     fail!(Status::failed_precondition(
                                         "FileSync received repeated PACKET_FIN",
                                     ));
                                 }
-                                fin_requested = true;
+                                phase = TransferPhase::Finishing;
                                 if pending_jobs.is_empty() {
                                     yield Ok(fin_response_packet());
                                     match session
-                                        .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                                        .shutdown(&mut jobs_sender, &mut output_receiver)
                                         .await
                                     {
                                         Ok(()) => break,
@@ -626,10 +751,10 @@ impl FileSync for FileSyncImpl {
                                 ));
                             }
                             yield Ok(packet);
-                            if fin_requested && enumeration_finished && pending_jobs.is_empty() {
+                            if phase == TransferPhase::Finishing && pending_jobs.is_empty() {
                                 yield Ok(fin_response_packet());
                                 match session
-                                    .shutdown(&mut entries_receiver, &mut jobs_sender, &mut output_receiver)
+                                    .shutdown(&mut jobs_sender, &mut output_receiver)
                                     .await
                                 {
                                     Ok(()) => break,
@@ -637,8 +762,12 @@ impl FileSync for FileSyncImpl {
                                 }
                             }
                         }
-                        Some(Err(error)) => fail!(error),
-                        None => fail!(Status::internal("FileSync output channel closed")),
+                        Some(Err(error)) => {
+                            fail!(error)
+                        }
+                        None => {
+                            fail!(Status::internal("FileSync output channel closed"))
+                        }
                     },
                 }
             }
@@ -1142,174 +1271,213 @@ fn scan_entries_with_selection(
     cancellation: CancellationToken,
     faults: FaultInjection,
 ) -> Result<(), Status> {
-    let root = root.try_clone().map_err(|error| {
-        Status::internal(format!("failed to retain local source root: {error}"))
-    })?;
-    let mut budget = ScanBudget { inspected: 0 };
-    let names = sorted_names(&root, &mut budget, &cancellation)?;
-    let mut frames = vec![ScanFrame {
-        relative: PathBuf::new(),
-        directory: root,
-        names,
-        next_name: 0,
-        pending: false,
-    }];
-    let mut position = 0_u32;
-    let mut pending = Vec::<PendingEntry>::new();
-    let mut seen_hardlinks = HashMap::<(u64, u64), String>::new();
-
-    while let Some(mut frame) = frames.pop() {
-        if faults.delay_scan {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+    let mut scanner = Scanner::new(root, selection, &cancellation)?;
+    loop {
+        let batch = scanner.take_batch(SCAN_BATCH_SIZE, &cancellation, faults)?;
+        let finished = batch.finished;
+        for entry in batch.entries {
+            if sender.blocking_send(Ok(entry)).is_err() {
+                return Ok(());
+            }
         }
-        if cancellation.is_cancelled() {
+        if finished {
             return Ok(());
         }
-        let Some(name) = frame.names.get(frame.next_name).cloned() else {
-            if frame.pending {
-                pending.pop();
-            }
-            continue;
-        };
-        frame.next_name += 1;
+    }
+}
 
-        let relative = frame.relative.join(&name);
-        let metadata = frame
-            .directory
-            .symlink_metadata(&name)
-            .map_err(|error| filesystem_error("stat", &relative, error))?;
-        if !selection.is_selected(&relative) {
-            if metadata.file_type().is_dir() {
-                let (stat, regular) = source_stat(
-                    &frame.directory,
-                    &name,
-                    &relative,
-                    &metadata,
-                    &mut seen_hardlinks,
+struct Scanner {
+    selection: ScanSelection,
+    budget: ScanBudget,
+    frames: Vec<ScanFrame>,
+    position: u32,
+    pending: Vec<PendingEntry>,
+    ready: VecDeque<SourceEntry>,
+    seen_hardlinks: HashMap<(u64, u64), String>,
+}
+
+impl Scanner {
+    fn new(
+        root: Arc<cap_std::fs::Dir>,
+        selection: ScanSelection,
+        cancellation: &CancellationToken,
+    ) -> Result<Self, Status> {
+        let root = root.try_clone().map_err(|error| {
+            Status::internal(format!("failed to retain local source root: {error}"))
+        })?;
+        let mut budget = ScanBudget { inspected: 0 };
+        let names = sorted_names(&root, &mut budget, cancellation)?;
+        Ok(Self {
+            selection,
+            budget,
+            frames: vec![ScanFrame {
+                relative: PathBuf::new(),
+                directory: root,
+                names,
+                next_name: 0,
+                pending: false,
+            }],
+            position: 0,
+            pending: Vec::new(),
+            ready: VecDeque::new(),
+            seen_hardlinks: HashMap::new(),
+        })
+    }
+
+    fn take_batch(
+        &mut self,
+        limit: usize,
+        cancellation: &CancellationToken,
+        faults: FaultInjection,
+    ) -> Result<ScanBatch, Status> {
+        if limit == 0 {
+            return Err(Status::invalid_argument(
+                "FileSync scanner batch limit must be positive",
+            ));
+        }
+
+        let mut entries = Vec::with_capacity(limit);
+        loop {
+            while entries.len() < limit {
+                if let Some(entry) = self.ready.pop_front() {
+                    entries.push(entry);
+                } else {
+                    break;
+                }
+            }
+            if entries.len() == limit {
+                return Ok(ScanBatch {
+                    entries,
+                    finished: false,
+                });
+            }
+            if cancellation.is_cancelled() {
+                return Ok(ScanBatch {
+                    entries,
+                    finished: true,
+                });
+            }
+
+            let Some(mut frame) = self.frames.pop() else {
+                return Ok(ScanBatch {
+                    entries,
+                    finished: true,
+                });
+            };
+            if faults.delay_scan {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            let Some(name) = frame.names.get(frame.next_name).cloned() else {
+                if frame.pending {
+                    self.pending.pop();
+                }
+                continue;
+            };
+            frame.next_name += 1;
+
+            let relative = frame.relative.join(&name);
+            let metadata = frame
+                .directory
+                .symlink_metadata(&name)
+                .map_err(|error| filesystem_error("stat", &relative, error))?;
+            if !self.selection.is_selected(&relative) {
+                if metadata.file_type().is_dir() {
+                    let (stat, regular) = source_stat(
+                        &frame.directory,
+                        &name,
+                        &relative,
+                        &metadata,
+                        &mut self.seen_hardlinks,
+                    )?;
+                    let directory = frame
+                        .directory
+                        .open_dir(&name)
+                        .map_err(|error| filesystem_error("open directory", &relative, error))?;
+                    self.pending.push(PendingEntry {
+                        stat,
+                        regular,
+                        relative: relative.clone(),
+                    });
+                    self.frames.push(frame);
+                    self.frames.push(ScanFrame {
+                        relative,
+                        names: sorted_names(&directory, &mut self.budget, cancellation)?,
+                        directory,
+                        next_name: 0,
+                        pending: true,
+                    });
+                } else {
+                    self.frames.push(frame);
+                }
+                continue;
+            }
+
+            let (stat, regular) = source_stat(
+                &frame.directory,
+                &name,
+                &relative,
+                &metadata,
+                &mut self.seen_hardlinks,
+            )?;
+            let pending_entries = self.pending.drain(..).collect::<Vec<_>>();
+            for pending_entry in pending_entries {
+                let entry = self.source_entry(
+                    pending_entry.stat,
+                    pending_entry.regular,
+                    pending_entry.relative,
                 )?;
+                self.ready.push_back(entry);
+            }
+            let entry = self.source_entry(stat, regular, relative.clone())?;
+            self.ready.push_back(entry);
+
+            let file_type = metadata.file_type();
+            let child = if file_type.is_dir() {
                 let directory = frame
                     .directory
                     .open_dir(&name)
                     .map_err(|error| filesystem_error("open directory", &relative, error))?;
-                pending.push(PendingEntry {
-                    stat,
-                    regular,
-                    relative: relative.clone(),
-                });
-                frames.push(frame);
-                frames.push(ScanFrame {
+                Some(ScanFrame {
                     relative,
-                    names: sorted_names(&directory, &mut budget, &cancellation)?,
+                    names: sorted_names(&directory, &mut self.budget, cancellation)?,
                     directory,
                     next_name: 0,
-                    pending: true,
-                });
+                    pending: false,
+                })
             } else {
-                frames.push(frame);
-            }
-            continue;
-        }
-        let (stat, regular) = source_stat(
-            &frame.directory,
-            &name,
-            &relative,
-            &metadata,
-            &mut seen_hardlinks,
-        )?;
-        for pending_entry in pending.drain(..) {
-            if matches!(
-                emit_source_entry(
-                    &sender,
-                    &cancellation,
-                    &mut position,
-                    pending_entry.stat,
-                    pending_entry.regular,
-                    pending_entry.relative,
-                )?,
-                EmitResult::ReceiverClosed
-            ) {
-                return Ok(());
-            }
-        }
-        if matches!(
-            emit_source_entry(
-                &sender,
-                &cancellation,
-                &mut position,
-                stat,
-                regular,
-                relative.clone(),
-            )?,
-            EmitResult::ReceiverClosed
-        ) {
-            return Ok(());
-        }
+                None
+            };
 
-        let file_type = metadata.file_type();
-        let child = if file_type.is_dir() {
-            let directory = frame
-                .directory
-                .open_dir(&name)
-                .map_err(|error| filesystem_error("open directory", &relative, error))?;
-            Some(ScanFrame {
-                relative,
-                names: sorted_names(&directory, &mut budget, &cancellation)?,
-                directory,
-                next_name: 0,
-                pending: false,
-            })
-        } else {
-            None
-        };
-
-        frames.push(frame);
-        if let Some(child) = child {
-            frames.push(child);
-        }
-    }
-
-    Ok(())
-}
-
-fn emit_source_entry(
-    sender: &tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
-    cancellation: &CancellationToken,
-    position: &mut u32,
-    stat: Stat,
-    regular: bool,
-    relative: PathBuf,
-) -> Result<EmitResult, Status> {
-    if *position as usize >= MAX_ENTRIES {
-        return Err(Status::resource_exhausted(
-            "local source has too many entries",
-        ));
-    }
-    let current_position = *position;
-    *position = position
-        .checked_add(1)
-        .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
-    let mut entry = Some(Ok(SourceEntry {
-        stat,
-        position: current_position,
-        regular,
-        relative,
-    }));
-    loop {
-        if cancellation.is_cancelled() {
-            return Ok(EmitResult::ReceiverClosed);
-        }
-        match sender.try_send(entry.take().expect("entry is available")) {
-            Ok(()) => break,
-            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                return Ok(EmitResult::ReceiverClosed)
-            }
-            Err(tokio::sync::mpsc::error::TrySendError::Full(value)) => {
-                entry = Some(value);
-                std::thread::sleep(Duration::from_millis(1));
+            self.frames.push(frame);
+            if let Some(child) = child {
+                self.frames.push(child);
             }
         }
     }
-    Ok(EmitResult::Sent)
+
+    fn source_entry(
+        &mut self,
+        stat: Stat,
+        regular: bool,
+        relative: PathBuf,
+    ) -> Result<SourceEntry, Status> {
+        if self.position as usize >= MAX_ENTRIES {
+            return Err(Status::resource_exhausted(
+                "local source has too many entries",
+            ));
+        }
+        let position = self.position;
+        self.position = self
+            .position
+            .checked_add(1)
+            .ok_or_else(|| Status::resource_exhausted("local source entry ID exhausted"))?;
+        Ok(SourceEntry {
+            stat,
+            position,
+            regular,
+            relative,
+        })
+    }
 }
 
 fn sorted_names(
@@ -1822,6 +1990,23 @@ mod tests {
         entries
     }
 
+    fn scan_fixture_in_batches(root: Arc<cap_std::fs::Dir>, limit: usize) -> Vec<SourceEntry> {
+        let cancellation = CancellationToken::new();
+        let mut scanner =
+            Scanner::new(root, ScanSelection::All, &cancellation).expect("fixture scanner starts");
+        let mut entries = Vec::new();
+        loop {
+            let batch = scanner
+                .take_batch(limit, &cancellation, FaultInjection::default())
+                .expect("fixture batch succeeds");
+            let finished = batch.finished;
+            entries.extend(batch.entries);
+            if finished {
+                return entries;
+            }
+        }
+    }
+
     #[tokio::test]
     async fn scanner_walks_depth_first_lexically_and_registers_positions() {
         let root = tempdir().expect("temporary directory is created");
@@ -1854,6 +2039,50 @@ mod tests {
         assert!(entries
             .iter()
             .all(|entry| entry.stat.path.len() <= MAX_PATH_LENGTH));
+    }
+
+    #[test]
+    fn scanner_batches_preserve_order_and_positions() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory is created");
+        for path in ["a", "b", "nested/c", "nested/d", "z"] {
+            let path = root.path().join(path);
+            std::fs::write(path, b"entry").expect("entry is created");
+        }
+
+        let one_at_a_time = scan_fixture_in_batches(open_mount(root.path()), 1)
+            .into_iter()
+            .map(|entry| (entry.stat.path, entry.position, entry.regular))
+            .collect::<Vec<_>>();
+        let in_batches = scan_fixture_in_batches(open_mount(root.path()), 3)
+            .into_iter()
+            .map(|entry| (entry.stat.path, entry.position, entry.regular))
+            .collect::<Vec<_>>();
+
+        assert_eq!(one_at_a_time, in_batches);
+        assert_eq!(
+            one_at_a_time
+                .iter()
+                .map(|entry| entry.1)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5]
+        );
+    }
+
+    #[test]
+    fn scanner_cancellation_finishes_without_emitting_entries() {
+        let root = tempdir().expect("temporary directory is created");
+        std::fs::write(root.path().join("input"), b"source").expect("source is created");
+        let cancellation = CancellationToken::new();
+        let mut scanner = Scanner::new(open_mount(root.path()), ScanSelection::All, &cancellation)
+            .expect("scanner starts");
+        cancellation.cancel();
+
+        let batch = scanner
+            .take_batch(SCAN_BATCH_SIZE, &cancellation, FaultInjection::default())
+            .expect("cancelled batch succeeds");
+        assert!(batch.finished);
+        assert!(batch.entries.is_empty());
     }
 
     #[cfg(windows)]
@@ -2507,8 +2736,6 @@ mod tests {
             },
         )
         .await;
-        let first = responses.message().await.unwrap().unwrap();
-        assert_eq!(first.r#type, PacketType::PacketStat as i32);
         sender.send(fin_packet()).await.expect("FIN sends");
         assert_eq!(
             expect_protocol_error(&mut responses).await.code(),
@@ -2706,7 +2933,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_accepts_requests_while_stat_is_in_flight() {
+    async fn diff_copy_accepts_requests_after_batched_stats() {
         let root = tempdir().expect("temporary directory is created");
         std::fs::write(root.path().join("a"), b"a").expect("a is created");
         std::fs::write(root.path().join("b"), b"b").expect("b is created");
@@ -2719,16 +2946,10 @@ mod tests {
             },
         )
         .await;
-        let first = responses
-            .message()
-            .await
-            .expect("first STAT succeeds")
-            .expect("first STAT exists");
-        assert_eq!(first.stat.as_ref().unwrap().path, "a");
+        read_stat_terminator(&mut responses).await;
         sender.send(request_packet(0)).await.expect("request sends");
 
-        let mut saw_data = false;
-        let mut saw_eof = false;
+        let mut data_packets = 0;
         loop {
             let packet = responses
                 .message()
@@ -2736,18 +2957,17 @@ mod tests {
                 .expect("FileSync response succeeds")
                 .expect("FileSync response exists");
             match PacketType::try_from(packet.r#type).expect("response type is known") {
-                PacketType::PacketStat if packet.stat.is_none() => break,
                 PacketType::PacketData => {
-                    saw_data = true;
                     if packet.data.is_empty() {
-                        saw_eof = true;
+                        break;
                     }
+                    data_packets += 1;
                 }
+                PacketType::PacketStat => panic!("STAT terminator was already consumed"),
                 _ => {}
             }
         }
-        assert!(saw_data);
-        assert!(saw_eof);
+        assert!(data_packets > 0);
         sender.send(fin_packet()).await.expect("FIN sends");
         assert_eq!(
             responses.message().await.unwrap().unwrap().r#type,
@@ -2758,7 +2978,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diff_copy_handles_large_stat_streams_with_bounded_queues() {
+    async fn diff_copy_handles_large_stat_streams_with_batched_scanner() {
         let root = tempdir().expect("temporary directory is created");
         for index in 0..(ENTRY_QUEUE_CAPACITY * 2) {
             std::fs::write(root.path().join(format!("entry-{index:03}")), b"entry")
