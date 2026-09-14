@@ -524,6 +524,7 @@ fn apply_xattrs(
     }
 
     let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true);
     cap_fs_ext::OpenOptionsFollowExt::follow(&mut options, cap_fs_ext::FollowSymlinks::No);
     let file = parent.open_with(name, &options)?.into_std();
     for (name, value) in xattrs {
