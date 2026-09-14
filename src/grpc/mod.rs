@@ -112,6 +112,37 @@ fn grpc_timestamp(dt: &GrpcDateTime) -> i64 {
 }
 
 const MAX_SECRET_SIZE: u64 = 500 * 1024; // 500KB
+const MAX_PATH_LENGTH: usize = 4096;
+const MAX_LINKNAME_LENGTH: usize = 4096;
+const MAX_FILE_COUNT: usize = 100_000;
+const MAX_PENDING_FILES: usize = 4096;
+const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_TOTAL_SIZE: u64 = 16 * 1024 * 1024 * 1024;
+
+/// Chunk size for streaming the build context to buildkit. Kept well below
+/// buildkit's default 16 MiB gRPC receive cap so a single message never
+/// exceeds it regardless of context size.
+const UPLOAD_CHUNK_SIZE: usize = 32 * 1024;
+
+const DEFAULT_TOKEN_EXPIRATION: i64 = 60;
+const DOCKER_HUB_REGISTRY_HOST: &str = "https://index.docker.io/v1/";
+const DOCKER_HUB_CONFIG_FILE_KEY: &str = "registry-1.docker.io";
+
+/// BuildKit's own id for the agent a `RUN --mount=type=ssh` instruction gets
+/// when it names none — and what an empty id means in both RPCs below.
+///
+/// Ref: `DefaultID` in
+/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
+pub(crate) const DEFAULT_SSH_AGENT_ID: &str = "default";
+
+/// The gRPC metadata key BuildKit puts the requested agent id under when it
+/// opens a `ForwardAgent` stream. Note the dots: this is `buildkit.ssh.id`,
+/// not a hyphenated spelling — getting it wrong doesn't fail loudly, it
+/// silently routes every named agent to `default`.
+///
+/// Ref: `KeySSHID` in
+/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
+const SSH_ID_METADATA_KEY: &str = "buildkit.ssh.id";
 
 #[derive(Debug)]
 pub(crate) enum GrpcServer {
@@ -250,6 +281,53 @@ pub(crate) struct FileSendImpl {
     pub(crate) dest: PathBuf,
 }
 
+/// Aggregate limits for one packet-based local export.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct FileTransferLimits {
+    max_files: Option<u64>,
+    max_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FileSendPacketImpl {
+    pub(crate) dest: PathBuf,
+    pub(crate) limits: FileTransferLimits,
+}
+
+struct FileReceiveState {
+    root: cap_std::fs::Dir,
+    stats: HashMap<u32, PendingFile>,
+    declared_paths: HashSet<PathBuf>,
+    directories: HashMap<PathBuf, PendingDirectory>,
+    received_all_stats: bool,
+    received_fin: bool,
+    next_stat_id: u32,
+    file_count: usize,
+    total_size: u64,
+    limits: FileTransferLimits,
+}
+
+struct PendingFile {
+    size: i64,
+    mode: u32,
+    file: File,
+    received_bytes: u64,
+}
+
+struct PendingDirectory {
+    mode: u32,
+    parent: cap_std::fs::Dir,
+    name: OsString,
+}
+
+struct StagingGuard {
+    staging: Option<PathBuf>,
+}
+
+struct StagingPublication {
+    path: PathBuf,
+}
+
 impl FileSendImpl {
     pub fn new(dest: &Path) -> Self {
         Self {
@@ -284,12 +362,6 @@ impl FileSend for FileSendImpl {
 
         Ok(Response::new(Box::pin(futures_util::stream::empty())))
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct FileSendPacketImpl {
-    pub(crate) dest: PathBuf,
-    pub(crate) limits: FileTransferLimits,
 }
 
 impl FileSendPacketImpl {
@@ -362,20 +434,6 @@ impl FileSendPacketImpl {
     }
 }
 
-/// Aggregate limits for one packet-based local export.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct FileTransferLimits {
-    max_files: Option<u64>,
-    max_bytes: Option<u64>,
-}
-
-const MAX_PATH_LENGTH: usize = 4096;
-const MAX_LINKNAME_LENGTH: usize = 4096;
-const MAX_FILE_COUNT: usize = 100_000;
-const MAX_PENDING_FILES: usize = 4096;
-const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
-const MAX_TOTAL_SIZE: u64 = 16 * 1024 * 1024 * 1024;
-
 #[cfg(unix)]
 fn apply_xattrs(
     parent: &cap_std::fs::Dir,
@@ -410,32 +468,6 @@ fn apply_xattrs_to_file(
         xattr::FileExt::set_xattr(file, name, value)?;
     }
     Ok(())
-}
-
-struct FileReceiveState {
-    root: cap_std::fs::Dir,
-    stats: HashMap<u32, PendingFile>,
-    declared_paths: HashSet<PathBuf>,
-    directories: HashMap<PathBuf, PendingDirectory>,
-    received_all_stats: bool,
-    received_fin: bool,
-    next_stat_id: u32,
-    file_count: usize,
-    total_size: u64,
-    limits: FileTransferLimits,
-}
-
-struct PendingFile {
-    size: i64,
-    mode: u32,
-    file: File,
-    received_bytes: u64,
-}
-
-struct PendingDirectory {
-    mode: u32,
-    parent: cap_std::fs::Dir,
-    name: OsString,
 }
 
 impl FileReceiveState {
@@ -974,10 +1006,6 @@ async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status
     Ok(staging)
 }
 
-struct StagingGuard {
-    staging: Option<PathBuf>,
-}
-
 impl StagingGuard {
     async fn new(destination: &Path) -> Result<Self, Status> {
         Ok(Self {
@@ -1137,10 +1165,6 @@ fn publish_staging_directory_blocking(staging: &Path, destination: &Path) -> Res
     result
 }
 
-struct StagingPublication {
-    path: PathBuf,
-}
-
 impl Drop for StagingPublication {
     fn drop(&mut self) {
         if let Err(error) = remove_path_blocking(&self.path) {
@@ -1276,11 +1300,6 @@ impl UploadProvider {
     }
 }
 
-/// Chunk size for streaming the build context to buildkit. Kept well below
-/// buildkit's default 16 MiB gRPC receive cap so a single message never
-/// exceeds it regardless of context size.
-const UPLOAD_CHUNK_SIZE: usize = 32 * 1024;
-
 #[tonic::async_trait]
 impl Upload for UploadProvider {
     type PullStream = Pin<Box<dyn Stream<Item = Result<UploadBytesMessage, Status>> + Send>>;
@@ -1318,10 +1337,6 @@ pub(crate) struct AuthProvider {
     registry_token: Option<String>,
     token_seeds: HashMap<String, Bytes>,
 }
-
-const DEFAULT_TOKEN_EXPIRATION: i64 = 60;
-const DOCKER_HUB_REGISTRY_HOST: &str = "https://index.docker.io/v1/";
-const DOCKER_HUB_CONFIG_FILE_KEY: &str = "registry-1.docker.io";
 
 enum TokenExpiry {
     DEFAULT,
@@ -1637,22 +1652,6 @@ impl Secrets for SecretProvider {
         }
     }
 }
-
-/// BuildKit's own id for the agent a `RUN --mount=type=ssh` instruction gets
-/// when it names none — and what an empty id means in both RPCs below.
-///
-/// Ref: `DefaultID` in
-/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
-pub(crate) const DEFAULT_SSH_AGENT_ID: &str = "default";
-
-/// The gRPC metadata key BuildKit puts the requested agent id under when it
-/// opens a `ForwardAgent` stream. Note the dots: this is `buildkit.ssh.id`,
-/// not a hyphenated spelling — getting it wrong doesn't fail loudly, it
-/// silently routes every named agent to `default`.
-///
-/// Ref: `KeySSHID` in
-/// <https://github.com/moby/buildkit/blob/master/session/sshforward/ssh.go>
-const SSH_ID_METADATA_KEY: &str = "buildkit.ssh.id";
 
 /// Applies BuildKit's "an empty id means [`DEFAULT_SSH_AGENT_ID`]" rule.
 ///

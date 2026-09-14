@@ -63,9 +63,6 @@ struct FileSyncStart {
     output: OutputReceiver,
 }
 
-#[cfg(test)]
-use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
-
 #[derive(Clone)]
 pub(crate) struct FileSyncImpl {
     mounts: HashMap<String, Arc<cap_std::fs::Dir>>,
@@ -101,17 +98,6 @@ struct FaultInjection {
     panic_scanner: bool,
 }
 
-impl FaultInjection {
-    #[cfg(test)]
-    fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
-        Self {
-            panic_worker: metadata.contains_key("x-test-panic-worker"),
-            delay_scan: metadata.contains_key("x-test-delay-scan"),
-            panic_scanner: metadata.contains_key("x-test-panic-scanner"),
-        }
-    }
-}
-
 struct FileSyncSession {
     cancellation: CancellationToken,
     scanner: Option<ScannerHandle>,
@@ -122,6 +108,101 @@ struct ScannerHandle {
     commands: tokio::sync::mpsc::Sender<ScannerCommand>,
     completion: tokio::sync::oneshot::Receiver<Result<(), Status>>,
     thread: Option<JoinHandle<()>>,
+}
+
+#[derive(Clone, Debug)]
+enum ScanSelection {
+    All,
+    Filter {
+        include: Option<PatternMatcher>,
+        exclude: Option<PatternMatcher>,
+    },
+}
+
+struct ScanFrame {
+    relative: PathBuf,
+    directory: cap_std::fs::Dir,
+    names: Vec<OsString>,
+    next_name: usize,
+    pending: bool,
+}
+
+struct PendingEntry {
+    stat: Stat,
+    regular: bool,
+    relative: PathBuf,
+}
+
+struct ScanBudget {
+    inspected: usize,
+}
+
+struct FollowPathBudget {
+    inspected: usize,
+    resolved: usize,
+}
+
+struct FollowPathContext {
+    visited: HashSet<String>,
+    resolved: Vec<String>,
+    budget: FollowPathBudget,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransferPhase {
+    Enumerating,
+    AwaitingFin,
+    Finishing,
+}
+
+enum ScannerCommand {
+    NextBatch {
+        limit: usize,
+        reply: tokio::sync::oneshot::Sender<Result<ScanBatch, Status>>,
+    },
+    Cancel,
+}
+
+struct ScanBatch {
+    entries: Vec<SourceEntry>,
+    finished: bool,
+}
+
+enum SessionEvent {
+    Scan(Result<ScanBatch, Status>),
+    Stat,
+    Packet(Option<Result<Packet, Status>>),
+    Output(Option<Result<Packet, Status>>),
+    Job(Result<FileJob, FileJob>),
+}
+
+#[derive(Clone, Debug, Default)]
+struct FileSyncOptions {
+    dir_name: Option<String>,
+    include_patterns: Vec<String>,
+    exclude_patterns: Vec<String>,
+    follow_paths: Vec<String>,
+}
+
+struct Scanner {
+    selection: ScanSelection,
+    budget: ScanBudget,
+    frames: Vec<ScanFrame>,
+    position: u32,
+    pending: Vec<PendingEntry>,
+    ready: VecDeque<SourceEntry>,
+    seen_hardlinks: HashMap<(u64, u64), String>,
+}
+
+impl FaultInjection {
+    #[cfg(test)]
+    fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
+        Self {
+            panic_worker: metadata.contains_key("x-test-panic-worker"),
+            delay_scan: metadata.contains_key("x-test-delay-scan"),
+            panic_scanner: metadata.contains_key("x-test-panic-scanner"),
+        }
+    }
 }
 
 impl ScannerHandle {
@@ -319,15 +400,6 @@ impl FileSyncSession {
     }
 }
 
-#[derive(Clone, Debug)]
-enum ScanSelection {
-    All,
-    Filter {
-        include: Option<PatternMatcher>,
-        exclude: Option<PatternMatcher>,
-    },
-}
-
 impl ScanSelection {
     fn from_patterns(include: &[String], exclude: &[String]) -> Result<Self, Status> {
         let include = PatternMatcher::new(include).map_err(|error| {
@@ -361,24 +433,6 @@ impl ScanSelection {
     }
 }
 
-struct ScanFrame {
-    relative: PathBuf,
-    directory: cap_std::fs::Dir,
-    names: Vec<OsString>,
-    next_name: usize,
-    pending: bool,
-}
-
-struct PendingEntry {
-    stat: Stat,
-    regular: bool,
-    relative: PathBuf,
-}
-
-struct ScanBudget {
-    inspected: usize,
-}
-
 impl ScanBudget {
     fn inspect(&mut self) -> Result<(), Status> {
         if self.inspected >= MAX_ENTRIES {
@@ -389,11 +443,6 @@ impl ScanBudget {
         self.inspected += 1;
         Ok(())
     }
-}
-
-struct FollowPathBudget {
-    inspected: usize,
-    resolved: usize,
 }
 
 impl FollowPathBudget {
@@ -416,40 +465,6 @@ impl FollowPathBudget {
         self.resolved += 1;
         path_string(path)
     }
-}
-
-struct FollowPathContext {
-    visited: HashSet<String>,
-    resolved: Vec<String>,
-    budget: FollowPathBudget,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TransferPhase {
-    Enumerating,
-    AwaitingFin,
-    Finishing,
-}
-
-enum ScannerCommand {
-    NextBatch {
-        limit: usize,
-        reply: tokio::sync::oneshot::Sender<Result<ScanBatch, Status>>,
-    },
-    Cancel,
-}
-
-struct ScanBatch {
-    entries: Vec<SourceEntry>,
-    finished: bool,
-}
-
-enum SessionEvent {
-    Scan(Result<ScanBatch, Status>),
-    Stat,
-    Packet(Option<Result<Packet, Status>>),
-    Output(Option<Result<Packet, Status>>),
-    Job(Result<FileJob, FileJob>),
 }
 
 async fn next_session_event(
@@ -870,14 +885,6 @@ async fn open_regular_file(
     Ok(tokio::fs::File::from_std(file))
 }
 
-#[derive(Clone, Debug, Default)]
-struct FileSyncOptions {
-    dir_name: Option<String>,
-    include_patterns: Vec<String>,
-    exclude_patterns: Vec<String>,
-    follow_paths: Vec<String>,
-}
-
 fn parse_options(metadata: &MetadataMap) -> Result<FileSyncOptions, Status> {
     Ok(FileSyncOptions {
         dir_name: metadata_values(metadata, DIR_NAME_METADATA)?
@@ -1241,54 +1248,6 @@ fn validate_options(metadata: &MetadataMap) -> Result<(), Status> {
         Status::invalid_argument(format!("invalid FileSync exclude pattern: {error}"))
     })?;
     Ok(())
-}
-
-#[cfg(test)]
-fn scan_entries(
-    root: Arc<cap_std::fs::Dir>,
-    sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
-) -> Result<(), Status> {
-    let cancellation = CancellationToken::new();
-    scan_entries_with_selection(
-        root,
-        sender,
-        ScanSelection::All,
-        cancellation,
-        FaultInjection::default(),
-    )
-}
-
-#[cfg(test)]
-fn scan_entries_with_selection(
-    root: Arc<cap_std::fs::Dir>,
-    sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
-    selection: ScanSelection,
-    cancellation: CancellationToken,
-    faults: FaultInjection,
-) -> Result<(), Status> {
-    let mut scanner = Scanner::new(root, selection, &cancellation)?;
-    loop {
-        let batch = scanner.take_batch(SCAN_BATCH_SIZE, &cancellation, faults)?;
-        let finished = batch.finished;
-        for entry in batch.entries {
-            if sender.blocking_send(Ok(entry)).is_err() {
-                return Ok(());
-            }
-        }
-        if finished {
-            return Ok(());
-        }
-    }
-}
-
-struct Scanner {
-    selection: ScanSelection,
-    budget: ScanBudget,
-    frames: Vec<ScanFrame>,
-    position: u32,
-    pending: Vec<PendingEntry>,
-    ready: VecDeque<SourceEntry>,
-    seen_hardlinks: HashMap<(u64, u64), String>,
 }
 
 impl Scanner {
@@ -1730,11 +1689,51 @@ fn error_packet(error: &Status) -> Packet {
 }
 
 #[cfg(test)]
+use bollard_buildkit_proto::moby::filesync::v1::file_sync_server::FileSyncServer;
+#[cfg(test)]
 use futures_util::stream;
 #[cfg(test)]
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 #[cfg(test)]
 use tonic::transport::Server;
+
+#[cfg(test)]
+fn scan_entries(
+    root: Arc<cap_std::fs::Dir>,
+    sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+) -> Result<(), Status> {
+    let cancellation = CancellationToken::new();
+    scan_entries_with_selection(
+        root,
+        sender,
+        ScanSelection::All,
+        cancellation,
+        FaultInjection::default(),
+    )
+}
+
+#[cfg(test)]
+fn scan_entries_with_selection(
+    root: Arc<cap_std::fs::Dir>,
+    sender: tokio::sync::mpsc::Sender<Result<SourceEntry, Status>>,
+    selection: ScanSelection,
+    cancellation: CancellationToken,
+    faults: FaultInjection,
+) -> Result<(), Status> {
+    let mut scanner = Scanner::new(root, selection, &cancellation)?;
+    loop {
+        let batch = scanner.take_batch(SCAN_BATCH_SIZE, &cancellation, faults)?;
+        let finished = batch.finished;
+        for entry in batch.entries {
+            if sender.blocking_send(Ok(entry)).is_err() {
+                return Ok(());
+            }
+        }
+        if finished {
+            return Ok(());
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn stat_packet(path: &'static str) -> Packet {
