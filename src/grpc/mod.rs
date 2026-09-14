@@ -33,18 +33,12 @@ use crate::moby::filesync::v1::{
 };
 use crate::moby::upload::v1::upload_server::{Upload, UploadServer};
 use crate::moby::upload::v1::BytesMessage as UploadBytesMessage;
-#[cfg(unix)]
-use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-#[cfg(unix)]
-use xattr::FileExt;
 
 use bollard_buildkit_proto::fsutil::types::packet::PacketType;
 use bollard_buildkit_proto::fsutil::types::{Packet, Stat};
@@ -69,14 +63,6 @@ use hyper_util::rt::TokioExecutor;
 use log::{debug, error, info, trace, warn};
 use rustls::ALL_VERSIONS;
 use serde_derive::Deserialize;
-#[cfg(not(windows))]
-use ssh::SshAgentPacketDecoder;
-#[cfg(not(windows))]
-use tokio::sync::mpsc;
-#[cfg(not(windows))]
-use tokio_util::codec::FramedRead;
-#[cfg(not(windows))]
-use tokio_util::io::{ReaderStream, StreamReader};
 use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
@@ -401,13 +387,13 @@ fn apply_xattrs(
     }
 
     let mut options = cap_std::fs::OpenOptions::new();
-    options.read(true).follow(FollowSymlinks::No);
+    cap_fs_ext::OpenOptionsFollowExt::follow(&mut options, cap_fs_ext::FollowSymlinks::No);
     let file = parent.open_with(name, &options)?.into_std();
     for (name, value) in xattrs {
         if !fsutil::is_transferable_xattr(name) {
             continue;
         }
-        file.set_xattr(name, value)?;
+        xattr::FileExt::set_xattr(&file, name, value)?;
     }
     Ok(())
 }
@@ -421,7 +407,7 @@ fn apply_xattrs_to_file(
         if !fsutil::is_transferable_xattr(name) {
             continue;
         }
-        file.set_xattr(name, value)?;
+        xattr::FileExt::set_xattr(file, name, value)?;
     }
     Ok(())
 }
@@ -924,10 +910,12 @@ impl FileReceiveState {
         #[cfg(unix)]
         {
             let file = pending.file.into_std().await;
-            file.set_permissions(std::fs::Permissions::from_mode(pending.mode & 0o777))
-                .map_err(|error| {
-                    Status::internal(format!("failed to set file permissions: {error}"))
-                })?;
+            file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(
+                pending.mode & 0o777,
+            ))
+            .map_err(|error| {
+                Status::internal(format!("failed to set file permissions: {error}"))
+            })?;
         }
         Ok(())
     }
@@ -945,9 +933,9 @@ impl FileReceiveState {
                 #[cfg(unix)]
                 directory.parent.set_permissions(
                     &directory.name,
-                    cap_std::fs::Permissions::from_std(std::fs::Permissions::from_mode(
-                        directory.mode,
-                    )),
+                    cap_std::fs::Permissions::from_std(
+                        std::os::unix::fs::PermissionsExt::from_mode(directory.mode),
+                    ),
                 )?;
                 #[cfg(not(unix))]
                 let _ = directory;
@@ -1836,7 +1824,7 @@ impl Ssh for SshProvider {
             .await
             .map_err(|e| Status::from(std::io::Error::other(e)))?;
 
-        let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(100);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, Status>>(100);
         let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(
             |res: Result<Bytes, _>| match res {
                 Ok(v) => Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage {
@@ -1847,19 +1835,19 @@ impl Ssh for SshProvider {
         );
 
         let in_stream = request.into_inner();
-        let mut in_framed = FramedRead::new(
-            StreamReader::new(in_stream.map(|res| match res {
+        let mut in_framed = tokio_util::codec::FramedRead::new(
+            tokio_util::io::StreamReader::new(in_stream.map(|res| match res {
                 Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: bytes }) => {
                     Ok(Bytes::from(bytes))
                 }
                 Err(e) => Err(std::io::Error::other(e)),
             })),
-            SshAgentPacketDecoder::new(),
+            ssh::SshAgentPacketDecoder::new(),
         );
 
         let (sock_read, sock_write) = sock.into_split();
 
-        let output_reader = ReaderStream::new(sock_read).map(|res| match res {
+        let output_reader = tokio_util::io::ReaderStream::new(sock_read).map(|res| match res {
             Ok(v) => {
                 Ok(bollard_buildkit_proto::moby::sshforward::v1::BytesMessage { data: v.to_vec() })
             }
