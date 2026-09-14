@@ -91,6 +91,84 @@ struct TearDownGuard {
     completed: bool,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct DriverInterceptor {
+    session_id: String,
+    metadata_grpc_method: Vec<String>,
+}
+
+/// Parameterises the [`docker_container::DockerContainer`] or [`moby::Moby`] driver with an exporter configuration. See
+/// <https://docs.docker.com/build/exporters/oci-docker/>
+#[derive(Debug, Clone)]
+pub enum ImageExporterEnum {
+    /// Export using the `oci` exporter.
+    OCI(ImageExporterRequest),
+    /// Export using the `docker` exporter.
+    Docker(ImageExporterRequest),
+}
+
+/// Exporter selection for a direct LLB definition solve.
+#[derive(Clone)]
+#[non_exhaustive]
+pub enum DefinitionExporter {
+    /// Export the solved filesystem into a local directory.
+    Local(PathBuf),
+}
+
+/// Options for a direct LLB definition solve.
+#[derive(Clone)]
+pub struct DefinitionSolveOptions {
+    cache_to: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
+    cache_from: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
+    credentials: HashMap<String, DockerCredentials>,
+    secrets: HashMap<String, SecretSource>,
+    ssh: bool,
+    timeout: Option<Duration>,
+    file_transfer_limits: FileTransferLimits,
+    local_mounts: HashMap<String, LocalMount>,
+}
+
+#[derive(Clone)]
+pub(crate) struct LocalMount {
+    pub(crate) root: Arc<cap_std::fs::Dir>,
+    pub(crate) path: PathBuf,
+}
+
+/// Builder for direct LLB definition solve options.
+#[derive(Debug, Clone, Default)]
+pub struct DefinitionSolveOptionsBuilder {
+    options: DefinitionSolveOptions,
+}
+
+/// A direct-definition solve request.
+#[derive(Clone)]
+pub struct DefinitionSolveRequest {
+    /// The pre-built LLB definition to solve.
+    pub definition: bollard_buildkit_proto::pb::Definition,
+    /// Where to export the result.
+    pub exporter: DefinitionExporter,
+    options: DefinitionSolveOptions,
+    build_ref: Option<BuildRef>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SolveRequestSummary {
+    has_ref: bool,
+    has_session: bool,
+    has_definition: bool,
+    definition_ops: usize,
+    frontend_attrs: usize,
+    frontend_inputs: usize,
+    entitlements: usize,
+    exporters: usize,
+    cache_exports: usize,
+    cache_imports: usize,
+    has_source_policy: bool,
+    has_source_policy_session: bool,
+    internal: bool,
+    enable_session_exporter: bool,
+}
+
 impl TearDownGuard {
     fn new(handler: Box<dyn DriverTearDownHandler>) -> Self {
         Self::with_timeout(handler, TEAR_DOWN_TIMEOUT)
@@ -168,12 +246,6 @@ impl Drop for TearDownGuard {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct DriverInterceptor {
-    session_id: String,
-    metadata_grpc_method: Vec<String>,
-}
-
 impl Interceptor for DriverInterceptor {
     fn call(&mut self, mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
         let metadata = req.metadata_mut();
@@ -197,43 +269,12 @@ impl Interceptor for DriverInterceptor {
     }
 }
 
-/// Parameterises the [`docker_container::DockerContainer`] or [`moby::Moby`] driver with an exporter configuration. See
-/// <https://docs.docker.com/build/exporters/oci-docker/>
-#[derive(Debug, Clone)]
-pub enum ImageExporterEnum {
-    /// Export using the `oci` exporter.
-    OCI(ImageExporterRequest),
-    /// Export using the `docker` exporter.
-    Docker(ImageExporterRequest),
-}
-
-/// Exporter selection for a direct LLB definition solve.
-#[derive(Clone)]
-#[non_exhaustive]
-pub enum DefinitionExporter {
-    /// Export the solved filesystem into a local directory.
-    Local(PathBuf),
-}
-
 impl std::fmt::Debug for DefinitionExporter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
         }
     }
-}
-
-/// Options for a direct LLB definition solve.
-#[derive(Clone)]
-pub struct DefinitionSolveOptions {
-    cache_to: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
-    cache_from: Vec<bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry>,
-    credentials: HashMap<String, DockerCredentials>,
-    secrets: HashMap<String, SecretSource>,
-    ssh: bool,
-    timeout: Option<Duration>,
-    file_transfer_limits: FileTransferLimits,
-    local_mounts: HashMap<String, LocalMount>,
 }
 
 impl std::fmt::Debug for DefinitionSolveOptions {
@@ -250,12 +291,6 @@ impl std::fmt::Debug for DefinitionSolveOptions {
             .field("local_mount_count", &self.local_mounts.len())
             .finish()
     }
-}
-
-#[derive(Clone)]
-pub(crate) struct LocalMount {
-    pub(crate) root: Arc<cap_std::fs::Dir>,
-    pub(crate) path: PathBuf,
 }
 
 impl std::fmt::Debug for LocalMount {
@@ -280,12 +315,6 @@ impl Default for DefinitionSolveOptions {
             local_mounts: HashMap::new(),
         }
     }
-}
-
-/// Builder for direct LLB definition solve options.
-#[derive(Debug, Clone, Default)]
-pub struct DefinitionSolveOptionsBuilder {
-    options: DefinitionSolveOptions,
 }
 
 impl DefinitionSolveOptionsBuilder {
@@ -393,17 +422,6 @@ impl DefinitionSolveOptionsBuilder {
     }
 }
 
-/// A direct-definition solve request.
-#[derive(Clone)]
-pub struct DefinitionSolveRequest {
-    /// The pre-built LLB definition to solve.
-    pub definition: bollard_buildkit_proto::pb::Definition,
-    /// Where to export the result.
-    pub exporter: DefinitionExporter,
-    options: DefinitionSolveOptions,
-    build_ref: Option<BuildRef>,
-}
-
 impl fmt::Debug for DefinitionSolveRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let exporter = match &self.exporter {
@@ -418,24 +436,6 @@ impl fmt::Debug for DefinitionSolveRequest {
             .field("has_build_ref", &self.build_ref.is_some())
             .finish()
     }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct SolveRequestSummary {
-    has_ref: bool,
-    has_session: bool,
-    has_definition: bool,
-    definition_ops: usize,
-    frontend_attrs: usize,
-    frontend_inputs: usize,
-    entitlements: usize,
-    exporters: usize,
-    cache_exports: usize,
-    cache_imports: usize,
-    has_source_policy: bool,
-    has_source_policy_session: bool,
-    internal: bool,
-    enable_session_exporter: bool,
 }
 
 impl From<&SolveRequest> for SolveRequestSummary {

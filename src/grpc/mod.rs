@@ -155,6 +155,143 @@ pub(crate) enum GrpcServer {
     Ssh(SshServer<SshProvider>),
 }
 
+#[derive(Debug)]
+pub(crate) struct HealthServerImpl {
+    service_map: HashMap<String, ServingStatus>,
+    shutdown: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FileSendImpl {
+    pub(crate) dest: PathBuf,
+}
+
+/// Aggregate limits for one packet-based local export.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct FileTransferLimits {
+    max_files: Option<u64>,
+    max_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FileSendPacketImpl {
+    pub(crate) dest: PathBuf,
+    pub(crate) limits: FileTransferLimits,
+}
+
+struct FileReceiveState {
+    root: cap_std::fs::Dir,
+    stats: HashMap<u32, PendingFile>,
+    declared_paths: HashSet<PathBuf>,
+    directories: HashMap<PathBuf, PendingDirectory>,
+    received_all_stats: bool,
+    received_fin: bool,
+    next_stat_id: u32,
+    file_count: usize,
+    total_size: u64,
+    limits: FileTransferLimits,
+}
+
+struct PendingFile {
+    size: i64,
+    mode: u32,
+    file: File,
+    received_bytes: u64,
+}
+
+struct PendingDirectory {
+    mode: u32,
+    parent: cap_std::fs::Dir,
+    name: OsString,
+}
+
+struct StagingGuard {
+    staging: Option<PathBuf>,
+}
+
+struct StagingPublication {
+    path: PathBuf,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct UploadProvider {
+    pub(crate) store: HashMap<String, Vec<u8>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct AuthProvider {
+    auth_config_cache: HashMap<String, DockerCredentials>,
+    registry_token: Option<String>,
+    token_seeds: HashMap<String, Bytes>,
+}
+
+enum TokenExpiry {
+    DEFAULT,
+    EXPIRES(i64),
+}
+
+struct TokenOptions {
+    realm: String,
+    service: String,
+    scopes: Vec<String>,
+    username: String,
+    secret: String,
+    fetch_refresh_token: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthTokenResponse {
+    access_token: String,
+    refresh_token: String,
+    expires_in: i64,
+    issued_at: GrpcDateTime,
+    scope: String,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct SecretProvider {
+    pub(crate) store: HashMap<String, build::SecretSource>,
+}
+
+/// Where a named ssh agent's bytes are relayed to.
+///
+/// Registered with
+/// [`ImageBuildSessionProviders::set_ssh_agent`](crate::grpc::build::ImageBuildSessionProviders::set_ssh_agent).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SshAgentSource {
+    /// The agent the host's `SSH_AUTH_SOCK` points at.
+    ///
+    /// Resolved when the build actually asks for the agent rather than when
+    /// it is registered, so constructing a build configuration never reads
+    /// the environment and a missing `SSH_AUTH_SOCK` is reported as a build
+    /// error rather than swallowed at registration time.
+    DefaultAgentSocket,
+    /// A specific Unix socket that speaks the ssh-agent protocol. It need not
+    /// be a running `ssh-agent`: anything answering that protocol works, which
+    /// is what lets a caller serve keys it holds itself.
+    Socket(PathBuf),
+}
+
+#[derive(Debug)]
+pub(crate) struct SshProvider {
+    /// Agent id → where to relay it. Empty ids are resolved to
+    /// [`DEFAULT_SSH_AGENT_ID`] before lookup, never stored as `""`.
+    sources: HashMap<String, SshAgentSource>,
+}
+
+pub(crate) struct GrpcClient {
+    pub(crate) client: crate::Docker,
+    pub(crate) session_id: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+/// A reference to a build within a BuildKit session
+/// It may be used to keep track of the progress of a build in BuildKit.
+///
+/// See [`bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient::status`].
+pub struct BuildRef(String);
+
 impl GrpcServer {
     pub(crate) fn append(
         self,
@@ -219,12 +356,6 @@ impl GrpcServer {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct HealthServerImpl {
-    service_map: HashMap<String, ServingStatus>,
-    shutdown: bool,
-}
-
 impl HealthServerImpl {
     pub fn new() -> Self {
         let mut service_map = HashMap::new();
@@ -274,58 +405,6 @@ impl Health for HealthServerImpl {
     ) -> Result<Response<Self::WatchStream>, Status> {
         unimplemented!();
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct FileSendImpl {
-    pub(crate) dest: PathBuf,
-}
-
-/// Aggregate limits for one packet-based local export.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct FileTransferLimits {
-    max_files: Option<u64>,
-    max_bytes: Option<u64>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct FileSendPacketImpl {
-    pub(crate) dest: PathBuf,
-    pub(crate) limits: FileTransferLimits,
-}
-
-struct FileReceiveState {
-    root: cap_std::fs::Dir,
-    stats: HashMap<u32, PendingFile>,
-    declared_paths: HashSet<PathBuf>,
-    directories: HashMap<PathBuf, PendingDirectory>,
-    received_all_stats: bool,
-    received_fin: bool,
-    next_stat_id: u32,
-    file_count: usize,
-    total_size: u64,
-    limits: FileTransferLimits,
-}
-
-struct PendingFile {
-    size: i64,
-    mode: u32,
-    file: File,
-    received_bytes: u64,
-}
-
-struct PendingDirectory {
-    mode: u32,
-    parent: cap_std::fs::Dir,
-    name: OsString,
-}
-
-struct StagingGuard {
-    staging: Option<PathBuf>,
-}
-
-struct StagingPublication {
-    path: PathBuf,
 }
 
 impl FileSendImpl {
@@ -1279,11 +1358,6 @@ impl FileSendPacket for FileSendPacketImpl {
     }
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct UploadProvider {
-    pub(crate) store: HashMap<String, Vec<u8>>,
-}
-
 impl UploadProvider {
     pub(crate) fn new() -> Self {
         Self {
@@ -1329,36 +1403,6 @@ impl Upload for UploadProvider {
             ))
         }
     }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct AuthProvider {
-    auth_config_cache: HashMap<String, DockerCredentials>,
-    registry_token: Option<String>,
-    token_seeds: HashMap<String, Bytes>,
-}
-
-enum TokenExpiry {
-    DEFAULT,
-    EXPIRES(i64),
-}
-
-struct TokenOptions {
-    realm: String,
-    service: String,
-    scopes: Vec<String>,
-    username: String,
-    secret: String,
-    fetch_refresh_token: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct OAuthTokenResponse {
-    access_token: String,
-    refresh_token: String,
-    expires_in: i64,
-    issued_at: GrpcDateTime,
-    scope: String,
 }
 
 impl AuthProvider {
@@ -1595,11 +1639,6 @@ impl Auth for AuthProvider {
     }
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct SecretProvider {
-    pub(crate) store: HashMap<String, build::SecretSource>,
-}
-
 impl SecretProvider {
     pub(crate) fn new(store: HashMap<String, build::SecretSource>) -> Self {
         Self { store }
@@ -1685,26 +1724,6 @@ fn agent_id_from_metadata(metadata: &tonic::metadata::MetadataMap) -> &str {
     )
 }
 
-/// Where a named ssh agent's bytes are relayed to.
-///
-/// Registered with
-/// [`ImageBuildSessionProviders::set_ssh_agent`](crate::grpc::build::ImageBuildSessionProviders::set_ssh_agent).
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SshAgentSource {
-    /// The agent the host's `SSH_AUTH_SOCK` points at.
-    ///
-    /// Resolved when the build actually asks for the agent rather than when
-    /// it is registered, so constructing a build configuration never reads
-    /// the environment and a missing `SSH_AUTH_SOCK` is reported as a build
-    /// error rather than swallowed at registration time.
-    DefaultAgentSocket,
-    /// A specific Unix socket that speaks the ssh-agent protocol. It need not
-    /// be a running `ssh-agent`: anything answering that protocol works, which
-    /// is what lets a caller serve keys it holds itself.
-    Socket(PathBuf),
-}
-
 impl SshAgentSource {
     /// The Unix socket to relay to, given the host's current `SSH_AUTH_SOCK`
     /// (`None` when unset).
@@ -1726,13 +1745,6 @@ impl SshAgentSource {
             SshAgentSource::Socket(path) => Ok(PathBuf::clone(path)),
         }
     }
-}
-
-#[derive(Debug)]
-pub(crate) struct SshProvider {
-    /// Agent id → where to relay it. Empty ids are resolved to
-    /// [`DEFAULT_SSH_AGENT_ID`] before lookup, never stored as `""`.
-    sources: HashMap<String, SshAgentSource>,
 }
 
 impl SshProvider {
@@ -1899,11 +1911,6 @@ impl Ssh for SshProvider {
     }
 }
 
-pub(crate) struct GrpcClient {
-    pub(crate) client: crate::Docker,
-    pub(crate) session_id: String,
-}
-
 impl Service<tonic::transport::Uri> for GrpcClient {
     type Response = GrpcTransport;
     type Error = error::GrpcError;
@@ -1943,13 +1950,6 @@ impl Service<tonic::transport::Uri> for GrpcClient {
         Box::pin(fut.map_err(From::from))
     }
 }
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-/// A reference to a build within a BuildKit session
-/// It may be used to keep track of the progress of a build in BuildKit.
-///
-/// See [`bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient::status`].
-pub struct BuildRef(String);
 
 impl From<BuildRef> for String {
     fn from(value: BuildRef) -> Self {

@@ -94,6 +94,116 @@ pub struct DockerContainerRemoveOptions {
     keep_state: bool,
 }
 
+#[derive(Debug, Clone)]
+struct DockerContainerConnector {
+    client: Docker,
+    name: String,
+}
+
+/// Builder used to create a driver, needed to communicate with `Buildkit`, such as with the
+/// [`crate::grpc::driver::Export::export`] or [`crate::grpc::driver::Image::registry`]
+/// functionality.
+///
+/// Builders use [`DockerContainerLifecycle::Persistent`] by default. This creates a
+/// privileged Docker container and a dedicated state volume that remain after
+/// solves until explicitly stopped or removed. Select an ephemeral lifecycle when
+/// the daemon should not remain available after a solve.
+///
+/// Lifecycle operations use the Docker client's configured timeout by default.
+/// Override it with [`Self::timeout`] when a different lifecycle bound is needed.
+///
+/// <div class="warning">
+///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.
+/// </div>
+///
+/// ## Examples
+///
+/// ```rust,no_run
+/// use bollard::grpc::driver::docker_container::{
+///     DockerContainerBuilder, DockerContainerLifecycle,
+/// };
+/// use bollard::Docker;
+///
+/// // Use a connection function
+/// // let docker = Docker::connect_...;
+/// # let docker = Docker::connect_with_local_defaults().unwrap();
+///
+/// let mut builder = DockerContainerBuilder::new(&docker);
+/// builder
+///     .name("project-builder")
+///     .lifecycle(DockerContainerLifecycle::Persistent);
+///
+/// ```
+///
+#[derive(Debug)]
+pub struct DockerContainerBuilder {
+    inner: DockerContainer,
+}
+
+/// DockerContainer plumbing to communicate with `Buildkit` using an execution pipe.
+/// Underneath, the `buildkit` CLI will open a stdin/stdout pipe, which we can hook into to call
+/// further GRPC methods.
+///
+/// Construct a `DockerContainer` using a [`DockerContainerBuilder`]. A persistent driver can be
+/// borrowed for multiple solves; each solve opens a fresh Docker exec transport and BuildKit
+/// session while retaining the daemon and state volume.
+///
+/// The lifecycle policy is selected on [`DockerContainerBuilder`] before bootstrap.
+/// Persistent builders are reused by stable name and must be explicitly stopped or
+/// removed when their resources are no longer needed.
+#[derive(Debug)]
+pub struct DockerContainer {
+    name: String,
+    docker: Docker,
+    net_mode: Option<String>,
+    image: Option<String>,
+    cgroup_parent: Option<String>,
+    env: Vec<String>,
+    args: Vec<String>,
+    lifecycle: DockerContainerLifecycle,
+    resource_id: String,
+    name_explicit: bool,
+    solve_started: AtomicBool,
+}
+
+#[derive(Debug)]
+struct BootstrapCleanupState {
+    enabled: bool,
+    container_created: bool,
+    volume_created: bool,
+    name: String,
+    volume_name: String,
+    resource_id: String,
+    bootstrap_attempt: String,
+}
+
+struct BootstrapTearDownHandler {
+    docker: Docker,
+    state: Arc<Mutex<BootstrapCleanupState>>,
+}
+
+struct DockerContainerTearDownHandler {
+    name: String,
+    volume_name: String,
+    resource_id: String,
+    expected_labels: HashMap<String, String>,
+    docker: Docker,
+    operation: DockerContainerTearDownOperation,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DockerContainerTearDownOperation {
+    Stop,
+    Remove { keep_state: bool },
+}
+
+enum StopResult {
+    Stopped,
+    TimedOut,
+}
+
+struct NoopTearDownHandler {}
+
 impl DockerContainerRemoveOptions {
     /// Construct options that remove the builder and its state volume.
     pub fn new() -> Self {
@@ -123,12 +233,6 @@ impl Service<tonic::transport::Uri> for DockerContainer {
         }
         .call(_req)
     }
-}
-
-#[derive(Debug, Clone)]
-struct DockerContainerConnector {
-    client: Docker,
-    name: String,
 }
 
 impl Service<tonic::transport::Uri> for DockerContainerConnector {
@@ -184,46 +288,6 @@ impl Service<tonic::transport::Uri> for DockerContainerConnector {
 
         Box::pin(fut.map_err(From::from))
     }
-}
-
-/// Builder used to create a driver, needed to communicate with `Buildkit`, such as with the
-/// [`crate::grpc::driver::Export::export`] or [`crate::grpc::driver::Image::registry`]
-/// functionality.
-///
-/// Builders use [`DockerContainerLifecycle::Persistent`] by default. This creates
-/// a privileged Docker container and a dedicated state volume that remain after
-/// solves until explicitly stopped or removed. Select an ephemeral lifecycle when
-/// the daemon should not remain available after a solve.
-///
-/// Lifecycle operations use the Docker client's configured timeout by default.
-/// Override it with [`Self::timeout`] when a different lifecycle bound is needed.
-///
-/// <div class="warning">
-///  Warning: Buildkit features in Bollard are currently in Developer Preview and are intended strictly for feedback purposes only.
-/// </div>
-///
-/// ## Examples
-///
-/// ```rust,no_run
-/// use bollard::grpc::driver::docker_container::{
-///     DockerContainerBuilder, DockerContainerLifecycle,
-/// };
-/// use bollard::Docker;
-///
-/// // Use a connection function
-/// // let docker = Docker::connect_...;
-/// # let docker = Docker::connect_with_local_defaults().unwrap();
-///
-/// let mut builder = DockerContainerBuilder::new(&docker);
-/// builder
-///     .name("project-builder")
-///     .lifecycle(DockerContainerLifecycle::Persistent);
-///
-/// ```
-///
-#[derive(Debug)]
-pub struct DockerContainerBuilder {
-    inner: DockerContainer,
 }
 
 impl DockerContainerBuilder {
@@ -471,32 +535,6 @@ fn lifecycle_requires_explicit_name(lifecycle: DockerContainerLifecycle) -> bool
         lifecycle,
         DockerContainerLifecycle::RemoveAfterSolve { keep_state: false }
     )
-}
-
-/// DockerContainer plumbing to communicate with `Buildkit` using an execution pipe.
-/// Underneath, the `buildkit` CLI will open a stdin/stdout pipe, which we can hook into to call
-/// further GRPC methods.
-///
-/// Construct a `DockerContainer` using a [`DockerContainerBuilder`]. A persistent driver can be
-/// borrowed for multiple solves; each solve opens a fresh Docker exec transport and BuildKit
-/// session while retaining the daemon and state volume.
-///
-/// The lifecycle policy is selected on [`DockerContainerBuilder`] before bootstrap.
-/// Persistent builders are reused by stable name and must be explicitly stopped or
-/// removed when their resources are no longer needed.
-#[derive(Debug)]
-pub struct DockerContainer {
-    name: String,
-    docker: Docker,
-    net_mode: Option<String>,
-    image: Option<String>,
-    cgroup_parent: Option<String>,
-    env: Vec<String>,
-    args: Vec<String>,
-    lifecycle: DockerContainerLifecycle,
-    resource_id: String,
-    name_explicit: bool,
-    solve_started: AtomicBool,
 }
 
 impl super::Driver for DockerContainer {
@@ -945,11 +983,6 @@ fn validate_owned_volume(
     Ok(())
 }
 
-enum StopResult {
-    Stopped,
-    TimedOut,
-}
-
 async fn stop_owned_container(
     docker: &Docker,
     name: &str,
@@ -1336,22 +1369,6 @@ fn remember_cleanup_error(slot: &mut Option<GrpcError>, error: GrpcError) {
     }
 }
 
-#[derive(Debug)]
-struct BootstrapCleanupState {
-    enabled: bool,
-    container_created: bool,
-    volume_created: bool,
-    name: String,
-    volume_name: String,
-    resource_id: String,
-    bootstrap_attempt: String,
-}
-
-struct BootstrapTearDownHandler {
-    docker: Docker,
-    state: Arc<Mutex<BootstrapCleanupState>>,
-}
-
 impl super::DriverTearDownHandler for BootstrapTearDownHandler {
     fn tear_down(&self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         let docker = Docker::clone(&self.docker);
@@ -1484,21 +1501,6 @@ fn validate_container_name(name: &str) -> Result<(), GrpcError> {
     Ok(())
 }
 
-struct DockerContainerTearDownHandler {
-    name: String,
-    volume_name: String,
-    resource_id: String,
-    expected_labels: HashMap<String, String>,
-    docker: Docker,
-    operation: DockerContainerTearDownOperation,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DockerContainerTearDownOperation {
-    Stop,
-    Remove { keep_state: bool },
-}
-
 impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
     fn tear_down(&self) -> Pin<Box<dyn Future<Output = Result<(), GrpcError>> + Send + 'static>> {
         let docker = Docker::clone(&self.docker);
@@ -1539,8 +1541,6 @@ impl super::DriverTearDownHandler for DockerContainerTearDownHandler {
         })
     }
 }
-
-struct NoopTearDownHandler {}
 
 impl super::DriverTearDownHandler for NoopTearDownHandler {
     fn tear_down(
