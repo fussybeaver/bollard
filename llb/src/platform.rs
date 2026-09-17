@@ -28,9 +28,9 @@ pub struct Platform {
 
 impl Platform {
     /// Create a new platform with the given OS and architecture.
-    pub fn new<OS: Into<String>, ARCH: Into<String>>(os: OS, architecture: ARCH) -> Self {
-        let os = normalize_os(&os.into());
-        let (architecture, variant) = normalize_architecture(&architecture.into(), None);
+    pub fn new<OS: AsRef<str>, ARCH: AsRef<str>>(os: OS, architecture: ARCH) -> Self {
+        let os = normalize_os(os.as_ref());
+        let (architecture, variant) = normalize_architecture(architecture.as_ref(), None);
         Self {
             os: Cow::Owned(os),
             architecture: Cow::Owned(architecture),
@@ -41,9 +41,9 @@ impl Platform {
     }
 
     /// Set the CPU variant.
-    pub fn with_variant<S: Into<String>>(mut self, variant: S) -> Self {
+    pub fn with_variant<S: AsRef<str>>(mut self, variant: S) -> Self {
         let (architecture, variant) =
-            normalize_architecture(self.architecture.as_ref(), Some(variant.into().as_str()));
+            normalize_architecture(self.architecture.as_ref(), Some(variant.as_ref()));
         self.architecture = Cow::Owned(architecture);
         self.variant = variant.map(Cow::Owned);
         self

@@ -1,4 +1,10 @@
 //! POSIX path helpers matching Go's `path` package semantics.
+//!
+//! LLB paths identify files inside the target filesystem, so they must use
+//! slash-separated POSIX syntax regardless of the host running the builder.
+//! `std::path::Path` is intentionally not used here: its separators and
+//! lexical behavior are host-dependent, and `OsStr` can contain values that
+//! cannot be represented by protobuf strings.
 
 pub(crate) fn is_abs(path: &str) -> bool {
     path.starts_with('/')

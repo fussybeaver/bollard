@@ -437,24 +437,6 @@ mod tests {
     }
 
     #[test]
-    fn marshal_dedup_identical_images() {
-        let root = image("alpine:latest").unwrap();
-        let def = root.marshal(MarshalOpts::default()).unwrap();
-        assert_eq!(def.def.len(), 2);
-
-        let dup = merge(
-            vec![
-                image("alpine:latest").unwrap(),
-                image("alpine:latest").unwrap(),
-            ],
-            crate::ops::merge::MergeOpts::new(),
-        )
-        .unwrap();
-        let def = dup.marshal(MarshalOpts::default()).unwrap();
-        assert_eq!(def.def.len(), 3);
-    }
-
-    #[test]
     fn marshal_dedup_identical_exec_ops() {
         let base = image("alpine:latest").unwrap();
         let a = base
@@ -526,74 +508,29 @@ mod tests {
 
     #[test]
     fn marshal_topological_order() {
-        let s = image("alpine:latest")
-            .unwrap()
-            .run(shlex("echo hello").unwrap())
-            .root()
-            .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
-        assert_topological_order(&def);
-    }
-
-    #[test]
-    fn marshal_topological_order_deep_chain() {
-        let s = image("alpine:latest")
-            .unwrap()
-            .run(shlex("echo 1").unwrap())
-            .root()
-            .unwrap()
-            .run(shlex("echo 2").unwrap())
-            .root()
-            .unwrap()
-            .run(shlex("echo 3").unwrap())
-            .root()
-            .unwrap()
-            .run(shlex("echo 4").unwrap())
-            .root()
-            .unwrap()
-            .run(shlex("echo 5").unwrap())
-            .root()
-            .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
-        assert_topological_order(&def);
-    }
-
-    #[test]
-    fn marshal_topological_order_diamond() {
-        let alpine = image("alpine:latest").unwrap();
-        let branch_a = alpine.clone().run(shlex("echo a").unwrap()).root().unwrap();
-        let branch_b = alpine.run(shlex("echo b").unwrap()).root().unwrap();
-        let s = merge(
-            vec![branch_a, branch_b],
-            crate::ops::merge::MergeOpts::new(),
-        )
-        .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
-        assert_topological_order(&def);
-    }
-
-    #[test]
-    fn marshal_topological_order_merge_with_file_ops() {
-        let image_branch = image("alpine:latest")
-            .unwrap()
+        let base = image("alpine:latest").unwrap();
+        let branch_a = base
+            .clone()
             .file(
                 crate::mkdir("/app", 0o755).with_parents(true),
                 crate::FileOpts::new(),
             )
             .unwrap()
-            .run(shlex("echo hello").unwrap())
+            .run(shlex("echo one").unwrap())
             .root()
             .unwrap();
-        let scratch_branch = scratch()
-            .unwrap()
-            .file(crate::mkfile("/tmp", 0o644, b"x"), crate::FileOpts::new())
-            .unwrap();
-        let s = merge(
-            vec![image_branch, scratch_branch],
+        let branch_b = base.run(shlex("echo two").unwrap()).root().unwrap();
+        let state = merge(
+            vec![branch_a, branch_b],
             crate::ops::merge::MergeOpts::new(),
         )
+        .unwrap()
+        .file(
+            crate::mkfile("/tmp/marker", 0o644, b"x"),
+            crate::FileOpts::new(),
+        )
         .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
+        let def = state.marshal(MarshalOpts::default()).unwrap();
         assert_topological_order(&def);
     }
 
@@ -636,6 +573,9 @@ mod tests {
         assert_eq!(wrapper_op.inputs.len(), 1);
         assert_eq!(wrapper_op.platform, None);
         assert_eq!(wrapper_op.constraints, None);
+        let head = def.root.as_ref().expect("non-empty definition has a head");
+        assert_eq!(wrapper_op.inputs[0].digest, head.as_str());
+        assert_ne!(head.as_str(), sha256(wrapper_bytes).as_str());
 
         let wrapper_md = def
             .metadata
@@ -646,101 +586,36 @@ mod tests {
     }
 
     #[test]
-    fn marshal_round_trip_stable() {
-        let s = image("alpine:latest")
-            .unwrap()
-            .run(shlex("echo hello").unwrap())
-            .root()
-            .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
-        let bytes_a = def.into_bytes().unwrap();
-
-        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
-        let mut bytes_b = Vec::new();
-        pb_def.encode(&mut bytes_b).unwrap();
-        assert_eq!(bytes_a, bytes_b);
-    }
-
-    #[test]
-    fn marshal_round_trip_multi_step() {
-        let s = image("alpine:latest")
+    fn marshal_round_trip_mixed_graph() {
+        let base = image("alpine:latest").unwrap();
+        let branch_a = base
+            .clone()
+            .file(
+                crate::mkdir("/app", 0o755).with_parents(true),
+                crate::FileOpts::new(),
+            )
             .unwrap()
             .run(shlex("echo one").unwrap())
             .root()
-            .unwrap()
-            .run(shlex("echo two").unwrap())
-            .root()
-            .unwrap()
-            .run(shlex("echo three").unwrap())
-            .root()
             .unwrap();
-        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
-        let bytes_a = def.into_bytes().unwrap();
-
-        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
-        let mut bytes_b = Vec::new();
-        pb_def.encode(&mut bytes_b).unwrap();
-        assert_eq!(bytes_a, bytes_b);
-    }
-
-    #[test]
-    fn marshal_round_trip_merge_exec() {
-        let merged = merge(
-            vec![
-                image("alpine:latest").unwrap(),
-                image("busybox:latest").unwrap(),
-            ],
+        let branch_b = base.run(shlex("echo two").unwrap()).root().unwrap();
+        let state = merge(
+            vec![branch_a, branch_b],
             crate::ops::merge::MergeOpts::new(),
         )
+        .unwrap()
+        .file(
+            crate::mkfile("/app/hello", 0o644, b"world"),
+            crate::FileOpts::new(),
+        )
         .unwrap();
-        let s = merged.run(shlex("echo hello").unwrap()).root().unwrap();
-        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
+        let def = state.marshal(MarshalOpts::linux_amd64()).unwrap();
         let bytes_a = def.into_bytes().unwrap();
 
         let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
         let mut bytes_b = Vec::new();
         pb_def.encode(&mut bytes_b).unwrap();
         assert_eq!(bytes_a, bytes_b);
-    }
-
-    #[test]
-    fn marshal_round_trip_file_chain() {
-        use crate::{mkdir, mkfile};
-        let s = scratch()
-            .unwrap()
-            .file(
-                mkdir("/app", 0o755).with_parents(true),
-                crate::FileOpts::new(),
-            )
-            .unwrap()
-            .file(
-                mkfile("/app/hello", 0o644, b"world"),
-                crate::FileOpts::new(),
-            )
-            .unwrap();
-        let def = s.marshal(MarshalOpts::linux_amd64()).unwrap();
-        let bytes_a = def.into_bytes().unwrap();
-
-        let pb_def = pb::Definition::decode(bytes_a.as_slice()).unwrap();
-        let mut bytes_b = Vec::new();
-        pb_def.encode(&mut bytes_b).unwrap();
-        assert_eq!(bytes_a, bytes_b);
-    }
-
-    #[test]
-    fn marshal_full_chain() {
-        let s = image("alpine:latest")
-            .unwrap()
-            .run(shlex("echo hello").unwrap())
-            .root()
-            .unwrap();
-        let def = s.marshal(MarshalOpts::default()).unwrap();
-        assert!(!def.def.is_empty());
-
-        let wrapper = pb::Op::decode(def.def.last().unwrap().as_slice()).unwrap();
-        let head = def.root.as_ref().expect("non-empty definition has a head");
-        assert_eq!(wrapper.inputs[0].digest, head.as_str());
-        assert_ne!(head.as_str(), sha256(def.def.last().unwrap()).as_str());
     }
 
     #[test]

@@ -201,66 +201,6 @@ impl Shlex {
     }
 }
 
-/// Create a [`Shlex`] from a shell command string.
-pub fn shlex<S: Into<String>>(cmd: S) -> Result<Shlex, LlbError> {
-    Shlex::new(cmd)
-}
-
-fn validate_shell(command: &str) -> Result<(), LlbError> {
-    let bytes = command.as_bytes();
-    let mut quote = None;
-    let mut opening = 0;
-    let mut escaped = false;
-
-    for (position, byte) in bytes.iter().copied().enumerate() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-
-        match quote {
-            Some(b'\'') => {
-                if byte == b'\'' {
-                    quote = None;
-                }
-            }
-            Some(b'"') => match byte {
-                b'\\' => escaped = true,
-                b'"' => quote = None,
-                _ => {}
-            },
-            None => match byte {
-                b'\\' => escaped = true,
-                b'\'' | b'"' => {
-                    quote = Some(byte);
-                    opening = position;
-                }
-                _ => {}
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    if escaped {
-        return Err(LlbError::InvalidShell {
-            position: bytes.len().saturating_sub(1),
-            kind: "trailing escape",
-        });
-    }
-    if let Some(delimiter) = quote {
-        return Err(LlbError::InvalidShell {
-            position: opening,
-            kind: if delimiter == b'\'' {
-                "unclosed single quote"
-            } else {
-                "unclosed double quote"
-            },
-        });
-    }
-
-    Ok(())
-}
-
 /// Add a mount to an exec step.
 #[derive(Clone, Debug)]
 pub struct AddMount {
@@ -491,6 +431,42 @@ impl ExecInputPlan {
     }
 }
 
+impl crate::state::RunOpt for Shlex {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.args = self.args;
+    }
+}
+
+impl crate::state::RunOpt for AddMount {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.mounts.push(Mount {
+            target: self.target,
+            source: Some(self.source),
+            mount_type: self.mount_type,
+            readonly: false,
+            output: None,
+        });
+    }
+}
+
+impl crate::state::RunOpt for AddSecret {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.secrets.push(self);
+    }
+}
+
+impl crate::state::RunOpt for AddEnv {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.env.push((self.key, self.value));
+    }
+}
+
+impl crate::state::RunOpt for WithCustomName {
+    fn apply(self, exec: &mut ExecState) {
+        exec.run.custom_name = Some(self.name);
+    }
+}
+
 fn build_pb_mount(mount: &Mount, input: i64) -> pb::Mount {
     let (mount_type, cache_opt, secret_opt, ssh_opt) = match &mount.mount_type {
         MountType::Bind | MountType::Scratch => (pb::MountType::Bind as i32, None, None, None),
@@ -625,40 +601,64 @@ fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
     metadata
 }
 
-impl crate::state::RunOpt for Shlex {
-    fn apply(self, exec: &mut ExecState) {
-        exec.run.args = self.args;
-    }
+/// Create a [`Shlex`] from a shell command string.
+pub fn shlex<S: Into<String>>(cmd: S) -> Result<Shlex, LlbError> {
+    Shlex::new(cmd)
 }
 
-impl crate::state::RunOpt for AddMount {
-    fn apply(self, exec: &mut ExecState) {
-        exec.run.mounts.push(Mount {
-            target: self.target,
-            source: Some(self.source),
-            mount_type: self.mount_type,
-            readonly: false,
-            output: None,
+fn validate_shell(command: &str) -> Result<(), LlbError> {
+    let bytes = command.as_bytes();
+    let mut quote = None;
+    let mut opening = 0;
+    let mut escaped = false;
+
+    for (position, byte) in bytes.iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match quote {
+            Some(b'\'') => {
+                if byte == b'\'' {
+                    quote = None;
+                }
+            }
+            Some(b'"') => match byte {
+                b'\\' => escaped = true,
+                b'"' => quote = None,
+                _ => {}
+            },
+            None => match byte {
+                b'\\' => escaped = true,
+                b'\'' | b'"' => {
+                    quote = Some(byte);
+                    opening = position;
+                }
+                _ => {}
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    if escaped {
+        return Err(LlbError::InvalidShell {
+            position: bytes.len().saturating_sub(1),
+            kind: "trailing escape",
         });
     }
-}
-
-impl crate::state::RunOpt for AddSecret {
-    fn apply(self, exec: &mut ExecState) {
-        exec.run.secrets.push(self);
+    if let Some(delimiter) = quote {
+        return Err(LlbError::InvalidShell {
+            position: opening,
+            kind: if delimiter == b'\'' {
+                "unclosed single quote"
+            } else {
+                "unclosed double quote"
+            },
+        });
     }
-}
 
-impl crate::state::RunOpt for AddEnv {
-    fn apply(self, exec: &mut ExecState) {
-        exec.run.env.push((self.key, self.value));
-    }
-}
-
-impl crate::state::RunOpt for WithCustomName {
-    fn apply(self, exec: &mut ExecState) {
-        exec.run.custom_name = Some(self.name);
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -928,16 +928,6 @@ mod tests {
             assert_eq!(position, expected_position);
             assert_eq!(kind, expected_kind);
         }
-    }
-
-    #[test]
-    fn exec_state_root_chains() {
-        let s = scratch()
-            .unwrap()
-            .run(shlex("echo hello").unwrap())
-            .root()
-            .unwrap();
-        let _ = s.run(shlex("echo again").unwrap()).root().unwrap();
     }
 
     #[test]

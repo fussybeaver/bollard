@@ -29,40 +29,6 @@ impl MergeOpts {
     }
 }
 
-/// Merge multiple states into a single state.
-///
-/// The resulting filesystem is an overlay of all non-scratch inputs. Scratch
-/// (empty) inputs are filtered out, matching Go's `llb.Merge` behavior. A
-/// merge with fewer than two non-scratch inputs is collapsed:
-/// - zero non-scratch inputs → [`crate::scratch()`]
-/// - one non-scratch input → the input itself
-/// - two or more non-scratch inputs → a `MergeOp` vertex
-pub fn merge<I: IntoIterator<Item = State>>(
-    inputs: I,
-    opts: impl Into<MergeOpts>,
-) -> Result<State, LlbError> {
-    let opts = opts.into();
-    let inputs: Vec<State> = inputs
-        .into_iter()
-        .filter(|s| !s.output().is_empty())
-        .collect();
-    match inputs.len() {
-        0 => crate::scratch(),
-        1 => Ok(inputs.into_iter().next().expect("one input")),
-        _ => {
-            let constraints = inputs
-                .first()
-                .map(|state| state.constraints().clone())
-                .unwrap_or_default();
-            let op = MergeOp::new(inputs, opts)?;
-            Ok(State::with_constraints(
-                OperationOutput::Owned(std::sync::Arc::new(op)),
-                constraints,
-            ))
-        }
-    }
-}
-
 /// A fully assembled merge operation.
 #[derive(Clone, Debug)]
 pub(crate) struct MergeOp {
@@ -131,6 +97,40 @@ impl Operation for MergeOp {
             op: pb_op,
             metadata: self.metadata.clone(),
         })
+    }
+}
+
+/// Merge multiple states into a single state.
+///
+/// The resulting filesystem is an overlay of all non-scratch inputs. Scratch
+/// (empty) inputs are filtered out, matching Go's `llb.Merge` behavior. A
+/// merge with fewer than two non-scratch inputs is collapsed:
+/// - zero non-scratch inputs → [`crate::scratch()`]
+/// - one non-scratch input → the input itself
+/// - two or more non-scratch inputs → a `MergeOp` vertex
+pub fn merge<I: IntoIterator<Item = State>>(
+    inputs: I,
+    opts: impl Into<MergeOpts>,
+) -> Result<State, LlbError> {
+    let opts = opts.into();
+    let inputs: Vec<State> = inputs
+        .into_iter()
+        .filter(|s| !s.output().is_empty())
+        .collect();
+    match inputs.len() {
+        0 => crate::scratch(),
+        1 => Ok(inputs.into_iter().next().expect("one input")),
+        _ => {
+            let constraints = inputs
+                .first()
+                .map(|state| state.constraints().clone())
+                .unwrap_or_default();
+            let op = MergeOp::new(inputs, opts)?;
+            Ok(State::with_constraints(
+                OperationOutput::Owned(std::sync::Arc::new(op)),
+                constraints,
+            ))
+        }
     }
 }
 

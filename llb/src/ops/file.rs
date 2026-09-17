@@ -670,17 +670,6 @@ mod tests {
     }
 
     #[test]
-    fn state_file_chains() {
-        let s = scratch()
-            .unwrap()
-            .file(mkdir("/app", 0o755), FileOpts::default())
-            .unwrap();
-        let _ = s
-            .file(mkfile("/app/foo", 0o644, "hi"), FileOpts::default())
-            .unwrap();
-    }
-
-    #[test]
     fn state_file_normalizes_paths_against_cwd() {
         let state = crate::scratch()
             .unwrap()

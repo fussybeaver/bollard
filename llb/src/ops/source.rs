@@ -11,6 +11,30 @@ use crate::ops::{Context, Operation, OperationOutput, SerializedOp};
 use crate::platform::Platform;
 use crate::State;
 
+const DEFAULT_IMAGE_DOMAIN: &str = "docker.io";
+const DEFAULT_IMAGE_NAMESPACE: &str = "library";
+
+/// Image resolve modes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResolveMode {
+    /// Default resolver behavior.
+    Default,
+    /// Always pull the image.
+    ForcePull,
+    /// Prefer a local image if available.
+    PreferLocal,
+}
+
+impl ResolveMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ResolveMode::Default => attr::IMAGE_RESOLVE_MODE_DEFAULT,
+            ResolveMode::ForcePull => attr::IMAGE_RESOLVE_MODE_FORCE_PULL,
+            ResolveMode::PreferLocal => attr::IMAGE_RESOLVE_MODE_PREFER_LOCAL,
+        }
+    }
+}
+
 /// A Docker image source.
 #[derive(Clone, Debug)]
 pub struct Image {
@@ -118,29 +142,177 @@ impl Operation for Image {
     }
 }
 
-/// Image resolve modes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ResolveMode {
-    /// Default resolver behavior.
-    Default,
-    /// Always pull the image.
-    ForcePull,
-    /// Prefer a local image if available.
-    PreferLocal,
+/// A local build-context source.
+#[derive(Clone, Debug)]
+pub struct Local {
+    name: String,
+    identifier: String,
+    attrs: BTreeMap<String, String>,
+    metadata: OpMetadata,
 }
 
-impl ResolveMode {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ResolveMode::Default => attr::IMAGE_RESOLVE_MODE_DEFAULT,
-            ResolveMode::ForcePull => attr::IMAGE_RESOLVE_MODE_FORCE_PULL,
-            ResolveMode::PreferLocal => attr::IMAGE_RESOLVE_MODE_PREFER_LOCAL,
+impl Local {
+    /// Create a new local source.
+    pub fn new<S: Into<String>>(name: S) -> Result<Self, LlbError> {
+        let name = name.into();
+        let identifier = format!("local://{name}");
+        let mut metadata = OpMetadata::default();
+        metadata.caps.insert(cap::CAP_SOURCE_LOCAL.to_string());
+        Ok(Self {
+            name,
+            identifier,
+            attrs: BTreeMap::new(),
+            metadata,
+        })
+    }
+
+    /// Set follow-paths for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.FollowPaths`.
+    pub fn with_follow_paths<I, S>(mut self, paths: I) -> Result<Self, LlbError>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let paths: Vec<String> = paths.into_iter().map(|p| p.into()).collect();
+        if !paths.is_empty() {
+            let value = serde_json::to_string(&paths)
+                .map_err(|e| LlbError::Serialization(e.to_string()))?;
+            self.attrs
+                .insert(attr::LOCAL_FOLLOW_PATHS.to_string(), value);
+            self.metadata
+                .caps
+                .insert(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS.to_string());
         }
+        Ok(self)
+    }
+
+    /// Set the session ID for the local source.
+    pub fn with_session_id<S: Into<String>>(mut self, id: S) -> Result<Self, LlbError> {
+        self.attrs
+            .insert(attr::LOCAL_SESSION_ID.to_string(), id.into());
+        self.metadata
+            .caps
+            .insert(cap::CAP_SOURCE_LOCAL_SESSION_ID.to_string());
+        Ok(self)
+    }
+
+    /// Set the shared-key hint for the local source.
+    pub fn with_shared_key_hint<S: Into<String>>(mut self, hint: S) -> Result<Self, LlbError> {
+        self.attrs
+            .insert(attr::LOCAL_SHARED_KEY_HINT.to_string(), hint.into());
+        self.metadata
+            .caps
+            .insert(cap::CAP_SOURCE_LOCAL_SHARED_KEY_HINT.to_string());
+        Ok(self)
+    }
+
+    /// Set the unique ID for the local source.
+    pub fn with_unique_id<S: Into<String>>(mut self, id: S) -> Result<Self, LlbError> {
+        self.attrs
+            .insert(attr::LOCAL_UNIQUE_ID.to_string(), id.into());
+        self.metadata
+            .caps
+            .insert(cap::CAP_SOURCE_LOCAL_UNIQUE.to_string());
+        Ok(self)
+    }
+
+    /// Set include patterns for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.IncludePatterns`.
+    pub fn with_include_patterns<I, S>(mut self, patterns: I) -> Result<Self, LlbError>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
+        if !patterns.is_empty() {
+            let value = serde_json::to_string(&patterns)
+                .map_err(|e| LlbError::Serialization(e.to_string()))?;
+            self.attrs
+                .insert(attr::LOCAL_INCLUDE_PATTERNS.to_string(), value);
+            self.metadata
+                .caps
+                .insert(cap::CAP_SOURCE_LOCAL_INCLUDE_PATTERNS.to_string());
+        }
+        Ok(self)
+    }
+
+    /// Set exclude patterns for the local source.
+    ///
+    /// Encoded as a JSON array to match Go's `llb.ExcludePatterns`.
+    pub fn with_exclude_patterns<I, S>(mut self, patterns: I) -> Result<Self, LlbError>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
+        if !patterns.is_empty() {
+            let value = serde_json::to_string(&patterns)
+                .map_err(|e| LlbError::Serialization(e.to_string()))?;
+            self.attrs
+                .insert(attr::LOCAL_EXCLUDE_PATTERNS.to_string(), value);
+            self.metadata
+                .caps
+                .insert(cap::CAP_SOURCE_LOCAL_EXCLUDE_PATTERNS.to_string());
+        }
+        Ok(self)
+    }
+
+    /// Set a custom name for this local source.
+    pub fn with_custom_name<S: Into<String>>(mut self, name: S) -> Result<Self, LlbError> {
+        self.metadata
+            .description
+            .insert(attr::DESCRIPTION_NAME.to_string(), name.into());
+        Ok(self)
     }
 }
 
-const DEFAULT_IMAGE_DOMAIN: &str = "docker.io";
-const DEFAULT_IMAGE_NAMESPACE: &str = "library";
+impl Operation for Local {
+    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
+        let mut attrs = self.attrs.clone();
+        let mut metadata = self.metadata.clone();
+        // BuildKit uses LocalUniqueID only as a fallback when no session ID
+        // is supplied. A session ID therefore suppresses the unique-id attr.
+        if attrs.contains_key(attr::LOCAL_SESSION_ID) {
+            attrs.remove(attr::LOCAL_UNIQUE_ID);
+            metadata.caps.remove(cap::CAP_SOURCE_LOCAL_UNIQUE);
+        }
+        let pb_op = pb::Op {
+            inputs: Vec::new(),
+            platform: None,
+            constraints: Some(pb::WorkerConstraints {
+                filter: ctx.worker_filters().to_vec(),
+            }),
+            op: Some(pb::op::Op::Source(pb::SourceOp {
+                identifier: self.identifier.clone(),
+                attrs,
+            })),
+        };
+        Ok(SerializedOp {
+            op: pb_op,
+            metadata,
+        })
+    }
+}
+
+impl From<Image> for State {
+    fn from(image: Image) -> Self {
+        let platform = image.platform.clone();
+        State::with_constraints(
+            OperationOutput::Owned(Arc::new(image)),
+            platform.map_or_else(Default::default, |platform| {
+                crate::state::Constraints::default().with_platform(platform)
+            }),
+        )
+    }
+}
+
+impl From<Local> for State {
+    fn from(local: Local) -> Self {
+        State::new(OperationOutput::Owned(Arc::new(local)))
+    }
+}
 
 /// Normalize an image reference using Docker's distribution/reference rules.
 ///
@@ -387,160 +559,6 @@ fn validate_digest(digest: &str, original: &str) -> Result<(), LlbError> {
     Ok(())
 }
 
-/// A local build-context source.
-#[derive(Clone, Debug)]
-pub struct Local {
-    name: String,
-    identifier: String,
-    attrs: BTreeMap<String, String>,
-    metadata: OpMetadata,
-}
-
-impl Local {
-    /// Create a new local source.
-    pub fn new<S: Into<String>>(name: S) -> Result<Self, LlbError> {
-        let name = name.into();
-        let identifier = format!("local://{name}");
-        let mut metadata = OpMetadata::default();
-        metadata.caps.insert(cap::CAP_SOURCE_LOCAL.to_string());
-        Ok(Self {
-            name,
-            identifier,
-            attrs: BTreeMap::new(),
-            metadata,
-        })
-    }
-
-    /// Set follow-paths for the local source.
-    ///
-    /// Encoded as a JSON array to match Go's `llb.FollowPaths`.
-    pub fn with_follow_paths<I, S>(mut self, paths: I) -> Result<Self, LlbError>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        let paths: Vec<String> = paths.into_iter().map(|p| p.into()).collect();
-        if !paths.is_empty() {
-            let value = serde_json::to_string(&paths)
-                .map_err(|e| LlbError::Serialization(e.to_string()))?;
-            self.attrs
-                .insert(attr::LOCAL_FOLLOW_PATHS.to_string(), value);
-            self.metadata
-                .caps
-                .insert(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS.to_string());
-        }
-        Ok(self)
-    }
-
-    /// Set the session ID for the local source.
-    pub fn with_session_id<S: Into<String>>(mut self, id: S) -> Result<Self, LlbError> {
-        self.attrs
-            .insert(attr::LOCAL_SESSION_ID.to_string(), id.into());
-        self.metadata
-            .caps
-            .insert(cap::CAP_SOURCE_LOCAL_SESSION_ID.to_string());
-        Ok(self)
-    }
-
-    /// Set the shared-key hint for the local source.
-    pub fn with_shared_key_hint<S: Into<String>>(mut self, hint: S) -> Result<Self, LlbError> {
-        self.attrs
-            .insert(attr::LOCAL_SHARED_KEY_HINT.to_string(), hint.into());
-        self.metadata
-            .caps
-            .insert(cap::CAP_SOURCE_LOCAL_SHARED_KEY_HINT.to_string());
-        Ok(self)
-    }
-
-    /// Set the unique ID for the local source.
-    pub fn with_unique_id<S: Into<String>>(mut self, id: S) -> Result<Self, LlbError> {
-        self.attrs
-            .insert(attr::LOCAL_UNIQUE_ID.to_string(), id.into());
-        self.metadata
-            .caps
-            .insert(cap::CAP_SOURCE_LOCAL_UNIQUE.to_string());
-        Ok(self)
-    }
-
-    /// Set include patterns for the local source.
-    ///
-    /// Encoded as a JSON array to match Go's `llb.IncludePatterns`.
-    pub fn with_include_patterns<I, S>(mut self, patterns: I) -> Result<Self, LlbError>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
-        if !patterns.is_empty() {
-            let value = serde_json::to_string(&patterns)
-                .map_err(|e| LlbError::Serialization(e.to_string()))?;
-            self.attrs
-                .insert(attr::LOCAL_INCLUDE_PATTERNS.to_string(), value);
-            self.metadata
-                .caps
-                .insert(cap::CAP_SOURCE_LOCAL_INCLUDE_PATTERNS.to_string());
-        }
-        Ok(self)
-    }
-
-    /// Set exclude patterns for the local source.
-    ///
-    /// Encoded as a JSON array to match Go's `llb.ExcludePatterns`.
-    pub fn with_exclude_patterns<I, S>(mut self, patterns: I) -> Result<Self, LlbError>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        let patterns: Vec<String> = patterns.into_iter().map(|p| p.into()).collect();
-        if !patterns.is_empty() {
-            let value = serde_json::to_string(&patterns)
-                .map_err(|e| LlbError::Serialization(e.to_string()))?;
-            self.attrs
-                .insert(attr::LOCAL_EXCLUDE_PATTERNS.to_string(), value);
-            self.metadata
-                .caps
-                .insert(cap::CAP_SOURCE_LOCAL_EXCLUDE_PATTERNS.to_string());
-        }
-        Ok(self)
-    }
-
-    /// Set a custom name for this local source.
-    pub fn with_custom_name<S: Into<String>>(mut self, name: S) -> Result<Self, LlbError> {
-        self.metadata
-            .description
-            .insert(attr::DESCRIPTION_NAME.to_string(), name.into());
-        Ok(self)
-    }
-}
-
-impl Operation for Local {
-    fn build_serialized(&self, ctx: &mut Context) -> Result<SerializedOp, LlbError> {
-        let mut attrs = self.attrs.clone();
-        let mut metadata = self.metadata.clone();
-        // BuildKit uses LocalUniqueID only as a fallback when no session ID
-        // is supplied. A session ID therefore suppresses the unique-id attr.
-        if attrs.contains_key(attr::LOCAL_SESSION_ID) {
-            attrs.remove(attr::LOCAL_UNIQUE_ID);
-            metadata.caps.remove(cap::CAP_SOURCE_LOCAL_UNIQUE);
-        }
-        let pb_op = pb::Op {
-            inputs: Vec::new(),
-            platform: None,
-            constraints: Some(pb::WorkerConstraints {
-                filter: ctx.worker_filters().to_vec(),
-            }),
-            op: Some(pb::op::Op::Source(pb::SourceOp {
-                identifier: self.identifier.clone(),
-                attrs,
-            })),
-        };
-        Ok(SerializedOp {
-            op: pb_op,
-            metadata,
-        })
-    }
-}
-
 /// Create a state backed by a Docker image.
 pub fn image<S: Into<String>>(reference: S) -> Result<State, LlbError> {
     Ok(State::new(OperationOutput::Owned(Arc::new(Image::new(
@@ -558,24 +576,6 @@ pub fn local<S: Into<String>>(name: S) -> Result<State, LlbError> {
 /// Create an empty scratch state.
 pub fn scratch() -> Result<State, LlbError> {
     Ok(State::new(OperationOutput::Empty))
-}
-
-impl From<Image> for State {
-    fn from(image: Image) -> Self {
-        let platform = image.platform.clone();
-        State::with_constraints(
-            OperationOutput::Owned(Arc::new(image)),
-            platform.map_or_else(Default::default, |platform| {
-                crate::state::Constraints::default().with_platform(platform)
-            }),
-        )
-    }
-}
-
-impl From<Local> for State {
-    fn from(local: Local) -> Self {
-        State::new(OperationOutput::Owned(Arc::new(local)))
-    }
 }
 
 #[cfg(test)]
