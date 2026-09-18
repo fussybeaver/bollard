@@ -286,6 +286,85 @@ async fn logs_tty_test(docker: Docker) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(unix)]
+async fn logs_tty_follow_streaming_test(docker: Docker) -> Result<(), Error> {
+    let image = format!("{}alpine", registry_http_addr());
+    let _ = &docker
+        .create_image(
+            Some(
+                CreateImageOptionsBuilder::default()
+                    .from_image(&image)
+                    .build(),
+            ),
+            None,
+            Some(integration_test_registry_credentials()),
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let container_name = "integration_test_logs_tty_follow_streaming";
+    docker
+        .create_container(
+            Some(
+                CreateContainerOptionsBuilder::default()
+                    .name(container_name)
+                    .build(),
+            ),
+            ContainerCreateBody {
+                image: Some(image),
+                attach_stdout: Some(true),
+                attach_stderr: Some(true),
+                cmd: Some(vec![
+                    "/bin/sh".to_string(),
+                    "-c".to_string(),
+                    "head -c 16384 /dev/zero | tr '\\0' x; sleep 10".to_string(),
+                ]),
+                tty: Some(true),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    docker.start_container(container_name, None).await?;
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    let mut logs = docker.logs(
+        container_name,
+        Some(
+            LogsOptionsBuilder::default()
+                .follow(true)
+                .stdout(true)
+                .stderr(false)
+                .build(),
+        ),
+    );
+
+    let first = tokio::time::timeout(tokio::time::Duration::from_secs(3), logs.try_next()).await;
+
+    docker.kill_container(container_name, None).await.ok();
+    docker
+        .wait_container(container_name, None)
+        .try_collect::<Vec<_>>()
+        .await
+        .ok();
+    docker.remove_container(container_name, None).await?;
+
+    let output = match first {
+        Ok(result) => result?.expect("TTY logs stream ended before producing output"),
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "TTY logs did not stream before the container exited",
+            )
+            .into());
+        }
+    };
+
+    let output_len = output.to_string().len();
+    assert!(output_len > 0 && output_len <= 16384);
+
+    Ok(())
+}
+
 async fn container_changes_test(docker: Docker) -> Result<(), Error> {
     create_container_hello_world(&docker, "integration_test_container_changes").await?;
 
@@ -966,6 +1045,12 @@ fn integration_test_logs() {
 #[cfg(unix)]
 fn integration_test_logs_tty() {
     connect_to_docker_and_run!(logs_tty_test);
+}
+
+#[test]
+#[cfg(unix)]
+fn integration_test_logs_tty_follow_streaming() {
+    connect_to_docker_and_run!(logs_tty_follow_streaming_test);
 }
 
 #[test]

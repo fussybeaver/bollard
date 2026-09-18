@@ -1997,9 +1997,15 @@ impl Docker {
     fn decode_into_stream_string(
         res: Response<Incoming>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
+        let is_raw_stream = res
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("application/vnd.docker.raw-stream"));
+
         FramedRead::new(
             StreamReader::new(res.into_body()),
-            NewlineLogOutputDecoder::new(false),
+            NewlineLogOutputDecoder::new(is_raw_stream),
         )
         .map_err(Error::from)
     }
