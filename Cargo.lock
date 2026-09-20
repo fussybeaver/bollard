@@ -775,9 +775,9 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "gomod-parser"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27f6248cb5f6d4ea74c974c7eb818fdc3d6d5c68d6e03a0ab914ca76d48eaeb2"
+checksum = "a3ceaf76d012a676dced39fab3888a41dfcaeea3e07ae8926e37dc4f0874b985"
 dependencies = [
  "winnow",
 ]
