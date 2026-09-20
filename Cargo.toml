@@ -109,7 +109,7 @@ regex = { version = "1.13", optional = true }
 [dev-dependencies]
 flate2 = "1.0"
 prost = "0.14"
-sha2 = "0.10"
+sha2 = "0.11"
 tar = "0.4"
 tokio = { version = "1.38", features = ["fs", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7", features = ["io"] }
