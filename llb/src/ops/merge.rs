@@ -193,7 +193,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(op.inputs.len(), 2);
-        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
         let node = ctx.nodes().get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();

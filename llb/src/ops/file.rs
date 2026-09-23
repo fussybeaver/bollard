@@ -550,7 +550,7 @@ mod tests {
     use prost::Message;
 
     fn serialize_file_op(op: FileOp) -> (pb::FileOp, crate::ops::Context) {
-        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
         let node = ctx.nodes().get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
@@ -576,7 +576,7 @@ mod tests {
 
     fn file_op_digest(base: OperationOutput, action: FileAction) -> String {
         let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
-        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
         node_ref.digest().to_string()
     }

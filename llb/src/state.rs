@@ -134,9 +134,12 @@ impl State {
             .cloned()
             .chain(opts.worker_filters.iter().cloned())
             .collect();
-        // MarshalOpts supplies the graph-wide default. State-local platforms
-        // are carried by the operations created from this state instead.
-        let mut ctx = Context::new(opts.platform.clone(), worker_filters);
+        // MarshalOpts supplies graph-wide defaults for platform and local IDs.
+        let mut ctx = Context::new(
+            opts.platform.clone(),
+            worker_filters,
+            opts.local_unique_id.clone(),
+        );
         let root_ref = ctx.register(&self.output)?;
         let wrapper_ref =
             ctx.append_wrapper(root_ref.clone(), self.constraints.custom_name.as_deref())?;
@@ -191,6 +194,9 @@ pub struct MarshalOpts {
     pub platform: Option<Platform>,
     /// Worker constraint filters applied to real operation vertices.
     pub worker_filters: Vec<String>,
+    /// Optional deterministic `local.unique` for session-less sources.
+    /// Defaults to a fresh random value per marshal; set for reproducible tests.
+    pub local_unique_id: Option<String>,
 }
 
 impl Default for MarshalOpts {
@@ -200,6 +206,7 @@ impl Default for MarshalOpts {
             // wrapper digests identical across SDKs and avoids cross-SDK cache fragmentation.
             platform: Some(Platform::LINUX_AMD64.clone()),
             worker_filters: Vec::new(),
+            local_unique_id: None,
         }
     }
 }
@@ -219,6 +226,12 @@ impl MarshalOpts {
     /// Marshal with the given worker constraint filter.
     pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
         self.worker_filters.push(filter.as_ref().to_string());
+        self
+    }
+
+    /// Set a deterministic `local.unique` value, typically for tests.
+    pub fn with_local_unique_id(mut self, id: impl Into<String>) -> Self {
+        self.local_unique_id = Some(id.into());
         self
     }
 }

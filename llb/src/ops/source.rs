@@ -208,6 +208,8 @@ impl Local {
     }
 
     /// Set the unique ID for the local source.
+    ///
+    /// Overrides the marshal-time default; omitted when a session ID is set.
     pub fn with_unique_id<S: Into<String>>(mut self, id: S) -> Result<Self, LlbError> {
         self.attrs
             .insert(attr::LOCAL_UNIQUE_ID.to_string(), id.into());
@@ -277,6 +279,17 @@ impl Operation for Local {
         if attrs.contains_key(attr::LOCAL_SESSION_ID) {
             attrs.remove(attr::LOCAL_UNIQUE_ID);
             metadata.caps.remove(cap::CAP_SOURCE_LOCAL_UNIQUE);
+        } else {
+            // Without a session or an explicit ID, every local source gets a
+            // unique value so concurrently solved graphs never share vertices.
+            // One fresh ID per marshal keeps this graph internally
+            // deduplicable; an explicit `with_unique_id` value wins.
+            attrs
+                .entry(attr::LOCAL_UNIQUE_ID.to_string())
+                .or_insert_with(|| ctx.local_unique_id().to_string());
+            metadata
+                .caps
+                .insert(cap::CAP_SOURCE_LOCAL_UNIQUE.to_string());
         }
         let pb_op = pb::Op {
             inputs: Vec::new(),
@@ -780,5 +793,136 @@ mod tests {
             .metadata
             .caps
             .contains(cap::CAP_SOURCE_LOCAL_FOLLOW_PATHS));
+    }
+
+    fn serialize_local(local: Local) -> SerializedOp {
+        let mut ctx = Context::new(None, Vec::new(), None);
+        local.build_serialized(&mut ctx).unwrap()
+    }
+
+    fn serialized_source(serialized: SerializedOp) -> (pb::SourceOp, OpMetadata) {
+        let SerializedOp { op, metadata } = serialized;
+        match op.op {
+            Some(pb::op::Op::Source(source)) => (source, metadata),
+            other => panic!("expected source operation, got {other:?}"),
+        }
+    }
+
+    fn definition_source(def: &crate::Definition, index: usize) -> pb::SourceOp {
+        let op = pb::Op::decode(def.def[index].as_slice()).unwrap();
+        match op.op.unwrap() {
+            pb::op::Op::Source(source) => source,
+            other => panic!("expected source operation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn local_default_emits_fresh_unique_id_and_cap() {
+        let (first, first_md) = serialized_source(serialize_local(Local::new("context").unwrap()));
+        let (second, _) = serialized_source(serialize_local(Local::new("context").unwrap()));
+
+        let first_id = first
+            .attrs
+            .get(attr::LOCAL_UNIQUE_ID)
+            .expect("session-less local sources emit local.unique");
+        assert!(!first_id.is_empty());
+        assert_ne!(
+            first_id,
+            second
+                .attrs
+                .get(attr::LOCAL_UNIQUE_ID)
+                .expect("session-less local sources emit local.unique")
+        );
+        assert!(first_md.caps.contains(cap::CAP_SOURCE_LOCAL_UNIQUE));
+    }
+
+    #[test]
+    fn local_session_id_suppresses_unique_id() {
+        let (source, metadata) = serialized_source(serialize_local(
+            Local::new("context")
+                .unwrap()
+                .with_session_id("sess-1")
+                .unwrap(),
+        ));
+        assert!(!source.attrs.contains_key(attr::LOCAL_UNIQUE_ID));
+        assert_eq!(
+            source.attrs.get(attr::LOCAL_SESSION_ID),
+            Some(&"sess-1".to_string())
+        );
+        assert!(!metadata.caps.contains(cap::CAP_SOURCE_LOCAL_UNIQUE));
+        assert!(metadata.caps.contains(cap::CAP_SOURCE_LOCAL_SESSION_ID));
+    }
+
+    #[test]
+    fn local_explicit_unique_id_wins_over_marshal_default() {
+        let (source, _) = serialized_source(serialize_local(
+            Local::new("context")
+                .unwrap()
+                .with_unique_id("explicit-id")
+                .unwrap(),
+        ));
+        assert_eq!(
+            source.attrs.get(attr::LOCAL_UNIQUE_ID),
+            Some(&"explicit-id".to_string())
+        );
+    }
+
+    #[test]
+    fn marshal_local_unique_id_is_fresh_per_marshal() {
+        let first = local("context")
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        let second = local("context")
+            .unwrap()
+            .marshal(MarshalOpts::default())
+            .unwrap();
+        assert_ne!(first.root, second.root);
+    }
+
+    #[test]
+    fn marshal_local_unique_id_override_is_deterministic() {
+        let marshal = || {
+            local("context")
+                .unwrap()
+                .marshal(MarshalOpts::default().with_local_unique_id("fixture-id"))
+                .unwrap()
+        };
+        let first = marshal();
+        let second = marshal();
+        assert_eq!(first.root, second.root);
+        assert_eq!(
+            definition_source(&first, 0)
+                .attrs
+                .get(attr::LOCAL_UNIQUE_ID),
+            Some(&"fixture-id".to_string())
+        );
+    }
+
+    #[test]
+    fn local_unique_id_is_shared_within_a_single_marshal() {
+        let state = crate::merge(
+            vec![local("one").unwrap(), local("two").unwrap()],
+            crate::MergeOpts::new(),
+        )
+        .unwrap();
+        let def = state.marshal(MarshalOpts::default()).unwrap();
+
+        let ids: Vec<String> = def
+            .def
+            .iter()
+            .filter_map(|bytes| {
+                let op = pb::Op::decode(bytes.as_slice()).unwrap();
+                match op.op {
+                    Some(pb::op::Op::Source(source)) => {
+                        source.attrs.get(attr::LOCAL_UNIQUE_ID).cloned()
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        assert_eq!(ids.len(), 2, "expected two local source operations");
+        assert!(!ids[0].is_empty(), "expected a non-empty local.unique");
+        assert_eq!(ids[0], ids[1], "one marshal shares one local.unique");
     }
 }

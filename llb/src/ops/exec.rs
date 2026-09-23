@@ -693,7 +693,7 @@ mod tests {
     }
 
     fn serialize_exec_op(op: ExecOp) -> (pb::ExecOp, crate::ops::Context) {
-        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
         let node = ctx.nodes().get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
@@ -706,7 +706,7 @@ mod tests {
 
     fn exec_digest(base: OperationOutput, run: RunOpts) -> String {
         let op = ExecOp::new(base, None, None, Vec::new(), run).unwrap();
-        let mut ctx = crate::ops::Context::new(None, Vec::new());
+        let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
         node_ref.digest().to_string()
     }
