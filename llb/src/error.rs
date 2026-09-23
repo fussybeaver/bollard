@@ -25,10 +25,6 @@ pub enum LlbError {
         source: prost::DecodeError,
     },
 
-    /// An operation referenced an input that was not registered.
-    #[error("missing input for operation")]
-    MissingInput,
-
     /// An image or other source reference could not be parsed.
     #[error("invalid image reference {reference:?}")]
     InvalidReference {
@@ -55,10 +51,6 @@ pub enum LlbError {
     /// An I/O error occurred while writing the LLB dump.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-
-    /// A feature or operation has not been implemented yet.
-    #[error("not yet implemented: {0}")]
-    Unimplemented(&'static str),
 
     /// Failed to serialize a value to an intermediate representation.
     #[error("serialization error: {0}")]

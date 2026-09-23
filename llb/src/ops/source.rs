@@ -145,7 +145,6 @@ impl Operation for Image {
 /// A local build-context source.
 #[derive(Clone, Debug)]
 pub struct Local {
-    name: String,
     identifier: String,
     attrs: BTreeMap<String, String>,
     metadata: OpMetadata,
@@ -159,7 +158,6 @@ impl Local {
         let mut metadata = OpMetadata::default();
         metadata.caps.insert(cap::CAP_SOURCE_LOCAL.to_string());
         Ok(Self {
-            name,
             identifier,
             attrs: BTreeMap::new(),
             metadata,

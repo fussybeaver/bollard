@@ -67,11 +67,7 @@ impl Operation for MergeOp {
                 let node_ref = ctx.register(input)?;
                 Ok(pb::Input {
                     digest: node_ref.digest().as_str().to_string(),
-                    index: if input.is_empty() {
-                        -1
-                    } else {
-                        node_ref.index().0 as i64
-                    },
+                    index: if input.is_empty() { -1 } else { 0 },
                 })
             })
             .collect::<Result<_, LlbError>>()?;
@@ -195,7 +191,7 @@ mod tests {
         assert_eq!(op.inputs.len(), 2);
         let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
-        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let node = ctx.nodes.get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         assert!(
             matches!(pb_op.op, Some(pb::op::Op::Merge(_))),
