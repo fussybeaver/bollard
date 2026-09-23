@@ -921,6 +921,7 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
     result
 }
 
+#[cfg(not(windows))]
 async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
     let socket = match std::env::var_os("SSH_AUTH_SOCK") {
         Some(socket) => PathBuf::from(socket),
@@ -1081,7 +1082,7 @@ fn integration_test_direct_definition_entitlements() {
 }
 
 #[test]
-#[cfg(feature = "buildkit_providerless")]
+#[cfg(all(feature = "buildkit_providerless", not(windows)))]
 fn integration_test_direct_definition_ssh_agent() {
     connect_to_docker_and_run!(direct_definition_ssh_agent_test);
 }
