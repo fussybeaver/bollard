@@ -208,16 +208,26 @@ pub(crate) struct Context {
     platform: Option<Platform>,
     /// Marshal-time worker constraint filters.
     worker_filters: Vec<String>,
+    /// Marshal-time `local.unique` value for session-less local sources.
+    local_unique_id: String,
 }
 
 impl Context {
     /// Create a context with the given marshal-time constraints.
-    pub(crate) fn new(platform: Option<Platform>, worker_filters: Vec<String>) -> Self {
+    ///
+    /// Shared by local sources without a session or explicit unique ID;
+    /// `None` generates a fresh value for each marshal.
+    pub(crate) fn new(
+        platform: Option<Platform>,
+        worker_filters: Vec<String>,
+        local_unique_id: Option<String>,
+    ) -> Self {
         Self {
             nodes: IndexMap::new(),
             serialized: HashMap::new(),
             platform,
             worker_filters,
+            local_unique_id: local_unique_id.unwrap_or_else(random_local_unique_id),
         }
     }
 
@@ -270,6 +280,11 @@ impl Context {
     /// Return the active marshal-time worker filters.
     pub(crate) fn worker_filters(&self) -> &[String] {
         &self.worker_filters
+    }
+
+    /// Return the marshal-time `local.unique` value.
+    pub(crate) fn local_unique_id(&self) -> &str {
+        &self.local_unique_id
     }
 
     /// Combine the active marshal-time platform with an operation's own
@@ -371,6 +386,13 @@ impl Context {
     }
 }
 
+/// Generate a random lowercase-hex `local.unique` value.
+fn random_local_unique_id() -> String {
+    let mut bytes = [0_u8; 16];
+    rand::fill(&mut bytes);
+    hex::encode(bytes)
+}
+
 /// Return a stable identity key for an operation object.
 ///
 /// The key is the address of the [`Arc`]-allocated operation, used to avoid
@@ -399,7 +421,7 @@ mod tests {
 
     #[test]
     fn context_starts_empty() {
-        let ctx = Context::new(None, Vec::new());
+        let ctx = Context::new(None, Vec::new(), None);
         assert!(ctx.nodes().is_empty());
     }
 
@@ -660,6 +682,7 @@ mod tests {
             .marshal(MarshalOpts {
                 platform: None,
                 worker_filters: Vec::new(),
+                local_unique_id: None,
             })
             .unwrap();
         let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
@@ -706,6 +729,7 @@ mod tests {
             .marshal(MarshalOpts {
                 platform: None,
                 worker_filters: Vec::new(),
+                local_unique_id: None,
             })
             .unwrap();
         let image_op = find_op_by_variant(&def, |op| matches!(op, pb::op::Op::Source(_)))
