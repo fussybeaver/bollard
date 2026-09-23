@@ -135,6 +135,12 @@ pub struct DefinitionSolveOptionsBuilder {
 }
 
 /// A direct-definition solve request.
+///
+/// Direct solves inspect every operation in `definition`. This includes
+/// operations that the final wrapper does not use. Every operation must contain
+/// valid protobuf data. A `local://` source must not set `local.session`. A
+/// required SSH mount must use a registered agent. Do not add unused operations
+/// that break these rules.
 #[derive(Clone)]
 pub struct DefinitionSolveRequest {
     /// The pre-built LLB definition to solve.
