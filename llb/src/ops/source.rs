@@ -346,6 +346,17 @@ fn normalize_image_reference(reference: &str) -> Result<String, LlbError> {
         });
     }
 
+    // Match distribution/reference: reject bare 64-hex input before normalization.
+    if reference.len() == 64
+        && reference
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(LlbError::InvalidReference {
+            reference: reference.to_string(),
+        });
+    }
+
     let (name_and_tag, digest) = match reference.split_once('@') {
         Some((name, digest)) if !name.is_empty() && !digest.is_empty() => {
             validate_digest(digest, reference)?;
@@ -431,7 +442,6 @@ fn split_image_domain(reference: &str) -> (&str, &str) {
 fn validate_image_name(name: &str, original: &str) -> Result<(), LlbError> {
     if name.is_empty()
         || name.len() > 255
-        || (name.len() == 64 && name.bytes().all(|c| c.is_ascii_hexdigit()))
         || name
             .split('/')
             .any(|component| !valid_image_component(component))
@@ -772,10 +782,21 @@ mod tests {
             "alpine:-foo",
             "alpine:.foo",
             "alpine@sha256:not-a-digest",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             &overlong,
         ] {
             assert!(Image::new(reference).is_err(), "accepted {reference:?}");
         }
+    }
+
+    #[test]
+    fn image_accepts_namespaced_64_hex_repository_names() {
+        let hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let source = source_op(Image::new(format!("ghcr.io/{hex64}")).unwrap());
+        assert_eq!(
+            source.identifier,
+            format!("docker-image://ghcr.io/{hex64}:latest")
+        );
     }
 
     #[test]
