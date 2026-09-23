@@ -5,9 +5,8 @@ use crate::error::LlbError;
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::ops::{Context, InputPlan, Operation, OperationOutput, SerializedOp};
 use crate::platform::Platform;
-use crate::state::{ExecState, RunOpts, State};
+use crate::state::{set_env, ExecState, RunOpts, State};
 use bollard_buildkit_proto::pb;
-use indexmap::IndexMap;
 
 /// How a cache mount is shared between concurrent builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -457,7 +456,7 @@ impl crate::state::RunOpt for AddSecret {
 
 impl crate::state::RunOpt for AddEnv {
     fn apply(self, exec: &mut ExecState) {
-        exec.run.env.push((self.key, self.value));
+        set_env(&mut exec.run.env, self.key, self.value);
     }
 }
 
@@ -528,18 +527,13 @@ fn build_pb_mount(mount: &Mount, input: i64) -> pb::Mount {
     }
 }
 
+/// Merge base-state and run-step environments with Go's last-set semantics.
 fn merge_env(base: &[(String, String)], run: &[(String, String)]) -> Vec<(String, String)> {
-    base.iter()
-        .chain(run)
-        .fold(
-            IndexMap::with_capacity(base.len() + run.len()),
-            |mut merged, (key, value)| {
-                merged.insert(key.clone(), value.clone());
-                merged
-            },
-        )
-        .into_iter()
-        .collect()
+    let mut merged = Vec::with_capacity(base.len() + run.len());
+    for (key, value) in base.iter().chain(run) {
+        set_env(&mut merged, key.clone(), value.clone());
+    }
+    merged
 }
 
 fn build_exec_metadata(run: &RunOpts, root_has_input: bool) -> OpMetadata {
@@ -965,7 +959,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_env_merge_preserves_order_and_last_value() {
+    fn exec_env_merge_last_set_value_wins_at_last_set_position() {
         let merged = merge_env(
             &[
                 ("K".to_string(), "V1".to_string()),
@@ -985,8 +979,74 @@ mod tests {
         assert_eq!(
             merged,
             vec![
-                ("K".to_string(), "V3".to_string()),
-                ("A".to_string(), "x".to_string())
+                ("A".to_string(), "x".to_string()),
+                ("K".to_string(), "V3".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn state_env_setters_emit_last_set_value() {
+        let state = scratch()
+            .unwrap()
+            .add_env("K", "first")
+            .add_envf("K", "second")
+            .add_env("K", "last")
+            .run(shlex("env").unwrap())
+            .root()
+            .unwrap();
+        let def = state
+            .marshal(crate::state::MarshalOpts::linux_amd64())
+            .unwrap();
+        let exec = def
+            .def
+            .iter()
+            .map(|bytes| pb::Op::decode(bytes.as_slice()).unwrap())
+            .find_map(|op| match op.op {
+                Some(pb::op::Op::Exec(exec)) => Some(exec),
+                _ => None,
+            })
+            .expect("expected exec operation");
+        let meta = exec.meta.expect("expected Meta");
+        assert!(meta.env.contains(&"K=last".to_string()));
+        assert_eq!(
+            meta.env
+                .iter()
+                .filter(|entry| entry.starts_with("K="))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn add_env_run_opt_replaces_existing_entry() {
+        let mut exec_state = scratch().unwrap().run(shlex("true").unwrap());
+        crate::state::RunOpt::apply(
+            AddEnv {
+                key: "K".to_string(),
+                value: "V1".to_string(),
+            },
+            &mut exec_state,
+        );
+        crate::state::RunOpt::apply(
+            AddEnv {
+                key: "A".to_string(),
+                value: "x".to_string(),
+            },
+            &mut exec_state,
+        );
+        crate::state::RunOpt::apply(
+            AddEnv {
+                key: "K".to_string(),
+                value: "V2".to_string(),
+            },
+            &mut exec_state,
+        );
+        assert_eq!(
+            exec_state.run.env,
+            vec![
+                ("A".to_string(), "x".to_string()),
+                ("K".to_string(), "V2".to_string()),
             ]
         );
     }
