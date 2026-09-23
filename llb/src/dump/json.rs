@@ -13,7 +13,9 @@ use super::{for_each_op, mount_type_name, net_mode_name, security_mode_name};
 /// Write a JSON Lines dump of `def` to `w`.
 ///
 /// Each line is a JSON object with `Op`, `Digest`, and `OpMetadata` fields,
-/// matching the shape produced by `buildctl debug dump-llb`.
+/// modeled on, but not schema-compatible with, `buildctl debug dump-llb`.
+/// Field nesting, omitted values, byte encoding, and enum representation differ.
+/// Unlike BuildKit's encoder, this renderer includes symlink file actions.
 pub fn dump_json<W: Write>(def: &Definition, w: &mut W) -> Result<(), LlbError> {
     for_each_op(
         def,
