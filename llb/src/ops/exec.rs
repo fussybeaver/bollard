@@ -689,7 +689,7 @@ mod tests {
     fn serialize_exec_op(op: ExecOp) -> (pb::ExecOp, crate::ops::Context) {
         let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
-        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let node = ctx.nodes.get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         let exec = match pb_op.op {
             Some(pb::op::Op::Exec(exec)) => exec,
@@ -765,7 +765,7 @@ mod tests {
             .with_mount("/b", src);
         let op = ExecOp::new(base, None, None, Vec::new(), run).unwrap();
         let (exec, ctx) = serialize_exec_op(op);
-        let node = ctx.nodes().values().last().unwrap();
+        let node = ctx.nodes.values().last().unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         assert_eq!(pb_op.inputs.len(), 2);
         assert_eq!(exec.mounts[1].input, 1);
@@ -833,7 +833,7 @@ mod tests {
         assert_eq!(secret_opt.mode, 0o400);
         assert!(!secret_opt.optional);
 
-        let node = ctx.nodes().values().last().expect("exec node");
+        let node = ctx.nodes.values().last().expect("exec node");
         assert!(node.metadata.caps.contains(cap::CAP_EXEC_MOUNT_SECRET));
     }
 

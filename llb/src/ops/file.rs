@@ -349,7 +349,6 @@ pub fn symlink<S1: Into<String>, S2: Into<String>>(target: S1, link_path: S2) ->
 pub(crate) struct FileOp {
     base: OperationOutput,
     action: FileAction,
-    opts: FileOpts,
     cwd: Option<String>,
     metadata: OpMetadata,
 }
@@ -370,7 +369,6 @@ impl FileOp {
         Ok(Self {
             base,
             action,
-            opts,
             cwd,
             metadata,
         })
@@ -552,7 +550,7 @@ mod tests {
     fn serialize_file_op(op: FileOp) -> (pb::FileOp, crate::ops::Context) {
         let mut ctx = crate::ops::Context::new(None, Vec::new(), None);
         let node_ref = op.serialize(&mut ctx).unwrap();
-        let node = ctx.nodes().get(node_ref.digest()).unwrap();
+        let node = ctx.nodes.get(node_ref.digest()).unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         let file = match pb_op.op {
             Some(pb::op::Op::File(file)) => file,
@@ -590,7 +588,7 @@ mod tests {
         let action = copy(src, "/src", "/dest");
         let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
         let (file, ctx) = serialize_file_op(op);
-        let node = ctx.nodes().values().last().unwrap();
+        let node = ctx.nodes.values().last().unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         assert_eq!(pb_op.inputs.len(), 2);
         assert_eq!(file.actions[0].secondary_input, 1);
@@ -602,7 +600,7 @@ mod tests {
         let action = mkdir("/app", 0o755).with_parents(true);
         let op = FileOp::new(base, action, FileOpts::default(), None).unwrap();
         let (file, ctx) = serialize_file_op(op);
-        let node = ctx.nodes().values().last().unwrap();
+        let node = ctx.nodes.values().last().unwrap();
         let pb_op = pb::Op::decode(node.bytes.as_slice()).unwrap();
         assert_eq!(pb_op.inputs.len(), 0);
         assert_eq!(file.actions[0].input, -1);

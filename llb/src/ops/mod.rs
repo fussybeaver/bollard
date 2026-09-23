@@ -19,31 +19,11 @@ use crate::marshal::{encode_and_hash, Digest};
 use crate::metadata::{attr, cap, OpMetadata};
 use crate::platform::Platform;
 
-/// Index of an output produced by an operation.
-///
-/// Most operations produce a single output at index 0. Multi-output operations
-/// (notably `ExecOp` mounts) use borrowed outputs with non-zero indices.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct OutputIdx(pub u32);
-
-impl OutputIdx {
-    /// The primary output of an operation.
-    pub const PRIMARY: OutputIdx = OutputIdx(0);
-}
-
-/// A handle to an operation output, either owned by a [`State`] or borrowed
-/// from a multi-output operation.
+/// An operation output or an absent (scratch) filesystem.
 #[derive(Clone, Debug)]
 pub(crate) enum OperationOutput {
     /// A single-output operation that is the direct producer of a state.
     Owned(Arc<dyn Operation>),
-    /// A specific output of a multi-output operation.
-    Borrowed {
-        /// The operation that owns the output.
-        op: Arc<dyn Operation>,
-        /// Which output index this handle refers to.
-        index: OutputIdx,
-    },
     /// An empty output representing an absent (scratch) filesystem.
     ///
     /// Go's `llb.Scratch()` does not produce a vertex; it is encoded as an
@@ -60,17 +40,7 @@ impl OperationOutput {
     pub(crate) fn operation(&self) -> &dyn Operation {
         match self {
             OperationOutput::Owned(op) => op.as_ref(),
-            OperationOutput::Borrowed { op, .. } => op.as_ref(),
             OperationOutput::Empty => panic!("empty output has no operation"),
-        }
-    }
-
-    /// The output index within the operation.
-    pub(crate) fn index(&self) -> OutputIdx {
-        match self {
-            OperationOutput::Owned(_) => OutputIdx::PRIMARY,
-            OperationOutput::Borrowed { index, .. } => *index,
-            OperationOutput::Empty => OutputIdx::PRIMARY,
         }
     }
 
@@ -91,10 +61,6 @@ pub(crate) trait Operation: Send + Sync + Debug {
 
     /// Serialize this operation, register its inputs, and insert the resulting
     /// [`Node`] into `ctx`.
-    ///
-    /// The returned [`NodeRef`] typically points to the operation's primary
-    /// output; callers that need a different output index should use
-    /// [`Context::register`].
     fn serialize(&self, ctx: &mut Context) -> Result<NodeRef, LlbError> {
         let SerializedOp { op, metadata } = self.build_serialized(ctx)?;
         let (digest, bytes) = encode_and_hash(&op)?;
@@ -103,11 +69,6 @@ pub(crate) trait Operation: Send + Sync + Debug {
             digest,
             metadata,
         }))
-    }
-
-    /// The outputs this operation exposes.
-    fn outputs(&self) -> Vec<OutputIdx> {
-        vec![OutputIdx::PRIMARY]
     }
 }
 
@@ -121,8 +82,8 @@ pub(crate) struct SerializedOp {
 /// Registered operation inputs and their protobuf positions.
 #[derive(Debug, Default)]
 pub(crate) struct InputPlan {
-    keys: Vec<(Digest, OutputIdx)>,
-    indices: HashMap<(Digest, OutputIdx), i64>,
+    keys: Vec<Digest>,
+    indices: HashMap<Digest, i64>,
 }
 
 impl InputPlan {
@@ -136,7 +97,7 @@ impl InputPlan {
             return Ok(-1);
         }
         let node_ref = ctx.register(output)?;
-        let key = (node_ref.digest().clone(), node_ref.index());
+        let key = node_ref.digest().clone();
         if let Some(index) = self.indices.get(&key) {
             return Ok(*index);
         }
@@ -147,38 +108,34 @@ impl InputPlan {
     }
 
     /// Convert registered inputs to their protobuf representation.
+    ///
+    /// Inputs reference output `0`; scratch inputs use index `-1`.
     pub(crate) fn pb_inputs(&self) -> Vec<pb::Input> {
         self.keys
             .iter()
-            .map(|(digest, index)| pb::Input {
+            .map(|digest| pb::Input {
                 digest: digest.as_str().to_string(),
-                index: index.0 as i64,
+                index: 0,
             })
             .collect()
     }
 }
 
-/// Reference to a registered operation node and a specific output index.
+/// Reference to a registered operation node.
 #[derive(Clone, Debug)]
 pub(crate) struct NodeRef {
     digest: Digest,
-    index: OutputIdx,
 }
 
 impl NodeRef {
     /// Build a new node reference.
-    pub(crate) fn new(digest: Digest, index: OutputIdx) -> Self {
-        Self { digest, index }
+    pub(crate) fn new(digest: Digest) -> Self {
+        Self { digest }
     }
 
     /// Digest of the referenced operation.
     pub(crate) fn digest(&self) -> &Digest {
         &self.digest
-    }
-
-    /// Output index within the referenced operation.
-    pub(crate) fn index(&self) -> OutputIdx {
-        self.index
     }
 }
 
@@ -203,7 +160,7 @@ pub(crate) struct Context {
     ///
     /// This avoids re-traversing shared subgraphs while still computing the
     /// final content digest from the encoded bytes.
-    serialized: HashMap<(usize, OutputIdx), NodeRef>,
+    serialized: HashMap<usize, NodeRef>,
     /// Marshal-time platform constraint.
     platform: Option<Platform>,
     /// Marshal-time worker constraint filters.
@@ -239,10 +196,10 @@ impl Context {
     /// operation object short-circuit through an identity cache.
     pub(crate) fn register(&mut self, output: &OperationOutput) -> Result<NodeRef, LlbError> {
         if output.is_empty() {
-            return Ok(NodeRef::new(Digest::empty(), OutputIdx::PRIMARY));
+            return Ok(NodeRef::new(Digest::empty()));
         }
         let op = output.operation();
-        let key = (operation_identity_key(op), output.index());
+        let key = operation_identity_key(op);
         if let Some(node_ref) = self.serialized.get(&key) {
             return Ok(node_ref.clone());
         }
@@ -264,17 +221,7 @@ impl Context {
             .entry(digest.clone())
             .and_modify(|existing| existing.metadata.merge_from(&node.metadata))
             .or_insert(node);
-        NodeRef::new(digest, OutputIdx::PRIMARY)
-    }
-
-    /// Iterate registered nodes in post-order (children before parents).
-    pub(crate) fn nodes(&self) -> &IndexMap<Digest, Node> {
-        &self.nodes
-    }
-
-    /// Return the active marshal-time platform constraint.
-    pub(crate) fn platform(&self) -> Option<Platform> {
-        self.platform.clone()
+        NodeRef::new(digest)
     }
 
     /// Return the active marshal-time worker filters.
@@ -310,7 +257,7 @@ impl Context {
         let wrapper_op = pb::Op {
             inputs: vec![pb::Input {
                 digest: root.digest().as_str().to_string(),
-                index: root.index().0 as i64,
+                index: 0,
             }],
             platform: None,
             constraints: None,
@@ -347,7 +294,7 @@ impl Context {
             digest: digest.clone(),
             metadata,
         });
-        Ok(NodeRef::new(digest, OutputIdx::PRIMARY))
+        Ok(NodeRef::new(digest))
     }
 
     /// Finalize the context into a [`Definition`].
@@ -422,7 +369,7 @@ mod tests {
     #[test]
     fn context_starts_empty() {
         let ctx = Context::new(None, Vec::new(), None);
-        assert!(ctx.nodes().is_empty());
+        assert!(ctx.nodes.is_empty());
     }
 
     #[test]
