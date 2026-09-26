@@ -51,8 +51,17 @@ impl Decoder for NewlineLogOutputDecoder {
         loop {
             match self.state {
                 NewlineLogOutputDecoderState::WaitingHeader => {
+                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
+                    // Raw TTY output can also start with 0x00-0x02, so require the
+                    // zero padding before treating the bytes as a header.
+                    if !src.is_empty() && src[0] <= 2 && src.len() < 4 {
+                        return Ok(None);
+                    }
+                    let is_header =
+                        src.len() >= 4 && src[0] <= 2 && src[1] == 0 && src[2] == 0 && src[3] == 0;
+
                     // `start_exec` API on unix socket will emit values without a header
-                    if !src.is_empty() && src[0] > 2 {
+                    if !src.is_empty() && !is_header {
                         if self.is_tcp {
                             return Ok(Some(LogOutput::Console {
                                 message: src.split().freeze(),
@@ -763,5 +772,41 @@ mod tests {
             })
         );
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn newline_decode_raw_output_starting_with_control_byte() {
+        // Raw TTY output starting with 0x01 must not be parsed as a frame header.
+        let payload = &b"\x01colored line\n"[..];
+        let mut buf = BytesMut::from(payload);
+        let mut codec = NewlineLogOutputDecoder::new(true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(payload)
+            })
+        );
+
+        let mut buf = BytesMut::from(&b"next line\n"[..]);
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(&b"next line\n"[..])
+            })
+        );
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_header() {
+        let mut buf = BytesMut::from(&[1u8, 0, 0, 0, 0, 0, 0, 3, b'a', b'b', b'c'][..]);
+        let mut codec = NewlineLogOutputDecoder::new(true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::StdOut {
+                message: bytes::Bytes::from(&b"abc"[..])
+            })
+        );
     }
 }
