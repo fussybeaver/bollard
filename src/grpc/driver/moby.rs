@@ -84,7 +84,7 @@ impl Driver for Moby {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        let (read, write) = self.docker.process_upgraded(req).await?;
+        let (read, write, _) = self.docker.process_upgraded(req).await?;
 
         let output = Box::pin(read);
         let input = Box::pin(write);

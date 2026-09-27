@@ -264,11 +264,14 @@ impl Docker {
                     })),
                 );
 
-                let (read, write) = self.process_upgraded(req).await?;
+                let (read, write, framing) = self.process_upgraded(req).await?;
 
-                let log =
-                    FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(true), capacity)
-                        .map_err(|e| e.into());
+                let log = FramedRead::with_capacity(
+                    read,
+                    NewlineLogOutputDecoder::new(framing, true),
+                    capacity,
+                )
+                .map_err(|e| e.into());
 
                 Ok(StartExecResults::Attached {
                     output: Box::pin(log),

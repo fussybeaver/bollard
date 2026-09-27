@@ -580,8 +580,9 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        let (read, write) = self.process_upgraded(req).await?;
-        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
+        let (read, write, framing) = self.process_upgraded(req).await?;
+        let log = FramedRead::new(read, NewlineLogOutputDecoder::new(framing, true))
+            .map_err(|e| e.into());
 
         Ok(AttachContainerResults {
             output: Box::pin(log),
@@ -648,8 +649,11 @@ impl Docker {
         let (write, read) = futures_util::StreamExt::split(ws_stream);
 
         let ws_reader = WebSocketReader::new(read);
-        let log =
-            FramedRead::new(ws_reader, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
+        let log = FramedRead::new(
+            ws_reader,
+            NewlineLogOutputDecoder::new(crate::read::StreamFraming::Unknown, true),
+        )
+        .map_err(|e| e.into());
 
         let ws_writer = WebSocketWriter::new(write);
 
@@ -674,8 +678,11 @@ impl Docker {
         let (write, read) = futures_util::StreamExt::split(ws_stream);
 
         let ws_reader = WebSocketReader::new(read);
-        let log =
-            FramedRead::new(ws_reader, NewlineLogOutputDecoder::new(true)).map_err(|e| e.into());
+        let log = FramedRead::new(
+            ws_reader,
+            NewlineLogOutputDecoder::new(crate::read::StreamFraming::Unknown, true),
+        )
+        .map_err(|e| e.into());
 
         let ws_writer = WebSocketWriter::new(write);
 

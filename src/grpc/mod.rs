@@ -1937,7 +1937,7 @@ impl Service<tonic::transport::Uri> for GrpcClient {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         let fut = async move {
-            client.process_upgraded(req).await.map(|(read, write)| {
+            client.process_upgraded(req).await.map(|(read, write, _)| {
                 let output = Box::pin(read);
                 let input = Box::pin(write);
                 GrpcTransport {
