@@ -1200,12 +1200,6 @@ fn path_string(path: &Path) -> Result<String, Status> {
     Ok(value)
 }
 
-fn mount_name(metadata: &MetadataMap) -> Result<String, Status> {
-    parse_options(metadata)?
-        .dir_name
-        .ok_or_else(|| Status::not_found("local source name is missing"))
-}
-
 fn lookup_mount(
     mounts: &HashMap<String, Arc<cap_std::fs::Dir>>,
     name: &str,
@@ -2368,17 +2362,6 @@ mod tests {
     fn scanner_rejects_invalid_options_and_long_paths() {
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            DIR_NAME_METADATA,
-            tonic::metadata::MetadataValue::try_from("context").expect("metadata value is valid"),
-        );
-        assert_eq!(mount_name(&metadata).expect("mount name exists"), "context");
-        assert_eq!(
-            mount_name(&MetadataMap::new()).unwrap_err().code(),
-            tonic::Code::NotFound
-        );
-
-        let mut metadata = MetadataMap::new();
-        metadata.insert(
             INCLUDE_PATTERNS_METADATA,
             tonic::metadata::MetadataValue::try_from("*.tmp").expect("metadata value is valid"),
         );
@@ -2840,6 +2823,29 @@ mod tests {
             .await
             .expect_err("unknown mount names are rejected");
         assert_eq!(error.code(), tonic::Code::NotFound);
+        let _ = shutdown.send(());
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn diff_copy_rejects_missing_mount_name() {
+        let root = tempdir().expect("temporary directory is created");
+        let (address, shutdown, server) = start_filesync_server(open_mount(root.path())).await;
+        let mut client =
+            bollard_buildkit_proto::moby::filesync::v1::file_sync_client::FileSyncClient::connect(
+                format!("http://{address}"),
+            )
+            .await
+            .expect("FileSync client connects");
+        let (_sender, receiver) = mpsc::channel(OUTPUT_QUEUE_CAPACITY);
+        let request = Request::new(ReceiverStream::new(receiver));
+
+        let error = client
+            .diff_copy(request)
+            .await
+            .expect_err("missing dir-name metadata is rejected");
+        assert_eq!(error.code(), tonic::Code::NotFound);
+
         let _ = shutdown.send(());
         let _ = server.await;
     }
