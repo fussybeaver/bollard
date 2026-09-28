@@ -336,6 +336,16 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_stream_string(req)
+        let docker = self.clone();
+        let service_id = service_id.to_owned();
+        self.process_into_stream_string(req, move || async move {
+            let service = docker.inspect_service(&service_id, None).await?;
+            Ok(service
+                .spec
+                .and_then(|spec| spec.task_template)
+                .and_then(|task| task.container_spec)
+                .and_then(|container| container.tty)
+                .unwrap_or(false))
+        })
     }
 }

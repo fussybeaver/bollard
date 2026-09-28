@@ -15,7 +15,7 @@ use crate::container::LogOutput;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
-use crate::read::NewlineLogOutputDecoder;
+use crate::read::{NewlineLogOutputDecoder, StreamFraming};
 use futures_core::Stream;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
@@ -265,6 +265,17 @@ impl Docker {
                 );
 
                 let (read, write, framing) = self.process_upgraded(req).await?;
+                let framing = match framing {
+                    Some(framing) => framing,
+                    None => {
+                        let exec = self.inspect_exec(exec_id).await?;
+                        StreamFraming::from_tty(
+                            exec.process_config
+                                .and_then(|config| config.tty)
+                                .unwrap_or(false),
+                        )
+                    }
+                };
 
                 let log = FramedRead::with_capacity(
                     read,

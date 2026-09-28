@@ -28,15 +28,23 @@ enum NewlineLogOutputDecoderState {
     WaitingPayload(u8, usize), // StreamType, Length
 }
 
-/// How a log/attach stream is framed, taken from the response `Content-Type`.
+/// How a log/attach stream is framed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum StreamFraming {
     /// Raw output with no frame headers (TTY enabled).
     Raw,
     /// Every chunk is prefixed with an 8-byte stream header (TTY disabled).
     Multiplexed,
-    /// API < 1.42 always reports `raw-stream`, so detect headers from the bytes.
-    Unknown,
+}
+
+impl StreamFraming {
+    pub(crate) fn from_tty(tty: bool) -> StreamFraming {
+        if tty {
+            StreamFraming::Raw
+        } else {
+            StreamFraming::Multiplexed
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -64,37 +72,11 @@ impl Decoder for NewlineLogOutputDecoder {
         loop {
             match self.state {
                 NewlineLogOutputDecoderState::WaitingHeader => {
-                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
-                    let is_header = match self.framing {
-                        StreamFraming::Raw => false,
-                        StreamFraming::Multiplexed => {
-                            if src.is_empty() {
-                                return Ok(None);
-                            }
-                            if src[0] > 2 {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!("invalid stream type in frame header: {}", src[0]),
-                                ));
-                            }
-                            true
-                        }
-                        // Raw TTY output can also start with 0x00-0x02, so require the
-                        // zero padding before treating the bytes as a header.
-                        StreamFraming::Unknown => {
-                            if !src.is_empty() && src[0] <= 2 && src.len() < 4 {
-                                return Ok(None);
-                            }
-                            src.len() >= 4
-                                && src[0] <= 2
-                                && src[1] == 0
-                                && src[2] == 0
-                                && src[3] == 0
-                        }
-                    };
+                    if src.is_empty() {
+                        return Ok(None);
+                    }
 
-                    // `start_exec` API on unix socket will emit values without a header
-                    if !src.is_empty() && !is_header {
+                    if self.framing == StreamFraming::Raw {
                         if self.is_tcp {
                             return Ok(Some(LogOutput::Console {
                                 message: src.split().freeze(),
@@ -108,6 +90,14 @@ impl Decoder for NewlineLogOutputDecoder {
                         } else {
                             return Ok(None);
                         }
+                    }
+
+                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
+                    if src[0] > 2 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("invalid stream type in frame header: {}", src[0]),
+                        ));
                     }
 
                     if src.len() < 8 {
@@ -756,7 +746,7 @@ mod tests {
         let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..];
         let mut buf = BytesMut::from(expected);
         let mut codec: NewlineLogOutputDecoder =
-            NewlineLogOutputDecoder::new(StreamFraming::Unknown, true);
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, true);
 
         assert_eq!(
             codec.decode(&mut buf).unwrap(),
@@ -768,7 +758,7 @@ mod tests {
         let mut buf =
             BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
         let mut codec: NewlineLogOutputDecoder =
-            NewlineLogOutputDecoder::new(StreamFraming::Unknown, false);
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, false);
 
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
 
@@ -793,7 +783,7 @@ mod tests {
         // FramedRead error with "bytes remaining on stream".
         let payload = b"inital input string";
         let mut buf = BytesMut::from(&payload[..]);
-        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Unknown, false);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Raw, false);
 
         // No newline yet — decode() waits for more data.
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
@@ -814,7 +804,7 @@ mod tests {
         // Raw TTY output starting with 0x01 must not be parsed as a frame header.
         let payload = &b"\x01colored line\n"[..];
         let mut buf = BytesMut::from(payload);
-        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Unknown, true);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Raw, true);
 
         assert_eq!(
             codec.decode(&mut buf).unwrap(),
@@ -835,7 +825,7 @@ mod tests {
     #[test]
     fn newline_decode_multiplexed_header() {
         let mut buf = BytesMut::from(&[1u8, 0, 0, 0, 0, 0, 0, 3, b'a', b'b', b'c'][..]);
-        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Unknown, true);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
 
         assert_eq!(
             codec.decode(&mut buf).unwrap(),

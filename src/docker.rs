@@ -1622,14 +1622,27 @@ impl Docker {
         )
     }
 
-    pub(crate) fn process_into_stream_string(
+    /// `tty` is only called when the response headers don't settle the stream framing
+    /// (API < 1.42), and should return the TTY setting of the container being read.
+    pub(crate) fn process_into_stream_string<F, Fut>(
         &self,
         req: Result<Request<BodyType>, Error>,
-    ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin {
+        tty: F,
+    ) -> impl Stream<Item = Result<LogOutput, Error>> + Unpin
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<bool, Error>>,
+    {
         let pinned_version = self.version.pinned_version();
         Box::pin(
             self.process_request(req)
-                .map_ok(move |res| Docker::decode_into_stream_string(res, pinned_version))
+                .and_then(move |res| async move {
+                    let framing = match Docker::stream_framing(res.headers(), pinned_version) {
+                        Some(framing) => framing,
+                        None => StreamFraming::from_tty(tty().await?),
+                    };
+                    Ok(Docker::decode_into_stream_string(res, framing))
+                })
                 .try_flatten_stream(),
         )
     }
@@ -1679,7 +1692,7 @@ impl Docker {
     pub(crate) async fn process_upgraded(
         &self,
         req: Result<Request<BodyType>, Error>,
-    ) -> Result<(impl AsyncRead, impl AsyncWrite, StreamFraming), Error> {
+    ) -> Result<(impl AsyncRead, impl AsyncWrite, Option<StreamFraming>), Error> {
         let res = self.process_request(req).await?;
         let framing = Docker::stream_framing(res.headers(), self.version.pinned_version());
         let upgraded = hyper::upgrade::on(res).await?;
@@ -1692,21 +1705,22 @@ impl Docker {
     /// Docker sends `multiplexed-stream` for non-TTY output since API 1.42. Before that it
     /// sends `raw-stream` either way, so `raw-stream` is only trusted when the request's API
     /// version is known to be >= 1.42: pinned by the client, or reported by the daemon in the
-    /// `Api-Version` header of an unversioned request.
+    /// `Api-Version` header of an unversioned request. Returns `None` otherwise, and the
+    /// caller picks the framing from the container's TTY setting.
     fn stream_framing(
         headers: &http::HeaderMap,
         pinned_version: Option<ClientVersion>,
-    ) -> StreamFraming {
+    ) -> Option<StreamFraming> {
         let content_type = headers
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .unwrap_or_default();
 
         if content_type.starts_with("application/vnd.docker.multiplexed-stream") {
-            return StreamFraming::Multiplexed;
+            return Some(StreamFraming::Multiplexed);
         }
         if !content_type.starts_with("application/vnd.docker.raw-stream") {
-            return StreamFraming::Unknown;
+            return None;
         }
 
         let version = pinned_version.or_else(|| {
@@ -1725,8 +1739,8 @@ impl Docker {
         };
 
         match version {
-            Some(version) if version >= multiplexed_since => StreamFraming::Raw,
-            _ => StreamFraming::Unknown,
+            Some(version) if version >= multiplexed_since => Some(StreamFraming::Raw),
+            _ => None,
         }
     }
 
@@ -2041,9 +2055,8 @@ impl Docker {
 
     fn decode_into_stream_string(
         res: Response<Incoming>,
-        pinned_version: Option<ClientVersion>,
+        framing: StreamFraming,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let framing = Docker::stream_framing(res.headers(), pinned_version);
         let is_raw_stream = res
             .headers()
             .get(CONTENT_TYPE)
@@ -2148,7 +2161,7 @@ mod tests {
             let headers = headers("application/vnd.docker.multiplexed-stream", None);
             assert_eq!(
                 Docker::stream_framing(&headers, None),
-                StreamFraming::Multiplexed
+                Some(StreamFraming::Multiplexed)
             );
         }
 
@@ -2157,36 +2170,27 @@ mod tests {
             let headers = headers("application/vnd.docker.raw-stream", None);
             assert_eq!(
                 Docker::stream_framing(&headers, Some(V1_42)),
-                StreamFraming::Raw
+                Some(StreamFraming::Raw)
             );
-            assert_eq!(
-                Docker::stream_framing(&headers, Some(V1_41)),
-                StreamFraming::Unknown
-            );
+            assert_eq!(Docker::stream_framing(&headers, Some(V1_41)), None);
         }
 
         #[test]
         fn raw_content_type_daemon_version() {
             let new = headers("application/vnd.docker.raw-stream", Some("1.47"));
-            assert_eq!(Docker::stream_framing(&new, None), StreamFraming::Raw);
+            assert_eq!(Docker::stream_framing(&new, None), Some(StreamFraming::Raw));
 
             let old = headers("application/vnd.docker.raw-stream", Some("1.41"));
-            assert_eq!(Docker::stream_framing(&old, None), StreamFraming::Unknown);
+            assert_eq!(Docker::stream_framing(&old, None), None);
 
             // The pinned version is what the request was sent with.
-            assert_eq!(
-                Docker::stream_framing(&new, Some(V1_41)),
-                StreamFraming::Unknown
-            );
+            assert_eq!(Docker::stream_framing(&new, Some(V1_41)), None);
         }
 
         #[test]
         fn raw_content_type_unknown_version() {
             let headers = headers("application/vnd.docker.raw-stream", None);
-            assert_eq!(
-                Docker::stream_framing(&headers, None),
-                StreamFraming::Unknown
-            );
+            assert_eq!(Docker::stream_framing(&headers, None), None);
         }
     }
 

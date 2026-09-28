@@ -25,7 +25,7 @@ use crate::errors::Error;
 use crate::models::*;
 #[cfg(feature = "websocket")]
 use crate::read::websocket::{WebSocketReader, WebSocketWriter};
-use crate::read::NewlineLogOutputDecoder;
+use crate::read::{NewlineLogOutputDecoder, StreamFraming};
 
 /// Path Stat Response from HEAD request to container/{id}/archive
 #[derive(Debug, Deserialize)]
@@ -581,6 +581,10 @@ impl Docker {
         );
 
         let (read, write, framing) = self.process_upgraded(req).await?;
+        let framing = match framing {
+            Some(framing) => framing,
+            None => StreamFraming::from_tty(self.container_tty(container_name).await?),
+        };
         let log = FramedRead::new(read, NewlineLogOutputDecoder::new(framing, true))
             .map_err(|e| e.into());
 
@@ -651,7 +655,7 @@ impl Docker {
         let ws_reader = WebSocketReader::new(read);
         let log = FramedRead::new(
             ws_reader,
-            NewlineLogOutputDecoder::new(crate::read::StreamFraming::Unknown, true),
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, true),
         )
         .map_err(|e| e.into());
 
@@ -680,7 +684,7 @@ impl Docker {
         let ws_reader = WebSocketReader::new(read);
         let log = FramedRead::new(
             ws_reader,
-            NewlineLogOutputDecoder::new(crate::read::StreamFraming::Unknown, true),
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, true),
         )
         .map_err(|e| e.into());
 
@@ -972,7 +976,19 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_stream_string(req)
+        let docker = self.clone();
+        let container_name = container_name.to_owned();
+        self.process_into_stream_string(req, move || async move {
+            docker.container_tty(&container_name).await
+        })
+    }
+
+    async fn container_tty(&self, container_name: &str) -> Result<bool, Error> {
+        let container = self.inspect_container(container_name, None).await?;
+        Ok(container
+            .config
+            .and_then(|config| config.tty)
+            .unwrap_or(false))
     }
 
     /// ---
