@@ -2057,15 +2057,9 @@ impl Docker {
         res: Response<Incoming>,
         framing: StreamFraming,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let is_raw_stream = res
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.starts_with("application/vnd.docker.raw-stream"));
-
         FramedRead::new(
             StreamReader::new(res.into_body()),
-            NewlineLogOutputDecoder::new(framing, is_raw_stream),
+            NewlineLogOutputDecoder::new(framing, framing == StreamFraming::Raw),
         )
         .map_err(Error::from)
     }
