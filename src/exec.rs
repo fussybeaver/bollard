@@ -196,6 +196,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - The ID of the previously created exec configuration.
+    ///  - Optional [Start Exec Options](StartExecOptions). With `None`, `tty` is taken from
+    ///    the exec's create-time setting.
     ///
     /// # Returns
     ///
@@ -250,6 +252,22 @@ impl Docker {
                     _ => 8 * 1024,
                 };
 
+                // The daemon frames the output by the start request's `tty`, so without
+                // options use the value the exec was created with.
+                let config = match config {
+                    Some(config) => config,
+                    None => StartExecOptions {
+                        tty: self
+                            .inspect_exec(exec_id)
+                            .await?
+                            .process_config
+                            .and_then(|config| config.tty)
+                            .unwrap_or(false),
+                        ..Default::default()
+                    },
+                };
+                let tty = config.tty;
+
                 let req = self.build_request(
                     &url,
                     Builder::new()
@@ -257,25 +275,11 @@ impl Docker {
                         .header(CONNECTION, "Upgrade")
                         .header(UPGRADE, "tcp"),
                     None::<String>,
-                    Docker::serialize_payload(config.or_else(|| {
-                        Some(StartExecOptions {
-                            ..Default::default()
-                        })
-                    })),
+                    Docker::serialize_payload(Some(config)),
                 );
 
                 let (read, write, framing) = self.process_upgraded(req).await?;
-                let framing = match framing {
-                    Some(framing) => framing,
-                    None => {
-                        let exec = self.inspect_exec(exec_id).await?;
-                        StreamFraming::from_tty(
-                            exec.process_config
-                                .and_then(|config| config.tty)
-                                .unwrap_or(false),
-                        )
-                    }
-                };
+                let framing = framing.unwrap_or(StreamFraming::from_tty(tty));
 
                 let log = FramedRead::with_capacity(
                     read,

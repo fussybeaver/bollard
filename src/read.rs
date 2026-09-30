@@ -92,16 +92,16 @@ impl Decoder for NewlineLogOutputDecoder {
                         }
                     }
 
-                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
-                    if src[0] > 2 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("invalid stream type in frame header: {}", src[0]),
-                        ));
-                    }
-
                     if src.len() < 8 {
                         return Ok(None);
+                    }
+
+                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
+                    if src[0] > 2 || src[1..4] != [0, 0, 0] {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("invalid multiplexed frame header: {:?}", &src[..8]),
+                        ));
                     }
 
                     let header = src.split_to(8);
@@ -869,7 +869,15 @@ mod tests {
 
     #[test]
     fn newline_decode_multiplexed_framing_rejects_bad_stream_type() {
-        let mut buf = BytesMut::from(&b"hello\n"[..]);
+        let mut buf = BytesMut::from(&b"hello world\n"[..]);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
+
+        assert!(codec.decode(&mut buf).is_err());
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_framing_rejects_bad_padding() {
+        let mut buf = BytesMut::from(&[1u8, 0, 1, 0, 0, 0, 0, 1, b'x'][..]);
         let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
 
         assert!(codec.decode(&mut buf).is_err());
