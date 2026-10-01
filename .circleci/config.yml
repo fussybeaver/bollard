@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 
 jobs:
   test_ssl:
@@ -243,7 +243,6 @@ jobs:
       - run: docker build -t bollard .
       - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,chrono,test_sshforward --verbose integration_test_build_buildkit_ssh 
 workflows:
-  version: 2
   test-image:
     jobs:
       - test_ssl
