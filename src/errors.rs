@@ -36,6 +36,10 @@ pub enum Error {
         path: PathBuf,
     },
     /// Error emitted when the client is unable to parse a native pki cert for SSL
+    ///
+    /// No longer constructed by this crate: `connect_with_ssl` now skips a
+    /// native certificate that fails to parse rather than failing the whole
+    /// connection. Left defined for API compatibility.
     #[cfg(feature = "ssl_providerless")]
     #[error("Could not parse a pki native cert")]
     NoNativeCertsError {
