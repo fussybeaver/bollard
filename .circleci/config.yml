@@ -37,7 +37,7 @@ jobs:
       - run: docker run --rm -h test.example.com -d --privileged --name test-docker-daemon -v ssh:/root/.ssh docker:stable-dind --storage-driver=overlay
       - run: docker build -t bollard .
       - run: |
-          docker exec -i test-docker-daemon sh -eux << 'EOD'
+          docker exec -i test-docker-daemon sh -eux \<< 'EOD'
           apk add --no-cache openssh-client openssh-server
           ssh-keygen -A
           echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
