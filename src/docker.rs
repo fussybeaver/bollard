@@ -30,7 +30,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 #[cfg(all(feature = "pipe", unix))]
 use hyperlocal::UnixConnector;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 #[cfg(feature = "ssl_providerless")]
 use rustls::{crypto::CryptoProvider, sign::CertifiedKey};
 #[cfg(feature = "ssl_providerless")]
@@ -570,10 +570,12 @@ impl Docker {
         // fatal here, returning `LoadNativeCertsErrors` and discarding the
         // whole native trust store -- including a case where the only
         // consequence should have been "one fewer CA available", since the
-        // caller's own `ssl_ca` is unaffected either way.
+        // caller's own `ssl_ca` is unaffected either way. For the same
+        // reason, a certificate that loaded but doesn't parse is skipped
+        // rather than failing the connection.
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
         if !native_certs.errors.is_empty() {
-            warn!(
+            log::warn!(
                 "ignoring {} error(s) loading native certs: {:?}",
                 native_certs.errors.len(),
                 native_certs.errors
@@ -581,11 +583,7 @@ impl Docker {
         }
 
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        for cert in native_certs.certs {
-            root_store
-                .add(cert)
-                .map_err(|err| NoNativeCertsError { err })?
-        }
+        root_store.add_parsable_certificates(native_certs.certs);
         #[cfg(any(feature = "test_ssl", feature = "webpki"))]
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
