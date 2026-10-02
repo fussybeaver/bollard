@@ -132,6 +132,15 @@ impl Docker {
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
-        self.process_into_stream_string(req)
+        let docker = self.clone();
+        let task_id = task_id.to_owned();
+        self.process_into_stream_string(req, move || async move {
+            let task = docker.inspect_task(&task_id).await?;
+            Ok(task
+                .spec
+                .and_then(|spec| spec.container_spec)
+                .and_then(|container| container.tty)
+                .unwrap_or(false))
+        })
     }
 }

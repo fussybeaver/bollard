@@ -28,16 +28,37 @@ enum NewlineLogOutputDecoderState {
     WaitingPayload(u8, usize), // StreamType, Length
 }
 
+/// How a log/attach stream is framed.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum StreamFraming {
+    /// Raw output with no frame headers (TTY enabled).
+    Raw,
+    /// Every chunk is prefixed with an 8-byte stream header (TTY disabled).
+    Multiplexed,
+}
+
+impl StreamFraming {
+    pub(crate) fn from_tty(tty: bool) -> StreamFraming {
+        if tty {
+            StreamFraming::Raw
+        } else {
+            StreamFraming::Multiplexed
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct NewlineLogOutputDecoder {
     state: NewlineLogOutputDecoderState,
+    framing: StreamFraming,
     is_tcp: bool,
 }
 
 impl NewlineLogOutputDecoder {
-    pub(crate) fn new(is_tcp: bool) -> NewlineLogOutputDecoder {
+    pub(crate) fn new(framing: StreamFraming, is_tcp: bool) -> NewlineLogOutputDecoder {
         NewlineLogOutputDecoder {
             state: NewlineLogOutputDecoderState::WaitingHeader,
+            framing,
             is_tcp,
         }
     }
@@ -51,8 +72,11 @@ impl Decoder for NewlineLogOutputDecoder {
         loop {
             match self.state {
                 NewlineLogOutputDecoderState::WaitingHeader => {
-                    // `start_exec` API on unix socket will emit values without a header
-                    if !src.is_empty() && src[0] > 2 {
+                    if src.is_empty() {
+                        return Ok(None);
+                    }
+
+                    if self.framing == StreamFraming::Raw {
                         if self.is_tcp {
                             return Ok(Some(LogOutput::Console {
                                 message: src.split().freeze(),
@@ -70,6 +94,14 @@ impl Decoder for NewlineLogOutputDecoder {
 
                     if src.len() < 8 {
                         return Ok(None);
+                    }
+
+                    // A multiplexed header is [stream (0-2), 0, 0, 0, size (u32 BE)].
+                    if src[0] > 2 || src[1..4] != [0, 0, 0] {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("invalid multiplexed frame header: {:?}", &src[..8]),
+                        ));
                     }
 
                     let header = src.split_to(8);
@@ -574,7 +606,7 @@ mod tests {
 
     use crate::container::LogOutput;
 
-    use super::{JsonLineDecoder, NewlineLogOutputDecoder};
+    use super::{JsonLineDecoder, NewlineLogOutputDecoder, StreamFraming};
 
     #[test]
     fn json_decode_empty() {
@@ -713,7 +745,8 @@ mod tests {
     fn newline_decode_no_header() {
         let expected = &b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..];
         let mut buf = BytesMut::from(expected);
-        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(true);
+        let mut codec: NewlineLogOutputDecoder =
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, true);
 
         assert_eq!(
             codec.decode(&mut buf).unwrap(),
@@ -724,7 +757,8 @@ mod tests {
 
         let mut buf =
             BytesMut::from(&b"2023-01-14T23:17:27.496421984-05:00 [lighttpd] 2023/01/14 23"[..]);
-        let mut codec: NewlineLogOutputDecoder = NewlineLogOutputDecoder::new(false);
+        let mut codec: NewlineLogOutputDecoder =
+            NewlineLogOutputDecoder::new(StreamFraming::Raw, false);
 
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
 
@@ -749,7 +783,7 @@ mod tests {
         // FramedRead error with "bytes remaining on stream".
         let payload = b"inital input string";
         let mut buf = BytesMut::from(&payload[..]);
-        let mut codec = NewlineLogOutputDecoder::new(false);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Raw, false);
 
         // No newline yet — decode() waits for more data.
         assert_eq!(codec.decode(&mut buf).unwrap(), None);
@@ -763,5 +797,89 @@ mod tests {
             })
         );
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn newline_decode_raw_output_starting_with_control_byte() {
+        // Raw TTY output starting with 0x01 must not be parsed as a frame header.
+        let payload = &b"\x01colored line\n"[..];
+        let mut buf = BytesMut::from(payload);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Raw, true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(payload)
+            })
+        );
+
+        let mut buf = BytesMut::from(&b"next line\n"[..]);
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(&b"next line\n"[..])
+            })
+        );
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_header() {
+        let mut buf = BytesMut::from(&[1u8, 0, 0, 0, 0, 0, 0, 3, b'a', b'b', b'c'][..]);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::StdOut {
+                message: bytes::Bytes::from(&b"abc"[..])
+            })
+        );
+    }
+
+    #[test]
+    fn newline_decode_raw_framing_ignores_header_bytes() {
+        let payload = &[1u8, 0, 0, 0, 0, 0, 0, 3, b'a', b'b', b'c'][..];
+        let mut buf = BytesMut::from(payload);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Raw, true);
+
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::Console {
+                message: bytes::Bytes::from(payload)
+            })
+        );
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_framing() {
+        // Split header, then a frame whose payload starts with a control byte.
+        let mut buf = BytesMut::from(&[1u8, 0, 0][..]);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+
+        buf.put(&[0u8, 0, 0, 0, 2, 1, b'\n'][..]);
+        assert_eq!(
+            codec.decode(&mut buf).unwrap(),
+            Some(LogOutput::StdOut {
+                message: bytes::Bytes::from(&[1u8, b'\n'][..])
+            })
+        );
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_framing_rejects_bad_stream_type() {
+        let mut buf = BytesMut::from(&b"hello world\n"[..]);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
+
+        assert!(codec.decode(&mut buf).is_err());
+    }
+
+    #[test]
+    fn newline_decode_multiplexed_framing_rejects_bad_padding() {
+        let mut buf = BytesMut::from(&[1u8, 0, 1, 0, 0, 0, 0, 1, b'x'][..]);
+        let mut codec = NewlineLogOutputDecoder::new(StreamFraming::Multiplexed, true);
+
+        assert!(codec.decode(&mut buf).is_err());
     }
 }

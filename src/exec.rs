@@ -15,7 +15,7 @@ use crate::container::LogOutput;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
-use crate::read::NewlineLogOutputDecoder;
+use crate::read::{NewlineLogOutputDecoder, StreamFraming};
 use futures_core::Stream;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
@@ -196,6 +196,8 @@ impl Docker {
     /// # Arguments
     ///
     ///  - The ID of the previously created exec configuration.
+    ///  - Optional [Start Exec Options](StartExecOptions). With `None`, `tty` is taken from
+    ///    the exec's create-time setting.
     ///
     /// # Returns
     ///
@@ -250,6 +252,22 @@ impl Docker {
                     _ => 8 * 1024,
                 };
 
+                // The daemon frames the output by the start request's `tty`, so without
+                // options use the value the exec was created with.
+                let config = match config {
+                    Some(config) => config,
+                    None => StartExecOptions {
+                        tty: self
+                            .inspect_exec(exec_id)
+                            .await?
+                            .process_config
+                            .and_then(|config| config.tty)
+                            .unwrap_or(false),
+                        ..Default::default()
+                    },
+                };
+                let tty = config.tty;
+
                 let req = self.build_request(
                     &url,
                     Builder::new()
@@ -257,18 +275,18 @@ impl Docker {
                         .header(CONNECTION, "Upgrade")
                         .header(UPGRADE, "tcp"),
                     None::<String>,
-                    Docker::serialize_payload(config.or_else(|| {
-                        Some(StartExecOptions {
-                            ..Default::default()
-                        })
-                    })),
+                    Docker::serialize_payload(Some(config)),
                 );
 
-                let (read, write) = self.process_upgraded(req).await?;
+                let (read, write, framing) = self.process_upgraded(req).await?;
+                let framing = framing.unwrap_or(StreamFraming::from_tty(tty));
 
-                let log =
-                    FramedRead::with_capacity(read, NewlineLogOutputDecoder::new(true), capacity)
-                        .map_err(|e| e.into());
+                let log = FramedRead::with_capacity(
+                    read,
+                    NewlineLogOutputDecoder::new(framing, true),
+                    capacity,
+                )
+                .map_err(|e| e.into());
 
                 Ok(StartExecResults::Attached {
                     output: Box::pin(log),
