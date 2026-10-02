@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 
 jobs:
   test_ssl:
@@ -37,7 +37,7 @@ jobs:
       - run: docker run --rm -h test.example.com -d --privileged --name test-docker-daemon -v ssh:/root/.ssh docker:stable-dind --storage-driver=overlay
       - run: docker build -t bollard .
       - run: |
-          docker exec -i test-docker-daemon sh -eux << 'EOD'
+          docker exec -i test-docker-daemon sh -eux \<< 'EOD'
           apk add --no-cache openssh-client openssh-server
           ssh-keygen -A
           echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
@@ -243,7 +243,6 @@ jobs:
       - run: docker build -t bollard .
       - run: DOCKER_PARAMETERS="-e GIT_HTTP_HOST=172.17.0.3 -e GIT_HTTP_PORT=22 -e SSH_AUTH_SOCK=/.ssh-agent/socket --link git:git -v ssh-agent:/.ssh-agent" resources/dockerfiles/bin/run_integration_tests.sh  --features buildkit,chrono,test_sshforward --verbose integration_test_build_buildkit_ssh 
 workflows:
-  version: 2
   test-image:
     jobs:
       - test_ssl
