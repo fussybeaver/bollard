@@ -44,7 +44,7 @@ use crate::{
     Docker,
 };
 
-use super::{channel::BuildkitChannel, DriverInterceptor, ImageExporterEnum};
+use super::{channel::BuildkitChannel, DriverInterceptor, Entitlement, ImageExporterEnum};
 
 /// The default `Buildkit` image to use for the [`DockerContainer] driver.
 pub const DEFAULT_IMAGE: &str = "moby/buildkit:master";
@@ -462,12 +462,19 @@ impl DockerContainerBuilder {
     /// The network mode to apply to the `Buildkit` docker container.
     pub fn network(&mut self, net: &str) -> &mut DockerContainerBuilder {
         if net == "host" {
-            self.inner
-                .args
-                .push(String::from("--allow-insecure-entitlement=network.host"));
+            self.allow_entitlement(Entitlement::NetworkHost);
         }
 
         self.inner.net_mode = Some(net.to_string());
+        self
+    }
+
+    /// Allow a BuildKit entitlement in the Docker-container daemon.
+    pub fn allow_entitlement(&mut self, entitlement: Entitlement) -> &mut DockerContainerBuilder {
+        let argument = entitlement.daemon_argument();
+        if !self.inner.args.iter().any(|arg| arg == argument) {
+            self.inner.args.push(String::from(argument));
+        }
         self
     }
 
@@ -1608,7 +1615,7 @@ impl super::SolveDefinition for DockerContainer {
     async fn solve_definition(
         &self,
         request: super::DefinitionSolveRequest,
-    ) -> Result<(), GrpcError> {
+    ) -> Result<super::DefinitionSolveResult, GrpcError> {
         super::solve_definition(self, request).await
     }
 }
@@ -1892,6 +1899,7 @@ mod tests {
         let mut builder = builder();
         builder.name("project-builder");
         builder.network("host");
+        builder.allow_entitlement(Entitlement::SecurityInsecure);
 
         let host_config = builder.inner.desired_host_config_for_test();
         let mut existing_host_config = host_config.clone();
@@ -1927,6 +1935,23 @@ mod tests {
             &builder.inner.resource_id
         )
         .is_ok());
+
+        let mut incompatible = inspect;
+        incompatible
+            .config
+            .as_mut()
+            .expect("container config")
+            .cmd
+            .as_mut()
+            .expect("container command")
+            .retain(|arg| arg != Entitlement::SecurityInsecure.daemon_argument());
+        assert!(compatible_container(
+            &builder.inner,
+            &incompatible,
+            &host_config,
+            &builder.inner.resource_id
+        )
+        .is_err());
     }
 
     #[test]
@@ -1971,6 +1996,35 @@ mod tests {
                 .restart_policy()
                 .and_then(|policy| policy.name),
             Some(RestartPolicyNameEnum::UNLESS_STOPPED)
+        );
+    }
+
+    #[test]
+    fn daemon_entitlement_arguments_are_deduplicated() {
+        let mut builder = builder();
+
+        builder.network("host");
+        builder.network("host");
+        builder.allow_entitlement(Entitlement::SecurityInsecure);
+        builder.allow_entitlement(Entitlement::SecurityInsecure);
+
+        assert_eq!(
+            builder
+                .inner
+                .args
+                .iter()
+                .filter(|arg| arg.as_str() == "--allow-insecure-entitlement=network.host")
+                .count(),
+            1
+        );
+        assert_eq!(
+            builder
+                .inner
+                .args
+                .iter()
+                .filter(|arg| arg.as_str() == "--allow-insecure-entitlement=security.insecure")
+                .count(),
+            1
         );
     }
 

@@ -57,9 +57,9 @@ impl State {
         self
     }
 
-    /// Add an environment variable for subsequent exec steps.
+    /// Add or replace an environment variable for subsequent exec steps.
     pub fn add_env(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        replace_env(
+        set_env(
             &mut self.constraints.env,
             key.as_ref().to_string(),
             value.as_ref().to_string(),
@@ -67,11 +67,13 @@ impl State {
         self
     }
 
-    /// Add an environment variable whose value is formatted.
+    /// Add an environment variable with a formatted value.
     pub fn add_envf(mut self, key: impl AsRef<str>, value: impl Display) -> Self {
-        self.constraints
-            .env
-            .push((key.as_ref().to_string(), format!("{value}")));
+        set_env(
+            &mut self.constraints.env,
+            key.as_ref().to_string(),
+            format!("{value}"),
+        );
         self
     }
 
@@ -134,9 +136,12 @@ impl State {
             .cloned()
             .chain(opts.worker_filters.iter().cloned())
             .collect();
-        // MarshalOpts supplies the graph-wide default. State-local platforms
-        // are carried by the operations created from this state instead.
-        let mut ctx = Context::new(opts.platform.clone(), worker_filters);
+        // MarshalOpts supplies graph-wide defaults for platform and local IDs.
+        let mut ctx = Context::new(
+            opts.platform.clone(),
+            worker_filters,
+            opts.local_unique_id.clone(),
+        );
         let root_ref = ctx.register(&self.output)?;
         let wrapper_ref =
             ctx.append_wrapper(root_ref.clone(), self.constraints.custom_name.as_deref())?;
@@ -191,6 +196,9 @@ pub struct MarshalOpts {
     pub platform: Option<Platform>,
     /// Worker constraint filters applied to real operation vertices.
     pub worker_filters: Vec<String>,
+    /// Optional deterministic `local.unique` for session-less sources.
+    /// Defaults to a fresh random value per marshal; set for reproducible tests.
+    pub local_unique_id: Option<String>,
 }
 
 impl Default for MarshalOpts {
@@ -200,6 +208,7 @@ impl Default for MarshalOpts {
             // wrapper digests identical across SDKs and avoids cross-SDK cache fragmentation.
             platform: Some(Platform::LINUX_AMD64.clone()),
             worker_filters: Vec::new(),
+            local_unique_id: None,
         }
     }
 }
@@ -219,6 +228,12 @@ impl MarshalOpts {
     /// Marshal with the given worker constraint filter.
     pub fn with_worker_filter(mut self, filter: impl AsRef<str>) -> Self {
         self.worker_filters.push(filter.as_ref().to_string());
+        self
+    }
+
+    /// Set a deterministic `local.unique` value, typically for tests.
+    pub fn with_local_unique_id(mut self, id: impl Into<String>) -> Self {
+        self.local_unique_id = Some(id.into());
         self
     }
 }
@@ -344,9 +359,9 @@ impl RunOpts {
         self
     }
 
-    /// Add an environment variable.
+    /// Add or replace an environment variable.
     pub fn with_env(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        replace_env(
+        set_env(
             &mut self.env,
             key.as_ref().to_string(),
             value.as_ref().to_string(),
@@ -391,15 +406,10 @@ impl RunOpts {
     }
 }
 
-fn replace_env(env: &mut Vec<(String, String)>, key: String, value: String) {
-    if let Some((_, existing_value)) = env
-        .iter_mut()
-        .find(|(existing_key, _)| existing_key.as_str() == key)
-    {
-        *existing_value = value;
-    } else {
-        env.push((key, value));
-    }
+/// Replace a key with its latest value and position, matching Go's `EnvList`.
+pub(crate) fn set_env(env: &mut Vec<(String, String)>, key: String, value: String) {
+    env.retain(|(existing_key, _)| existing_key != &key);
+    env.push((key, value));
 }
 
 /// Marker trait for types that can be applied to an [`ExecState`].
@@ -435,6 +445,35 @@ mod tests {
         assert_eq!(
             State::scratch().unwrap().dir("a").dir("../b").cwd(),
             Some("/b")
+        );
+    }
+
+    #[test]
+    fn env_setters_remove_then_append_last_set_wins() {
+        let state = State::scratch()
+            .unwrap()
+            .add_env("A", "1")
+            .add_env("K", "x")
+            .add_envf("K", "y")
+            .add_env("K", "z");
+        assert_eq!(
+            state.constraints.env,
+            vec![
+                ("A".to_string(), "1".to_string()),
+                ("K".to_string(), "z".to_string()),
+            ]
+        );
+
+        let run = RunOpts::new()
+            .with_env("K", "first")
+            .with_env("B", "2")
+            .with_env("K", "last");
+        assert_eq!(
+            run.env,
+            vec![
+                ("B".to_string(), "2".to_string()),
+                ("K".to_string(), "last".to_string()),
+            ]
         );
     }
 }
