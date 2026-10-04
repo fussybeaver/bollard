@@ -2412,17 +2412,34 @@ mod tests {
             .await
             .unwrap();
         let mut response_stream = response.into_inner();
-        let response_task =
-            tokio::spawn(async move { while response_stream.message().await.is_ok() {} });
 
         sender
             .send(packet_stat(Some(stat("partial", 0o600, 5, ""))))
             .await
             .unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(5), response_stream.message())
+            .await
+            .expect("FileSend acknowledged the first file")
+            .unwrap()
+            .expect("FileSend response stream remained open");
+        assert_eq!(request.r#type, PacketType::PacketReq as i32);
+        assert_eq!(request.id, 0);
+
         sender.send(packet_data(0, b"hi")).await.unwrap();
-        wait_for_staging_siblings(root.path(), true).await;
-        response_task.abort();
-        let _ = response_task.await;
+        // The next request is emitted only after the server has consumed the partial data.
+        sender
+            .send(packet_stat(Some(stat("next", 0o600, 5, ""))))
+            .await
+            .unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(5), response_stream.message())
+            .await
+            .expect("FileSend acknowledged the second file after consuming partial data")
+            .unwrap()
+            .expect("FileSend response stream remained open");
+        assert_eq!(request.r#type, PacketType::PacketReq as i32);
+        assert_eq!(request.id, 1);
+
+        drop(response_stream);
         drop(sender);
         wait_for_staging_cleanup(root.path()).await;
 
