@@ -68,7 +68,9 @@ use tonic::server::NamedService;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use futures_util::{StreamExt, TryFutureExt};
-use tokio::fs::{self, File};
+#[cfg(test)]
+use tokio::fs;
+use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 use http::request::Builder;
@@ -1071,27 +1073,50 @@ impl FileReceiveState {
     }
 }
 
-async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status> {
+fn staging_directory_path(destination: &Path) -> Result<PathBuf, Status> {
     let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent)
-        .await
-        .map_err(|error| Status::internal(format!("failed to create export parent: {error}")))?;
     let name = destination
         .file_name()
         .ok_or_else(|| Status::invalid_argument("export destination has no filename"))?
         .to_string_lossy();
-    let staging = parent.join(format!(".{name}.bollard-staging-{}", crate::grpc::new_id()));
-    fs::create_dir(&staging).await.map_err(|error| {
+    Ok(parent.join(format!(".{name}.bollard-staging-{}", crate::grpc::new_id())))
+}
+
+fn prepare_staging_directory_blocking(destination: &Path) -> Result<PathBuf, Status> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)
+        .map_err(|error| Status::internal(format!("failed to create export parent: {error}")))?;
+    let staging = staging_directory_path(destination)?;
+    std::fs::create_dir(&staging).map_err(|error| {
         Status::internal(format!("failed to create staging directory: {error}"))
     })?;
     Ok(staging)
 }
 
+async fn prepare_staging_directory(destination: &Path) -> Result<PathBuf, Status> {
+    let destination = destination.to_owned();
+    tokio::task::spawn_blocking(move || prepare_staging_directory_blocking(&destination))
+        .await
+        .map_err(|error| {
+            Status::internal(format!("staging directory creation worker failed: {error}"))
+        })?
+}
+
 impl StagingGuard {
     async fn new(destination: &Path) -> Result<Self, Status> {
-        Ok(Self {
-            staging: Some(prepare_staging_directory(destination).await?),
+        let destination = destination.to_owned();
+        tokio::task::spawn_blocking(move || {
+            // Keep directory creation and guard construction in one blocking operation so
+            // cancellation cannot leave a created staging directory without its cleanup owner.
+            let staging = prepare_staging_directory_blocking(&destination)?;
+            Ok(Self {
+                staging: Some(staging),
+            })
         })
+        .await
+        .map_err(|error| {
+            Status::internal(format!("staging directory creation worker failed: {error}"))
+        })?
     }
 
     fn path(&self) -> &Path {
