@@ -31,11 +31,6 @@ impl Digest {
     pub(crate) fn empty() -> Self {
         Digest(Arc::from(""))
     }
-
-    /// Returns `true` for the empty scratch sentinel digest.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 impl Display for Digest {
@@ -99,14 +94,6 @@ fn encode_message_field<M: Message>(
             source,
         })?;
     Ok(())
-}
-
-fn encode_varint(buf: &mut Vec<u8>, mut value: u64) {
-    while value >= 0x80 {
-        buf.push((value as u8) | 0x80);
-        value >>= 7;
-    }
-    buf.push(value as u8);
 }
 
 /// Deterministically encode a protobuf `Op` and return both its SHA-256 digest

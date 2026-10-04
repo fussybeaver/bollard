@@ -16,7 +16,7 @@
     unused_import_braces
 )]
 #![warn(missing_docs, rust_2018_idioms)]
-#![allow(clippy::upper_case_acronyms, dead_code)]
+#![allow(clippy::upper_case_acronyms)]
 
 /// The marshalled LLB graph.
 pub mod definition;
