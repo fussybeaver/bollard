@@ -2172,17 +2172,22 @@ mod tests {
         assert_eq!(guard.staging.as_ref(), Some(&staging));
     }
 
-    async fn wait_for_staging_siblings(root: &Path, expected: bool) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+    async fn wait_for_staging_cleanup(root: &Path) {
+        let cleaned = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if !transfer_sibling_names(root).is_empty() == expected {
+                if transfer_sibling_names(root).is_empty() {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
-        .await
-        .expect("FileSend staging state became observable");
+        .await;
+        if cleaned.is_err() {
+            let remaining = transfer_sibling_names(root);
+            panic!(
+                "timed out waiting for FileSend staging cleanup; remaining paths: {remaining:?}"
+            );
+        }
     }
 
     #[test]
@@ -2306,7 +2311,7 @@ mod tests {
             fs::read_link(destination.join("link")).await.unwrap(),
             Path::new("message")
         );
-        wait_for_staging_siblings(root.path(), false).await;
+        wait_for_staging_cleanup(root.path()).await;
         #[cfg(unix)]
         {
             assert_eq!(
@@ -2353,7 +2358,7 @@ mod tests {
         }
 
         assert!(sent_fin);
-        wait_for_staging_siblings(root.path(), false).await;
+        wait_for_staging_cleanup(root.path()).await;
         server_task.abort();
         let _ = server_task.await;
     }
@@ -2390,7 +2395,7 @@ mod tests {
             fs::read(destination.join("sentinel")).await.unwrap(),
             b"old"
         );
-        wait_for_staging_siblings(root.path(), false).await;
+        wait_for_staging_cleanup(root.path()).await;
     }
 
     #[tokio::test]
@@ -2419,7 +2424,7 @@ mod tests {
         response_task.abort();
         let _ = response_task.await;
         drop(sender);
-        wait_for_staging_siblings(root.path(), false).await;
+        wait_for_staging_cleanup(root.path()).await;
 
         server_task.abort();
         let _ = server_task.await;
