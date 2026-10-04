@@ -556,8 +556,11 @@ mod tests {
 
     #[test]
     fn public_builder_supports_platformless_marshalling() {
-        let opts = MarshalOpts::default().without_platform();
+        let opts = MarshalOpts::default()
+            .without_platform()
+            .with_local_unique_id("test-local");
         assert_eq!(opts.platform(), None);
+        assert_eq!(opts.local_unique_id(), Some("test-local"));
     }
 
     #[test]

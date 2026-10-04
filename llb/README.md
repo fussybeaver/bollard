@@ -19,6 +19,11 @@ The current BuildKit compatibility baseline is recorded in the repository's
 - Copy, mkdir, mkfile, remove and symlink file actions.
 - Merge operations, worker filters, metadata, deterministic serialization and text/JSON dumps.
 
+Session-less local sources receive a fresh `local.unique` on each marshal. For
+reproducible definitions, pin it with `MarshalOpts::with_local_unique_id` or
+`Local::with_unique_id`. The JSON dump is a Rust diagnostic format, not the
+`buildctl debug dump-llb` JSON schema.
+
 SSH forwarding is Unix-only for the first release. Empty SSH IDs select the
 BuildKit `default` provider. Direct solves must register a provider with
 Bollard's solve driver; an unavailable required provider is rejected, while an

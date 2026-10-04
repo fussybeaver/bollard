@@ -1270,7 +1270,7 @@ mod tests {
                     .unwrap()
         );
 
-        let node = ctx.nodes().values().last().unwrap();
+        let node = ctx.nodes.values().last().unwrap();
         assert!(node.metadata.caps.contains(cap::CAP_EXEC_MOUNT_SSH));
     }
 
