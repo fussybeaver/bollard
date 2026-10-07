@@ -16,6 +16,7 @@ const DEFAULT_IMAGE_NAMESPACE: &str = "library";
 
 /// Image resolve modes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ResolveMode {
     /// Default resolver behavior.
     Default,
