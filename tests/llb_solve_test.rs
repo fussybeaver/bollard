@@ -9,7 +9,7 @@ use bollard::grpc::driver::{
     DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
 };
 use bollard::grpc::Entitlement;
-#[cfg(feature = "test_sshforward")]
+#[cfg(all(feature = "test_sshforward", not(windows)))]
 use bollard::grpc::SshAgentSource;
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
@@ -688,7 +688,7 @@ fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
         .to_pb())
 }
 
-#[cfg(feature = "test_sshforward")]
+#[cfg(all(feature = "test_sshforward", not(windows)))]
 fn llb_ssh_provider_definition(
     image_ref: &str,
     id: &str,
