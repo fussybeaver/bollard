@@ -16,13 +16,11 @@ use bollard_llb::{
     ResolveMode, RunOpts, SecurityMode, State,
 };
 use prost::Message;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 mod common;
 
 const MANIFEST_CONTENT: &str = include_str!("../testdata/golden/manifest.json");
-const OPS_PROTO_BYTES: &[u8] = include_bytes!("../../codegen/proto/resources/pb/ops.proto");
 
 fn manifest() -> serde_json::Value {
     serde_json::from_str(MANIFEST_CONTENT).expect("golden manifest should be valid JSON")
@@ -44,10 +42,6 @@ fn generator_version() -> String {
         .to_string()
 }
 
-fn ops_proto_sha256() -> String {
-    hex::encode(Sha256::digest(OPS_PROTO_BYTES))
-}
-
 fn provenance(name: &str) -> String {
     format!(
         "fixture={} generator={} provenance_buildkit={} provenance_commit={} go_oracle={} ops_proto_sha256={}",
@@ -56,7 +50,7 @@ fn provenance(name: &str) -> String {
         provenance::BUILDKIT_VERSION,
         provenance::BUILDKIT_COMMIT,
         go_oracle_version(),
-        ops_proto_sha256()
+        provenance::OPS_PROTO_SHA256
     )
 }
 
@@ -1171,13 +1165,6 @@ fn parity_provenance_self_check() {
         go_version,
         provenance::BUILDKIT_VERSION,
         "golden manifest BuildKit version must match generated provenance"
-    );
-    let hash = ops_proto_sha256();
-    assert_eq!(
-        hash.len(),
-        64,
-        "ops.proto hash should be 64 hex chars: {}",
-        hash
     );
     assert_ne!(generator_version(), "unknown");
     assert_eq!(
