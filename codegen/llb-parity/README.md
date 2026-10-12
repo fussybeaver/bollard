@@ -38,3 +38,10 @@ Bollard's solve path:
 ./independent_solve.sh <buildkit-container> \
   ../../llb/testdata/golden/mkfile.llb.pb /tmp/llb-output
 ```
+
+CircleCI runs this check in the parallel `test_llb_independent_solve` job. The
+job reads the image, version and commit from the protobuf provenance lock,
+starts a temporary privileged BuildKit container, validates the runtime
+identity, parses and solves the `mkfile` golden with the independent Go client,
+and checks the exported file contents and mode. It does not depend on the
+Bollard BuildKit or golden jobs.

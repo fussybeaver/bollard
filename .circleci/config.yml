@@ -94,6 +94,21 @@ jobs:
             go run . -check ../../llb/testdata/golden -against "$tmp"
             go test ./...
             go vet ./...
+  test_llb_independent_solve:
+    docker:
+      - image: golang:1.25
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install Docker CLI
+          command: |
+            apt-get update
+            apt-get install --yes --no-install-recommends docker-cli
+            docker version
+      - run:
+          name: Independently parse and solve the pinned LLB fixture
+          command: sh codegen/llb-parity/ci_independent_solve.sh
   test_chrono:
     docker:
       - image: docker:29.3
@@ -267,6 +282,7 @@ workflows:
       - test_unix
       - test_buildkit
       - test_llb_goldens
+      - test_llb_independent_solve
       - test_chrono
       - test_time
       - test_doc
