@@ -3,11 +3,14 @@
 use bollard::container::LogOutput;
 use bollard::errors::Error;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::grpc::build::SecretSource;
 use bollard::grpc::driver::docker_container::DockerContainerBuilder;
 use bollard::grpc::driver::{
     DefinitionExporter, DefinitionSolveOptionsBuilder, DefinitionSolveRequest, SolveDefinition,
 };
-use bollard::grpc::{Entitlement, SshAgentSource};
+use bollard::grpc::Entitlement;
+#[cfg(all(feature = "test_sshforward", not(windows)))]
+use bollard::grpc::SshAgentSource;
 use bollard::Docker;
 use bollard_buildkit_proto::pb;
 use futures_util::TryStreamExt;
@@ -38,6 +41,18 @@ const MINIMAL_MKFILE_DEFINITION_HEX: &str = concat!(
     "323333303933653334316334323934373362613162643936356534333535",
     "353433616636306139323435623035353631636562656230661200"
 );
+
+const MKFILE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/mkfile.llb.pb");
+const SYMLINK_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/symlink.llb.pb");
+const IMAGE_GOLDEN: &[u8] = include_bytes!("../llb/testdata/golden/differential_image.llb.pb");
+const DIFFERENTIAL_MERGE_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_merge_alpine.llb.pb");
+const DIFFERENTIAL_FILE_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_secret.llb.pb");
+const DIFFERENTIAL_ENV_SECRET_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_env_secret.llb.pb");
+const DIFFERENTIAL_FILE_OPS_GOLDEN: &[u8] =
+    include_bytes!("../llb/testdata/golden/differential_file_operations_allow_not_found.llb.pb");
 
 fn minimal_mkfile_definition() -> pb::Definition {
     let bytes = (0..MINIMAL_MKFILE_DEFINITION_HEX.len())
@@ -217,44 +232,6 @@ fn local_source_exec_definition_with_modes(
         metadata: Default::default(),
         source: None,
     }
-}
-
-fn local_source_ssh_definition(
-    image_identifier: &str,
-    name: &str,
-    id: &str,
-    optional: bool,
-) -> pb::Definition {
-    let mut definition = local_source_exec_definition(image_identifier, name);
-    let mut operation = pb::Op::decode(definition.def[2].as_slice())
-        .expect("local source exec operation is valid protobuf");
-    if let Some(pb::op::Op::Exec(exec)) = operation.op.as_mut() {
-        exec.meta
-            .as_mut()
-            .expect("local source exec operation has metadata")
-            .args = vec![
-            String::from("/bin/sh"),
-            String::from("-c"),
-            String::from("test -S /run/buildkit/ssh_agent.0"),
-        ];
-        exec.mounts.push(pb::Mount {
-            dest: String::from("/run/buildkit/ssh_agent.0"),
-            mount_type: pb::MountType::Ssh as i32,
-            ssh_opt: Some(pb::SshOpt {
-                id: String::from(id),
-                optional,
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
-    }
-    definition.def[2] = operation.encode_to_vec();
-
-    let mut wrapper = pb::Op::decode(definition.def[3].as_slice())
-        .expect("local source wrapper operation is valid protobuf");
-    wrapper.inputs[0].digest = operation_digest(&operation);
-    definition.def[3] = wrapper.encode_to_vec();
-    definition
 }
 
 fn local_source_session_definition(name: &str) -> pb::Definition {
@@ -488,12 +465,390 @@ fn assert_tree_equal(expected: &Path, actual: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum ExportEntry {
+    File { mode: u32, contents: Vec<u8> },
+    Dir { mode: u32 },
+    Symlink { target: String },
+}
+
+#[cfg(unix)]
+fn export_mode(path: &Path) -> u32 {
+    use std::os::unix::fs::MetadataExt;
+
+    path.symlink_metadata()
+        .expect("export entry metadata should be readable")
+        .mode()
+        & 0o777
+}
+
+#[cfg(not(unix))]
+fn export_mode(_path: &Path) -> u32 {
+    0
+}
+
+fn read_export_tree(root: &Path) -> Result<BTreeMap<PathBuf, ExportEntry>, Error> {
+    fn visit(
+        root: &Path,
+        current: &Path,
+        tree: &mut BTreeMap<PathBuf, ExportEntry>,
+    ) -> Result<(), Error> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root).map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("failed to relativize export path: {error}")),
+            })?;
+            let metadata = path.symlink_metadata()?;
+            let value = if metadata.file_type().is_symlink() {
+                ExportEntry::Symlink {
+                    target: std::fs::read_link(&path)?.to_string_lossy().into_owned(),
+                }
+            } else if metadata.file_type().is_dir() {
+                tree.insert(
+                    relative.to_path_buf(),
+                    ExportEntry::Dir {
+                        mode: export_mode(&path),
+                    },
+                );
+                visit(root, &path, tree)?;
+                continue;
+            } else {
+                ExportEntry::File {
+                    mode: export_mode(&path),
+                    contents: std::fs::read(&path)?,
+                }
+            };
+            tree.insert(relative.to_path_buf(), value);
+        }
+        Ok(())
+    }
+
+    let mut tree = BTreeMap::new();
+    visit(root, root, &mut tree)?;
+    Ok(tree)
+}
+
 fn unique_builder_name() -> String {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is before the Unix epoch")
         .as_nanos();
     format!("bollard_llb_gate_f_{suffix}")
+}
+
+fn llb_error(error: bollard_llb::LlbError) -> Error {
+    Error::IOError {
+        err: std::io::Error::other(format!("LLB definition construction failed: {error}")),
+    }
+}
+
+fn go_definition(bytes: &[u8]) -> Result<pb::Definition, Error> {
+    pb::Definition::decode(bytes).map_err(|error| Error::IOError {
+        err: std::io::Error::other(format!("failed to decode Go definition: {error}")),
+    })
+}
+
+fn registry_image(name: &str) -> String {
+    format!("{}{name}", crate::common::registry_http_addr())
+}
+
+fn differential_mkfile_definition() -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::scratch()
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::mkfile("/hello", 0o644, b"world"),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_symlink_definition() -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::scratch()
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::symlink("/target", "/link"),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_image_definition() -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(bollard_llb::shlex("echo hello").map_err(llb_error)?)
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_merge_definition() -> Result<pb::Definition, Error> {
+    let first = bollard_llb::image(registry_image("alpine:latest")).map_err(llb_error)?;
+    let second = bollard_llb::image(registry_image("alpine:latest")).map_err(llb_error)?;
+    Ok(
+        bollard_llb::merge(vec![first, second], bollard_llb::MergeOpts::new())
+            .map_err(llb_error)?
+            .run(
+                bollard_llb::shlex("sh -c 'echo differential > /differential'")
+                    .map_err(llb_error)?,
+            )
+            .root()
+            .map_err(llb_error)?
+            .marshal(bollard_llb::MarshalOpts::linux_amd64())
+            .map_err(llb_error)?
+            .to_pb(),
+    )
+}
+
+fn differential_file_secret_definition() -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(
+            bollard_llb::RunOpts::new()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("sha256sum /run/secrets/token > /derived"),
+        )
+        .add_secret(
+            "token",
+            bollard_llb::AddSecret::new("token").with_target("/run/secrets/token"),
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_env_secret_definition() -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(registry_image("alpine:latest"))
+        .map_err(llb_error)?
+        .run(
+            bollard_llb::RunOpts::new()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("printf '%s' \"$MY_SECRET\" | sha256sum > /derived"),
+        )
+        .add_secret(
+            "mysecret",
+            bollard_llb::AddSecret::new("mysecret")
+                .with_as_env(true)
+                .with_env_name("MY_SECRET"),
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn differential_file_operations_definition() -> Result<pb::Definition, Error> {
+    let base = bollard_llb::scratch()
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::mkdir("/app", 0o755).with_parents(true),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::mkfile("/app/config.toml", 0o644, b"[server]\nhost = \"0.0.0.0\"\n"),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::symlink("/app/config.toml", "/app/current-config"),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?;
+    let state = base
+        .clone()
+        .file(
+            bollard_llb::copy(base, "/app/config.toml", "/app/config.toml.bak")
+                .with_create_dest_path(true),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?
+        .file(
+            bollard_llb::rm("/app/current-config").with_allow_not_found(true),
+            bollard_llb::FileOpts::new(),
+        )
+        .map_err(llb_error)?;
+
+    Ok(state
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+#[cfg(all(feature = "test_sshforward", not(windows)))]
+fn llb_ssh_provider_definition(
+    image_ref: &str,
+    id: &str,
+    optional: bool,
+) -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(image_ref)
+        .map_err(llb_error)?
+        .run(
+            bollard_llb::RunOpts::new()
+                .with_arg("true")
+                .with_ssh_socket(
+                    bollard_llb::AddSshSocket::new()
+                        .with_id(id)
+                        .with_optional(optional),
+                ),
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+fn llb_entitlement_definition(image_ref: &str) -> Result<pb::Definition, Error> {
+    Ok(bollard_llb::image(image_ref)
+        .map_err(llb_error)?
+        .run(
+            bollard_llb::RunOpts::new()
+                .with_arg("sh")
+                .with_arg("-c")
+                .with_arg("printf '%s' 'local source' > /result.txt")
+                .with_net(bollard_llb::NetMode::Host)
+                .with_security(bollard_llb::SecurityMode::Insecure),
+        )
+        .root()
+        .map_err(llb_error)?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(llb_error)?
+        .to_pb())
+}
+
+async fn solve_definition_with_driver(
+    driver: &bollard::grpc::driver::docker_container::DockerContainer,
+    definition: pb::Definition,
+    destination: &Path,
+    image_registry: Option<&str>,
+    secrets: Vec<(String, SecretSource)>,
+) -> Result<(), Error> {
+    let mut options = DefinitionSolveOptionsBuilder::new();
+    if let Some(host) = image_registry {
+        options = options.credential(host, integration_test_registry_credentials());
+    }
+    for (id, source) in secrets {
+        options = options.secret(id, source);
+    }
+    let request = DefinitionSolveRequest::new(
+        definition,
+        DefinitionExporter::Local(destination.to_path_buf()),
+    )
+    .with_options(options.build());
+    SolveDefinition::solve_definition(driver, request)
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("direct definition solve failed: {error}")),
+        })?;
+    Ok(())
+}
+
+async fn differential_exported_tree_test(docker: Docker) -> Result<(), Error> {
+    type DefinitionBuilder = fn() -> Result<pb::Definition, Error>;
+
+    let cases: [(&str, &[u8], DefinitionBuilder); 7] = [
+        ("mkfile", MKFILE_GOLDEN, differential_mkfile_definition),
+        ("symlink", SYMLINK_GOLDEN, differential_symlink_definition),
+        ("image", IMAGE_GOLDEN, differential_image_definition),
+        (
+            "merge_alpine",
+            DIFFERENTIAL_MERGE_GOLDEN,
+            differential_merge_definition,
+        ),
+        (
+            "file_secret",
+            DIFFERENTIAL_FILE_SECRET_GOLDEN,
+            differential_file_secret_definition,
+        ),
+        (
+            "env_secret",
+            DIFFERENTIAL_ENV_SECRET_GOLDEN,
+            differential_env_secret_definition,
+        ),
+        (
+            "file_operations_allow_not_found",
+            DIFFERENTIAL_FILE_OPS_GOLDEN,
+            differential_file_operations_definition,
+        ),
+    ];
+
+    let (image_ref, image_registry) = alpine_image_reference();
+    let secret_dir = tempfile::tempdir()?;
+    let token_path = secret_dir.path().join("token");
+    std::fs::write(&token_path, "llb-differential-secret")?;
+    std::env::set_var(
+        "BOLLARD_LLB_DIFFERENTIAL_ENV_SECRET",
+        "llb-differential-env-secret",
+    );
+
+    let name = unique_builder_name();
+    let mut fixture = common::buildkit_test::BuildkitTestFixture::new(&docker, &name);
+    let result = async {
+        let driver = fixture.bootstrap().await?;
+        let version = common::buildkit_test::record_version(&docker, driver).await?;
+        println!("{version}");
+        common::buildkit_test::validate_version(&version)?;
+
+        for (fixture_name, golden, rust_builder) in cases {
+            let go_destination = tempfile::tempdir()?;
+            let rust_destination = tempfile::tempdir()?;
+            let secrets = match fixture_name {
+                "file_secret" => vec![(
+                    String::from("token"),
+                    SecretSource::File(token_path.clone()),
+                )],
+                "env_secret" => vec![(
+                    String::from("mysecret"),
+                    SecretSource::Env(String::from("BOLLARD_LLB_DIFFERENTIAL_ENV_SECRET")),
+                )],
+                _ => Vec::new(),
+            };
+            solve_definition_with_driver(
+                driver,
+                go_definition(golden)?,
+                go_destination.path(),
+                image_registry.as_deref(),
+                secrets.clone(),
+            )
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("{fixture_name}: Go solve failed: {error}")),
+            })?;
+            solve_definition_with_driver(
+                driver,
+                rust_builder()?,
+                rust_destination.path(),
+                image_registry.as_deref(),
+                secrets,
+            )
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("{fixture_name}: Rust solve failed: {error}")),
+            })?;
+            assert_eq!(
+                read_export_tree(go_destination.path())?,
+                read_export_tree(rust_destination.path())?,
+                "Go/Rust exported filesystem mismatch for {fixture_name} using {image_ref}"
+            );
+        }
+        Ok::<(), Error>(())
+    }
+    .await;
+    fixture.finish(result).await
 }
 
 async fn capture_builder_identity(docker: &Docker, driver_name: &str) -> Result<(), Error> {
@@ -888,18 +1243,29 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
         let driver = builder.bootstrap().await.map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("BuildKit bootstrap failed: {error}")),
         })?;
+        let definition = llb_entitlement_definition(&image_ref)?;
+        let negative_output = tempfile::tempdir()?;
+        let negative_options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .build();
+        SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                definition.clone(),
+                DefinitionExporter::Local(negative_output.path().to_path_buf()),
+            )
+            .with_options(negative_options),
+        )
+        .await
+        .expect_err("solve entitlements must be required by direct solve");
+        assert!(relative_entries(negative_output.path())?.is_empty());
         let options =
             local_source_options_builder("context", source.path(), image_registry.as_deref())?
                 .entitlement(Entitlement::NetworkHost)
                 .entitlement(Entitlement::SecurityInsecure)
                 .build();
         let request = DefinitionSolveRequest::new(
-            local_source_exec_definition_with_modes(
-                &format!("docker-image://{image_ref}"),
-                "context",
-                pb::NetMode::Host,
-                pb::SecurityMode::Insecure,
-            ),
+            definition,
             DefinitionExporter::Local(output.path().to_path_buf()),
         )
         .with_options(options);
@@ -921,15 +1287,13 @@ async fn direct_definition_entitlements_test(docker: Docker) -> Result<(), Error
     result
 }
 
-#[cfg(not(windows))]
+#[cfg(all(feature = "test_sshforward", not(windows)))]
 async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
-    let socket = match std::env::var_os("SSH_AUTH_SOCK") {
-        Some(socket) => PathBuf::from(socket),
-        None => {
-            eprintln!("skipping SSH direct-solve integration test: SSH_AUTH_SOCK is unset");
-            return Ok(());
-        }
-    };
+    let socket = std::env::var_os("SSH_AUTH_SOCK")
+        .map(PathBuf::from)
+        .ok_or_else(|| Error::IOError {
+            err: std::io::Error::other("SSH_AUTH_SOCK must be set for direct-solve SSH validation"),
+        })?;
     let name = unique_builder_name();
     let volume_name = format!("{name}_state");
     let source = create_application_fixture()?;
@@ -951,12 +1315,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         SolveDefinition::solve_definition(
             &driver,
             DefinitionSolveRequest::new(
-                local_source_ssh_definition(
-                    &format!("docker-image://{image_ref}"),
-                    "context",
-                    "",
-                    false,
-                ),
+                llb_ssh_provider_definition(&image_ref, "", false)?,
                 DefinitionExporter::Local(default_output.path().to_path_buf()),
             )
             .with_options(default_options),
@@ -973,12 +1332,7 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         SolveDefinition::solve_definition(
             &driver,
             DefinitionSolveRequest::new(
-                local_source_ssh_definition(
-                    &format!("docker-image://{image_ref}"),
-                    "context",
-                    "deploy",
-                    false,
-                ),
+                llb_ssh_provider_definition(&image_ref, "deploy", false)?,
                 DefinitionExporter::Local(named_output.path().to_path_buf()),
             )
             .with_options(named_options),
@@ -986,6 +1340,45 @@ async fn direct_definition_ssh_agent_test(docker: Docker) -> Result<(), Error> {
         .await
         .map_err(|error| Error::IOError {
             err: std::io::Error::other(format!("named SSH direct solve failed: {error}")),
+        })?;
+
+        let missing_output = tempfile::tempdir()?;
+        let missing_options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .build();
+        let missing_error = SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                llb_ssh_provider_definition(&image_ref, "unregistered", false)?,
+                DefinitionExporter::Local(missing_output.path().to_path_buf()),
+            )
+            .with_options(missing_options),
+        )
+        .await
+        .expect_err("required unregistered SSH provider should fail");
+        assert!(
+            missing_error.to_string().contains("unregistered"),
+            "failure did not identify the missing SSH provider: {missing_error}"
+        );
+        assert!(relative_entries(missing_output.path())?.is_empty());
+
+        let optional_output = tempfile::tempdir()?;
+        let optional_options =
+            local_source_options_builder("context", source.path(), image_registry.as_deref())?
+                .build();
+        SolveDefinition::solve_definition(
+            &driver,
+            DefinitionSolveRequest::new(
+                llb_ssh_provider_definition(&image_ref, "optional-unregistered", true)?,
+                DefinitionExporter::Local(optional_output.path().to_path_buf()),
+            )
+            .with_options(optional_options),
+        )
+        .await
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!(
+                "optional unregistered SSH direct solve failed: {error}"
+            )),
         })?;
         Ok::<(), Error>(())
     }
@@ -1082,8 +1475,12 @@ fn integration_test_direct_definition_entitlements() {
 }
 
 #[test]
-#[cfg(all(feature = "buildkit_providerless", not(windows)))]
-fn integration_test_direct_definition_ssh_agent() {
+#[cfg(all(
+    feature = "buildkit_providerless",
+    feature = "test_sshforward",
+    not(windows)
+))]
+fn integration_test_build_buildkit_ssh_direct_definition() {
     connect_to_docker_and_run!(direct_definition_ssh_agent_test);
 }
 
@@ -1091,6 +1488,12 @@ fn integration_test_direct_definition_ssh_agent() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_direct_definition_local_session_rejection() {
     connect_to_docker_and_run!(direct_definition_local_session_rejection_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_llb_solve_go_rust_differential() {
+    connect_to_docker_and_run!(differential_exported_tree_test);
 }
 
 #[test]

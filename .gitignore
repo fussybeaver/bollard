@@ -7,3 +7,4 @@ main.rs
 **/.idea
 .vscode/
 **/.swagger-codegen
+codegen/llb-parity/go-parity
