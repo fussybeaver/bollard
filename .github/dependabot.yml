@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      # Generator updates need matching provenance expectations and regeneration.
+      # See codegen/proto/README.md#upgrading-the-generator-toolchain.
       buildkit-generator-toolchain:
         patterns:
           - "protoc-bin-vendored"
