@@ -78,6 +78,9 @@ pub(crate) trait Driver {
         services: Vec<GrpcServer>,
     ) -> Result<GrpcHandle, GrpcError>;
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
+    fn supports_moby_image_export(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) struct GrpcHandle {
@@ -152,11 +155,26 @@ pub enum ImageExporterEnum {
 }
 
 /// Exporter selection for a direct LLB definition solve.
+///
+/// Image exporters either write a Docker or OCI archive to the destination
+/// supplied when constructing their [`ImageExporterRequest`], or load a Docker
+/// image directly into the daemon through the [`moby::Moby`] driver.
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum DefinitionExporter {
     /// Export the solved filesystem into a local directory.
     Local(PathBuf),
+    /// Export a Docker image archive.
+    Docker(ImageExporterRequest),
+    /// Export an OCI image archive.
+    OCI(ImageExporterRequest),
+    /// Export a Docker image directly into the daemon's image store.
+    ///
+    /// The string is the image name/tag to store in Docker. This exporter is
+    /// supported only by [`moby::Moby`].
+    /// The Moby exporter takes image configuration from BuildKit result
+    /// metadata; it does not accept a `containerimage.config` exporter override.
+    DockerDaemon(String),
 }
 
 /// A direct Moby image-store build from an LLB definition.
@@ -370,6 +388,9 @@ impl std::fmt::Debug for DefinitionExporter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
+            Self::Docker(_) => formatter.write_str("DefinitionExporter::Docker(..)"),
+            Self::OCI(_) => formatter.write_str("DefinitionExporter::OCI(..)"),
+            Self::DockerDaemon(_) => formatter.write_str("DefinitionExporter::DockerDaemon(..)"),
         }
     }
 }
@@ -620,6 +641,9 @@ impl fmt::Debug for DefinitionSolveRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let exporter = match &self.exporter {
             DefinitionExporter::Local(_) => "local",
+            DefinitionExporter::Docker(_) => "docker",
+            DefinitionExporter::OCI(_) => "oci",
+            DefinitionExporter::DockerDaemon(_) => "moby",
         };
 
         formatter
@@ -900,6 +924,14 @@ pub(crate) async fn solve_definition(
         build_ref,
     } = request;
 
+    if matches!(&exporter, DefinitionExporter::DockerDaemon(_))
+        && !driver.supports_moby_image_export()
+    {
+        return Err(tonic::Status::failed_precondition(
+            "direct Docker-daemon image export is supported only by the Moby driver",
+        )
+        .into());
+    }
     validate_definition(&definition, &options.ssh)?;
 
     let mut services = solve_services(&options);
@@ -914,6 +946,13 @@ pub(crate) async fn solve_definition(
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
             services.push(GrpcServer::FileSendPacket(filesend));
         }
+        DefinitionExporter::Docker(request) | DefinitionExporter::OCI(request) => {
+            let filesend = FileSendServer::new(super::FileSendImpl::new(request.path.as_path()))
+                .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+            services.push(GrpcServer::FileSend(filesend));
+        }
+        DefinitionExporter::DockerDaemon(_) => {}
     }
 
     let tear_down_handler = driver.begin_solve()?;
@@ -1152,6 +1191,31 @@ fn build_definition_solve_request(
                 attrs: HashMap::new(),
             }];
             (String::from("local"), HashMap::new(), exporters)
+        }
+        DefinitionExporter::Docker(request) => {
+            let attrs = request.output.clone().into_map();
+            let exporters = vec![Exporter {
+                r#type: String::from("docker"),
+                attrs: attrs.clone(),
+            }];
+            (String::from("docker"), attrs, exporters)
+        }
+        DefinitionExporter::OCI(request) => {
+            let attrs = request.output.clone().into_map();
+            let exporters = vec![Exporter {
+                r#type: String::from("oci"),
+                attrs: attrs.clone(),
+            }];
+            (String::from("oci"), attrs, exporters)
+        }
+        DefinitionExporter::DockerDaemon(output) => {
+            let mut attrs = HashMap::new();
+            attrs.insert(String::from("type"), String::from("docker"));
+            attrs.insert(String::from("name"), output.clone());
+            // The Moby exporter wraps the requested exporter and imports its
+            // result into the Docker daemon. This is the protocol used by
+            // Moby::docker_build; it intentionally has no FileSend service.
+            (String::from("moby"), attrs, Vec::new())
         }
     };
 

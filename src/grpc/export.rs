@@ -30,6 +30,7 @@ pub struct ImageExporterOutput {
     pub(crate) force_compression: bool,
     pub(crate) oci_mediatypes: bool,
     pub(crate) annotation: HashMap<String, String>,
+    pub(crate) image_config: Option<String>,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
@@ -120,6 +121,10 @@ impl ImageExporterOutput {
             attrs.insert(format!("annotation.{}", key), value);
         }
 
+        if let Some(image_config) = self.image_config {
+            attrs.insert(String::from("containerimage.config"), image_config);
+        }
+
         attrs
     }
 }
@@ -190,6 +195,21 @@ impl ImageExporterOutputBuilder {
         self.inner
             .annotation
             .insert(String::from(key), String::from(value));
+        self
+    }
+
+    /// Provide the OCI image configuration JSON for a direct-definition Docker
+    /// or OCI archive export. This lets BuildKit retain runtime settings such as
+    /// `Cmd`, `Entrypoint`, environment, and working directory when the LLB
+    /// graph has no frontend to supply image configuration metadata. This
+    /// attribute is not supported by the Moby image-store exporter; that
+    /// exporter takes image configuration from BuildKit result metadata.
+    ///
+    /// The value must be a complete OCI image config document, including
+    /// `os`, `architecture`, and `config` fields. BuildKit derives `rootfs`
+    /// from the solved LLB graph.
+    pub fn image_config_json(mut self, config: impl Into<String>) -> Self {
+        self.inner.image_config = Some(config.into());
         self
     }
 

@@ -1,14 +1,14 @@
 //! Builds and pushes an image using a named persistent BuildKit builder.
 #![allow(unused_variables, unused_mut, unused_imports)]
 
+mod common;
+
 #[cfg(feature = "buildkit_providerless")]
 use bollard::grpc::registry::ImageRegistryOutput;
 use bollard::Docker;
 
 #[cfg(feature = "buildkit_providerless")]
 use bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry;
-
-use std::io::Write;
 
 #[tokio::main]
 async fn main() {
@@ -25,18 +25,12 @@ async fn main() {
     ",
         );
 
-        let mut header = tar::Header::new_gnu();
-        header.set_path("Dockerfile").unwrap();
-        header.set_size(dockerfile.len() as u64);
-        header.set_mode(0o755);
-        header.set_cksum();
-        let mut tar = tar::Builder::new(Vec::new());
-        tar.append(&header, dockerfile.as_bytes()).unwrap();
-
-        let uncompressed = tar.into_inner().unwrap();
-        let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        c.write_all(&uncompressed).unwrap();
-        let compressed = c.finish().unwrap();
+        let compressed = common::gzip_tar([common::TarFile::new(
+            "Dockerfile",
+            dockerfile.into_bytes(),
+            0o755,
+        )])
+        .unwrap();
 
         let name = "bollard-buildkit-with-cache-example";
 

@@ -1,6 +1,8 @@
 //! Exports an image using an ephemeral BuildKit builder.
 #![allow(unused_variables, unused_mut)]
 
+mod common;
+
 #[tokio::main]
 async fn main() {
     #[cfg(feature = "buildkit_providerless")]
@@ -9,8 +11,6 @@ async fn main() {
             DockerContainerBuilder, DockerContainerLifecycle,
         };
         use bollard::Docker;
-        use std::io::Write;
-
         let mut docker = Docker::connect_with_socket_defaults().unwrap();
 
         let dockerfile = String::from(
@@ -22,18 +22,12 @@ async fn main() {
             ",
         );
 
-        let mut header = tar::Header::new_gnu();
-        header.set_path("Dockerfile").unwrap();
-        header.set_size(dockerfile.len() as u64);
-        header.set_mode(0o755);
-        header.set_cksum();
-        let mut tar = tar::Builder::new(Vec::new());
-        tar.append(&header, dockerfile.as_bytes()).unwrap();
-
-        let uncompressed = tar.into_inner().unwrap();
-        let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        c.write_all(&uncompressed).unwrap();
-        let compressed = c.finish().unwrap();
+        let compressed = common::gzip_tar([common::TarFile::new(
+            "Dockerfile",
+            dockerfile.into_bytes(),
+            0o755,
+        )])
+        .unwrap();
 
         let session_id = "bollard-oci-export-buildkit-example";
 

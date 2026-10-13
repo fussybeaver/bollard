@@ -472,3 +472,10 @@ pub use bollard_buildkit_proto::moby;
 
 #[cfg(feature = "buildkit_providerless")]
 pub use bollard_buildkit_proto::pb;
+
+/// Synchronous BuildKit Low-Level Builder graph construction.
+///
+/// The graph can be marshalled into [`pb::Definition`] and submitted to
+/// Bollard's direct-definition solve APIs.
+#[cfg(feature = "buildkit_providerless")]
+pub use bollard_llb as llb;

@@ -57,5 +57,5 @@ feature and does not pull `tokio`, `tonic`, TLS or an HTTP client stack.
 The following features remain outside the initial release and are tracked for
 later compatible expansion: Git and HTTP sources, OCI-layout and image-blob
 sources, Diff and CDI operations, tmpfs and richer mount controls, richer exec
-metadata, multi-action file operations, richer exporters, gateway/frontend APIs
-and progress streaming.
+metadata, multi-action file operations, registry and other advanced exporters,
+gateway/frontend APIs and progress streaming.

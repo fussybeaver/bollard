@@ -343,6 +343,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bollard-llb"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0fb2229379b0a64c04f78c9a130e67d1abbe021796ea0c56137c045a1dcbf86"
+dependencies = [
+ "bollard-buildkit-proto 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hex",
+ "indexmap",
+ "prost",
+ "rand",
+ "serde_json",
+ "sha2 0.10.9",
+ "shlex",
+ "thiserror",
+]
+
+[[package]]
 name = "bollard-stubs"
 version = "1.53.1-rc.29.3.1"
 dependencies = [
