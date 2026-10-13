@@ -1,5 +1,6 @@
 use hyper::Uri as HyperUri;
 use log::trace;
+use percent_encoding::{utf8_percent_encode, AsciiSet, PercentEncode, NON_ALPHANUMERIC};
 use url::Url;
 
 use std::borrow::Cow;
@@ -7,6 +8,52 @@ use std::ffi::OsStr;
 
 use crate::docker::{ClientType, ClientVersion};
 use crate::errors::Error;
+
+/// Bytes escaped in an identifier that is interpolated into a request path:
+/// everything except RFC 3986 unreserved characters, `:` and `@`.
+const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~')
+    .remove(b':')
+    .remove(b'@');
+
+/// Like [`PATH_SEGMENT`], but keeps `/` so that image and plugin references
+/// such as `library/ubuntu:latest` are sent unchanged.
+const REFERENCE: &AsciiSet = &PATH_SEGMENT.remove(b'/');
+
+/// Escapes an identifier (container, network, volume, ...) for use as a
+/// single request path segment, so that it cannot introduce `/`, `?`, `#`
+/// or `%` into the request path.
+pub(crate) fn escape_segment(value: &str) -> PercentEncode<'_> {
+    utf8_percent_encode(value, PATH_SEGMENT)
+}
+
+/// Escapes an image or plugin reference for use in a request path. `/` is
+/// kept, since the daemon routes these as `{name:.*}`; `.` and `..` segments
+/// are rejected by [`Uri::parse`].
+pub(crate) fn escape_reference(value: &str) -> PercentEncode<'_> {
+    utf8_percent_encode(value, REFERENCE)
+}
+
+/// Rejects paths containing `.` or `..` segments (including their
+/// percent-encoded forms), which would otherwise be resolved away and let an
+/// identifier escape its position in the path.
+pub(crate) fn check_dot_segments(path: &str) -> Result<(), Error> {
+    let is_dot_segment = |segment: &str| {
+        matches!(
+            segment.to_ascii_lowercase().as_str(),
+            "." | "%2e" | ".." | ".%2e" | "%2e." | "%2e%2e"
+        )
+    };
+    if path.split('/').any(is_dot_segment) {
+        return Err(Error::InvalidRequestPathError {
+            path: path.to_owned(),
+        });
+    }
+    Ok(())
+}
 
 #[derive(Debug)]
 pub struct Uri<'a> {
@@ -32,6 +79,7 @@ impl<'a> Uri<'a> {
     where
         O: serde::ser::Serialize,
     {
+        check_dot_segments(path)?;
         let mut url = Url::parse(&format!(
             "{}://{}",
             Uri::socket_scheme(client_type),
@@ -179,6 +227,75 @@ mod tests {
             uri.path_and_query().unwrap().as_str(),
             "/v1.53/containers/a%3Fb%23c/json"
         );
+    }
+
+    fn parse_path(path: &str) -> Result<String, Error> {
+        let uri: HyperUri = Uri::parse(
+            "localhost:2375",
+            &client_type(),
+            path,
+            Some([("follow", "true")]),
+            Some(&VERSION),
+        )?
+        .try_into()
+        .unwrap();
+        Ok(uri.path_and_query().unwrap().as_str().to_owned())
+    }
+
+    #[test]
+    fn escaped_segment_stays_in_place() {
+        let cases = [
+            ("my-container_1.2", "my-container_1.2"),
+            ("foo/json?", "foo%2Fjson%3F"),
+            ("../../containers/json?", "..%2F..%2Fcontainers%2Fjson%3F"),
+            ("a#b", "a%23b"),
+            ("%2e%2e", "%252e%252e"),
+        ];
+        for (name, escaped) in cases {
+            let path = format!("/containers/{}/logs", escape_segment(name));
+            assert_eq!(
+                parse_path(&path).unwrap(),
+                format!("/v1.53/containers/{escaped}/logs?follow=true"),
+                "name: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn escaped_reference_keeps_slashes() {
+        let path = format!(
+            "/images/{}/json",
+            escape_reference("registry:5000/library/ubuntu:latest")
+        );
+        assert_eq!(
+            parse_path(&path).unwrap(),
+            "/v1.53/images/registry:5000/library/ubuntu:latest/json?follow=true"
+        );
+
+        let path = format!("/images/{}/json", escape_reference("a?b#c"));
+        assert_eq!(
+            parse_path(&path).unwrap(),
+            "/v1.53/images/a%3Fb%23c/json?follow=true"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_dot_segments() {
+        for path in [
+            format!("/containers/{}/logs", escape_segment("..")),
+            format!("/containers/{}/logs", escape_segment(".")),
+            format!("/images/{}", escape_reference("x/../../containers/y")),
+            "/containers/%2E%2e/logs".to_owned(),
+            "/containers/.%2E/logs".to_owned(),
+        ] {
+            assert!(
+                matches!(
+                    parse_path(&path),
+                    Err(Error::InvalidRequestPathError { .. })
+                ),
+                "path: {path}"
+            );
+        }
     }
 
     #[test]

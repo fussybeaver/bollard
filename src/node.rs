@@ -4,7 +4,7 @@ use bollard_stubs::models::{Node, NodeSpec};
 use bytes::Bytes;
 use http_body_util::Full;
 
-use crate::{docker::BodyType, errors::Error, Docker};
+use crate::{docker::BodyType, errors::Error, uri::escape_segment, Docker};
 use http::{request::Builder, Method};
 
 impl Docker {
@@ -76,7 +76,7 @@ impl Docker {
     /// docker.inspect_node("my_node_name");
     /// ```
     pub async fn inspect_node(&self, node_name: &str) -> Result<Node, Error> {
-        let url = format!("/nodes/{node_name}");
+        let url = format!("/nodes/{}", escape_segment(node_name));
 
         let req = self.build_request(
             &url,
@@ -121,7 +121,7 @@ impl Docker {
         node_name: &str,
         options: Option<crate::query_parameters::DeleteNodeOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/nodes/{node_name}");
+        let url = format!("/nodes/{}", escape_segment(node_name));
 
         let req = self.build_request(
             &url,
@@ -175,7 +175,7 @@ impl Docker {
         spec: NodeSpec,
         options: crate::query_parameters::UpdateNodeOptions,
     ) -> Result<(), Error> {
-        let url = format!("/nodes/{node_id}/update");
+        let url = format!("/nodes/{}/update", escape_segment(node_id));
 
         let req = self.build_request(
             &url,

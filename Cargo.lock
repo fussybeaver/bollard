@@ -216,6 +216,7 @@ dependencies = [
  "num",
  "once_cell",
  "openssh",
+ "percent-encoding",
  "pin-project-lite",
  "prost",
  "rand",

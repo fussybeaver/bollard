@@ -16,6 +16,7 @@ use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::ExecInspectResponse;
 use crate::read::{NewlineLogOutputDecoder, StreamFraming};
+use crate::uri::escape_segment;
 use futures_core::Stream;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
@@ -174,7 +175,7 @@ impl Docker {
         container_name: &str,
         config: impl Into<ExecConfig>,
     ) -> Result<CreateExecResults, Error> {
-        let url = format!("/containers/{container_name}/exec");
+        let url = format!("/containers/{}/exec", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -229,7 +230,7 @@ impl Docker {
         exec_id: &str,
         config: Option<StartExecOptions>,
     ) -> Result<StartExecResults, Error> {
-        let url = format!("/exec/{exec_id}/start");
+        let url = format!("/exec/{}/start", escape_segment(exec_id));
 
         match config {
             Some(StartExecOptions { detach: true, .. }) => {
@@ -331,7 +332,7 @@ impl Docker {
     /// };
     /// ```
     pub async fn inspect_exec(&self, exec_id: &str) -> Result<ExecInspectResponse, Error> {
-        let url = format!("/exec/{exec_id}/json");
+        let url = format!("/exec/{}/json", escape_segment(exec_id));
 
         let req = self.build_request(
             &url,
@@ -382,7 +383,7 @@ impl Docker {
         exec_id: &str,
         options: impl Into<crate::query_parameters::ResizeExecOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/exec/{exec_id}/resize");
+        let url = format!("/exec/{}/resize", escape_segment(exec_id));
 
         let req = self.build_request(
             &url,

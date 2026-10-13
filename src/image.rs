@@ -21,6 +21,7 @@ use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::docker::{body_try_stream, BodyType};
 use crate::errors::Error;
 use crate::models::*;
+use crate::uri::escape_reference;
 
 enum ImageBuildBuildkitEither {
     #[allow(dead_code)]
@@ -175,7 +176,7 @@ impl Docker {
     /// docker.inspect_image("hello-world");
     /// ```
     pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
-        let url = format!("/images/{image_name}/json");
+        let url = format!("/images/{}/json", escape_reference(image_name));
 
         let req = self.build_request(
             &url,
@@ -212,7 +213,7 @@ impl Docker {
         image_name: &str,
         credentials: Option<DockerCredentials>,
     ) -> Result<DistributionInspect, Error> {
-        let url = format!("/distribution/{image_name}/json");
+        let url = format!("/distribution/{}/json", escape_reference(image_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -300,7 +301,7 @@ impl Docker {
         &self,
         image_name: &str,
     ) -> Result<Vec<ImageHistoryResponseItem>, Error> {
-        let url = format!("/images/{image_name}/history");
+        let url = format!("/images/{}/history", escape_reference(image_name));
 
         let req = self.build_request(
             &url,
@@ -397,7 +398,7 @@ impl Docker {
         options: Option<impl Into<crate::query_parameters::RemoveImageOptions>>,
         credentials: Option<DockerCredentials>,
     ) -> Result<Vec<ImageDeleteResponseItem>, Error> {
-        let url = format!("/images/{image_name}");
+        let url = format!("/images/{}", escape_reference(image_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -442,7 +443,7 @@ impl Docker {
         image_name: &str,
         options: Option<impl Into<crate::query_parameters::TagImageOptions>>,
     ) -> Result<(), Error> {
-        let url = format!("/images/{image_name}/tag");
+        let url = format!("/images/{}/tag", escape_reference(image_name));
 
         let req = self.build_request(
             &url,
@@ -496,7 +497,7 @@ impl Docker {
         options: Option<impl Into<crate::query_parameters::PushImageOptions>>,
         credentials: Option<DockerCredentials>,
     ) -> impl Stream<Item = Result<PushImageInfo, Error>> {
-        let url = format!("/images/{image_name}/push");
+        let url = format!("/images/{}/push", escape_reference(image_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -972,7 +973,7 @@ impl Docker {
     /// # Returns
     ///  - An uncompressed TAR archive
     pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/images/{image_name}/get");
+        let url = format!("/images/{}/get", escape_reference(image_name));
         let req = self.build_request(
             &url,
             Builder::new()

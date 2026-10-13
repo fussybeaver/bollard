@@ -7,6 +7,7 @@ pub use crate::models::*;
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
 use crate::errors::Error;
+use crate::uri::escape_segment;
 use bytes::Bytes;
 use futures_core::Stream;
 use http::header::CONTENT_TYPE;
@@ -168,7 +169,7 @@ impl Docker {
         service_name: &str,
         options: Option<crate::query_parameters::InspectServiceOptions>,
     ) -> Result<Service, Error> {
-        let url = format!("/services/{service_name}");
+        let url = format!("/services/{}", escape_segment(service_name));
 
         let req = self.build_request(
             &url,
@@ -203,7 +204,7 @@ impl Docker {
     /// docker.delete_service("my-service");
     /// ```
     pub async fn delete_service(&self, service_name: &str) -> Result<(), Error> {
-        let url = format!("/services/{service_name}");
+        let url = format!("/services/{}", escape_segment(service_name));
 
         let req = self.build_request(
             &url,
@@ -279,7 +280,7 @@ impl Docker {
         options: crate::query_parameters::UpdateServiceOptions,
         credentials: Option<DockerCredentials>,
     ) -> Result<ServiceUpdateResponse, Error> {
-        let url = format!("/services/{service_name}/update");
+        let url = format!("/services/{}/update", escape_segment(service_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -327,7 +328,7 @@ impl Docker {
         service_id: &str,
         options: Option<impl Into<crate::query_parameters::LogsOptions>>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let url = format!("/services/{service_id}/logs");
+        let url = format!("/services/{}/logs", escape_segment(service_id));
 
         let req = self.build_request(
             &url,
