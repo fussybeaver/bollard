@@ -263,7 +263,7 @@ impl Service<tonic::transport::Uri> for DockerContainerConnector {
                 .await?
                 .id;
 
-            let url = format!("/exec/{exec_id}/start");
+            let url = format!("/exec/{}/start", crate::uri::escape_segment(&exec_id));
             let capacity = 8 * 1024;
 
             let req = client.build_request(

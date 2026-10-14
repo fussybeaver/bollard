@@ -1,6 +1,8 @@
 use hyper::Uri as HyperUri;
 use log::trace;
-use percent_encoding::{utf8_percent_encode, AsciiSet, PercentEncode, NON_ALPHANUMERIC};
+use percent_encoding::{
+    percent_decode_str, utf8_percent_encode, AsciiSet, PercentEncode, NON_ALPHANUMERIC,
+};
 use url::Url;
 
 use std::borrow::Cow;
@@ -37,17 +39,15 @@ pub(crate) fn escape_reference(value: &str) -> PercentEncode<'_> {
     utf8_percent_encode(value, REFERENCE)
 }
 
-/// Rejects paths containing `.` or `..` segments (including their
-/// percent-encoded forms), which would otherwise be resolved away and let an
-/// identifier escape its position in the path.
+/// Rejects paths containing `.` or `..` segments once percent-decoded, as
+/// both `url` and the daemon would resolve them and let an identifier escape
+/// its position in the path.
 pub(crate) fn check_dot_segments(path: &str) -> Result<(), Error> {
-    let is_dot_segment = |segment: &str| {
-        matches!(
-            segment.to_ascii_lowercase().as_str(),
-            "." | "%2e" | ".." | ".%2e" | "%2e." | "%2e%2e"
-        )
-    };
-    if path.split('/').any(is_dot_segment) {
+    let decoded: Cow<'_, [u8]> = percent_decode_str(path).into();
+    if decoded
+        .split(|&b| b == b'/')
+        .any(|segment| segment == b"." || segment == b"..")
+    {
         return Err(Error::InvalidRequestPathError {
             path: path.to_owned(),
         });
@@ -247,7 +247,6 @@ mod tests {
         let cases = [
             ("my-container_1.2", "my-container_1.2"),
             ("foo/json?", "foo%2Fjson%3F"),
-            ("../../containers/json?", "..%2F..%2Fcontainers%2Fjson%3F"),
             ("a#b", "a%23b"),
             ("%2e%2e", "%252e%252e"),
         ];
@@ -285,6 +284,11 @@ mod tests {
             format!("/containers/{}/logs", escape_segment("..")),
             format!("/containers/{}/logs", escape_segment(".")),
             format!("/images/{}", escape_reference("x/../../containers/y")),
+            format!("/networks/{}", escape_segment("x/../images/y")),
+            format!(
+                "/containers/{}/logs",
+                escape_segment("../../containers/json?")
+            ),
             "/containers/%2E%2e/logs".to_owned(),
             "/containers/.%2E/logs".to_owned(),
         ] {
