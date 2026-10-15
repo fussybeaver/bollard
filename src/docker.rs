@@ -1767,6 +1767,8 @@ impl Docker {
     {
         use tokio_tungstenite::client_async;
 
+        crate::uri::check_dot_segments(path)?;
+
         let query_string = match query {
             Some(q) => {
                 let qs = serde_urlencoded::to_string(&q)?;
@@ -1801,6 +1803,8 @@ impl Docker {
         O: Serialize,
     {
         use tokio_tungstenite::client_async;
+
+        crate::uri::check_dot_segments(path)?;
 
         let query_string = match query {
             Some(q) => {

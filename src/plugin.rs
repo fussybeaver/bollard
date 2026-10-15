@@ -2,7 +2,7 @@
 
 use super::Docker;
 use crate::auth::{DockerCredentials, DockerCredentialsHeader};
-use crate::{docker::BodyType, errors::Error};
+use crate::{docker::BodyType, errors::Error, uri::escape_reference};
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -86,7 +86,7 @@ impl Docker {
     /// docker.inspect_plugin("vieux/sshfs:latest");
     /// ```
     pub async fn inspect_plugin(&self, plugin_name: &str) -> Result<Plugin, Error> {
-        let url = format!("/plugins/{plugin_name}/json");
+        let url = format!("/plugins/{}/json", escape_reference(plugin_name));
 
         let req = self.build_request(
             &url,
@@ -131,7 +131,7 @@ impl Docker {
         plugin_name: &str,
         options: Option<crate::query_parameters::RemovePluginOptions>,
     ) -> Result<Plugin, Error> {
-        let url = format!("/plugins/{plugin_name}");
+        let url = format!("/plugins/{}", escape_reference(plugin_name));
 
         let req = self.build_request(
             &url,
@@ -176,7 +176,7 @@ impl Docker {
         plugin_name: &str,
         options: Option<crate::query_parameters::EnablePluginOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/plugins/{plugin_name}/enable");
+        let url = format!("/plugins/{}/enable", escape_reference(plugin_name));
 
         let req = self.build_request(
             &url,
@@ -221,7 +221,7 @@ impl Docker {
         plugin_name: &str,
         options: Option<crate::query_parameters::DisablePluginOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/plugins/{plugin_name}/disable");
+        let url = format!("/plugins/{}/disable", escape_reference(plugin_name));
 
         let req = self.build_request(
             &url,
@@ -452,7 +452,7 @@ impl Docker {
         privileges: Vec<PluginPrivilege>,
         credentials: Option<DockerCredentials>,
     ) -> Result<(), Error> {
-        let url = format!("/plugins/{plugin_name}/upgrade");
+        let url = format!("/plugins/{}/upgrade", escape_reference(plugin_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -500,7 +500,7 @@ impl Docker {
         plugin_name: &str,
         credentials: Option<DockerCredentials>,
     ) -> Result<(), Error> {
-        let url = format!("/plugins/{plugin_name}/push");
+        let url = format!("/plugins/{}/push", escape_reference(plugin_name));
 
         let req = self.build_request_with_registry_auth(
             &url,
@@ -546,7 +546,7 @@ impl Docker {
         plugin_name: &str,
         config: Vec<String>,
     ) -> Result<(), Error> {
-        let url = format!("/plugins/{plugin_name}/set");
+        let url = format!("/plugins/{}/set", escape_reference(plugin_name));
 
         let req = self.build_request(
             &url,

@@ -3,7 +3,7 @@
 pub use crate::models::*;
 
 use super::Docker;
-use crate::{docker::BodyType, errors::Error};
+use crate::{docker::BodyType, errors::Error, uri::escape_segment};
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
@@ -130,7 +130,7 @@ impl Docker {
     /// docker.inspect_config("config-name");
     /// ```
     pub async fn inspect_config(&self, config_id: &str) -> Result<Config, Error> {
-        let url = format!("/configs/{config_id}");
+        let url = format!("/configs/{}", escape_segment(config_id));
 
         let req = self.build_request(
             &url,
@@ -166,7 +166,7 @@ impl Docker {
     /// docker.delete_config("config-name");
     /// ```
     pub async fn delete_config(&self, config_id: &str) -> Result<(), Error> {
-        let url = format!("/configs/{config_id}");
+        let url = format!("/configs/{}", escape_segment(config_id));
 
         let req = self.build_request(
             &url,
@@ -224,7 +224,7 @@ impl Docker {
         config_spec: ConfigSpec,
         options: crate::query_parameters::UpdateConfigOptions,
     ) -> Result<(), Error> {
-        let url = format!("/configs/{config_id}/update");
+        let url = format!("/configs/{}/update", escape_segment(config_id));
 
         let req = self.build_request(
             &url,

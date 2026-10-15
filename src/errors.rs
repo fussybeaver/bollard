@@ -178,6 +178,13 @@ pub enum Error {
         #[from]
         err: http::uri::InvalidUri,
     },
+    /// Error emitted when a request path contains a `.` or `..` segment, e.g.
+    /// because an identifier passed to the client was `..`
+    #[error("Request path must not contain `.` or `..` segments: {path}")]
+    InvalidRequestPathError {
+        /// The rejected request path.
+        path: String,
+    },
     /// Error emitted when encoding a URIParts
     #[error("Unable to parse URIParts: {}", err)]
     InvalidURIPartsError {

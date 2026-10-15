@@ -5,7 +5,7 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http_body_util::Full;
 
-use crate::{container::LogOutput, docker::BodyType, errors::Error, Docker};
+use crate::{container::LogOutput, docker::BodyType, errors::Error, uri::escape_segment, Docker};
 use http::{request::Builder, Method};
 
 impl Docker {
@@ -78,7 +78,7 @@ impl Docker {
     /// docker.inspect_task("my_task_id");
     /// ```
     pub async fn inspect_task(&self, task_id: &str) -> Result<Task, Error> {
-        let url = format!("/tasks/{task_id}");
+        let url = format!("/tasks/{}", escape_segment(task_id));
 
         let req = self.build_request(
             &url,
@@ -123,7 +123,7 @@ impl Docker {
         task_id: &str,
         options: Option<impl Into<crate::query_parameters::LogsOptions>>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let url = format!("/tasks/{task_id}/logs");
+        let url = format!("/tasks/{}/logs", escape_segment(task_id));
 
         let req = self.build_request(
             &url,

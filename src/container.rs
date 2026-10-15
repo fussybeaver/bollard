@@ -26,6 +26,7 @@ use crate::models::*;
 #[cfg(feature = "websocket")]
 use crate::read::websocket::{WebSocketReader, WebSocketWriter};
 use crate::read::{NewlineLogOutputDecoder, StreamFraming};
+use crate::uri::escape_segment;
 
 /// Path Stat Response from HEAD request to container/{id}/archive
 #[derive(Debug, Deserialize)]
@@ -357,7 +358,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::StartContainerOptions>,
     ) -> Result<StartContainerResult, Error> {
-        let url = format!("/containers/{container_name}/start");
+        let url = format!("/containers/{}/start", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -406,7 +407,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::StopContainerOptions>,
     ) -> Result<StopContainerResult, Error> {
-        let url = format!("/containers/{container_name}/stop");
+        let url = format!("/containers/{}/stop", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -454,7 +455,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::RemoveContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}");
+        let url = format!("/containers/{}", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -501,7 +502,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::WaitContainerOptions>,
     ) -> impl Stream<Item = Result<ContainerWaitResponse, Error>> {
-        let url = format!("/containers/{container_name}/wait");
+        let url = format!("/containers/{}/wait", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -568,7 +569,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::AttachContainerOptions>,
     ) -> Result<AttachContainerResults, Error> {
-        let url = format!("/containers/{container_name}/attach");
+        let url = format!("/containers/{}/attach", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -647,7 +648,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::AttachContainerOptions>,
     ) -> Result<AttachContainerResults, Error> {
-        let path = format!("/containers/{container_name}/attach/ws");
+        let path = format!("/containers/{}/attach/ws", escape_segment(container_name));
 
         let ws_stream = self.process_websocket(&path, options).await?;
         let (write, read) = futures_util::StreamExt::split(ws_stream);
@@ -676,7 +677,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::AttachContainerOptions>,
     ) -> Result<AttachContainerResults, Error> {
-        let path = format!("/containers/{container_name}/attach/ws");
+        let path = format!("/containers/{}/attach/ws", escape_segment(container_name));
 
         let ws_stream = self.process_websocket(&path, options).await?;
         let (write, read) = futures_util::StreamExt::split(ws_stream);
@@ -726,7 +727,7 @@ impl Docker {
         container_name: &str,
         options: crate::query_parameters::ResizeContainerTTYOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/resize");
+        let url = format!("/containers/{}/resize", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -771,7 +772,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::RestartContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/restart");
+        let url = format!("/containers/{}/restart", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -816,7 +817,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::InspectContainerOptions>,
     ) -> Result<ContainerInspectResponse, Error> {
-        let url = format!("/containers/{container_name}/json");
+        let url = format!("/containers/{}/json", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -859,7 +860,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::ContainerArchiveInfoOptions>,
     ) -> Result<PathStatResponse, Error> {
-        let url = format!("/containers/{container_name}/archive");
+        let url = format!("/containers/{}/archive", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -921,7 +922,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::TopOptions>,
     ) -> Result<ContainerTopResponse, Error> {
-        let url = format!("/containers/{container_name}/top");
+        let url = format!("/containers/{}/top", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -967,7 +968,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::LogsOptions>,
     ) -> impl Stream<Item = Result<LogOutput, Error>> {
-        let url = format!("/containers/{container_name}/logs");
+        let url = format!("/containers/{}/logs", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1018,7 +1019,7 @@ impl Docker {
         &self,
         container_name: &str,
     ) -> Result<Option<Vec<FilesystemChange>>, Error> {
-        let url = format!("/containers/{container_name}/changes");
+        let url = format!("/containers/{}/changes", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1065,7 +1066,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::StatsOptions>,
     ) -> impl Stream<Item = Result<ContainerStatsResponse, Error>> {
-        let url = format!("/containers/{container_name}/stats");
+        let url = format!("/containers/{}/stats", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1110,7 +1111,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::KillContainerOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/kill");
+        let url = format!("/containers/{}/kill", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1157,7 +1158,7 @@ impl Docker {
         container_name: &str,
         config: ContainerUpdateBody,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/update");
+        let url = format!("/containers/{}/update", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1202,7 +1203,7 @@ impl Docker {
         container_name: &str,
         options: crate::query_parameters::RenameContainerOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/rename");
+        let url = format!("/containers/{}/rename", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1237,7 +1238,7 @@ impl Docker {
     /// docker.pause_container("postgres");
     /// ```
     pub async fn pause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/pause");
+        let url = format!("/containers/{}/pause", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1272,7 +1273,7 @@ impl Docker {
     /// docker.unpause_container("postgres");
     /// ```
     pub async fn unpause_container(&self, container_name: &str) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/unpause");
+        let url = format!("/containers/{}/unpause", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1464,7 +1465,7 @@ impl Docker {
         options: Option<crate::query_parameters::UploadToContainerOptions>,
         tar: BodyType,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/archive");
+        let url = format!("/containers/{}/archive", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1511,7 +1512,7 @@ impl Docker {
         container_name: &str,
         options: Option<crate::query_parameters::DownloadFromContainerOptions>,
     ) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/containers/{container_name}/archive");
+        let url = format!("/containers/{}/archive", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1540,7 +1541,7 @@ impl Docker {
         &self,
         container_name: &str,
     ) -> impl Stream<Item = Result<Bytes, Error>> {
-        let url = format!("/containers/{container_name}/export");
+        let url = format!("/containers/{}/export", escape_segment(container_name));
         let req = self.build_request(
             &url,
             Builder::new()
@@ -1591,7 +1592,7 @@ impl Docker {
         container_name: &str,
         options: CreateCheckpointOptions,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/checkpoints");
+        let url = format!("/containers/{}/checkpoints", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1634,7 +1635,7 @@ impl Docker {
         container_name: &str,
         options: Option<ListCheckpointsOptions>,
     ) -> Result<Vec<Checkpoint>, Error> {
-        let url = format!("/containers/{container_name}/checkpoints");
+        let url = format!("/containers/{}/checkpoints", escape_segment(container_name));
 
         let req = self.build_request(
             &url,
@@ -1681,7 +1682,11 @@ impl Docker {
         checkpoint_id: &str,
         options: Option<DeleteCheckpointOptions>,
     ) -> Result<(), Error> {
-        let url = format!("/containers/{container_name}/checkpoints/{checkpoint_id}");
+        let url = format!(
+            "/containers/{}/checkpoints/{}",
+            escape_segment(container_name),
+            escape_segment(checkpoint_id)
+        );
 
         let req = self.build_request(
             &url,

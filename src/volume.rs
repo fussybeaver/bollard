@@ -9,6 +9,7 @@ use super::Docker;
 use crate::docker::BodyType;
 use crate::errors::Error;
 use crate::models::*;
+use crate::uri::escape_segment;
 
 impl Docker {
     /// ---
@@ -127,7 +128,7 @@ impl Docker {
     /// docker.inspect_volume("my_volume_name");
     /// ```
     pub async fn inspect_volume(&self, volume_name: &str) -> Result<Volume, Error> {
-        let url = format!("/volumes/{volume_name}");
+        let url = format!("/volumes/{}", escape_segment(volume_name));
 
         let req = self.build_request(
             &url,
@@ -172,7 +173,7 @@ impl Docker {
         volume_name: &str,
         options: Option<impl Into<crate::query_parameters::RemoveVolumeOptions>>,
     ) -> Result<(), Error> {
-        let url = format!("/volumes/{volume_name}");
+        let url = format!("/volumes/{}", escape_segment(volume_name));
 
         let req = self.build_request(
             &url,

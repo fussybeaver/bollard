@@ -3,7 +3,7 @@
 use crate::models::*;
 
 use super::Docker;
-use crate::{docker::BodyType, errors::Error};
+use crate::{docker::BodyType, errors::Error, uri::escape_segment};
 use bytes::Bytes;
 use http::request::Builder;
 use http_body_util::Full;
@@ -128,7 +128,7 @@ impl Docker {
     /// docker.inspect_secret("secret-name");
     /// ```
     pub async fn inspect_secret(&self, secret_id: &str) -> Result<Secret, Error> {
-        let url = format!("/secrets/{secret_id}");
+        let url = format!("/secrets/{}", escape_segment(secret_id));
 
         let req = self.build_request(
             &url,
@@ -164,7 +164,7 @@ impl Docker {
     /// docker.delete_secret("secret-name");
     /// ```
     pub async fn delete_secret(&self, secret_id: &str) -> Result<(), Error> {
-        let url = format!("/secrets/{secret_id}");
+        let url = format!("/secrets/{}", escape_segment(secret_id));
 
         let req = self.build_request(
             &url,
@@ -223,7 +223,7 @@ impl Docker {
         secret_spec: SecretSpec,
         options: crate::query_parameters::UpdateSecretOptions,
     ) -> Result<(), Error> {
-        let url = format!("/secrets/{secret_id}/update");
+        let url = format!("/secrets/{}/update", escape_segment(secret_id));
 
         let req = self.build_request(
             &url,

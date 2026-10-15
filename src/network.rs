@@ -8,6 +8,7 @@ use hyper::Method;
 use super::Docker;
 use crate::docker::BodyType;
 use crate::errors::Error;
+use crate::uri::escape_segment;
 
 use crate::models::*;
 
@@ -78,7 +79,7 @@ impl Docker {
     /// docker.remove_network("my_network_name");
     /// ```
     pub async fn remove_network(&self, network_name: &str) -> Result<(), Error> {
-        let url = format!("/networks/{network_name}");
+        let url = format!("/networks/{}", escape_segment(network_name));
 
         let req = self.build_request(
             &url,
@@ -123,7 +124,7 @@ impl Docker {
         network_name: &str,
         options: Option<crate::query_parameters::InspectNetworkOptions>,
     ) -> Result<NetworkInspect, Error> {
-        let url = format!("/networks/{network_name}");
+        let url = format!("/networks/{}", escape_segment(network_name));
 
         let req = self.build_request(
             &url,
@@ -221,7 +222,7 @@ impl Docker {
         network_name: &str,
         config: NetworkConnectRequest,
     ) -> Result<(), Error> {
-        let url = format!("/networks/{network_name}/connect");
+        let url = format!("/networks/{}/connect", escape_segment(network_name));
 
         let req = self.build_request(
             &url,
@@ -265,7 +266,7 @@ impl Docker {
         network_name: &str,
         config: NetworkDisconnectRequest,
     ) -> Result<(), Error> {
-        let url = format!("/networks/{network_name}/disconnect");
+        let url = format!("/networks/{}/disconnect", escape_segment(network_name));
 
         let req = self.build_request(
             &url,
