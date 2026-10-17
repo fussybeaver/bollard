@@ -3,7 +3,7 @@ module go-parity
 go 1.25.9
 
 require (
-	github.com/moby/buildkit v0.29.0
+	github.com/moby/buildkit v0.31.1
 	github.com/opencontainers/image-spec v1.1.1
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 )
@@ -26,7 +26,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
