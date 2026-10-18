@@ -37,6 +37,17 @@ impl Moby {
             docker: Docker::clone(docker),
         }
     }
+
+    /// Build an LLB definition directly into Docker Engine's image store.
+    ///
+    /// Unlike [`super::SolveDefinition`], this Moby-only operation preserves the
+    /// supplied image runtime configuration and exports the requested tag.
+    pub async fn build_image(
+        &self,
+        request: super::MobyImageBuildRequest,
+    ) -> Result<super::DefinitionSolveResult, GrpcError> {
+        super::solve_moby_image(self, request).await
+    }
 }
 
 impl Driver for Moby {

@@ -159,6 +159,57 @@ pub enum DefinitionExporter {
     Local(PathBuf),
 }
 
+/// A direct Moby image-store build from an LLB definition.
+#[derive(Clone)]
+pub struct MobyImageBuildRequest {
+    /// The pre-built LLB definition to solve.
+    pub(crate) definition: bollard_buildkit_proto::pb::Definition,
+    /// OCI/Docker image runtime configuration returned to BuildKit.
+    pub(crate) image_config: serde_json::Value,
+    /// The single target platform for this image.
+    pub(crate) platform: super::build::ImageBuildPlatform,
+    /// Image reference to store in Docker Engine (for example `example/app:dev`).
+    pub(crate) tag: String,
+    /// Existing direct-solve options such as caches, credentials, secrets and timeout.
+    pub(crate) options: DefinitionSolveOptions,
+}
+
+impl MobyImageBuildRequest {
+    /// Construct a Moby direct image build request.
+    pub fn new(
+        definition: bollard_buildkit_proto::pb::Definition,
+        image_config: serde_json::Value,
+        platform: super::build::ImageBuildPlatform,
+        tag: impl Into<String>,
+    ) -> Self {
+        Self {
+            definition,
+            image_config,
+            platform,
+            tag: tag.into(),
+            options: DefinitionSolveOptions::default(),
+        }
+    }
+
+    /// Set existing direct-solve options for this build.
+    pub fn with_options(mut self, options: DefinitionSolveOptions) -> Self {
+        self.options = options;
+        self
+    }
+}
+
+impl fmt::Debug for MobyImageBuildRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MobyImageBuildRequest")
+            .field("definition_ops", &self.definition.def.len())
+            .field("platform", &self.platform)
+            .field("tag", &self.tag)
+            .field("options", &self.options)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct LocalMount {
     pub(crate) root: Arc<cap_std::fs::Dir>,
@@ -913,6 +964,118 @@ pub(crate) async fn solve_definition(
     })
 }
 
+pub(crate) async fn solve_moby_image(
+    driver: &moby::Moby,
+    request: MobyImageBuildRequest,
+) -> Result<DefinitionSolveResult, GrpcError> {
+    let MobyImageBuildRequest {
+        definition,
+        image_config,
+        platform,
+        tag,
+        options,
+    } = request;
+    if tag.trim().is_empty() || tag.contains('\n') || tag.contains('\r') {
+        return Err(tonic::Status::invalid_argument(
+            "image tag must be a non-empty single-line image reference",
+        )
+        .into());
+    }
+    if platform.os.trim().is_empty() || platform.architecture.trim().is_empty() {
+        return Err(tonic::Status::invalid_argument(
+            "image platform must specify both OS and architecture",
+        )
+        .into());
+    }
+    if !image_config.is_object() {
+        return Err(
+            tonic::Status::invalid_argument("image configuration must be a JSON object").into(),
+        );
+    }
+    validate_definition(&definition, &options.ssh)?;
+    let config = serde_json::to_vec(&image_config).map_err(|error| {
+        tonic::Status::invalid_argument(format!("image configuration is not serializable: {error}"))
+    })?;
+
+    let mut auth_provider = super::AuthProvider::new();
+    for (host, credentials) in &options.credentials {
+        auth_provider.set_docker_credentials(host, credentials.clone());
+    }
+    let auth = AuthServer::new(auth_provider);
+    let secrets = SecretsServer::new(super::SecretProvider::new(options.secrets.clone()))
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+    let mut services = vec![GrpcServer::Auth(auth), GrpcServer::Secrets(secrets)];
+    if !options.ssh.is_empty() {
+        services.push(GrpcServer::Ssh(
+            SshServer::new(super::SshProvider::new(options.ssh.clone()))
+                .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
+        ));
+    }
+    if !options.local_mounts.is_empty() {
+        let mounts = options
+            .local_mounts
+            .iter()
+            .map(|(name, mount)| (name.clone(), Arc::clone(&mount.root)))
+            .collect();
+        services.push(GrpcServer::FileSync(
+            FileSyncServer::new(super::filesync::FileSyncImpl::new(mounts))
+                .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
+        ));
+    }
+
+    let build_ref = BuildRef::random();
+    let outer_request = build_moby_image_outer_request(&tag, &platform, &options, &build_ref);
+    let response = gateway::solve(
+        driver,
+        gateway::GatewaySolve {
+            definition,
+            outer_request,
+            services,
+            result_metadata: HashMap::from([(String::from("containerimage.config"), config)]),
+            build_ref: build_ref.clone(),
+            timeout: options.timeout,
+        },
+    )
+    .await?;
+    Ok(DefinitionSolveResult {
+        build_ref,
+        exporter_response: response.exporter_response,
+    })
+}
+
+fn build_moby_image_outer_request(
+    tag: &str,
+    platform: &super::build::ImageBuildPlatform,
+    options: &DefinitionSolveOptions,
+    build_ref: &BuildRef,
+) -> SolveRequest {
+    SolveRequest {
+        r#ref: build_ref.as_ref().to_string(),
+        session: String::new(),
+        frontend: String::new(),
+        frontend_attrs: HashMap::from([(String::from("platform"), platform.to_string())]),
+        exporter_deprecated: String::from("moby"),
+        exporter_attrs_deprecated: HashMap::from([
+            (String::from("type"), String::from("docker")),
+            (String::from("name"), tag.to_string()),
+        ]),
+        cache: Some(CacheOptions {
+            exports: options.cache_to.clone(),
+            imports: options.cache_from.clone(),
+            ..Default::default()
+        }),
+        entitlements: options
+            .entitlements
+            .iter()
+            .map(|entitlement| entitlement.as_str().to_string())
+            .collect(),
+        ..Default::default()
+    }
+}
+
 fn build_definition_solve_request(
     mut definition: bollard_buildkit_proto::pb::Definition,
     exporter: &DefinitionExporter,
@@ -1516,6 +1679,49 @@ mod tests {
         assert_eq!(request.exporters[0].r#type, "local");
         assert!(request.exporters[0].attrs.is_empty());
         assert_eq!(request.session, "session-id");
+    }
+
+    #[test]
+    fn moby_image_request_sets_export_tag_platform_and_config_metadata() {
+        let platform = super::super::build::ImageBuildPlatform {
+            os: "linux".into(),
+            architecture: "amd64".into(),
+            variant: None,
+        };
+        let build_ref = BuildRef::random();
+        let options = DefinitionSolveOptions::default();
+        let request =
+            build_moby_image_outer_request("example/app:test", &platform, &options, &build_ref);
+        assert_eq!(request.r#ref, build_ref.as_ref());
+        assert_eq!(request.exporter_deprecated, "moby");
+        assert_eq!(
+            request
+                .exporter_attrs_deprecated
+                .get("type")
+                .map(String::as_str),
+            Some("docker")
+        );
+        assert_eq!(
+            request
+                .exporter_attrs_deprecated
+                .get("name")
+                .map(String::as_str),
+            Some("example/app:test")
+        );
+        assert_eq!(
+            request.frontend_attrs.get("platform").map(String::as_str),
+            Some("linux/amd64")
+        );
+        assert!(request.frontend.is_empty());
+        assert!(request.definition.is_none());
+
+        let config = serde_json::json!({"Entrypoint":["/bin/app"],"Cmd":["--serve"]});
+        let bytes = serde_json::to_vec(&config).unwrap();
+        let result_metadata = HashMap::from([(String::from("containerimage.config"), bytes)]);
+        assert_eq!(
+            result_metadata.get("containerimage.config").unwrap(),
+            br#"{"Cmd":["--serve"],"Entrypoint":["/bin/app"]}"#
+        );
     }
 
     #[test]
