@@ -41,20 +41,17 @@ impl super::Driver for BuildkitChannel {
         &self,
         session_id: &str,
         services: Vec<crate::grpc::GrpcServer>,
-    ) -> Result<
-        bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient<
-            tonic::service::interceptor::InterceptedService<Channel, super::DriverInterceptor>,
-        >,
-        crate::grpc::error::GrpcError,
-    > {
+    ) -> Result<super::GrpcHandle, crate::grpc::error::GrpcError> {
         let metadata_grpc_method: Vec<String> = services.iter().flat_map(|s| s.names()).collect();
 
         let interceptor = DriverInterceptor {
             session_id: String::from(session_id),
             metadata_grpc_method,
+            build_ref: None,
         };
 
-        let mut control_client = ControlClient::with_interceptor(self.channel.clone(), interceptor);
+        let mut control_client =
+            ControlClient::with_interceptor(self.channel.clone(), interceptor.clone());
 
         let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
         let streamreader = ReaderStream::new(asyncreader);
@@ -88,7 +85,11 @@ impl super::Driver for BuildkitChannel {
             }
         });
 
-        Ok(control_client)
+        Ok(super::GrpcHandle {
+            control_client,
+            channel: self.channel.clone(),
+            interceptor,
+        })
     }
 
     fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {

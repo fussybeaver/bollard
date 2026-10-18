@@ -66,6 +66,7 @@ pub mod channel;
 /// The Docker Container driver opens a GRPC connection by instantiating a Buildkit container over
 /// the traditional docker socket, and communicating over a docker execution Stdin/Stdout pipe.
 pub mod docker_container;
+mod gateway;
 /// The Moby driver opens a bi-directional GRPC connection by upgrading HTTP `/session` and `/grpc`
 /// endpoints over the traditional docker socket.
 pub mod moby;
@@ -75,8 +76,38 @@ pub(crate) trait Driver {
         &self,
         session_id: &str,
         services: Vec<GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>;
+    ) -> Result<GrpcHandle, GrpcError>;
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
+}
+
+pub(crate) struct GrpcHandle {
+    pub(crate) control_client: ControlClient<InterceptedService<Channel, DriverInterceptor>>,
+    channel: Channel,
+    interceptor: DriverInterceptor,
+}
+
+impl GrpcHandle {
+    pub(crate) fn new(channel: Channel, interceptor: DriverInterceptor) -> Self {
+        Self {
+            control_client: ControlClient::with_interceptor(channel.clone(), interceptor.clone()),
+            channel,
+            interceptor,
+        }
+    }
+
+    fn gateway_client(
+        &self,
+        build_ref: &BuildRef,
+    ) -> bollard_buildkit_proto::moby::buildkit::v1::frontend::llb_bridge_client::LlbBridgeClient<
+        InterceptedService<Channel, DriverInterceptor>,
+    >{
+        let mut interceptor = self.interceptor.clone();
+        interceptor.build_ref = Some(build_ref.as_ref().to_string());
+        bollard_buildkit_proto::moby::buildkit::v1::frontend::llb_bridge_client::LlbBridgeClient::with_interceptor(
+            self.channel.clone(),
+            interceptor,
+        )
+    }
 }
 
 mod private {
@@ -106,6 +137,7 @@ struct TearDownGuard {
 pub(crate) struct DriverInterceptor {
     session_id: String,
     metadata_grpc_method: Vec<String>,
+    build_ref: Option<String>,
 }
 
 /// Parameterises the [`docker_container::DockerContainer`] or [`moby::Moby`] driver with an exporter configuration. See
@@ -268,6 +300,15 @@ impl Interceptor for DriverInterceptor {
                 .parse::<MetadataValue<tonic::metadata::Ascii>>()
                 .map_err(|_| tonic::Status::invalid_argument("invalid grpc method name"))?;
             metadata.append("x-docker-expose-session-grpc-method", metadata_value);
+        }
+
+        if let Some(build_ref) = &self.build_ref {
+            metadata.insert(
+                "buildkit-controlapi-buildid",
+                build_ref
+                    .parse()
+                    .map_err(|_| tonic::Status::invalid_argument("invalid build reference"))?,
+            );
         }
 
         Ok(req)
@@ -1023,12 +1064,8 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     teardown_timeout: Duration,
 ) -> Result<SolveResponse, GrpcError> {
     let mut tear_down_guard = TearDownGuard::with_timeout(tear_down_handler, teardown_timeout);
-    let mut control_client = match run_until(deadline, driver.grpc_handle(session_id, services))
-        .await
-    {
-        Ok(client) => client
-            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
+    let handle = match run_until(deadline, driver.grpc_handle(session_id, services)).await {
+        Ok(handle) => handle,
         Err(error) => {
             // A driver may have created resources before gRPC setup failed.
             if let Err(teardown_error) = tear_down_guard.tear_down().await {
@@ -1037,6 +1074,11 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
             return Err(error);
         }
     };
+
+    let mut control_client = handle
+        .control_client
+        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
 
     debug!(
         "sending solve request: {:?}",
@@ -1108,7 +1150,7 @@ mod tests {
     };
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::{
-        transport::{Channel, Endpoint, Server},
+        transport::{Endpoint, Server},
         Request, Response, Status,
     };
 
@@ -1128,8 +1170,7 @@ mod tests {
             &self,
             session_id: &str,
             _services: Vec<GrpcServer>,
-        ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError>
-        {
+        ) -> Result<GrpcHandle, GrpcError> {
             self.session_ids
                 .lock()
                 .expect("session IDs mutex is not poisoned")
@@ -1152,10 +1193,11 @@ mod tests {
             let interceptor = DriverInterceptor {
                 session_id: String::from(session_id),
                 metadata_grpc_method: Vec::new(),
+                build_ref: None,
             };
 
             let channel = self.endpoint.connect().await?;
-            Ok(ControlClient::with_interceptor(channel, interceptor))
+            Ok(GrpcHandle::new(channel, interceptor))
         }
 
         fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError> {
