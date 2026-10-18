@@ -21,6 +21,8 @@ const PROTO_FILES: &[&str] = &[
     "google/protobuf/timestamp.proto",
     "google/rpc/status.proto",
     "moby/buildkit/v1/control.proto",
+    "moby/buildkit/v1/apicaps/caps.proto",
+    "moby/buildkit/v1/frontend/gateway.proto",
     "moby/buildkit/v1/secrets.proto",
     "moby/buildkit/v1/ssh.proto",
     "moby/buildkit/v1/types/worker.proto",

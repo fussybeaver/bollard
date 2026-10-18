@@ -32,6 +32,12 @@ pub mod moby {
         }
         pub mod v1 {
             include!("generated/moby.buildkit.v1.rs");
+            pub mod apicaps {
+                include!("generated/moby.buildkit.v1.apicaps.rs");
+            }
+            pub mod frontend {
+                include!("generated/moby.buildkit.v1.frontend.rs");
+            }
             pub mod sourcepolicy {
                 include!("generated/moby.buildkit.v1.sourcepolicy.rs");
             }
@@ -140,5 +146,63 @@ mod tests {
 
         let encoded = definition.encode_to_vec();
         assert_eq!(super::pb::Definition::decode(encoded.as_slice()), Ok(definition));
+    }
+
+    #[test]
+    fn gateway_solve_and_return_messages_round_trip_without_grpc() {
+        use super::moby::buildkit::v1::{
+            apicaps::ApiCap,
+            frontend::{self, result, Ref},
+        };
+
+        let solve = frontend::SolveRequest {
+            definition: Some(super::pb::Definition {
+                def: vec![vec![1, 2, 3]],
+                ..Default::default()
+            }),
+            allow_result_return: true,
+            allow_result_array_ref: true,
+            ..Default::default()
+        };
+        let encoded = solve.encode_to_vec();
+        assert_eq!(frontend::SolveRequest::decode(encoded.as_slice()), Ok(solve));
+
+        let returned = frontend::ReturnRequest {
+            result: Some(frontend::Result {
+                metadata: std::collections::HashMap::from([(
+                    "containerimage.config".to_string(),
+                    br#"{"architecture":"amd64","os":"linux","config":{"Cmd":["/app"]}}"#.to_vec(),
+                )]),
+                attestations: Default::default(),
+                result: Some(result::Result::Ref(Ref {
+                    id: "gateway-ref".to_string(),
+                    def: None,
+                })),
+            }),
+            error: None,
+        };
+        let encoded = returned.encode_to_vec();
+        assert_eq!(
+            frontend::ReturnRequest::decode(encoded.as_slice()),
+            Ok(returned)
+        );
+
+        let capability = ApiCap {
+            id: "return".to_string(),
+            enabled: true,
+            ..Default::default()
+        };
+        let encoded = capability.encode_to_vec();
+        assert_eq!(ApiCap::decode(encoded.as_slice()), Ok(capability));
+    }
+
+    #[cfg(feature = "grpc")]
+    #[test]
+    fn gateway_client_is_gated_by_grpc_feature() {
+        let _: Option<
+            super::moby::buildkit::v1::frontend::llb_bridge_client::LlbBridgeClient<
+                tonic::transport::Channel,
+            >,
+        > = None;
     }
 }
