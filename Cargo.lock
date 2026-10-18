@@ -192,7 +192,7 @@ dependencies = [
  "async-stream",
  "base64 0.23.1",
  "bitflags",
- "bollard-buildkit-proto 0.9.1",
+ "bollard-buildkit-proto 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bollard-llb",
  "bollard-stubs 1.53.1-rc.29.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
@@ -260,9 +260,7 @@ dependencies = [
 
 [[package]]
 name = "bollard-buildkit-proto"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "520619af2416f16aa42df3053233632891db4fd70c193db7e86cd2f9ee4ab814"
+version = "0.9.2"
 dependencies = [
  "prost",
  "tonic",
@@ -272,6 +270,8 @@ dependencies = [
 [[package]]
 name = "bollard-buildkit-proto"
 version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23234f425c904a2560c745a7659cd9b19a16566809ae7e4cfdcaa6de3b776a30"
 dependencies = [
  "prost",
  "tonic",
@@ -282,7 +282,7 @@ dependencies = [
 name = "bollard-llb"
 version = "0.1.0"
 dependencies = [
- "bollard-buildkit-proto 0.9.1",
+ "bollard-buildkit-proto 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex",
  "indexmap",
  "prost",
@@ -298,7 +298,7 @@ name = "bollard-stubs"
 version = "1.53.1-rc.29.3.1"
 dependencies = [
  "base64 0.23.1",
- "bollard-buildkit-proto 0.9.1",
+ "bollard-buildkit-proto 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
  "chrono",
  "prost",
