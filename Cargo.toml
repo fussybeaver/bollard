@@ -139,5 +139,9 @@ required-features = ["websocket"]
 name = "build_buildkit_session_providers"
 required-features = ["buildkit"]
 
+[[example]]
+name = "llb_app_build"
+required-features = ["buildkit", "chrono"]
+
 [package.metadata.docs.rs]
 features = ["ssl", "ssh"]
