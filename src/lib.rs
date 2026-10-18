@@ -90,6 +90,12 @@
 //!
 //! **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
 //!
+//! The transport-free `bollard-llb` crate constructs synchronous LLB graphs.
+//! Direct definition solves support local filesystem export through
+//! Docker-container and BuildkitDaemon. The Moby driver provides
+//! `Moby::build_image` to store configured images directly in Docker Engine,
+//! initially validated for a single `linux/amd64` platform.
+//!
 //! ### WebSocket Features
 //!
 //! | Feature | Description |
@@ -301,8 +307,11 @@
 //! cargo xtask buildkit check
 //! ```
 //!
-//! `check` regenerates into a temporary directory and compares the result with
-//! the checked-in output without modifying the working tree.
+//! `update` resolves the Moby-derived BuildKit version and protobuf sources,
+//! updates the provenance lockfile, and regenerates the bindings. `check`
+//! regenerates into a temporary directory using the locked inputs and compares
+//! against the checked-in bindings. For more information see the [protobuf
+//! provenance README](./codegen/proto/README.md).
 //!
 //! ## Building the swagger models
 //!
