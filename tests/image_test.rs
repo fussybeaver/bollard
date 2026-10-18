@@ -1293,6 +1293,221 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     Ok(())
 }
+
+#[cfg(feature = "buildkit_providerless")]
+async fn moby_llb_image_lifecycle_test(docker: Docker) -> Result<(), Error> {
+    use bollard::grpc::build::ImageBuildPlatform;
+    use bollard::grpc::driver::MobyImageBuildRequest;
+    use bollard::query_parameters::{LogsOptionsBuilder, WaitContainerOptionsBuilder};
+    use std::time::Duration;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(360);
+    let tag = format!(
+        "bollard-llb-lifecycle:{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let temp = tempfile::tempdir().expect("create scratch test directory");
+    let source = temp.path().join("probe.c");
+    let binary = temp.path().join("probe");
+    std::fs::write(
+        &source,
+        r#"#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  char cwd[4096];
+  if (!getcwd(cwd, sizeof(cwd))) return 10;
+  printf("cwd=%s\\n", cwd);
+  printf("env=%s\\n", getenv("BOLLARD_PROBE") ? getenv("BOLLARD_PROBE") : "missing");
+  for (int i = 0; i < argc; ++i) printf("argv[%d]=%s\\n", i, argv[i]);
+  puts("LLB-LIFECYCLE-OK");
+  return 0;
+}
+"#,
+    )?;
+    let compile = std::process::Command::new("cc")
+        .args(["-static", "-Os", "-s"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()?;
+    assert!(
+        compile.status.success(),
+        "failed to compile static scratch probe: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let executable = std::fs::read(&binary)?;
+    let definition = bollard_llb::scratch()
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .file(
+            bollard_llb::mkdir("/workdir", 0o755),
+            bollard_llb::FileOpts::default(),
+        )
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .file(
+            bollard_llb::mkfile("/probe", 0o755, executable),
+            bollard_llb::FileOpts::default(),
+        )
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .to_pb();
+    let config = serde_json::json!({
+        "architecture": "amd64",
+        "os": "linux",
+        "config": {
+            "Entrypoint": ["/probe"],
+            "Cmd": ["from-config"],
+            "Env": ["BOLLARD_PROBE=stored-env"],
+            "WorkingDir": "/workdir",
+            "Labels": {"org.bollard.test": "llb-lifecycle"}
+        }
+    });
+    let driver = bollard::grpc::driver::moby::Moby::new(&docker);
+
+    let outcome = tokio::time::timeout(TEST_TIMEOUT, async {
+        driver
+            .build_image(MobyImageBuildRequest::new(
+                definition,
+                config,
+                ImageBuildPlatform {
+                    architecture: "amd64".into(),
+                    os: "linux".into(),
+                    variant: None,
+                },
+                &tag,
+            ))
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(error.to_string()),
+            })?;
+
+        let inspected = docker.inspect_image(&tag).await?;
+        assert_eq!(inspected.os.as_deref(), Some("linux"));
+        assert_eq!(inspected.architecture.as_deref(), Some("amd64"));
+        let image_config = inspected.config.expect("stored image config");
+        assert_eq!(
+            image_config.entrypoint.as_deref(),
+            Some(["/probe".to_owned()].as_slice())
+        );
+        assert_eq!(
+            image_config.cmd.as_deref(),
+            Some(["from-config".to_owned()].as_slice())
+        );
+        assert!(image_config
+            .env
+            .unwrap_or_default()
+            .iter()
+            .any(|v| v == "BOLLARD_PROBE=stored-env"));
+        assert_eq!(image_config.working_dir.as_deref(), Some("/workdir"));
+        assert_eq!(
+            image_config
+                .labels
+                .unwrap_or_default()
+                .get("org.bollard.test")
+                .map(String::as_str),
+            Some("llb-lifecycle")
+        );
+
+        // No command or entrypoint override: the image's stored defaults must run.
+        let created = docker
+            .create_container(
+                None,
+                ContainerCreateBody {
+                    image: Some(tag.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let run_result = async {
+            docker.start_container(&created.id, None).await?;
+            let wait = docker
+                .wait_container(
+                    &created.id,
+                    Some(
+                        WaitContainerOptionsBuilder::default()
+                            .condition("not-running")
+                            .build(),
+                    ),
+                )
+                .next()
+                .await
+                .ok_or_else(|| Error::IOError {
+                    err: std::io::Error::other("container wait stream ended without a result"),
+                })??;
+            if wait.status_code != 0 {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "container exited with status {}",
+                        wait.status_code
+                    )),
+                });
+            }
+            let output = docker
+                .logs(
+                    &created.id,
+                    Some(
+                        LogsOptionsBuilder::default()
+                            .stdout(true)
+                            .stderr(true)
+                            .build(),
+                    ),
+                )
+                .try_collect::<Vec<_>>()
+                .await?
+                .into_iter()
+                .map(|item| item.to_string())
+                .collect::<String>();
+            for expected in [
+                "LLB-LIFECYCLE-OK",
+                "cwd=/workdir",
+                "env=stored-env",
+                "argv[1]=from-config",
+            ] {
+                if !output.contains(expected) {
+                    return Err(Error::IOError {
+                        err: std::io::Error::other(format!(
+                            "missing {expected:?} in container output: {output}"
+                        )),
+                    });
+                }
+            }
+            Ok::<(), Error>(())
+        }
+        .await;
+        let _ = docker
+            .remove_container(&created.id, None::<RemoveContainerOptions>)
+            .await;
+        run_result?;
+        Ok::<(), Error>(())
+    })
+    .await;
+
+    // Always remove the tag, including when build, inspect, create, run, or an
+    // assertion fails. The timeout bounds the whole lifecycle operation.
+    let cleanup = tokio::time::timeout(Duration::from_secs(30), async {
+        let _ = docker
+            .remove_image(&tag, None::<RemoveImageOptions>, None)
+            .await;
+    })
+    .await;
+    assert!(cleanup.is_ok(), "timed out cleaning up test image {tag}");
+    outcome.expect("Moby LLB image lifecycle timed out")?;
+    Ok(())
+}
 #[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_anonymous_auth_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
@@ -1921,6 +2136,12 @@ fn integration_test_build_image() {
 fn integration_test_build_buildkit_image() {
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, false));
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, true));
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_moby_llb_image_lifecycle() {
+    connect_to_docker_and_run!(moby_llb_image_lifecycle_test);
 }
 
 #[test]
