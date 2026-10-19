@@ -85,6 +85,15 @@ output_sha256 = "164b670058855c6277a0511a14e2a302dd5a8ff899853ca6851b6b201a413d2
 transform = "none"
 
 [[resource]]
+destination = "moby/buildkit/v1/apicaps/caps.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "util/apicaps/pb/caps.proto"
+source_sha256 = "1cb3824b0daabf5b57de609d17b5d785a6d474c240e93185d2fafa5a2f04de89"
+output_sha256 = "1cb3824b0daabf5b57de609d17b5d785a6d474c240e93185d2fafa5a2f04de89"
+transform = "none"
+
+[[resource]]
 destination = "moby/buildkit/v1/control.proto"
 repository = "moby/buildkit"
 revision = "8543ce4428265d547cb009e5ad62348284497a88"
@@ -92,6 +101,15 @@ path = "api/services/control/control.proto"
 source_sha256 = "8ff2dad3ab7eac5a39b4665c850c67066e4540faecb82cb917a38a5a6b4b599c"
 output_sha256 = "14fe2f84c4a55704aef06335f9a7059b21975d166836080e2592ea6d6360605a"
 transform = "rewrite-buildkit-control-imports"
+
+[[resource]]
+destination = "moby/buildkit/v1/frontend/gateway.proto"
+repository = "moby/buildkit"
+revision = "8543ce4428265d547cb009e5ad62348284497a88"
+path = "frontend/gateway/pb/gateway.proto"
+source_sha256 = "cc3bf88b551578c859c2985a6157a9f725ebe49181bd92220c91d3f89c659287"
+output_sha256 = "e0b63feb6b2815037d03532d780aaf228f77aa5ff55d063f2e5b4500acefab0f"
+transform = "rewrite-buildkit-gateway-imports"
 
 [[resource]]
 destination = "moby/buildkit/v1/secrets.proto"

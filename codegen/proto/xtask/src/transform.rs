@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 pub enum Transform {
     None,
     BuildkitControlImports,
+    BuildkitGatewayImports,
     BuildkitWorkerImports,
     FsutilStatImports,
     FsutilWireImports,
@@ -16,6 +17,7 @@ impl Transform {
         match self {
             Self::None => "none",
             Self::BuildkitControlImports => "rewrite-buildkit-control-imports",
+            Self::BuildkitGatewayImports => "rewrite-buildkit-gateway-imports",
             Self::BuildkitWorkerImports => "rewrite-buildkit-worker-imports",
             Self::FsutilStatImports => "rewrite-fsutil-stat-imports",
             Self::FsutilWireImports => "rewrite-fsutil-wire-imports",
@@ -55,6 +57,34 @@ const BUILDKIT_WORKER_IMPORTS: &[Replacement] = &[Replacement {
     to: "pb/ops.proto",
     expected: 1,
 }];
+
+const BUILDKIT_GATEWAY_IMPORTS: &[Replacement] = &[
+    Replacement {
+        from: "github.com/moby/buildkit/api/types/worker.proto",
+        to: "moby/buildkit/v1/types/worker.proto",
+        expected: 1,
+    },
+    Replacement {
+        from: "github.com/moby/buildkit/solver/pb/ops.proto",
+        to: "pb/ops.proto",
+        expected: 1,
+    },
+    Replacement {
+        from: "github.com/moby/buildkit/sourcepolicy/pb/policy.proto",
+        to: "moby/buildkit/v1/sourcepolicy/policy.proto",
+        expected: 1,
+    },
+    Replacement {
+        from: "github.com/moby/buildkit/util/apicaps/pb/caps.proto",
+        to: "moby/buildkit/v1/apicaps/caps.proto",
+        expected: 1,
+    },
+    Replacement {
+        from: "github.com/tonistiigi/fsutil/types/stat.proto",
+        to: "fsutil/types/stat.proto",
+        expected: 1,
+    },
+];
 
 const FSUTIL_STAT_IMPORTS: &[Replacement] = &[Replacement {
     from: "github.com/planetscale/vtprotobuf/vtproto/ext.proto",
@@ -98,6 +128,7 @@ fn replacements(transform: Transform) -> &'static [Replacement] {
     match transform {
         Transform::None => &[],
         Transform::BuildkitControlImports => BUILDKIT_CONTROL_IMPORTS,
+        Transform::BuildkitGatewayImports => BUILDKIT_GATEWAY_IMPORTS,
         Transform::BuildkitWorkerImports => BUILDKIT_WORKER_IMPORTS,
         Transform::FsutilStatImports => FSUTIL_STAT_IMPORTS,
         Transform::FsutilWireImports => FSUTIL_WIRE_IMPORTS,
@@ -109,6 +140,7 @@ fn replacements(transform: Transform) -> &'static [Replacement] {
 pub fn for_destination(destination: &str) -> Transform {
     match destination {
         "moby/buildkit/v1/control.proto" => Transform::BuildkitControlImports,
+        "moby/buildkit/v1/frontend/gateway.proto" => Transform::BuildkitGatewayImports,
         "moby/buildkit/v1/types/worker.proto" => Transform::BuildkitWorkerImports,
         "fsutil/types/stat.proto" => Transform::FsutilStatImports,
         "fsutil/types/wire.proto" => Transform::FsutilWireImports,
@@ -173,6 +205,33 @@ mod tests {
                 "import \"moby/buildkit/v1/types/worker.proto\";\n",
                 "import \"pb/ops.proto\";\n",
                 "import \"moby/buildkit/v1/sourcepolicy/policy.proto\";\n",
+            )
+        );
+    }
+
+    #[test]
+    fn rewrites_only_the_pinned_gateway_imports() {
+        let input = concat!(
+            "import \"github.com/moby/buildkit/api/types/worker.proto\";\n",
+            "import \"github.com/moby/buildkit/solver/pb/ops.proto\";\n",
+            "import \"github.com/moby/buildkit/sourcepolicy/pb/policy.proto\";\n",
+            "import \"github.com/moby/buildkit/util/apicaps/pb/caps.proto\";\n",
+            "import \"github.com/tonistiigi/fsutil/types/stat.proto\";\n",
+        );
+        let output = apply(
+            Transform::BuildkitGatewayImports,
+            "moby/buildkit/v1/frontend/gateway.proto",
+            input.as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            concat!(
+                "import \"moby/buildkit/v1/types/worker.proto\";\n",
+                "import \"pb/ops.proto\";\n",
+                "import \"moby/buildkit/v1/sourcepolicy/policy.proto\";\n",
+                "import \"moby/buildkit/v1/apicaps/caps.proto\";\n",
+                "import \"fsutil/types/stat.proto\";\n",
             )
         );
     }

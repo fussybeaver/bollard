@@ -109,6 +109,11 @@ pub fn inventory(
 
     let sources = vec![
         buildkit("moby/buildkit/v1/control.proto", "api/services/control/control.proto"),
+        buildkit("moby/buildkit/v1/apicaps/caps.proto", "util/apicaps/pb/caps.proto"),
+        buildkit(
+            "moby/buildkit/v1/frontend/gateway.proto",
+            "frontend/gateway/pb/gateway.proto",
+        ),
         buildkit("moby/buildkit/v1/secrets.proto", "session/secrets/secrets.proto"),
         buildkit("moby/buildkit/v1/sourcepolicy/policy.proto", "sourcepolicy/pb/policy.proto"),
         buildkit("moby/buildkit/v1/ssh.proto", "session/sshforward/ssh.proto"),
@@ -240,9 +245,9 @@ fn validate_inventory(sources: &[Source]) -> Result<()> {
             ));
         }
     }
-    if sources.len() != 18 {
+    if sources.len() != 20 {
         return Err(anyhow!(
-            "protobuf source inventory contains {}; expected 18 destinations",
+            "protobuf source inventory contains {}; expected 20 destinations",
             sources.len()
         ));
     }
@@ -320,7 +325,7 @@ mod tests {
             &independent_pins(),
         )
         .unwrap();
-        assert_eq!(sources.len(), 18);
+        assert_eq!(sources.len(), 20);
         assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitOwned));
         assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitVendored));
         assert!(sources.iter().any(|source| source.class == DependencyClass::Independent));
