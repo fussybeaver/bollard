@@ -145,7 +145,10 @@ mod tests {
         };
 
         let encoded = definition.encode_to_vec();
-        assert_eq!(super::pb::Definition::decode(encoded.as_slice()), Ok(definition));
+        assert_eq!(
+            super::pb::Definition::decode(encoded.as_slice()),
+            Ok(definition)
+        );
     }
 
     #[test]
@@ -165,7 +168,10 @@ mod tests {
             ..Default::default()
         };
         let encoded = solve.encode_to_vec();
-        assert_eq!(frontend::SolveRequest::decode(encoded.as_slice()), Ok(solve));
+        assert_eq!(
+            frontend::SolveRequest::decode(encoded.as_slice()),
+            Ok(solve)
+        );
 
         let returned = frontend::ReturnRequest {
             result: Some(frontend::Result {

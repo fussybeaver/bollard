@@ -167,7 +167,10 @@ pub fn apply(transform: Transform, destination: &str, contents: &[u8]) -> Result
         if actual != replacement.expected {
             return Err(anyhow!(
                 "{} cannot transform {destination}: expected {} matches for {:?}, found {}",
-                transform.name(), replacement.expected, replacement.from, actual
+                transform.name(),
+                replacement.expected,
+                replacement.from,
+                actual
             ));
         }
         output = output.replace(replacement.from, replacement.to);

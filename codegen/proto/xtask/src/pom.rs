@@ -11,8 +11,8 @@ pub struct MobyInputSpec {
 }
 
 pub fn parse_input_spec(contents: &str) -> Result<MobyInputSpec> {
-    let document = Document::parse(contents)
-        .map_err(|error| anyhow!("could not parse pom.xml: {error}"))?;
+    let document =
+        Document::parse(contents).map_err(|error| anyhow!("could not parse pom.xml: {error}"))?;
     let input_specs: Vec<String> = document
         .descendants()
         .filter(|node| node.tag_name().name() == "inputSpec")
@@ -26,12 +26,10 @@ pub fn parse_input_spec(contents: &str) -> Result<MobyInputSpec> {
         _ => return Err(anyhow!("pom.xml contains multiple inputSpec elements")),
     };
 
-    let parsed = Url::parse(&url)
-        .map_err(|error| anyhow!("invalid pom.xml inputSpec URL: {error}"))?;
+    let parsed =
+        Url::parse(&url).map_err(|error| anyhow!("invalid pom.xml inputSpec URL: {error}"))?;
     if parsed.scheme() != "https" || parsed.host_str() != Some(MOBY_HOST) {
-        return Err(anyhow!(
-            "pom.xml inputSpec must use https://{MOBY_HOST}"
-        ));
+        return Err(anyhow!("pom.xml inputSpec must use https://{MOBY_HOST}"));
     }
 
     let segments: Vec<&str> = parsed
@@ -39,9 +37,7 @@ pub fn parse_input_spec(contents: &str) -> Result<MobyInputSpec> {
         .ok_or_else(|| anyhow!("pom.xml inputSpec URL has no path"))?
         .collect();
     if segments.len() < 5 || segments[0] != "moby" || segments[1] != "moby" {
-        return Err(anyhow!(
-            "pom.xml inputSpec URL must point to moby/moby",
-        ));
+        return Err(anyhow!("pom.xml inputSpec URL must point to moby/moby",));
     }
 
     let api_index = segments
@@ -100,18 +96,26 @@ mod tests {
 
     #[test]
     fn rejects_missing_empty_duplicate_and_malformed_input_specs() {
-        assert!(parse_input_spec("<project />").unwrap_err().to_string().contains("does not contain"));
-        assert!(parse_input_spec("<project><inputSpec> </inputSpec></project>")
+        assert!(parse_input_spec("<project />")
             .unwrap_err()
             .to_string()
-            .contains("is empty"));
+            .contains("does not contain"));
+        assert!(
+            parse_input_spec("<project><inputSpec> </inputSpec></project>")
+                .unwrap_err()
+                .to_string()
+                .contains("is empty")
+        );
         assert!(parse_input_spec(
             "<project><inputSpec>a</inputSpec><inputSpec>b</inputSpec></project>"
         )
         .unwrap_err()
         .to_string()
         .contains("multiple"));
-        assert!(parse_input_spec("<project><inputSpec>").unwrap_err().to_string().contains("parse"));
+        assert!(parse_input_spec("<project><inputSpec>")
+            .unwrap_err()
+            .to_string()
+            .contains("parse"));
     }
 
     #[test]
