@@ -34,8 +34,8 @@ pub fn parse_module_requirement(contents: &str, module: &str) -> Result<Buildkit
         .filter(|line| !line.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
-    let go_mod = GoMod::from_str(&normalized)
-        .map_err(|error| anyhow!("could not parse go.mod: {error}"))?;
+    let go_mod =
+        GoMod::from_str(&normalized).map_err(|error| anyhow!("could not parse go.mod: {error}"))?;
 
     if go_mod
         .replace
@@ -59,9 +59,7 @@ pub fn parse_module_requirement(contents: &str, module: &str) -> Result<Buildkit
         .collect();
     let [requirement] = requirements.as_slice() else {
         return if requirements.is_empty() {
-            Err(anyhow!(
-                "go.mod does not directly require {module}"
-            ))
+            Err(anyhow!("go.mod does not directly require {module}"))
         } else {
             Err(anyhow!(
                 "go.mod contains multiple direct requirements for {module}"
@@ -79,14 +77,13 @@ pub fn parse_module_requirement(contents: &str, module: &str) -> Result<Buildkit
     })
 }
 
-pub fn resolve_vtprotobuf_revision<R: Remote>(
-    remote: &R,
-    buildkit_go_mod: &str,
-) -> Result<String> {
+pub fn resolve_vtprotobuf_revision<R: Remote>(remote: &R, buildkit_go_mod: &str) -> Result<String> {
     const MODULE: &str = "github.com/planetscale/vtprotobuf";
     let requirement = parse_module_requirement(buildkit_go_mod, MODULE)?;
     match requirement.version {
-        BuildkitVersion::Tagged(version) => remote.resolve_tag("planetscale", "vtprotobuf", &version),
+        BuildkitVersion::Tagged(version) => {
+            remote.resolve_tag("planetscale", "vtprotobuf", &version)
+        }
         BuildkitVersion::Pseudo { commit_prefix, .. } => {
             remote.resolve_commit_prefix("planetscale", "vtprotobuf", &commit_prefix)
         }
@@ -96,9 +93,8 @@ pub fn resolve_vtprotobuf_revision<R: Remote>(
 fn parse_version(version: &str) -> Result<BuildkitVersion> {
     if let Some((base, _timestamp, commit_prefix)) = pseudo_parts(version) {
         let semver_base = base.strip_prefix('v').unwrap_or(base);
-        Version::parse(semver_base).map_err(|error| {
-            anyhow!("malformed BuildKit pseudo-version {version:?}: {error}")
-        })?;
+        Version::parse(semver_base)
+            .map_err(|error| anyhow!("malformed BuildKit pseudo-version {version:?}: {error}"))?;
         return Ok(BuildkitVersion::Pseudo {
             version: version.into(),
             commit_prefix: commit_prefix.into(),
@@ -106,9 +102,8 @@ fn parse_version(version: &str) -> Result<BuildkitVersion> {
     }
 
     let semver = version.strip_prefix('v').unwrap_or(version);
-    Version::parse(semver).map_err(|error| {
-        anyhow!("malformed BuildKit module version {version:?}: {error}")
-    })?;
+    Version::parse(semver)
+        .map_err(|error| anyhow!("malformed BuildKit module version {version:?}: {error}"))?;
     Ok(BuildkitVersion::Tagged(version.into()))
 }
 
@@ -208,7 +203,8 @@ require (
         let single = "replace github.com/moby/buildkit => ../buildkit\n";
         assert!(parse_buildkit_requirement(&format!("{TAGGED}\n{single}")).is_err());
 
-        let block = "replace (\n github.com/moby/buildkit v0.29.0 => github.com/example/fork v0.1.0\n)\n";
+        let block =
+            "replace (\n github.com/moby/buildkit v0.29.0 => github.com/example/fork v0.1.0\n)\n";
         assert!(parse_buildkit_requirement(&format!("{TAGGED}\n{block}")).is_err());
     }
 
@@ -222,7 +218,8 @@ require (
 
     #[test]
     fn rejects_unterminated_blocks() {
-        assert!(parse_buildkit_requirement("require (\n github.com/moby/buildkit v0.29.0\n")
-            .is_err());
+        assert!(
+            parse_buildkit_requirement("require (\n github.com/moby/buildkit v0.29.0\n").is_err()
+        );
     }
 }

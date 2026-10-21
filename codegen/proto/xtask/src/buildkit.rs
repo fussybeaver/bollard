@@ -4,13 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use fs_extra::dir::{copy, CopyOptions};
 use anyhow::{anyhow, Result};
+use fs_extra::dir::{copy, CopyOptions};
 use tempfile::{tempdir_in, TempDir};
 
 use crate::github::Remote;
-use crate::{github, gomod, pom, provenance, resolver, resources};
 use crate::support::sha256;
+use crate::{github, gomod, pom, provenance, resolver, resources};
 
 const PACKET_PROTO: &str = "moby/filesync/v1/filesync.packet.proto";
 
@@ -76,10 +76,8 @@ pub fn update() -> Result<()> {
     let (baseline, staged_resources) = resolve_and_fetch_sources(&paths, &independent_pins)?;
     println!("Resolved BuildKit compatibility baseline:\n{baseline}");
     resources::print_report(&staged_resources.sources);
-    let replacement_lock = provenance::ProvenanceLock::from_prepared(
-        &baseline,
-        staged_resources.sources.clone(),
-    )?;
+    let replacement_lock =
+        provenance::ProvenanceLock::from_prepared(&baseline, staged_resources.sources.clone())?;
     let generated = generate(&paths, &staged_resources.directory, &replacement_lock)?;
     let staged_oracle = stage_llb_oracle(&paths, &replacement_lock.buildkit.version)?;
     let mut commit = OutputTransaction::new();
@@ -186,12 +184,13 @@ fn verify_llb_oracle_files(
             manifest_path.display()
         )
     })?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest_contents).map_err(|error| {
-        anyhow!(
-            "could not parse LLB golden manifest {}: {error}",
-            manifest_path.display()
-        )
-    })?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_contents).map_err(|error| {
+            anyhow!(
+                "could not parse LLB golden manifest {}: {error}",
+                manifest_path.display()
+            )
+        })?;
     let manifest_version = manifest
         .get("buildkit_version")
         .and_then(serde_json::Value::as_str)
@@ -285,7 +284,10 @@ fn run_command(current_dir: &Path, program: &str, args: &[String]) -> Result<()>
         if output.stdout.is_empty() {
             String::new()
         } else {
-            format!("; stdout: {}", String::from_utf8_lossy(&output.stdout).trim())
+            format!(
+                "; stdout: {}",
+                String::from_utf8_lossy(&output.stdout).trim()
+            )
         }
     ))
 }
@@ -298,12 +300,8 @@ fn resolve_and_fetch_sources(
 
     let remote = github::GitHubRemote::from_environment();
     let baseline = resolver::resolve(&remote, &input_spec)?;
-    let buildkit_go_mod = remote.fetch_raw(
-        "moby",
-        "buildkit",
-        &baseline.buildkit_commit,
-        "go.mod",
-    )?;
+    let buildkit_go_mod =
+        remote.fetch_raw("moby", "buildkit", &baseline.buildkit_commit, "go.mod")?;
     let buildkit_go_mod = String::from_utf8(buildkit_go_mod)
         .map_err(|source_error| anyhow!("BuildKit go.mod is not UTF-8: {source_error}"))?;
     let vtprotobuf_revision = gomod::resolve_vtprotobuf_revision(&remote, &buildkit_go_mod)?;
@@ -337,25 +335,20 @@ fn verify_generator_dependencies(paths: &Paths) -> Result<()> {
 }
 
 fn verify_generator_dependencies_at(path: &Path) -> Result<()> {
-    let contents = fs::read_to_string(path).map_err(|error| {
-        anyhow!(
-            "could not read xtask manifest {}: {error}",
-            path.display()
-        )
-    })?;
-    let manifest: toml::Value = toml::from_str(&contents).map_err(|error| {
-        anyhow!(
-            "could not parse xtask manifest {}: {error}",
-            path.display()
-        )
-    })?;
+    let contents = fs::read_to_string(path)
+        .map_err(|error| anyhow!("could not read xtask manifest {}: {error}", path.display()))?;
+    let manifest: toml::Value = toml::from_str(&contents)
+        .map_err(|error| anyhow!("could not parse xtask manifest {}: {error}", path.display()))?;
     let dependencies = manifest
         .get("dependencies")
         .and_then(toml::Value::as_table)
         .ok_or_else(|| anyhow!("xtask manifest is missing [dependencies]"))?;
 
     for (name, expected) in [
-        ("protoc-bin-vendored", provenance::PROTOC_BIN_VENDORED_VERSION),
+        (
+            "protoc-bin-vendored",
+            provenance::PROTOC_BIN_VENDORED_VERSION,
+        ),
         ("tonic-prost-build", provenance::TONIC_PROST_BUILD_VERSION),
         ("prost-build", provenance::PROST_BUILD_VERSION),
     ] {
@@ -435,10 +428,7 @@ fn verify_lock_inventory(lock: &provenance::ProvenanceLock) -> Result<()> {
     Ok(())
 }
 
-fn verify_checked_in_resources(
-    paths: &Paths,
-    lock: &provenance::ProvenanceLock,
-) -> Result<()> {
+fn verify_checked_in_resources(paths: &Paths, lock: &provenance::ProvenanceLock) -> Result<()> {
     let actual = files(&paths.resources_dir)?;
     let expected: BTreeMap<PathBuf, &provenance::Resource> = lock
         .resources()
@@ -454,7 +444,9 @@ fn verify_checked_in_resources(
                 if hash != resource.output_sha256 {
                     mismatches.push(format!(
                         "{} hash {} differs from lock {}",
-                        path.display(), hash, resource.output_sha256
+                        path.display(),
+                        hash,
+                        resource.output_sha256
                     ));
                 }
             }
@@ -531,12 +523,13 @@ fn verify_prepared_sources(
 
 fn paths() -> Result<Paths> {
     let xtask_directory = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let proto_dir = xtask_directory.parent().ok_or_else(|| {
-        anyhow!("could not determine proto directory")
-    })?;
-    let workspace_root = proto_dir.parent().and_then(Path::parent).ok_or_else(|| {
-        anyhow!("could not determine workspace root")
-    })?;
+    let proto_dir = xtask_directory
+        .parent()
+        .ok_or_else(|| anyhow!("could not determine proto directory"))?;
+    let workspace_root = proto_dir
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| anyhow!("could not determine workspace root"))?;
 
     Ok(Paths {
         workspace_root: workspace_root.to_path_buf(),
@@ -563,7 +556,11 @@ fn generate(
     fs::create_dir_all(&directory)?;
 
     let packet_proto = resources_directory.join(PACKET_PROTO);
-    compile(&directory, std::slice::from_ref(&packet_proto), resources_directory)?;
+    compile(
+        &directory,
+        std::slice::from_ref(&packet_proto),
+        resources_directory,
+    )?;
     copy_packet_output(&directory)?;
 
     let proto_files: Vec<PathBuf> = PROTO_FILES
@@ -631,11 +628,7 @@ fn compile(
         .btree_map(".pb")
         .client_mod_attribute(".", r##"#[cfg(feature = "grpc")]"##)
         .server_mod_attribute(".", r##"#[cfg(feature = "grpc")]"##);
-    builder.compile_with_config(
-        config,
-        proto_files,
-        &[resources_directory.to_path_buf()],
-    )?;
+    builder.compile_with_config(config, proto_files, &[resources_directory.to_path_buf()])?;
 
     Ok(())
 }
@@ -708,12 +701,9 @@ impl OutputTransaction {
     }
 
     fn add(&mut self, source: &Path, destination: &Path) -> Result<()> {
-        let parent = destination.parent().ok_or_else(|| {
-            anyhow!(
-                "directory has no parent: {}",
-                destination.display()
-            )
-        })?;
+        let parent = destination
+            .parent()
+            .ok_or_else(|| anyhow!("directory has no parent: {}", destination.display()))?;
         fs::create_dir_all(parent)?;
         let staging = tempdir_in(parent)?;
         let staged = staging.path().join("replacement");
@@ -745,9 +735,7 @@ impl OutputTransaction {
     fn commit_inner(&mut self, fail_at: Option<usize>) -> Result<()> {
         for (index, entry) in self.entries.iter_mut().enumerate() {
             if fail_at == Some(index) {
-                return Err(std::io::Error::other(
-                    "injected replacement failure",
-                ).into());
+                return Err(std::io::Error::other("injected replacement failure").into());
             }
 
             if fs::symlink_metadata(&entry.destination).is_ok() {
@@ -811,21 +799,30 @@ fn remove_path(path: &Path) -> std::io::Result<()> {
 }
 
 fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
-    copy(
-        source,
-        destination,
-        &CopyOptions::new().content_only(true),
-    )?;
+    copy(source, destination, &CopyOptions::new().content_only(true))?;
     Ok(())
 }
 
 fn compare_directories(actual: &Path, expected: &Path) -> Result<()> {
-    compare_directories_named(actual, expected, "generated BuildKit bindings")
+    let actual_files = files(actual)?;
+    let mut expected_files = files(expected)?;
+    // This local rustfmt config keeps generated bindings untouched, but is not
+    // part of the generator output.
+    expected_files.remove(Path::new("rustfmt.toml"));
+    compare_file_maps(actual_files, expected_files, "generated BuildKit bindings")
 }
 
 fn compare_directories_named(actual: &Path, expected: &Path, label: &str) -> Result<()> {
     let actual_files = files(actual)?;
     let expected_files = files(expected)?;
+    compare_file_maps(actual_files, expected_files, label)
+}
+
+fn compare_file_maps(
+    actual_files: BTreeMap<PathBuf, Vec<u8>>,
+    expected_files: BTreeMap<PathBuf, Vec<u8>>,
+    label: &str,
+) -> Result<()> {
     if actual_files == expected_files {
         return Ok(());
     }
@@ -843,7 +840,7 @@ fn compare_directories_named(actual: &Path, expected: &Path, label: &str) -> Res
         differences
             .iter()
             .map(|path| path.display().to_string())
-        .collect::<Vec<_>>()
+            .collect::<Vec<_>>()
             .join(", ")
     ))
 }
@@ -891,8 +888,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        OutputTransaction, compare_directories, copy_directory, provenance, verify_generator_dependencies_at,
-        verify_llb_oracle_files,
+        compare_directories, copy_directory, provenance, verify_generator_dependencies_at,
+        verify_llb_oracle_files, OutputTransaction,
     };
 
     #[test]
@@ -905,6 +902,24 @@ mod tests {
         copy_directory(&first, &second).unwrap();
 
         compare_directories(&first, &second).unwrap();
+    }
+
+    #[test]
+    fn ignores_local_rustfmt_config_in_generated_directory() {
+        let temporary_directory = tempdir().unwrap();
+        let actual = temporary_directory.path().join("actual");
+        let expected = temporary_directory.path().join("expected");
+        fs::create_dir_all(&actual).unwrap();
+        fs::create_dir_all(&expected).unwrap();
+        fs::write(actual.join("binding.rs"), b"generated").unwrap();
+        fs::write(expected.join("binding.rs"), b"generated").unwrap();
+        fs::write(
+            expected.join("rustfmt.toml"),
+            b"disable_all_formatting = true\n",
+        )
+        .unwrap();
+
+        compare_directories(&actual, &expected).unwrap();
     }
 
     #[test]
@@ -991,8 +1006,8 @@ mod tests {
 
         super::write_provenance_module(temporary_directory.path(), &lock).unwrap();
 
-        let generated = fs::read_to_string(temporary_directory.path().join("provenance.rs"))
-            .unwrap();
+        let generated =
+            fs::read_to_string(temporary_directory.path().join("provenance.rs")).unwrap();
         assert!(generated.contains("pub const MOBY_TAG: &str = \"docker-v29.4.1\";"));
         assert!(generated.contains("pub const BUILDKIT_VERSION: &str = \"v0.29.0\";"));
         assert!(generated.contains(
@@ -1081,7 +1096,9 @@ mod tests {
         fs::write(&manifest, r#"{"buildkit_version":"v0.29.0"}"#).unwrap();
 
         let error = verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap_err();
-        assert!(error.to_string().contains("must use tagged BuildKit version"));
+        assert!(error
+            .to_string()
+            .contains("must use tagged BuildKit version"));
     }
 
     #[test]
@@ -1097,7 +1114,9 @@ mod tests {
         fs::write(&manifest, r#"{"buildkit_version":"v0.31.1"}"#).unwrap();
 
         let error = verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap_err();
-        assert!(error.to_string().contains("golden manifest records BuildKit v0.31.1"));
+        assert!(error
+            .to_string()
+            .contains("golden manifest records BuildKit v0.31.1"));
     }
 
     #[test]
@@ -1113,6 +1132,8 @@ mod tests {
         fs::write(&manifest, "not json").unwrap();
 
         let error = verify_llb_oracle_files(&go_mod, &manifest, "v0.29.0").unwrap_err();
-        assert!(error.to_string().contains("could not parse LLB golden manifest"));
+        assert!(error
+            .to_string()
+            .contains("could not parse LLB golden manifest"));
     }
 }
