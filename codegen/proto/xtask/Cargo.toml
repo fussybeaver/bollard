@@ -17,7 +17,7 @@ sha2 = "0.11"
 tempfile = "3.27.0"
 toml = "1.1"
 prost-build = "=0.14.4"
-protoc-bin-vendored = "=3.2.0"
+protoc-bin-vendored = "=3.3.0"
 tonic-prost-build = "=0.14.6"
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
 url = "2.5"
