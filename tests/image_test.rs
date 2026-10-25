@@ -1294,7 +1294,14 @@ ENTRYPOINT ls buildkit-bollard.txt
     Ok(())
 }
 
-#[cfg(feature = "buildkit_providerless")]
+// The fixture compiles a static amd64 Linux probe with the host C compiler,
+// then marshals it as `linux/amd64`. This test only runs on Linux x86_64 hosts;
+// those hosts must also provide `cc` with static-link support.
+#[cfg(all(
+    feature = "buildkit_providerless",
+    target_os = "linux",
+    target_arch = "x86_64"
+))]
 async fn moby_llb_image_lifecycle_test(docker: Docker) -> Result<(), Error> {
     use bollard::grpc::build::ImageBuildPlatform;
     use bollard::grpc::driver::MobyImageBuildRequest;
@@ -2214,7 +2221,11 @@ fn integration_test_build_buildkit_image() {
 }
 
 #[test]
-#[cfg(feature = "buildkit_providerless")]
+#[cfg(all(
+    feature = "buildkit_providerless",
+    target_os = "linux",
+    target_arch = "x86_64"
+))]
 fn integration_test_moby_llb_image_lifecycle() {
     connect_to_docker_and_run!(moby_llb_image_lifecycle_test);
 }
