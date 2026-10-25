@@ -17,7 +17,7 @@ use tonic::{Code, Request, Status};
 use crate::grpc::{error::GrpcError, BuildRef};
 
 use super::{
-    moby::Moby, Driver, GrpcServer, TearDownGuard, DEFAULT_MAX_RECV_MSG_SIZE,
+    moby::Moby, run_until, Driver, GrpcServer, TearDownGuard, DEFAULT_MAX_RECV_MSG_SIZE,
     DEFAULT_MAX_SEND_MSG_SIZE,
 };
 
@@ -32,6 +32,9 @@ pub(crate) struct GatewaySolve {
     /// Session providers prepared by the caller for this one build.
     pub(crate) services: Vec<GrpcServer>,
     pub(crate) result_metadata: HashMap<String, Vec<u8>>,
+    /// Cache imports sent with the definition in the inner Gateway `SolveRequest`.
+    pub(crate) cache_imports:
+        Vec<bollard_buildkit_proto::moby::buildkit::v1::frontend::CacheOptionsEntry>,
     pub(crate) build_ref: BuildRef,
     pub(crate) timeout: Option<Duration>,
 }
@@ -71,7 +74,13 @@ async fn solve_with_driver<D: Driver>(
     let mut tear_down_guard = TearDownGuard::new(tear_down_handler);
 
     let services = std::mem::take(&mut build.services);
-    let handle = match run_until(deadline, driver.grpc_handle(&session_id, services)).await {
+    let handle = match run_until(
+        deadline,
+        "gateway solve",
+        driver.grpc_handle(&session_id, services),
+    )
+    .await
+    {
         Ok(handle) => handle,
         Err(error) => {
             if let Err(teardown_error) = tear_down_guard.tear_down().await {
@@ -84,7 +93,12 @@ async fn solve_with_driver<D: Driver>(
         }
     };
 
-    let result = run_until(deadline, async move {
+    log::debug!(
+        "sending Gateway solve request: {:?}",
+        super::SolveRequestSummary::from(&build.outer_request)
+    );
+
+    let result = run_until(deadline, "gateway solve", async move {
         let mut gateway_client = handle.gateway_client(&build.build_ref);
         let mut control_client = handle
             .control_client
@@ -101,8 +115,12 @@ async fn solve_with_driver<D: Driver>(
                 .map(|response| response.into_inner())
                 .map_err(GrpcError::from)
         };
-        let callback =
-            run_gateway_callback(gateway_client, build.definition, build.result_metadata);
+        let callback = run_gateway_callback(
+            gateway_client,
+            build.definition,
+            build.result_metadata,
+            build.cache_imports,
+        );
 
         let (response, ()) = try_join!(outer, callback)?;
         Ok(response)
@@ -130,6 +148,7 @@ async fn run_gateway_callback(
     >,
     definition: pb::Definition,
     result_metadata: HashMap<String, Vec<u8>>,
+    cache_imports: Vec<bollard_buildkit_proto::moby::buildkit::v1::frontend::CacheOptionsEntry>,
 ) -> Result<(), GrpcError> {
     let ping = client
         .ping(Request::new(PingRequest {}))
@@ -162,6 +181,7 @@ async fn run_gateway_callback(
             definition: Some(definition),
             allow_result_return: true,
             allow_result_array_ref: true,
+            cache_imports,
             ..Default::default()
         }))
         .await;
@@ -288,21 +308,6 @@ fn require_capability(
     }
 }
 
-async fn run_until<F, T>(deadline: Option<std::time::Instant>, future: F) -> Result<T, GrpcError>
-where
-    F: std::future::Future<Output = Result<T, GrpcError>>,
-{
-    match deadline {
-        Some(deadline) => {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            tokio::time::timeout(remaining, future).await.map_err(|_| {
-                GrpcError::from(Status::deadline_exceeded("gateway solve timed out"))
-            })?
-        }
-        None => future.await,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -355,8 +360,33 @@ mod tests {
 
     struct TestControl {
         exchange: Arc<Mutex<Exchange>>,
-        pending: bool,
-        solve_error: Option<Status>,
+        behavior: ControlBehavior,
+    }
+
+    enum ControlBehavior {
+        Succeed,
+        FailAfterGatewayStarts {
+            error: Status,
+            gateway_started: Arc<tokio::sync::Notify>,
+        },
+    }
+
+    enum GatewayBehavior {
+        Succeed,
+        Fail(Status),
+        Pending,
+    }
+
+    /// Signals when the server drops a pending Gateway handler after client
+    /// cancellation.
+    struct DropSignal(Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.lock().unwrap().take() {
+                let _ = sender.send(());
+            }
+        }
     }
 
     type EmptyUsage = Empty<std::result::Result<UsageRecord, Status>>;
@@ -392,13 +422,18 @@ mod tests {
                 exchange.control_metadata = Some(request.metadata().clone());
                 exchange.control_request = Some(request.into_inner());
             }
-            if self.pending {
-                std::future::pending::<()>().await;
+            match &self.behavior {
+                ControlBehavior::Succeed => Ok(Response::new(SolveResponse::default())),
+                ControlBehavior::FailAfterGatewayStarts {
+                    error,
+                    gateway_started,
+                } => {
+                    // Wait until the Gateway handler is pending so cancellation
+                    // is observable when this outer solve fails.
+                    gateway_started.notified().await;
+                    Err(error.clone())
+                }
             }
-            if let Some(error) = &self.solve_error {
-                return Err(error.clone());
-            }
-            Ok(Response::new(SolveResponse::default()))
         }
         async fn status(
             &self,
@@ -438,8 +473,9 @@ mod tests {
     struct TestGateway {
         exchange: Arc<Mutex<Exchange>>,
         capabilities: Vec<bollard_buildkit_proto::moby::buildkit::v1::apicaps::ApiCap>,
-        solve_error: Option<Status>,
-        solve_pending: bool,
+        behavior: GatewayBehavior,
+        gateway_started: Option<Arc<tokio::sync::Notify>>,
+        handler_dropped: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     }
 
     type EmptyExec = Empty<std::result::Result<ExecMessage, Status>>;
@@ -464,28 +500,32 @@ mod tests {
             &self,
             request: Request<GatewayProtoSolveRequest>,
         ) -> std::result::Result<Response<frontend::SolveResponse>, Status> {
+            // Keep this guard alive through the handler future. If the client
+            // cancels its Gateway RPC, dropping the server handler signals it.
+            let _drop_signal = DropSignal(Arc::clone(&self.handler_dropped));
             {
                 let mut exchange = self.exchange.lock().unwrap();
                 exchange.gateway_metadata = Some(request.metadata().clone());
                 exchange.gateway_request = Some(request.into_inner());
             }
-            if self.solve_pending {
-                std::future::pending::<()>().await;
+            if let Some(started) = &self.gateway_started {
+                started.notify_one();
             }
-            if let Some(error) = &self.solve_error {
-                return Err(error.clone());
+            match &self.behavior {
+                GatewayBehavior::Succeed => Ok(Response::new(frontend::SolveResponse {
+                    result: Some(frontend::Result {
+                        metadata: HashMap::new(),
+                        attestations: HashMap::new(),
+                        result: Some(result::Result::Ref(Ref {
+                            id: "result-ref".to_string(),
+                            def: None,
+                        })),
+                    }),
+                    ..Default::default()
+                })),
+                GatewayBehavior::Fail(error) => Err(error.clone()),
+                GatewayBehavior::Pending => std::future::pending().await,
             }
-            Ok(Response::new(frontend::SolveResponse {
-                result: Some(frontend::Result {
-                    metadata: HashMap::new(),
-                    attestations: HashMap::new(),
-                    result: Some(result::Result::Ref(Ref {
-                        id: "result-ref".to_string(),
-                        def: None,
-                    })),
-                }),
-                ..Default::default()
-            }))
         }
         async fn read_file(
             &self,
@@ -617,28 +657,15 @@ mod tests {
     }
 
     async fn start_server(
-        exchange: Arc<Mutex<Exchange>>,
-        capabilities: Vec<bollard_buildkit_proto::moby::buildkit::v1::apicaps::ApiCap>,
-        solve_error: Option<Status>,
-        control_error: Option<Status>,
-        gateway_pending: bool,
-        control_pending: bool,
+        control: TestControl,
+        gateway: TestGateway,
     ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let server = Server::builder()
-            .add_service(ControlServer::new(TestControl {
-                exchange: Arc::clone(&exchange),
-                pending: control_pending,
-                solve_error: control_error,
-            }))
-            .add_service(LlbBridgeServer::new(TestGateway {
-                exchange,
-                capabilities,
-                solve_error,
-                solve_pending: gateway_pending,
-            }))
+            .add_service(ControlServer::new(control))
+            .add_service(LlbBridgeServer::new(gateway))
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
                 let _ = shutdown_rx.await;
             });
@@ -666,6 +693,20 @@ mod tests {
             .collect()
     }
 
+    fn test_control(exchange: Arc<Mutex<Exchange>>, behavior: ControlBehavior) -> TestControl {
+        TestControl { exchange, behavior }
+    }
+
+    fn test_gateway(exchange: Arc<Mutex<Exchange>>, behavior: GatewayBehavior) -> TestGateway {
+        TestGateway {
+            exchange,
+            capabilities: all_caps(),
+            behavior,
+            gateway_started: None,
+            handler_dropped: Arc::new(Mutex::new(None)),
+        }
+    }
+
     fn build_request(build_ref: BuildRef, timeout: Option<Duration>) -> GatewaySolve {
         GatewaySolve {
             definition: pb::Definition {
@@ -685,6 +726,10 @@ mod tests {
                 "containerimage.config".to_string(),
                 b"{\"config\":{}}".to_vec(),
             )]),
+            cache_imports: vec![frontend::CacheOptionsEntry {
+                r#type: "registry".to_string(),
+                attrs: HashMap::from([("ref".to_string(), "example.com/cache:latest".to_string())]),
+            }],
             build_ref,
             timeout,
         }
@@ -700,8 +745,11 @@ mod tests {
     #[tokio::test]
     async fn coordinates_shared_session_build_ref_solve_and_return() {
         let exchange = Arc::new(Mutex::new(Exchange::default()));
-        let (address, shutdown, task) =
-            start_server(exchange.clone(), all_caps(), None, None, false, false).await;
+        let (address, shutdown, task) = start_server(
+            test_control(exchange.clone(), ControlBehavior::Succeed),
+            test_gateway(exchange.clone(), GatewayBehavior::Succeed),
+        )
+        .await;
         let teardown_calls = Arc::new(AtomicUsize::new(0));
         let driver = TestDriver {
             endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
@@ -741,6 +789,17 @@ mod tests {
             );
             assert!(gateway_request.allow_result_return);
             assert!(gateway_request.allow_result_array_ref);
+            // Cache imports travel on the inner Gateway solve, because the outer
+            // Control request carries no definition.
+            assert_eq!(gateway_request.cache_imports.len(), 1);
+            assert_eq!(gateway_request.cache_imports[0].r#type, "registry");
+            assert_eq!(
+                gateway_request.cache_imports[0]
+                    .attrs
+                    .get("ref")
+                    .map(String::as_str),
+                Some("example.com/cache:latest")
+            );
             let gateway_metadata = exchange.gateway_metadata.as_ref().unwrap();
             assert_eq!(
                 required_metadata(gateway_metadata, "x-docker-expose-session-uuid"),
@@ -791,8 +850,14 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let (address, shutdown, task) =
-            start_server(exchange.clone(), caps, None, None, false, false).await;
+        let (address, shutdown, task) = start_server(
+            test_control(exchange.clone(), ControlBehavior::Succeed),
+            TestGateway {
+                capabilities: caps,
+                ..test_gateway(exchange.clone(), GatewayBehavior::Succeed)
+            },
+        )
+        .await;
         let teardown_calls = Arc::new(AtomicUsize::new(0));
         let driver = TestDriver {
             endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
@@ -826,12 +891,8 @@ mod tests {
         let exchange = Arc::new(Mutex::new(Exchange::default()));
         let error = Status::invalid_argument("invalid LLB");
         let (address, shutdown, task) = start_server(
-            exchange.clone(),
-            all_caps(),
-            Some(error),
-            None,
-            false,
-            false,
+            test_control(exchange.clone(), ControlBehavior::Succeed),
+            test_gateway(exchange.clone(), GatewayBehavior::Fail(error)),
         )
         .await;
         let teardown_calls = Arc::new(AtomicUsize::new(0));
@@ -880,8 +941,11 @@ mod tests {
     #[tokio::test]
     async fn timeout_cancels_gateway_callback_and_tears_down() {
         let exchange = Arc::new(Mutex::new(Exchange::default()));
-        let (address, shutdown, task) =
-            start_server(exchange, all_caps(), None, None, true, false).await;
+        let (address, shutdown, task) = start_server(
+            test_control(exchange.clone(), ControlBehavior::Succeed),
+            test_gateway(exchange, GatewayBehavior::Pending),
+        )
+        .await;
         let teardown_calls = Arc::new(AtomicUsize::new(0));
         let driver = TestDriver {
             endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
@@ -903,8 +967,23 @@ mod tests {
     async fn outer_control_failure_cancels_gateway_callback() {
         let exchange = Arc::new(Mutex::new(Exchange::default()));
         let control_error = Status::permission_denied("outer solve rejected");
-        let (address, shutdown, task) =
-            start_server(exchange, all_caps(), None, Some(control_error), true, false).await;
+        let (dropped_tx, dropped_rx) = oneshot::channel();
+        let gateway_started = Arc::new(tokio::sync::Notify::new());
+        let (address, shutdown, task) = start_server(
+            test_control(
+                exchange.clone(),
+                ControlBehavior::FailAfterGatewayStarts {
+                    error: control_error,
+                    gateway_started: Arc::clone(&gateway_started),
+                },
+            ),
+            TestGateway {
+                gateway_started: Some(gateway_started),
+                handler_dropped: Arc::new(Mutex::new(Some(dropped_tx))),
+                ..test_gateway(exchange.clone(), GatewayBehavior::Pending)
+            },
+        )
+        .await;
         let teardown_calls = Arc::new(AtomicUsize::new(0));
         let driver = TestDriver {
             endpoint: Endpoint::from_shared(format!("http://{address}")).unwrap(),
@@ -919,6 +998,94 @@ mod tests {
             matches!(result, Err(GrpcError::TonicStatus { err }) if err.code() == Code::PermissionDenied)
         );
         assert_eq!(teardown_calls.load(Ordering::SeqCst), 1);
+        // The Gateway callback ran and must be dropped once the outer solve fails.
+        assert!(exchange.lock().unwrap().gateway_request.is_some());
+        tokio::time::timeout(Duration::from_secs(15), dropped_rx)
+            .await
+            .expect("the pending Gateway callback should be cancelled promptly")
+            .expect("the drop signal should be delivered");
         stop_server(shutdown, task).await;
+    }
+
+    #[test]
+    fn with_result_metadata_converts_single_refs_and_merges_metadata() {
+        let metadata = HashMap::from([(String::from("containerimage.config"), b"{}{}".to_vec())]);
+
+        // Deprecated non-array input with array refs enabled returns the array form.
+        let result = with_result_metadata(
+            GatewayResult {
+                metadata: HashMap::new(),
+                result: Some(result::Result::RefDeprecated(String::from("legacy-ref"))),
+                ..Default::default()
+            },
+            metadata.clone(),
+            true,
+        )
+        .expect("deprecated reference input is accepted");
+        assert!(matches!(
+            result.result,
+            Some(result::Result::Ref(Ref { ref id, .. })) if id == "legacy-ref"
+        ));
+
+        // Structured single-ref input with array refs disabled returns the
+        // deprecated single-ref form and caller metadata takes precedence.
+        let result = with_result_metadata(
+            GatewayResult {
+                metadata: HashMap::from([(
+                    String::from("containerimage.config"),
+                    b"stale".to_vec(),
+                )]),
+                result: Some(result::Result::Ref(Ref {
+                    id: String::from("array-ref"),
+                    def: None,
+                })),
+                ..Default::default()
+            },
+            metadata.clone(),
+            false,
+        )
+        .expect("array reference input is accepted");
+        assert!(matches!(
+            result.result,
+            Some(result::Result::RefDeprecated(id)) if id == "array-ref"
+        ));
+        assert_eq!(
+            result
+                .metadata
+                .get("containerimage.config")
+                .map(Vec::as_slice),
+            Some(b"{}{}".as_slice())
+        );
+
+        // Both current and deprecated multi-reference forms are rejected.
+        for refs in [
+            result::Result::Refs(frontend::RefMap::default()),
+            result::Result::RefsDeprecated(frontend::RefMapDeprecated::default()),
+        ] {
+            let error = with_result_metadata(
+                GatewayResult {
+                    metadata: HashMap::new(),
+                    result: Some(refs),
+                    ..Default::default()
+                },
+                metadata.clone(),
+                true,
+            )
+            .expect_err("multiple references must be rejected");
+            assert_eq!(error.code(), Code::FailedPrecondition);
+        }
+
+        // A missing reference is rejected.
+        let error = with_result_metadata(
+            GatewayResult {
+                metadata: HashMap::new(),
+                result: None,
+                ..Default::default()
+            },
+            metadata.clone(),
+            true,
+        )
+        .expect_err("a missing reference must be rejected");
+        assert_eq!(error.code(), Code::FailedPrecondition);
     }
 }
