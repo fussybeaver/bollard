@@ -902,35 +902,7 @@ pub(crate) async fn solve_definition(
 
     validate_definition(&definition, &options.ssh)?;
 
-    let mut auth_provider = super::AuthProvider::new();
-    for (host, credentials) in options.credentials.clone() {
-        auth_provider.set_docker_credentials(&host, credentials);
-    }
-
-    let auth = AuthServer::new(auth_provider);
-    let secret = SecretsServer::new(super::SecretProvider::new(options.secrets.clone()))
-        .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-        .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
-    let mut services = vec![GrpcServer::Auth(auth), GrpcServer::Secrets(secret)];
-
-    if !options.ssh.is_empty() {
-        let ssh = SshServer::new(super::SshProvider::new(options.ssh.clone()))
-            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
-        services.push(GrpcServer::Ssh(ssh));
-    }
-
-    if !options.local_mounts.is_empty() {
-        let mounts = options
-            .local_mounts
-            .iter()
-            .map(|(name, mount)| (name.clone(), Arc::clone(&mount.root)))
-            .collect();
-        let filesync = FileSyncServer::new(super::filesync::FileSyncImpl::new(mounts))
-            .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
-            .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
-        services.push(GrpcServer::FileSync(filesync));
-    }
+    let mut services = solve_services(&options);
 
     match &exporter {
         DefinitionExporter::Local(path) => {
@@ -969,34 +941,115 @@ pub(crate) async fn solve_moby_image(
     request: MobyImageBuildRequest,
 ) -> Result<DefinitionSolveResult, GrpcError> {
     let MobyImageBuildRequest {
-        definition,
+        mut definition,
         image_config,
         platform,
         tag,
         options,
     } = request;
-    if tag.trim().is_empty() || tag.contains('\n') || tag.contains('\r') {
-        return Err(tonic::Status::invalid_argument(
-            "image tag must be a non-empty single-line image reference",
-        )
-        .into());
-    }
+    validate_image_tag(&tag)?;
     if platform.os.trim().is_empty() || platform.architecture.trim().is_empty() {
         return Err(tonic::Status::invalid_argument(
             "image platform must specify both OS and architecture",
         )
         .into());
     }
-    if !image_config.is_object() {
-        return Err(
-            tonic::Status::invalid_argument("image configuration must be a JSON object").into(),
-        );
-    }
+    validate_image_config(&image_config, &platform)?;
+    // Remove the empty `Locations` entries that `bollard-llb` records for each
+    // real vertex, exactly as the `SolveDefinition` boundary does, so both
+    // direct-solve paths send the same definition shape to BuildKit.
+    normalize_empty_source_locations(&mut definition);
     validate_definition(&definition, &options.ssh)?;
     let config = serde_json::to_vec(&image_config).map_err(|error| {
         tonic::Status::invalid_argument(format!("image configuration is not serializable: {error}"))
     })?;
 
+    let services = solve_services(&options);
+
+    let build_ref = BuildRef::random();
+    let outer_request = build_moby_image_outer_request(&tag, &platform, &options);
+    let response = gateway::solve(
+        driver,
+        gateway::GatewaySolve {
+            definition,
+            outer_request,
+            services,
+            result_metadata: HashMap::from([(String::from("containerimage.config"), config)]),
+            cache_imports: options
+                .cache_from
+                .iter()
+                .map(frontend_cache_entry)
+                .collect(),
+            build_ref: build_ref.clone(),
+            timeout: options.timeout,
+        },
+    )
+    .await?;
+    Ok(DefinitionSolveResult {
+        build_ref,
+        exporter_response: response.exporter_response,
+    })
+}
+
+/// Validate that the requested image tag is exactly one image reference.
+///
+/// The Moby exporter reads its `name` attribute as a comma-separated list and
+/// turns each entry into a separate tag, so a comma must be rejected to keep
+/// the one-request-one-image contract.
+fn validate_image_tag(tag: &str) -> Result<(), GrpcError> {
+    if tag.trim().is_empty() || tag.contains('\n') || tag.contains('\r') || tag.contains(',') {
+        return Err(tonic::Status::invalid_argument(
+            "image tag must be one non-empty single-line image reference; a comma-separated tag list is not supported",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn build_moby_image_outer_request(
+    tag: &str,
+    platform: &super::build::ImageBuildPlatform,
+    options: &DefinitionSolveOptions,
+) -> SolveRequest {
+    // The Gateway coordinator owns `r#ref`, `session`, `frontend` and
+    // `definition`; it sets or clears them before sending the outer Control
+    // solve. Leave all four at their defaults here.
+    SolveRequest {
+        frontend_attrs: HashMap::from([(String::from("platform"), platform.to_string())]),
+        exporter_deprecated: String::from("moby"),
+        exporter_attrs_deprecated: HashMap::from([
+            (String::from("type"), String::from("docker")),
+            (String::from("name"), tag.to_string()),
+        ]),
+        cache: Some(CacheOptions {
+            exports: options.cache_to.clone(),
+            ..Default::default()
+        }),
+        entitlements: options
+            .entitlements
+            .iter()
+            .map(|entitlement| entitlement.as_str().to_string())
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// Convert a control-plane cache entry into the Gateway solve representation.
+fn frontend_cache_entry(
+    entry: &bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry,
+) -> bollard_buildkit_proto::moby::buildkit::v1::frontend::CacheOptionsEntry {
+    bollard_buildkit_proto::moby::buildkit::v1::frontend::CacheOptionsEntry {
+        r#type: entry.r#type.clone(),
+        attrs: entry.attrs.clone(),
+    }
+}
+
+/// Build the session providers shared by every definition solve.
+///
+/// The `Local`-exporter `FileSendPacket` service is added by
+/// `solve_definition` only, because the Moby image build never exports to a
+/// local directory.
+fn solve_services(options: &DefinitionSolveOptions) -> Vec<GrpcServer> {
     let mut auth_provider = super::AuthProvider::new();
     for (host, credentials) in &options.credentials {
         auth_provider.set_docker_credentials(host, credentials.clone());
@@ -1025,55 +1078,61 @@ pub(crate) async fn solve_moby_image(
                 .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE),
         ));
     }
-
-    let build_ref = BuildRef::random();
-    let outer_request = build_moby_image_outer_request(&tag, &platform, &options, &build_ref);
-    let response = gateway::solve(
-        driver,
-        gateway::GatewaySolve {
-            definition,
-            outer_request,
-            services,
-            result_metadata: HashMap::from([(String::from("containerimage.config"), config)]),
-            build_ref: build_ref.clone(),
-            timeout: options.timeout,
-        },
-    )
-    .await?;
-    Ok(DefinitionSolveResult {
-        build_ref,
-        exporter_response: response.exporter_response,
-    })
+    services
 }
 
-fn build_moby_image_outer_request(
-    tag: &str,
+/// Validate the image-config fields required by the Moby exporter.
+///
+/// This checks for non-empty top-level `os` and `architecture` strings matching
+/// the requested platform, and a nested `config` object. In particular, it
+/// catches missing top-level platform fields before the image is stored.
+fn validate_image_config(
+    image_config: &serde_json::Value,
     platform: &super::build::ImageBuildPlatform,
-    options: &DefinitionSolveOptions,
-    build_ref: &BuildRef,
-) -> SolveRequest {
-    SolveRequest {
-        r#ref: build_ref.as_ref().to_string(),
-        session: String::new(),
-        frontend: String::new(),
-        frontend_attrs: HashMap::from([(String::from("platform"), platform.to_string())]),
-        exporter_deprecated: String::from("moby"),
-        exporter_attrs_deprecated: HashMap::from([
-            (String::from("type"), String::from("docker")),
-            (String::from("name"), tag.to_string()),
-        ]),
-        cache: Some(CacheOptions {
-            exports: options.cache_to.clone(),
-            imports: options.cache_from.clone(),
-            ..Default::default()
-        }),
-        entitlements: options
-            .entitlements
-            .iter()
-            .map(|entitlement| entitlement.as_str().to_string())
-            .collect(),
-        ..Default::default()
+) -> Result<(), GrpcError> {
+    let object = image_config.as_object().ok_or_else(|| {
+        tonic::Status::invalid_argument("image configuration must be a JSON object")
+    })?;
+
+    let os = object
+        .get("os")
+        .and_then(serde_json::Value::as_str)
+        .filter(|os| !os.trim().is_empty())
+        .ok_or_else(|| {
+            tonic::Status::invalid_argument(
+                "image configuration must contain a non-empty top-level `os` string",
+            )
+        })?;
+    let architecture = object
+        .get("architecture")
+        .and_then(serde_json::Value::as_str)
+        .filter(|architecture| !architecture.trim().is_empty())
+        .ok_or_else(|| {
+            tonic::Status::invalid_argument(
+                "image configuration must contain a non-empty top-level `architecture` string",
+            )
+        })?;
+    let config = object.get("config").ok_or_else(|| {
+        tonic::Status::invalid_argument(
+            "image configuration must contain a nested `config` object with runtime settings",
+        )
+    })?;
+    if !config.is_object() {
+        return Err(tonic::Status::invalid_argument(
+            "image configuration `config` field must be a JSON object",
+        )
+        .into());
     }
+
+    if os != platform.os || architecture != platform.architecture {
+        return Err(tonic::Status::invalid_argument(format!(
+            "image configuration platform `{os}/{architecture}` must match the requested platform `{}`",
+            platform
+        ))
+        .into());
+    }
+
+    Ok(())
 }
 
 fn build_definition_solve_request(
@@ -1227,7 +1286,8 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     teardown_timeout: Duration,
 ) -> Result<SolveResponse, GrpcError> {
     let mut tear_down_guard = TearDownGuard::with_timeout(tear_down_handler, teardown_timeout);
-    let handle = match run_until(deadline, driver.grpc_handle(session_id, services)).await {
+    let handle = match run_until(deadline, "solve", driver.grpc_handle(session_id, services)).await
+    {
         Ok(handle) => handle,
         Err(error) => {
             // A driver may have created resources before gRPC setup failed.
@@ -1249,6 +1309,7 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     );
     let solve_result = match run_until(
         deadline,
+        "solve",
         control_client.solve(request).map_err(GrpcError::from),
     )
     .await
@@ -1272,16 +1333,22 @@ async fn execute_solve_with_teardown_timeout<D: Driver>(
     }
 }
 
-async fn run_until<F, T>(deadline: Option<Instant>, future: F) -> Result<T, GrpcError>
+async fn run_until<F, T>(
+    deadline: Option<Instant>,
+    label: &'static str,
+    future: F,
+) -> Result<T, GrpcError>
 where
     F: std::future::Future<Output = Result<T, GrpcError>>,
 {
     match deadline {
         Some(deadline) => {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            tokio::time::timeout(remaining, future)
-                .await
-                .map_err(|_| GrpcError::from(tonic::Status::deadline_exceeded("solve timed out")))?
+            tokio::time::timeout(remaining, future).await.map_err(|_| {
+                GrpcError::from(tonic::Status::deadline_exceeded(format!(
+                    "{label} timed out"
+                )))
+            })?
         }
         None => future.await,
     }
@@ -1682,17 +1749,16 @@ mod tests {
     }
 
     #[test]
-    fn moby_image_request_sets_export_tag_platform_and_config_metadata() {
+    fn moby_image_request_sets_export_tag_and_platform() {
         let platform = super::super::build::ImageBuildPlatform {
             os: "linux".into(),
             architecture: "amd64".into(),
             variant: None,
         };
-        let build_ref = BuildRef::random();
         let options = DefinitionSolveOptions::default();
-        let request =
-            build_moby_image_outer_request("example/app:test", &platform, &options, &build_ref);
-        assert_eq!(request.r#ref, build_ref.as_ref());
+        let request = build_moby_image_outer_request("example/app:test", &platform, &options);
+        // The Gateway coordinator owns `r#ref`; the builder must leave it unset.
+        assert!(request.r#ref.is_empty());
         assert_eq!(request.exporter_deprecated, "moby");
         assert_eq!(
             request
@@ -1714,14 +1780,133 @@ mod tests {
         );
         assert!(request.frontend.is_empty());
         assert!(request.definition.is_none());
+    }
 
-        let config = serde_json::json!({"Entrypoint":["/bin/app"],"Cmd":["--serve"]});
-        let bytes = serde_json::to_vec(&config).unwrap();
-        let result_metadata = HashMap::from([(String::from("containerimage.config"), bytes)]);
+    #[test]
+    fn moby_image_outer_request_and_gateway_entry_carry_cache_entries() {
+        let platform = super::super::build::ImageBuildPlatform {
+            os: "linux".into(),
+            architecture: "amd64".into(),
+            variant: None,
+        };
+        let cache = bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry {
+            r#type: String::from("registry"),
+            attrs: HashMap::from([(String::from("ref"), String::from("example.com/cache"))]),
+        };
+        let options = DefinitionSolveOptionsBuilder::new()
+            .cache_to(&cache)
+            .cache_from(&cache)
+            .build();
+
+        let request = build_moby_image_outer_request("example/app:test", &platform, &options);
+        let outer_cache = request.cache.as_ref().expect("cache options are set");
+        // The outer solve only reads cache exports; imports travel on the
+        // inner Gateway solve, which is asserted in the gateway tests.
+        assert_eq!(outer_cache.exports.len(), 1);
+        assert!(outer_cache.imports.is_empty());
+
+        let gateway_entry = frontend_cache_entry(&cache);
+        assert_eq!(gateway_entry.r#type, "registry");
         assert_eq!(
-            result_metadata.get("containerimage.config").unwrap(),
-            br#"{"Cmd":["--serve"],"Entrypoint":["/bin/app"]}"#
+            gateway_entry.attrs.get("ref").map(String::as_str),
+            Some("example.com/cache")
         );
+    }
+
+    #[test]
+    fn image_tag_validation_rejects_empty_multiline_and_comma_tags() {
+        validate_image_tag("example/app:dev").expect("a single reference is accepted");
+
+        for tag in ["", "   ", "app\nnext", "app\rnext", "a/one:1,b/two:2"] {
+            assert!(
+                validate_image_tag(tag).is_err(),
+                "tag should be rejected: {tag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn image_config_validation_checks_document_shape_and_platform() {
+        let platform = super::super::build::ImageBuildPlatform {
+            os: "linux".into(),
+            architecture: "amd64".into(),
+            variant: None,
+        };
+        let config = serde_json::json!({
+            "architecture": "amd64",
+            "os": "linux",
+            "config": {
+                "Entrypoint": ["/bin/app"],
+                "Cmd": ["--serve"],
+                "Labels": {"org.example": "test"}
+            }
+        });
+
+        validate_image_config(&config, &platform).expect("image config is accepted");
+
+        // This was the original failure: runtime settings alone are not the
+        // image-config document expected by the Moby exporter.
+        let config = serde_json::json!({"Entrypoint":["/bin/app"],"Cmd":["--serve"]});
+        let error = validate_image_config(&config, &platform)
+            .expect_err("bare runtime settings must be rejected");
+        assert!(error.to_string().contains("`os`"));
+
+        for config in [
+            serde_json::json!(["not", "an", "object"]),
+            serde_json::json!({"config": {}}),
+            serde_json::json!({"os": "linux", "config": {}}),
+            serde_json::json!({"os": "linux", "architecture": "amd64"}),
+            serde_json::json!({"os": "linux", "architecture": "amd64", "config": []}),
+        ] {
+            assert!(
+                validate_image_config(&config, &platform).is_err(),
+                "config should be rejected: {config}"
+            );
+        }
+
+        let mismatch = serde_json::json!({
+            "os": "linux",
+            "architecture": "arm64",
+            "config": {}
+        });
+        let error = validate_image_config(&mismatch, &platform)
+            .expect_err("a config/platform mismatch must be rejected");
+        assert!(error
+            .to_string()
+            .contains("must match the requested platform"));
+    }
+
+    #[test]
+    fn normalize_empty_source_locations_removes_empty_entries_only() {
+        let mut definition = bollard_buildkit_proto::pb::Definition {
+            source: Some(bollard_buildkit_proto::pb::Source {
+                locations: std::collections::BTreeMap::from([
+                    (
+                        String::from("sha256:removed"),
+                        bollard_buildkit_proto::pb::Locations {
+                            locations: Vec::new(),
+                        },
+                    ),
+                    (
+                        String::from("sha256:kept"),
+                        bollard_buildkit_proto::pb::Locations {
+                            locations: vec![bollard_buildkit_proto::pb::Location {
+                                source_index: 0,
+                                ranges: Vec::new(),
+                            }],
+                        },
+                    ),
+                ]),
+                infos: Vec::new(),
+            }),
+            ..Default::default()
+        };
+
+        normalize_empty_source_locations(&mut definition);
+
+        let locations = &definition.source.as_ref().unwrap().locations;
+        assert!(!locations.contains_key("sha256:removed"));
+        assert!(locations.contains_key("sha256:kept"));
     }
 
     #[test]
