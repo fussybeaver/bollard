@@ -213,17 +213,22 @@ jobs:
           command: |
             # Do not enable test_ssl/webpki: they compile this test file away.
             docker run --rm bollard bash -euo pipefail -c '
-              tests=$(cargo test -p bollard --locked --features ssl --test ssl_trust_anchor_test -- --list)
-              printf "%s\n" "$tests"
-              for test in \
-                ssl_ca_signed_daemon_is_accepted \
-                unrelated_issuer_is_rejected \
-                platform_root_signed_daemon_is_rejected
+              # Run the handshake tests with each TLS provider.
+              # Check test discovery before each run to prevent an empty test run.
+              for features in ssl aws-lc-rs
               do
-                printf "%s\n" "$tests" | grep -Fxq "$test: test"
+                tests=$(cargo test -p bollard --locked --features "$features" --test ssl_trust_anchor_test -- --list)
+                printf "%s\n" "$tests"
+                for test in \
+                  ssl_ca_signed_daemon_is_accepted \
+                  unrelated_issuer_is_rejected \
+                  platform_root_signed_daemon_is_rejected
+                do
+                  printf "%s\n" "$tests" | grep -Fxq "$test: test"
+                done
+                printf "%s\n" "$tests" | grep -Fxq "3 tests, 0 benchmarks"
+                cargo test -p bollard --locked --features "$features" --test ssl_trust_anchor_test -- --test-threads=1 --nocapture
               done
-              printf "%s\n" "$tests" | grep -Fxq "3 tests, 0 benchmarks"
-              cargo test -p bollard --locked --features ssl --test ssl_trust_anchor_test -- --test-threads=1 --nocapture
               for features in ssl webpki test_ssl,aws-lc-rs
               do
                 tests=$(cargo test -p bollard --locked --features "$features" --lib docker::tests::ssl_root_store -- --list)
