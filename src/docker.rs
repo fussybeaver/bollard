@@ -553,6 +553,9 @@ impl Docker {
     /// certificate authorities, include their certificates explicitly in the supplied PEM bundle.
     /// Certificate-chain and hostname verification remain enabled.
     ///
+    /// To use OS roots or a custom trust store, use [`Docker::connect_with_custom_transport`].
+    /// Configure TLS in that transport and keep certificate-chain and hostname verification enabled.
+    ///
     /// # Arguments
     ///
     ///  - `addr`: the connection url.

@@ -177,6 +177,9 @@ Only the certificates in `ca.pem` are trusted, even with the `webpki` feature.
 The client does not add OS or Mozilla roots. Add other trusted CA certificates to this PEM bundle.
 The client rejects empty or malformed CA bundles. Certificate-chain and hostname verification remain enabled.
 
+To use OS roots or a custom trust store, use [`Docker::connect_with_custom_transport`].
+Configure TLS in that transport and keep certificate-chain and hostname verification enabled.
+
 ```rust
 use bollard::Docker;
 #[cfg(feature = "ssl")]
