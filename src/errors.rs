@@ -30,7 +30,9 @@ pub enum Error {
     },
     /// Parse error for certificate or private-key input.
     #[cfg(feature = "ssl_providerless")]
-    #[error("Could not parse key: {path}")]
+    // This error can identify a certificate file or a private key file.
+    // Keep the public variant and its path field unchanged.
+    #[error("Could not parse certificate or key: {path}")]
     CertParseError {
         /// Path for the failing certificate file
         path: PathBuf,

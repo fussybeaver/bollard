@@ -467,11 +467,23 @@ fn server_root_store(ssl_ca: &Path) -> Result<rustls::RootCertStore, Error> {
     let mut root_store = rustls::RootCertStore::empty();
 
     for certificate in CertificateDer::pem_reader_iter(&mut ca_pem) {
-        let certificate = certificate.map_err(|_| CertParseError {
-            path: ssl_ca.to_owned(),
+        let certificate = certificate.map_err(|error| {
+            log::warn!(
+                "Could not read CA certificate from {}: {error}",
+                ssl_ca.display()
+            );
+            CertParseError {
+                path: ssl_ca.to_owned(),
+            }
         })?;
-        root_store.add(certificate).map_err(|_| CertParseError {
-            path: ssl_ca.to_owned(),
+        root_store.add(certificate).map_err(|error| {
+            log::warn!(
+                "Could not parse CA certificate from {}: {error}",
+                ssl_ca.display()
+            );
+            CertParseError {
+                path: ssl_ca.to_owned(),
+            }
         })?;
     }
     if root_store.is_empty() {
@@ -2169,10 +2181,15 @@ mod tests {
         fn assert_parse_error(pem: &str) {
             let file = tempfile::NamedTempFile::new().unwrap();
             fs::write(file.path(), pem).unwrap();
-            assert!(matches!(
-                server_root_store(file.path()),
-                Err(CertParseError { path }) if path == file.path()
-            ));
+            let error = server_root_store(file.path()).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Could not parse certificate or key: {}",
+                    file.path().display()
+                )
+            );
+            assert!(matches!(error, CertParseError { path } if path == file.path()));
         }
 
         #[test]
