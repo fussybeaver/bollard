@@ -50,12 +50,14 @@ impl super::Driver for BuildkitChannel {
             build_ref: None,
         };
 
-        let mut control_client =
+        // A throwaway client drives the session-opening call; `GrpcHandle::new`
+        // then builds the handle's own client from the same channel and interceptor.
+        let mut session_client =
             ControlClient::with_interceptor(self.channel.clone(), interceptor.clone());
 
         let (asyncwriter, asyncreader) = tokio::io::duplex(DUPLEX_BUF_SIZE);
         let streamreader = ReaderStream::new(asyncreader);
-        let stream = control_client.session(streamreader).await?;
+        let stream = session_client.session(streamreader).await?;
         let stream = stream.into_inner().map_err(std::io::Error::other);
 
         let asyncreader = IntoAsyncRead::new(stream);
@@ -85,11 +87,7 @@ impl super::Driver for BuildkitChannel {
             }
         });
 
-        Ok(super::GrpcHandle {
-            control_client,
-            channel: self.channel.clone(),
-            interceptor,
-        })
+        Ok(super::GrpcHandle::new(self.channel.clone(), interceptor))
     }
 
     fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {

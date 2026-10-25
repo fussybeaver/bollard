@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
+use bollard_buildkit_proto::health;
 use bytes::Bytes;
 use http::{request::Builder, Method};
 use http_body_util::Full;
@@ -72,7 +72,6 @@ impl Driver for Moby {
             metadata_grpc_method: metadata_grpc_method.clone(),
             build_ref: None,
         };
-        let control_client = ControlClient::with_interceptor(channel.clone(), interceptor.clone());
 
         let url = "/session";
 
@@ -125,11 +124,7 @@ impl Driver for Moby {
             }
         });
 
-        Ok(super::GrpcHandle {
-            control_client,
-            channel,
-            interceptor,
-        })
+        Ok(super::GrpcHandle::new(channel, interceptor))
     }
 
     fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
