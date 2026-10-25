@@ -456,6 +456,33 @@ impl rustls::client::ResolvesClientCert for DockerClientCertResolver {
     }
 }
 
+/// Build the daemon trust store exclusively from the caller's CA bundle.
+#[cfg(feature = "ssl_providerless")]
+fn server_root_store(ssl_ca: &Path) -> Result<rustls::RootCertStore, Error> {
+    use rustls_pki_types::pem::PemObject;
+
+    let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
+        path: ssl_ca.to_owned(),
+    })?);
+    let mut root_store = rustls::RootCertStore::empty();
+
+    for certificate in CertificateDer::pem_reader_iter(&mut ca_pem) {
+        let certificate = certificate.map_err(|_| CertParseError {
+            path: ssl_ca.to_owned(),
+        })?;
+        root_store.add(certificate).map_err(|_| CertParseError {
+            path: ssl_ca.to_owned(),
+        })?;
+    }
+    if root_store.is_empty() {
+        return Err(CertParseError {
+            path: ssl_ca.to_owned(),
+        });
+    }
+
+    Ok(root_store)
+}
+
 /// A Docker implementation typed to connect to a secure HTTPS connection using the `rustls`
 /// library.
 #[cfg(feature = "ssl_providerless")]
@@ -467,7 +494,8 @@ impl Docker {
     ///  - The connection url is sourced from the `DOCKER_HOST` environment variable.
     ///  - The certificate directory is sourced from the `DOCKER_CERT_PATH` environment variable.
     ///  - Certificates are named `key.pem`, `cert.pem` and `ca.pem` to indicate the private key,
-    ///    the server certificate and the certificate chain respectively.
+    ///    the client certificate and the trusted daemon CA certificates respectively.
+    ///    Only the certificates in `ca.pem` are trusted; platform roots are not added.
     ///  - The request timeout defaults to 2 minutes.
     ///
     /// # Examples
@@ -508,12 +536,17 @@ impl Docker {
 
     /// Connect using secure HTTPS.
     ///
+    /// The certificates in `ssl_ca` are the only trust anchors for the daemon, regardless of
+    /// the `webpki` feature. OS and Mozilla roots are not added automatically. To trust additional
+    /// certificate authorities, include their certificates explicitly in the supplied PEM bundle.
+    /// Certificate-chain and hostname verification remain enabled.
+    ///
     /// # Arguments
     ///
     ///  - `addr`: the connection url.
     ///  - `ssl_key`: the private key path.
-    ///  - `ssl_cert`: the server certificate path.
-    ///  - `ssl_ca`: the certificate chain path.
+    ///  - `ssl_cert`: the client certificate path.
+    ///  - `ssl_ca`: the PEM bundle of trusted daemon CA certificates.
     ///  - `timeout`: the read/write timeout (seconds) to use for every hyper connection
     ///  - `client_version`: the API version to pin in request paths as `/vX.Y`.
     ///
@@ -538,6 +571,11 @@ impl Docker {
     ///   .map_ok(|_| Ok::<_, ()>(println!("Connected!")));
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns [`Error::CertPathError`] if `ssl_ca` cannot be read, or
+    /// [`Error::CertParseError`] if it contains no certificates or a certificate cannot be parsed.
+    ///
     /// # Panics
     ///
     /// This function will panic if neither `ssl` nor `aws-lc-rs` features are activated,
@@ -551,53 +589,9 @@ impl Docker {
         timeout: u64,
         client_version: &ClientVersion,
     ) -> Result<Docker, Error> {
-        use rustls_pki_types::pem::PemObject;
         // This ensures that using docker-machine-esque addresses work with Hyper.
         let client_addr = addr.replacen("tcp://", "", 1).replacen("https://", "", 1);
-
-        let mut root_store = rustls::RootCertStore::empty();
-
-        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        let native_certs = rustls_native_certs::load_native_certs();
-
-        // A partial failure loading the OS trust store (one unreadable
-        // entry among many -- not uncommon on some platforms) must not
-        // discard every certificate that DID load, nor prevent the
-        // explicit `ssl_ca` added just below from being trusted. Add
-        // whatever loaded successfully and proceed, the same way `curl`
-        // and the `docker` CLI itself tolerate the same condition.
-        // Previously any non-empty `native_certs.errors` was treated as
-        // fatal here, returning `LoadNativeCertsErrors` and discarding the
-        // whole native trust store -- including a case where the only
-        // consequence should have been "one fewer CA available", since the
-        // caller's own `ssl_ca` is unaffected either way. For the same
-        // reason, a certificate that loaded but doesn't parse is skipped
-        // rather than failing the connection.
-        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        if !native_certs.errors.is_empty() {
-            log::warn!(
-                "ignoring {} error(s) loading native certs: {:?}",
-                native_certs.errors.len(),
-                native_certs.errors
-            );
-        }
-
-        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        root_store.add_parsable_certificates(native_certs.certs);
-        #[cfg(any(feature = "test_ssl", feature = "webpki"))]
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-        let mut ca_pem = io::Cursor::new(fs::read(ssl_ca).map_err(|_| CertPathError {
-            path: ssl_ca.to_owned(),
-        })?);
-
-        root_store.add_parsable_certificates(
-            rustls_pki_types::CertificateDer::pem_reader_iter(&mut ca_pem)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| CertParseError {
-                    path: ssl_ca.to_owned(),
-                })?,
-        );
+        let root_store = server_root_store(ssl_ca)?;
 
         let config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
@@ -2144,6 +2138,98 @@ pub fn body_full(body: Bytes) -> BodyType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "ssl_providerless")]
+    mod ssl_root_store {
+        use super::*;
+        use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair};
+
+        fn ca() -> Certificate {
+            let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            params.self_signed(&KeyPair::generate().unwrap()).unwrap()
+        }
+
+        fn assert_roots(certificates: &[Certificate]) {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            let mut expected = rustls::RootCertStore::empty();
+            let mut pem = String::new();
+            for certificate in certificates {
+                pem.push_str(&certificate.pem());
+                expected.add(certificate.der().clone()).unwrap();
+            }
+            fs::write(file.path(), pem).unwrap();
+
+            let actual = server_root_store(file.path()).unwrap();
+            // Compare the full anchors, not just their count: no native or
+            // bundled Mozilla root may supplement or replace the supplied CAs.
+            assert_eq!(actual.roots, expected.roots);
+        }
+
+        fn assert_parse_error(pem: &str) {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            fs::write(file.path(), pem).unwrap();
+            assert!(matches!(
+                server_root_store(file.path()),
+                Err(CertParseError { path }) if path == file.path()
+            ));
+        }
+
+        #[test]
+        fn ssl_ca_is_only_trust_anchor() {
+            assert_roots(&[ca()]);
+        }
+
+        #[test]
+        fn ssl_ca_bundle_preserves_all_trust_anchors() {
+            assert_roots(&[ca(), ca()]);
+        }
+
+        #[test]
+        fn unreadable_ca_path_is_rejected() {
+            let directory = tempfile::tempdir().unwrap();
+            for path in [
+                directory.path().join("missing.pem"),
+                directory.path().to_owned(),
+            ] {
+                assert!(matches!(
+                    server_root_store(&path),
+                    Err(CertPathError { path: error_path }) if error_path == path
+                ));
+            }
+        }
+
+        #[test]
+        fn empty_or_non_certificate_bundle_is_rejected() {
+            for pem in [
+                "",
+                "not a certificate",
+                &KeyPair::generate().unwrap().serialize_pem(),
+            ] {
+                assert_parse_error(pem);
+            }
+        }
+
+        #[test]
+        fn malformed_pem_is_rejected() {
+            assert_parse_error(
+                "-----BEGIN CERTIFICATE-----\n!invalid!\n-----END CERTIFICATE-----\n",
+            );
+        }
+
+        #[test]
+        fn malformed_der_is_rejected() {
+            assert_parse_error("-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n");
+        }
+
+        #[test]
+        fn mixed_valid_and_invalid_bundle_is_rejected() {
+            assert_parse_error(&format!(
+                "{}-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n",
+                ca().pem()
+            ));
+        }
+    }
 
     mod stream_framing {
         use super::*;

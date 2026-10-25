@@ -68,7 +68,7 @@
 //! | `ssl` | [Rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) provider (recommended) |
 //! | `aws-lc-rs` | [Rustls](https://github.com/rustls/rustls) with [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider (FIPS-compliant) |
 //! | `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
-//! | `webpki` | Use Mozilla's root certificates instead of OS native certs |
+//! | `webpki` | Use Mozilla's roots for BuildKit registry authentication TLS; Docker daemon TLS trusts only the supplied CA bundle |
 //!
 //! ### DateTime Features
 //!

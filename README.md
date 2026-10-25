@@ -68,7 +68,7 @@ Choose **one** crypto provider:
 | `ssl` | [Rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) provider (recommended) |
 | `aws-lc-rs` | [Rustls](https://github.com/rustls/rustls) with [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider (FIPS-compliant) |
 | `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
-| `webpki` | Use Mozilla's root certificates instead of OS native certs |
+| `webpki` | Use Mozilla's roots for BuildKit registry authentication TLS; Docker daemon TLS trusts only the supplied CA bundle |
 
 #### DateTime Features
 
@@ -171,8 +171,11 @@ The client will connect to the location pointed to by `DOCKER_HOST` environment 
 `localhost:2375` if missing.
 
 The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
-certificates - `key.pem` for the private key, `cert.pem` for the server certificate and
-`ca.pem` for the certificate authority chain.
+certificates - `key.pem` for the private key, `cert.pem` for the client certificate and
+`ca.pem` for the trusted daemon CA certificates. Only the certificates in `ca.pem` are trusted,
+even when the `webpki` feature is enabled; OS and Mozilla roots are not added automatically.
+Include any additional trusted CA certificates explicitly in this PEM bundle. Empty or malformed
+CA bundles are rejected. Certificate-chain and hostname verification remain enabled.
 
 ```rust
 use bollard::Docker;

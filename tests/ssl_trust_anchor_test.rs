@@ -6,9 +6,9 @@
 //! "platform" root, so a certificate issued by that root stands in for one
 //! issued by any public or enterprise CA in the OS store.
 //!
-//! The `webpki` / `test_ssl` features use the bundled Mozilla roots instead of
-//! the OS store, and no test can hold a key for those, so this file only runs
-//! with the native-roots providers:
+//! Before the fix, `webpki` / `test_ssl` builds used bundled Mozilla roots
+//! instead of the OS store. This reproduction injects an OS root, so it only
+//! distinguishes vulnerable from fixed behavior with the native-roots providers:
 //!
 //! ```text
 //! cargo test --features ssl --test ssl_trust_anchor_test
