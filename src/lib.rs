@@ -170,9 +170,12 @@
 //! The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
 //! `localhost:2375` if missing.
 //!
-//! The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
-//! certificates - `key.pem` for the private key, `cert.pem` for the server certificate and
-//! `ca.pem` for the certificate authority chain.
+//! The client reads certificates from the directory set by `DOCKER_CERT_PATH`.
+//! The file `key.pem` contains the private key. The file `cert.pem` contains the client certificate.
+//! The file `ca.pem` contains the trusted daemon CA certificates.
+//! Only the certificates in `ca.pem` are trusted, even with the `webpki` feature.
+//! The client does not add OS or Mozilla roots. Add other trusted CA certificates to this PEM bundle.
+//! The client rejects empty or malformed CA bundles. Certificate-chain and hostname verification remain enabled.
 //!
 //! ```rust
 //! use bollard::Docker;
