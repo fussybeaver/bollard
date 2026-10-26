@@ -161,52 +161,51 @@ impl ProvenanceLock {
 fn independent_pins_from_resources(
     resources: &[Resource],
 ) -> Result<BTreeMap<String, IndependentPin>> {
-        let mut pins = BTreeMap::new();
-        for destination in crate::resources::INDEPENDENT_DESTINATIONS {
-            let matches: Vec<_> = resources
-                .iter()
-                .filter(|resource| resource.destination == *destination)
-                .collect();
-            let resource = match matches.as_slice() {
-                [resource] => resource,
-                [] => {
-                    return Err(anyhow!(
-                        "provenance lock is missing independent resource {destination}"
-                    ))
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "provenance lock contains duplicate independent resource {destination}"
-                    ))
-                }
-            };
-            let (owner, repository) = resource.repository.split_once('/').ok_or_else(|| {
-                anyhow!(
-                    "resource {destination} repository must be owner/repository"
-                )
-            })?;
-            if owner.is_empty() || repository.is_empty() || repository.contains('/') {
+    let mut pins = BTreeMap::new();
+    for destination in crate::resources::INDEPENDENT_DESTINATIONS {
+        let matches: Vec<_> = resources
+            .iter()
+            .filter(|resource| resource.destination == *destination)
+            .collect();
+        let resource = match matches.as_slice() {
+            [resource] => resource,
+            [] => {
                 return Err(anyhow!(
-                    "resource {destination} repository must be owner/repository"
-                ));
+                    "provenance lock is missing independent resource {destination}"
+                ))
             }
-            validate_commit(
-                &format!("resource {destination} revision"),
-                &resource.revision,
-            )?;
-            validate_path(&format!("resource {destination} path"), &resource.path)?;
-            pins.insert(
-                (*destination).to_string(),
-                IndependentPin {
-                    owner: owner.to_string(),
-                    repository: repository.to_string(),
-                    revision: resource.revision.clone(),
-                    path: resource.path.clone(),
-                },
-            );
+            _ => {
+                return Err(anyhow!(
+                    "provenance lock contains duplicate independent resource {destination}"
+                ))
+            }
+        };
+        let (owner, repository) = resource
+            .repository
+            .split_once('/')
+            .ok_or_else(|| anyhow!("resource {destination} repository must be owner/repository"))?;
+        if owner.is_empty() || repository.is_empty() || repository.contains('/') {
+            return Err(anyhow!(
+                "resource {destination} repository must be owner/repository"
+            ));
         }
-        Ok(pins)
+        validate_commit(
+            &format!("resource {destination} revision"),
+            &resource.revision,
+        )?;
+        validate_path(&format!("resource {destination} path"), &resource.path)?;
+        pins.insert(
+            (*destination).to_string(),
+            IndependentPin {
+                owner: owner.to_string(),
+                repository: repository.to_string(),
+                revision: resource.revision.clone(),
+                path: resource.path.clone(),
+            },
+        );
     }
+    Ok(pins)
+}
 
 impl ProvenanceLock {
     fn validate(&self) -> Result<()> {
@@ -278,7 +277,8 @@ impl ProvenanceLock {
                 if previous >= resource.destination.as_str() {
                     return Err(anyhow!(
                         "resource destinations must be strictly sorted; {:?} follows {:?}",
-                        resource.destination, previous
+                        resource.destination,
+                        previous
                     ));
                 }
             }
@@ -312,14 +312,10 @@ fn validate_non_empty(field: &str, value: &str) -> Result<()> {
 
 fn validate_moby_release_tag(value: &str) -> Result<()> {
     let version = value.strip_prefix("docker-v").ok_or_else(|| {
-        anyhow!(
-            "moby.tag {value:?} must be an immutable docker-v<version> release tag"
-        )
+        anyhow!("moby.tag {value:?} must be an immutable docker-v<version> release tag")
     })?;
     semver::Version::parse(version).map_err(|error| {
-        anyhow!(
-            "moby.tag {value:?} must contain a valid release version: {error}"
-        )
+        anyhow!("moby.tag {value:?} must contain a valid release version: {error}")
     })?;
     Ok(())
 }
@@ -331,9 +327,7 @@ fn validate_sha256(field: &str, value: &str) -> Result<()> {
         ));
     }
     if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(anyhow!(
-            "{field} must use lowercase hexadecimal"
-        ));
+        return Err(anyhow!("{field} must use lowercase hexadecimal"));
     }
     Ok(())
 }
@@ -386,7 +380,9 @@ transform = "none"
         let directory = tempdir().map_err(|error| error.to_string())?;
         let path = directory.path().join("provenance.lock.toml");
         fs::write(&path, contents).map_err(|error| error.to_string())?;
-        load(&path).map(|_| ()).map_err(|error| format!("{error:#}"))
+        load(&path)
+            .map(|_| ())
+            .map_err(|error| format!("{error:#}"))
     }
 
     fn independent_resource(destination: &str) -> String {
@@ -461,8 +457,8 @@ transform = "none"
         let baseline = ResolvedBaseline {
             moby_reference: "docker-v29.4.1".into(),
             moby_commit: "6c91b92cc71077b70c779c510da125301a8e40f3".into(),
-            moby_go_mod_sha256:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            moby_go_mod_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
             buildkit_version: "v0.29.0".into(),
             buildkit_commit: "8543ce4428265d547cb009e5ad62348284497a88".into(),
             buildkit_image: "moby/buildkit:v0.29.0".into(),
@@ -496,33 +492,28 @@ transform = "none"
 
     #[test]
     fn rejects_unknown_fields() {
-        let error = load_contents(&format!("{VALID_LOCK}\nextra = true"))
-            .unwrap_err();
+        let error = load_contents(&format!("{VALID_LOCK}\nextra = true")).unwrap_err();
         assert!(error.contains("unknown field"));
     }
 
     #[test]
     fn rejects_generation_toolchain_drift() {
-        let error = load_contents(&VALID_LOCK.replacen(
-            "protoc = \"31.1\"",
-            "protoc = \"31.0\"",
-            1,
-        ))
-        .unwrap_err();
+        let error =
+            load_contents(&VALID_LOCK.replacen("protoc = \"31.1\"", "protoc = \"31.0\"", 1))
+                .unwrap_err();
         assert!(error.contains("generation inputs differ"));
     }
 
     #[test]
     fn rejects_generation_contract_drift() {
-        let error = load_contents(&VALID_LOCK.replacen("contract = 1", "contract = 2", 1))
-            .unwrap_err();
+        let error =
+            load_contents(&VALID_LOCK.replacen("contract = 1", "contract = 2", 1)).unwrap_err();
         assert!(error.contains("generation inputs differ"));
     }
 
     #[test]
     fn rejects_unsupported_schema() {
-        let error = load_contents(&VALID_LOCK.replacen("schema = 2", "schema = 3", 1))
-            .unwrap_err();
+        let error = load_contents(&VALID_LOCK.replacen("schema = 2", "schema = 3", 1)).unwrap_err();
         assert!(error.contains("unsupported provenance lock schema"));
     }
 
@@ -576,7 +567,11 @@ transform = "none"
         let error = load_contents(&duplicate).unwrap_err();
         assert!(error.contains("duplicate resource destination"));
 
-        let unsorted = VALID_LOCK.replacen("destination = \"pb/ops.proto\"", "destination = \"z/ops.proto\"", 1);
+        let unsorted = VALID_LOCK.replacen(
+            "destination = \"pb/ops.proto\"",
+            "destination = \"z/ops.proto\"",
+            1,
+        );
         let second = format!("{unsorted}\n\n[[resource]]\ndestination = \"a/ops.proto\"\nrepository = \"moby/buildkit\"\nrevision = \"8543ce4428265d547cb009e5ad62348284497a88\"\npath = \"solver/pb/ops.proto\"\nsource_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\noutput_sha256 = \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\ntransform = \"none\"\n");
         let error = load_contents(&second).unwrap_err();
         assert!(error.contains("resource destinations must be strictly sorted"));
