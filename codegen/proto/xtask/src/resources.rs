@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
 use crate::github::Remote;
 use crate::resolver::ResolvedBaseline;
 use crate::support::{sha256, validate_commit, validate_path};
 use crate::transform::{self, Transform};
+use anyhow::{anyhow, Result};
 
 pub const INDEPENDENT_DESTINATIONS: &[&str] = &[
     "google/protobuf/any.proto",
@@ -92,9 +92,7 @@ pub fn inventory(
     };
     let independent = |destination: &str| -> Result<Source> {
         let pin = independent_pins.get(destination).ok_or_else(|| {
-            anyhow!(
-                "provenance lock is missing independent resource {destination}"
-            )
+            anyhow!("provenance lock is missing independent resource {destination}")
         })?;
         Ok(Source {
             class: DependencyClass::Independent,
@@ -108,19 +106,40 @@ pub fn inventory(
     };
 
     let sources = vec![
-        buildkit("moby/buildkit/v1/control.proto", "api/services/control/control.proto"),
-        buildkit("moby/buildkit/v1/apicaps/caps.proto", "util/apicaps/pb/caps.proto"),
+        buildkit(
+            "moby/buildkit/v1/control.proto",
+            "api/services/control/control.proto",
+        ),
+        buildkit(
+            "moby/buildkit/v1/apicaps/caps.proto",
+            "util/apicaps/pb/caps.proto",
+        ),
         buildkit(
             "moby/buildkit/v1/frontend/gateway.proto",
             "frontend/gateway/pb/gateway.proto",
         ),
-        buildkit("moby/buildkit/v1/secrets.proto", "session/secrets/secrets.proto"),
-        buildkit("moby/buildkit/v1/sourcepolicy/policy.proto", "sourcepolicy/pb/policy.proto"),
+        buildkit(
+            "moby/buildkit/v1/secrets.proto",
+            "session/secrets/secrets.proto",
+        ),
+        buildkit(
+            "moby/buildkit/v1/sourcepolicy/policy.proto",
+            "sourcepolicy/pb/policy.proto",
+        ),
         buildkit("moby/buildkit/v1/ssh.proto", "session/sshforward/ssh.proto"),
-        buildkit("moby/buildkit/v1/types/worker.proto", "api/types/worker.proto"),
+        buildkit(
+            "moby/buildkit/v1/types/worker.proto",
+            "api/types/worker.proto",
+        ),
         buildkit("moby/filesync/v1/auth.proto", "session/auth/auth.proto"),
-        buildkit("moby/filesync/v1/filesync.packet.proto", "session/filesync/filesync.proto"),
-        buildkit("moby/filesync/v1/filesync.proto", "session/filesync/filesync.proto"),
+        buildkit(
+            "moby/filesync/v1/filesync.packet.proto",
+            "session/filesync/filesync.proto",
+        ),
+        buildkit(
+            "moby/filesync/v1/filesync.proto",
+            "session/filesync/filesync.proto",
+        ),
         buildkit("moby/upload/v1/upload.proto", "session/upload/upload.proto"),
         buildkit("pb/ops.proto", "solver/pb/ops.proto"),
         vendored(
@@ -282,7 +301,9 @@ mod tests {
     use anyhow::anyhow;
     use tempfile::tempdir;
 
-    use super::{fetch_sources, inventory, DependencyClass, IndependentPin, INDEPENDENT_DESTINATIONS};
+    use super::{
+        fetch_sources, inventory, DependencyClass, IndependentPin, INDEPENDENT_DESTINATIONS,
+    };
     use crate::github::Remote;
     use crate::resolver::ResolvedBaseline;
     use crate::transform::Transform;
@@ -326,10 +347,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sources.len(), 20);
-        assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitOwned));
-        assert!(sources.iter().any(|source| source.class == DependencyClass::BuildkitVendored));
-        assert!(sources.iter().any(|source| source.class == DependencyClass::Independent));
-        assert!(!sources.iter().any(|source| source.destination.contains("gogo")));
+        assert!(sources
+            .iter()
+            .any(|source| source.class == DependencyClass::BuildkitOwned));
+        assert!(sources
+            .iter()
+            .any(|source| source.class == DependencyClass::BuildkitVendored));
+        assert!(sources
+            .iter()
+            .any(|source| source.class == DependencyClass::Independent));
+        assert!(!sources
+            .iter()
+            .any(|source| source.destination.contains("gogo")));
     }
 
     #[test]
@@ -397,7 +426,10 @@ mod tests {
         let fetched = fetch_sources(&remote, &sources, directory.path()).unwrap();
         assert_eq!(fetched.len(), 2);
         assert_eq!(remote.fetch_count.get(), 1);
-        assert_eq!(fs::read(directory.path().join("first.proto")).unwrap(), b"source");
+        assert_eq!(
+            fs::read(directory.path().join("first.proto")).unwrap(),
+            b"source"
+        );
         assert_eq!(fetched[0].source_sha256, fetched[1].source_sha256);
     }
 
@@ -407,7 +439,12 @@ mod tests {
     }
 
     impl Remote for FakeRemote {
-        fn resolve_tag(&self, _owner: &str, _repository: &str, _tag: &str) -> super::Result<String> {
+        fn resolve_tag(
+            &self,
+            _owner: &str,
+            _repository: &str,
+            _tag: &str,
+        ) -> super::Result<String> {
             unreachable!()
         }
 

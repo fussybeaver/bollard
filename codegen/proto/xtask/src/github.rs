@@ -15,12 +15,7 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub trait Remote {
     fn resolve_tag(&self, owner: &str, repository: &str, tag: &str) -> Result<String>;
-    fn resolve_commit_prefix(
-        &self,
-        owner: &str,
-        repository: &str,
-        prefix: &str,
-    ) -> Result<String>;
+    fn resolve_commit_prefix(&self, owner: &str, repository: &str, prefix: &str) -> Result<String>;
     fn fetch_raw(
         &self,
         owner: &str,
@@ -37,7 +32,9 @@ pub struct GitHubRemote {
 impl GitHubRemote {
     pub fn from_environment() -> Self {
         Self {
-            token: env::var("GITHUB_TOKEN").ok().filter(|token| !token.is_empty()),
+            token: env::var("GITHUB_TOKEN")
+                .ok()
+                .filter(|token| !token.is_empty()),
         }
     }
 
@@ -93,23 +90,18 @@ impl Remote for GitHubRemote {
         let reference = format!("{API_BASE}/repos/{owner}/{repository}/git/ref/tags/{tag}");
         let tag_ref: GitRef = self.get_json(&reference)?;
         let annotated = if tag_ref.object.r#type == "tag" {
-                let tag_object = format!(
-                    "{API_BASE}/repos/{owner}/{repository}/git/tags/{}",
-                    tag_ref.object.sha
-                );
-                Some(self.get_json::<GitTag>(&tag_object)?)
-            } else {
-                None
-            };
+            let tag_object = format!(
+                "{API_BASE}/repos/{owner}/{repository}/git/tags/{}",
+                tag_ref.object.sha
+            );
+            Some(self.get_json::<GitTag>(&tag_object)?)
+        } else {
+            None
+        };
         resolve_tag_target(&tag_ref, annotated.as_ref(), tag)
     }
 
-    fn resolve_commit_prefix(
-        &self,
-        owner: &str,
-        repository: &str,
-        prefix: &str,
-    ) -> Result<String> {
+    fn resolve_commit_prefix(&self, owner: &str, repository: &str, prefix: &str) -> Result<String> {
         let url = format!("{API_BASE}/repos/{owner}/{repository}/commits/{prefix}");
         let commit: Commit = self.get_json(&url)?;
         let sha = validate_commit(&commit.sha, "commit lookup result")?;
@@ -160,17 +152,12 @@ fn validate_commit(value: &str, description: &str) -> Result<String> {
     Ok(value.into())
 }
 
-fn resolve_tag_target(
-    tag_ref: &GitRef,
-    annotated: Option<&GitTag>,
-    tag: &str,
-) -> Result<String> {
+fn resolve_tag_target(tag_ref: &GitRef, annotated: Option<&GitTag>, tag: &str) -> Result<String> {
     match tag_ref.object.r#type.as_str() {
         "commit" => validate_commit(&tag_ref.object.sha, "tag target"),
         "tag" => {
-            let annotated = annotated.ok_or_else(|| {
-                anyhow!("GitHub annotated tag {tag:?} has no tag object")
-            })?;
+            let annotated = annotated
+                .ok_or_else(|| anyhow!("GitHub annotated tag {tag:?} has no tag object"))?;
             if annotated.object.r#type != "commit" {
                 return Err(anyhow!(
                     "GitHub annotated tag {tag:?} resolves to {}, not a commit",
@@ -202,7 +189,10 @@ mod tests {
             r#"{{"object":{{"sha":"{COMMIT}","type":"commit"}}}}"#
         ))
         .unwrap();
-        assert_eq!(resolve_tag_target(&tag_ref, None, "v1.0.0").unwrap(), COMMIT);
+        assert_eq!(
+            resolve_tag_target(&tag_ref, None, "v1.0.0").unwrap(),
+            COMMIT
+        );
     }
 
     #[test]
@@ -254,7 +244,8 @@ mod tests {
         let body = "x".repeat(32);
         let url = serve(format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(), body
+            body.len(),
+            body
         ));
         let error = GitHubRemote { token: None }
             .get_with_options(
