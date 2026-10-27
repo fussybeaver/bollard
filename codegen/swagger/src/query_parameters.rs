@@ -1895,6 +1895,7 @@ impl Default for PruneBuildOptions
 /// //  .outputs(/* ... */)
 /// //  .version(/* ... */)
 /// //  .session(/* ... */)
+/// //  .buildid(/* ... */)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -2103,6 +2104,13 @@ impl BuildImageOptionsBuilder {
         self
     }
 
+    /// Build ID used to cancel the build with `/build/cancel`
+    #[cfg(feature = "buildkit")]
+    pub fn buildid(mut self, buildid: &str) -> Self {
+        self.inner.buildid = Some(buildid.into());
+        self
+    }
+
     /// Consume this builder and use the `BuildImageOptions` as parameter to the
     /// `ImageBuild` API
     pub fn build(self) -> BuildImageOptions {
@@ -2165,6 +2173,9 @@ pub struct BuildImageOptions
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(feature = "buildkit")]
     pub session: Option<String>, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg(feature = "buildkit")]
+    pub buildid: Option<String>, 
 }
 
 impl Default for BuildImageOptions
@@ -2199,6 +2210,8 @@ impl Default for BuildImageOptions
             version: Default::default(),
             #[cfg(feature = "buildkit")]
             session: None,
+            #[cfg(feature = "buildkit")]
+            buildid: None,
         }
     }
 }

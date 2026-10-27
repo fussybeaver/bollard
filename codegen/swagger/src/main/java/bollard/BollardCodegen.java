@@ -525,6 +525,17 @@ public class BollardCodegen extends RustServerCodegen {
                         sessionParam.vendorExtensions = new HashMap<>();
                         sessionParam.vendorExtensions.put("x-codegen-query-param-is-buildkit", "true");
                         operation.queryParams.add(sessionParam);
+
+                        // Add buildkit specific 'buildid' argument, so the build can later be cancelled with `/build/cancel`
+                        CodegenParameter buildIdParam = new CodegenParameter();
+                        buildIdParam.baseName = "buildid";
+                        buildIdParam.unescapedDescription = "    /// Build ID used to cancel the build with `/build/cancel`";
+                        buildIdParam.paramName = "buildid";
+                        buildIdParam.dataType = "String";
+                        buildIdParam.isString = true;
+                        buildIdParam.vendorExtensions = new HashMap<>();
+                        buildIdParam.vendorExtensions.put("x-codegen-query-param-is-buildkit", "true");
+                        operation.queryParams.add(buildIdParam);
                     }
 
                 }
