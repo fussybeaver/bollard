@@ -1956,6 +1956,71 @@ RUN echo bollard > bollard.txt
     Ok(())
 }
 
+#[cfg(feature = "buildkit_providerless")]
+async fn cancel_build_test(docker: Docker) -> Result<(), Error> {
+    let dockerfile = format!(
+        "FROM {}alpine
+RUN sleep 60
+",
+        registry_http_addr()
+    );
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+
+    let uncompressed = tar.into_inner().unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&uncompressed).unwrap();
+    let compressed = c.finish().unwrap();
+
+    let credentials = bollard::auth::DockerCredentials {
+        username: Some("bollard".to_string()),
+        password: std::env::var("REGISTRY_PASSWORD").ok(),
+        ..Default::default()
+    };
+    let mut creds_hsh = std::collections::HashMap::new();
+    creds_hsh.insert("localhost:5000".to_string(), credentials);
+
+    let build_id = "integration_test_cancel_build";
+    let started = std::time::Instant::now();
+
+    let build = docker
+        .build_image(
+            BuildImageOptionsBuilder::default()
+                .dockerfile("Dockerfile")
+                .t("integration_test_cancel_build")
+                .pull("true")
+                .version(BuilderVersion::BuilderBuildKit)
+                .rm(true)
+                .session("cancel_build_test")
+                .buildid(build_id)
+                .build(),
+            Some(creds_hsh),
+            Some(http_body_util::Either::Left(Full::new(compressed.into()))),
+        )
+        .try_collect::<Vec<bollard::models::BuildInfo>>();
+
+    let cancel = async {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        docker.cancel_build(build_id).await
+    };
+
+    let (build, cancel) = tokio::join!(build, cancel);
+
+    cancel?;
+    assert!(build.is_err());
+    assert!(started.elapsed() < std::time::Duration::from_secs(60));
+
+    // An unknown or finished build ID is not an error.
+    docker.cancel_build(build_id).await?;
+
+    Ok(())
+}
+
 async fn export_image_test(docker: Docker) -> Result<(), Error> {
     create_image_hello_world(&docker).await?;
 
@@ -2294,6 +2359,12 @@ fn integration_test_build_buildkit_image_outputs_local() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_prune_build() {
     connect_to_docker_and_run!(prune_build_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_cancel_build() {
+    connect_to_docker_and_run!(cancel_build_test);
 }
 
 #[test]

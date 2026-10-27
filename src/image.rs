@@ -955,6 +955,43 @@ impl Docker {
 
     /// ---
     ///
+    /// # Cancel Build
+    ///
+    /// Cancel a BuildKit build started with a build ID, set through
+    /// [`buildid`](crate::query_parameters::BuildImageOptionsBuilder::buildid). The Docker engine
+    /// returns success for an unknown or already-finished build ID.
+    ///
+    /// # Arguments
+    ///
+    ///  - The build ID passed to [`build_image`](Docker::build_image).
+    ///
+    /// # Returns
+    ///
+    ///  - unit type `()`, wrapped in a Future.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// docker.cancel_build("my-build-id");
+    /// ```
+    #[cfg(feature = "buildkit_providerless")]
+    pub async fn cancel_build(&self, id: &str) -> Result<(), Error> {
+        let url = "/build/cancel";
+
+        let req = self.build_request(
+            url,
+            Builder::new().method(Method::POST),
+            Some([("id", id)]),
+            Ok(BodyType::Left(Full::new(Bytes::new()))),
+        );
+
+        self.process_into_unit(req).await
+    }
+
+    /// ---
+    ///
     /// # Export Image
     ///
     /// Get a tarball containing all images and metadata for a repository.
