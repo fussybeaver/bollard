@@ -9,10 +9,11 @@ use bollard::errors::Error;
 use bollard::models::{ContainerConfig, ContainerCreateBody};
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptions,
-    CreateImageOptionsBuilder, ImportImageOptionsBuilder, ListImagesOptionsBuilder,
-    PruneImagesOptionsBuilder, RemoveContainerOptions, RemoveContainerOptionsBuilder,
-    RemoveImageOptions, RemoveImageOptionsBuilder, SearchImagesOptionsBuilder,
-    StartContainerOptions, TagImageOptionsBuilder, WaitContainerOptions,
+    CreateImageOptionsBuilder, ImportImageOptionsBuilder, InspectImageOptions,
+    InspectImageOptionsBuilder, ListImagesOptionsBuilder, PruneImagesOptionsBuilder,
+    RemoveContainerOptions, RemoveContainerOptionsBuilder, RemoveImageOptions,
+    RemoveImageOptionsBuilder, SearchImagesOptionsBuilder, StartContainerOptions,
+    TagImageOptionsBuilder, WaitContainerOptions,
 };
 #[cfg(feature = "buildkit")]
 use bollard::query_parameters::{BuilderVersion, ImageBuildOutput, PruneBuildOptions};
@@ -68,7 +69,9 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
         .collect::<Result<Vec<_>, bollard::errors::Error>>()
         .unwrap();
 
-    let result = &docker.inspect_image(image).await?;
+    let result = &docker
+        .inspect_image(image, None::<InspectImageOptions>)
+        .await?;
 
     assert!(result.repo_tags.as_ref().unwrap() == [image.to_owned()].as_slice());
 
@@ -100,7 +103,9 @@ async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
 
     create_image_hello_world(&docker).await?;
 
-    let result = &docker.inspect_image(&image).await?;
+    let result = &docker
+        .inspect_image(&image, None::<InspectImageOptions>)
+        .await?;
 
     assert!(result
         .repo_tags
@@ -108,6 +113,45 @@ async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
         .unwrap()
         .iter()
         .any(|repo_tag| repo_tag == &image));
+
+    Ok(())
+}
+
+async fn inspect_image_platform_test(docker: Docker) -> Result<(), Error> {
+    let image = create_image_hello_world(&docker).await?;
+
+    let stored = docker
+        .inspect_image(&image, None::<InspectImageOptions>)
+        .await?;
+    let os = stored.os.unwrap();
+    let architecture = stored.architecture.unwrap();
+    let platform_options = |architecture: &str| {
+        InspectImageOptionsBuilder::new()
+            .platform(&serde_json::json!({ "os": os, "architecture": architecture }).to_string())
+            .build()
+    };
+
+    let selected = docker
+        .inspect_image(&image, Some(platform_options(&architecture)))
+        .await?;
+
+    assert_eq!(selected.os.as_deref(), Some(os.as_str()));
+    assert_eq!(
+        selected.architecture.as_deref(),
+        Some(architecture.as_str())
+    );
+
+    // The daemon answers a platform the image does not provide with an error.
+    let absent_architecture = if architecture == "s390x" {
+        "riscv64"
+    } else {
+        "s390x"
+    };
+    let absent = docker
+        .inspect_image(&image, Some(platform_options(absent_architecture)))
+        .await;
+
+    assert!(absent.is_err(), "{absent:?}");
 
     Ok(())
 }
@@ -1412,7 +1456,9 @@ int main(int argc, char **argv) {
                     err: std::io::Error::other(error.to_string()),
                 })?;
 
-            let inspected = docker.inspect_image(&tag).await?;
+            let inspected = docker
+                .inspect_image(&tag, None::<InspectImageOptions>)
+                .await?;
             if inspected.os.as_deref() != Some("linux") {
                 return Err(Error::IOError {
                     err: std::io::Error::other(format!(
@@ -2176,6 +2222,12 @@ fn integration_test_create_image_wasm() {
 #[cfg(not(windows))]
 fn integration_test_inspect_image() {
     connect_to_docker_and_run!(inspect_image_test);
+}
+
+#[test]
+#[cfg(not(windows))]
+fn integration_test_inspect_image_platform() {
+    connect_to_docker_and_run!(inspect_image_platform_test);
 }
 
 #[test]

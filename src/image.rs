@@ -160,6 +160,7 @@ impl Docker {
     /// # Arguments
     ///
     /// - Image name as a string slice.
+    /// - An optional [Inspect Image Options](crate::query_parameters::InspectImageOptions) struct.
     ///
     /// # Returns
     ///
@@ -170,18 +171,25 @@ impl Docker {
     /// ```rust
     /// # use bollard::Docker;
     /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::InspectImageOptionsBuilder;
     ///
-    /// use std::default::Default;
+    /// let options = InspectImageOptionsBuilder::default()
+    ///     .platform(r#"{"os":"linux","architecture":"arm64"}"#)
+    ///     .build();
     ///
-    /// docker.inspect_image("hello-world");
+    /// docker.inspect_image("hello-world", Some(options));
     /// ```
-    pub async fn inspect_image(&self, image_name: &str) -> Result<ImageInspect, Error> {
+    pub async fn inspect_image(
+        &self,
+        image_name: &str,
+        options: Option<impl Into<crate::query_parameters::InspectImageOptions>>,
+    ) -> Result<ImageInspect, Error> {
         let url = format!("/images/{}/json", escape_reference(image_name));
 
         let req = self.build_request(
             &url,
             Builder::new().method(Method::GET),
-            None::<String>,
+            options.map(Into::into),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
 
