@@ -90,6 +90,12 @@ For timestamp support in events and logs, choose **one**:
 
 **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
 
+The transport-free `bollard-llb` crate constructs synchronous LLB graphs.
+Direct definition solves support local filesystem export through
+Docker-container and BuildkitDaemon. The Moby driver provides
+`Moby::build_image` to store configured images directly in Docker Engine,
+initially validated for a single `linux/amd64` platform.
+
 #### WebSocket Features
 
 | Feature | Description |
@@ -298,13 +304,11 @@ cargo xtask buildkit update
 cargo xtask buildkit check
 ```
 
-`update` resolves the Moby-derived BuildKit baseline, refreshes immutable
-protobuf resources through named transformations, and regenerates the checked-in
-bindings while updating the committed provenance lock. `check` regenerates into
-a temporary directory, enforces the lock, and compares the result with the
-checked-in output without modifying the working tree. Use
-`cargo xtask buildkit check --online` to additionally verify the immutable source
-resources against the checked-in tree.
+`update` resolves the Moby-derived BuildKit version and protobuf sources,
+updates the provenance lockfile, and regenerates the bindings. `check`
+regenerates into a temporary directory using the locked inputs and compares
+against the checked-in bindings. For more information see the [protobuf
+provenance README](./codegen/proto/README.md).
 
 ### Building the swagger models
 

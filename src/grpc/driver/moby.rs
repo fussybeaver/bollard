@@ -3,14 +3,13 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use bollard_buildkit_proto::{health, moby::buildkit::v1::control_client::ControlClient};
+use bollard_buildkit_proto::health;
 use bytes::Bytes;
 use http::{request::Builder, Method};
 use http_body_util::Full;
 use log::error;
 use log::trace;
-use tonic::codegen::InterceptedService;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::Endpoint;
 
 use crate::auth::DockerCredentials;
 use crate::docker::BodyType;
@@ -38,6 +37,17 @@ impl Moby {
             docker: Docker::clone(docker),
         }
     }
+
+    /// Build an LLB definition directly into Docker Engine's image store.
+    ///
+    /// Unlike [`super::SolveDefinition`], this Moby-only operation preserves the
+    /// supplied image runtime configuration and exports the requested tag.
+    pub async fn build_image(
+        &self,
+        request: super::MobyImageBuildRequest,
+    ) -> Result<super::DefinitionSolveResult, GrpcError> {
+        super::solve_moby_image(self, request).await
+    }
 }
 
 impl Driver for Moby {
@@ -45,7 +55,7 @@ impl Driver for Moby {
         &self,
         session_id: &str,
         services: Vec<GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
+    ) -> Result<super::GrpcHandle, GrpcError> {
         let grpc_client = GrpcClient {
             client: self.docker.clone(),
             session_id: String::from(session_id),
@@ -60,8 +70,8 @@ impl Driver for Moby {
         let interceptor = DriverInterceptor {
             session_id: String::from(session_id),
             metadata_grpc_method: metadata_grpc_method.clone(),
+            build_ref: None,
         };
-        let control_client = ControlClient::with_interceptor(channel, interceptor);
 
         let url = "/session";
 
@@ -114,7 +124,7 @@ impl Driver for Moby {
             }
         });
 
-        Ok(control_client)
+        Ok(super::GrpcHandle::new(channel, interceptor))
     }
 
     fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {

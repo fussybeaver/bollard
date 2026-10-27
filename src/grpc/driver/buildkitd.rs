@@ -12,12 +12,11 @@ use crate::grpc::DockerCredentials;
 
 use std::collections::HashMap;
 pub use tonic::transport::Endpoint;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
 use crate::grpc::error::GrpcError;
 
 use super::channel::BuildkitChannel;
-use super::{Driver, DriverInterceptor, DriverTearDownHandler};
+use super::{Driver, DriverTearDownHandler};
 
 const DUPLEX_BUF_SIZE: usize = 8 * 1024;
 
@@ -39,7 +38,7 @@ impl Driver for BuildkitDaemon {
         &self,
         session_id: &str,
         services: Vec<super::GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
+    ) -> Result<super::GrpcHandle, GrpcError> {
         let channel = self.uri.connect().await?;
         let channel = BuildkitChannel::new(channel);
 
