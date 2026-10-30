@@ -141,7 +141,6 @@ async fn inspect_image_platform_test(docker: Docker) -> Result<(), Error> {
         Some(architecture.as_str())
     );
 
-    // The daemon answers a platform the image does not provide with an error.
     let absent_architecture = if architecture == "s390x" {
         "riscv64"
     } else {
@@ -151,7 +150,53 @@ async fn inspect_image_platform_test(docker: Docker) -> Result<(), Error> {
         .inspect_image(&image, Some(platform_options(absent_architecture)))
         .await;
 
-    assert!(absent.is_err(), "{absent:?}");
+    let platform_since = bollard::ClientVersion {
+        major_version: 1,
+        minor_version: 49,
+    };
+    if docker.client_version() < platform_since {
+        // The daemon ignores `platform` and answers with the stored image.
+        let absent = absent?;
+        assert_eq!(absent.os.as_deref(), Some(os.as_str()));
+        assert_eq!(absent.architecture.as_deref(), Some(architecture.as_str()));
+        return Ok(());
+    }
+
+    let containerd_store = docker
+        .info()
+        .await?
+        .driver_status
+        .unwrap_or_default()
+        .iter()
+        .any(|status| status == &["driver-type", "io.containerd.snapshotter.v1"]);
+    let requested = format!("{os}/{absent_architecture}");
+    let expected = if containerd_store {
+        format!(
+            "image with reference {image} was found but does not provide the specified platform ({requested})"
+        )
+    } else {
+        let stored_platform = [Some(&os), Some(&architecture), stored.variant.as_ref()]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.is_empty())
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("/");
+        format!(
+            "image with reference {image} was found but its platform ({stored_platform}) does not match the specified platform ({requested})"
+        )
+    };
+
+    match absent {
+        Err(Error::DockerResponseServerError {
+            status_code,
+            message,
+        }) => {
+            assert_eq!(status_code, 404);
+            assert_eq!(message, expected);
+        }
+        other => panic!("expected a 404 for {requested}, got {other:?}"),
+    }
 
     Ok(())
 }
