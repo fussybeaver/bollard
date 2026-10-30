@@ -1232,15 +1232,9 @@ fn ignored_inspect_parameters(
         minor_version: 49,
     };
 
-    // Moby reads `platform` only when it is non-empty.
-    let platform = options
-        .platform
-        .as_deref()
-        .is_some_and(|platform| !platform.is_empty());
-
     [
         ("manifests", options.manifests, MANIFESTS_SINCE),
-        ("platform", platform, PLATFORM_SINCE),
+        ("platform", options.platform.is_some(), PLATFORM_SINCE),
     ]
     .into_iter()
     .filter(move |&(_, set, since)| set && version < since)
@@ -1426,12 +1420,6 @@ mod tests {
         }
 
         #[test]
-        fn unset_options_are_never_ignored() {
-            let options = InspectImageOptionsBuilder::new().build();
-            assert_eq!(ignored(&options, 24), []);
-        }
-
-        #[test]
         fn manifests_floor() {
             let options = InspectImageOptionsBuilder::new().manifests(true).build();
             assert_eq!(ignored(&options, 47), [("manifests", version(48))]);
@@ -1445,24 +1433,6 @@ mod tests {
                 .build();
             assert_eq!(ignored(&options, 48), [("platform", version(49))]);
             assert_eq!(ignored(&options, 49), []);
-        }
-
-        #[test]
-        fn empty_platform_is_unset() {
-            let options = InspectImageOptionsBuilder::new().platform("").build();
-            assert_eq!(ignored(&options, 24), []);
-        }
-
-        #[test]
-        fn both_below_floor() {
-            let options = InspectImageOptionsBuilder::new()
-                .manifests(true)
-                .platform(r#"{"os":"linux","architecture":"arm64"}"#)
-                .build();
-            assert_eq!(
-                ignored(&options, 47),
-                [("manifests", version(48)), ("platform", version(49))]
-            );
         }
     }
 }

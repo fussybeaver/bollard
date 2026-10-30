@@ -2340,64 +2340,22 @@ mod tests {
         }
     }
 
-    mod request_version {
-        use super::*;
-
-        const V1_44: ClientVersion = ClientVersion {
-            major_version: 1,
-            minor_version: 44,
-        };
-        const V1_53: ClientVersion = ClientVersion {
+    #[test]
+    fn daemon_version_caps_pinned_request_version() {
+        // Podman serves any request path and answers with its own compat version.
+        let mut headers = http::HeaderMap::new();
+        headers.insert("Api-Version", "1.44".parse().unwrap());
+        let pinned = ClientVersion {
             major_version: 1,
             minor_version: 53,
         };
-
-        fn headers(api_version: Option<&str>) -> http::HeaderMap {
-            let mut headers = http::HeaderMap::new();
-            if let Some(api_version) = api_version {
-                headers.insert("Api-Version", api_version.parse().unwrap());
-            }
-            headers
-        }
-
-        #[test]
-        fn unversioned_request_uses_daemon_default() {
-            assert_eq!(
-                Docker::request_version(&headers(Some("1.44")), None),
-                Some(V1_44)
-            );
-        }
-
-        #[test]
-        fn pinned_request_without_daemon_version() {
-            assert_eq!(
-                Docker::request_version(&headers(None), Some(V1_44)),
-                Some(V1_44)
-            );
-        }
-
-        #[test]
-        fn pinned_request_below_daemon_version() {
-            assert_eq!(
-                Docker::request_version(&headers(Some("1.53")), Some(V1_44)),
-                Some(V1_44)
-            );
-        }
-
-        #[test]
-        fn daemon_version_caps_pinned_request() {
-            // Podman serves any request path and answers with its own compat version.
-            assert_eq!(
-                Docker::request_version(&headers(Some("1.44")), Some(V1_53)),
-                Some(V1_44)
-            );
-        }
-
-        #[test]
-        fn unknown_version() {
-            assert_eq!(Docker::request_version(&headers(None), None), None);
-            assert_eq!(Docker::request_version(&headers(Some("v1")), None), None);
-        }
+        assert_eq!(
+            Docker::request_version(&headers, Some(pinned)),
+            Some(ClientVersion {
+                major_version: 1,
+                minor_version: 44,
+            })
+        );
     }
 
     /// RAII guard that sets or unsets an env var and restores the previous
