@@ -1628,6 +1628,24 @@ impl Docker {
         async move { Docker::decode_response(fut.await?).await }
     }
 
+    /// Like [`Docker::process_into_value`], also returning the API version the daemon applied to
+    /// the request, as given by [`Docker::request_version`].
+    pub(crate) fn process_into_value_with_version<T>(
+        &self,
+        req: Result<Request<BodyType>, Error>,
+    ) -> impl Future<Output = Result<(T, Option<ClientVersion>), Error>>
+    where
+        T: DeserializeOwned,
+    {
+        let pinned_version = self.version.pinned_version();
+        let fut = self.process_request(req);
+        async move {
+            let response = fut.await?;
+            let version = Docker::request_version(response.headers(), pinned_version);
+            Ok((Docker::decode_response(response).await?, version))
+        }
+    }
+
     pub(crate) fn process_into_stream<T>(
         &self,
         req: Result<Request<BodyType>, Error>,
@@ -1725,9 +1743,8 @@ impl Docker {
 
     /// Docker sends `multiplexed-stream` for non-TTY output since API 1.42. Before that it
     /// sends `raw-stream` either way, so `raw-stream` is only trusted when the request's API
-    /// version is known to be >= 1.42: pinned by the client, or reported by the daemon in the
-    /// `Api-Version` header of an unversioned request. Returns `None` otherwise, and the
-    /// caller picks the framing from the container's TTY setting.
+    /// version, as given by [`Docker::request_version`], is known to be >= 1.42. Returns `None`
+    /// otherwise, and the caller picks the framing from the container's TTY setting.
     fn stream_framing(
         headers: &http::HeaderMap,
         pinned_version: Option<ClientVersion>,
@@ -1744,24 +1761,37 @@ impl Docker {
             return None;
         }
 
-        let version = pinned_version.or_else(|| {
-            match headers
-                .get("api-version")
-                .and_then(|value| value.to_str().ok())
-                .map(MaybeClientVersion::from)
-            {
-                Some(MaybeClientVersion::Some(version)) => Some(version),
-                _ => None,
-            }
-        });
         let multiplexed_since = ClientVersion {
             major_version: 1,
             minor_version: 42,
         };
 
-        match version {
+        match Docker::request_version(headers, pinned_version) {
             Some(version) if version >= multiplexed_since => Some(StreamFraming::Raw),
             _ => None,
+        }
+    }
+
+    /// The API version the daemon applied to a request, the lower of the pinned version and the
+    /// `Api-Version` response header. Moby answers its default version in that header, applies
+    /// it to unversioned requests and rejects a pinned version above it. Podman answers its
+    /// compat version whatever the request path says.
+    fn request_version(
+        headers: &http::HeaderMap,
+        pinned_version: Option<ClientVersion>,
+    ) -> Option<ClientVersion> {
+        let daemon_version = match headers
+            .get("api-version")
+            .and_then(|value| value.to_str().ok())
+            .map(MaybeClientVersion::from)
+        {
+            Some(MaybeClientVersion::Some(version)) => Some(version),
+            _ => None,
+        };
+
+        match (pinned_version, daemon_version) {
+            (Some(pinned), Some(daemon)) if daemon < pinned => Some(daemon),
+            (pinned, daemon) => pinned.or(daemon),
         }
     }
 
@@ -2308,6 +2338,24 @@ mod tests {
             let headers = headers("application/vnd.docker.raw-stream", None);
             assert_eq!(Docker::stream_framing(&headers, None), None);
         }
+    }
+
+    #[test]
+    fn daemon_version_caps_pinned_request_version() {
+        // Podman serves any request path and answers with its own compat version.
+        let mut headers = http::HeaderMap::new();
+        headers.insert("Api-Version", "1.44".parse().unwrap());
+        let pinned = ClientVersion {
+            major_version: 1,
+            minor_version: 53,
+        };
+        assert_eq!(
+            Docker::request_version(&headers, Some(pinned)),
+            Some(ClientVersion {
+                major_version: 1,
+                minor_version: 44,
+            })
+        );
     }
 
     /// RAII guard that sets or unsets an env var and restores the previous
