@@ -112,17 +112,11 @@ pub enum GrpcAuthError {
         err: std::io::Error,
     },
     /// Error emitted from the rustls library during communication with the registry
-    #[error("TLS error during GRPC authentication with registry")]
+    #[error("TLS error during GRPC authentication with registry: {err}")]
     RustTlsError {
         /// The source error from Rustls
         #[from]
         err: rustls::Error,
-    },
-    /// Error emitted when the client is unable to load native certs for SSL
-    #[error("Could not load native certs")]
-    RustlsNativeCertsErrors {
-        /// The original errors emitted.
-        errors: Vec<rustls_native_certs::Error>,
     },
     /// Failure to encode query parameters when creating the URL to authenticate with the registry
     #[error("Failure encoding query parameters for GRPC authentication with registry")]

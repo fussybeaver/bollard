@@ -1507,29 +1507,22 @@ impl AuthProvider {
 
     fn ssl_client(
     ) -> Result<Client<hyper_rustls::HttpsConnector<HttpConnector>, BodyType>, GrpcAuthError> {
-        let mut root_store = rustls::RootCertStore::empty();
+        let builder = rustls::ClientConfig::builder_with_protocol_versions(ALL_VERSIONS);
 
         #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        let native_certs = rustls_native_certs::load_native_certs();
+        let builder = {
+            use rustls_platform_verifier::BuilderVerifierExt;
+            builder.with_platform_verifier()?
+        };
 
-        #[cfg(not(any(feature = "test_ssl", feature = "webpki")))]
-        if native_certs.errors.is_empty() {
-            for cert in native_certs.certs {
-                root_store
-                    .add(cert)
-                    .map_err(|err| GrpcAuthError::RustTlsError { err })?
-            }
-        } else {
-            return Err(GrpcAuthError::RustlsNativeCertsErrors {
-                errors: native_certs.errors,
-            });
-        }
         #[cfg(any(feature = "test_ssl", feature = "webpki"))]
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let builder = {
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            builder.with_root_certificates(root_store)
+        };
 
-        let config = rustls::ClientConfig::builder_with_protocol_versions(ALL_VERSIONS)
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+        let config = builder.with_no_client_auth();
 
         let mut http_connector = HttpConnector::new();
         http_connector.enforce_http(false);

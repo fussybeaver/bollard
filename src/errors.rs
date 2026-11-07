@@ -49,17 +49,6 @@ pub enum Error {
         #[from]
         err: rustls::Error,
     },
-    /// Error emitted when the client is unable to load native certs for SSL.
-    ///
-    /// No longer constructed by this crate: `connect_with_ssl` trusts only
-    /// the explicitly supplied CA bundle and does not load native roots.
-    /// Left defined for API compatibility.
-    #[cfg(feature = "ssl_providerless")]
-    #[error("Could not load native certs")]
-    LoadNativeCertsErrors {
-        /// The original errors emitted.
-        errors: Vec<rustls_native_certs::Error>,
-    },
     /// Generic error emitted by the docker server.
     #[error("Docker responded with status code {status_code}: {message}")]
     DockerResponseServerError {

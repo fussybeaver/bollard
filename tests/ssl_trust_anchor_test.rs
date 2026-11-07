@@ -2,7 +2,7 @@
 //! caller's `ca.pem` as the only trust anchor for the daemon.
 //!
 //! Runs without a Docker daemon or network. A TLS server on 127.0.0.1 answers
-//! `/_ping`, and `SSL_CERT_FILE` points rustls-native-certs at a throwaway
+//! `/_ping`, and `SSL_CERT_FILE` replaces the OS trust store with a throwaway
 //! "platform" root, so a certificate issued by that root stands in for one
 //! issued by any public or enterprise CA in the OS store.
 //!
@@ -81,8 +81,9 @@ impl Fixture {
     }
 }
 
-/// Point rustls-native-certs at a single throwaway root for the whole binary.
-/// `OnceLock` keeps `set_var` from racing a concurrent `load_native_certs`.
+/// Replace the OS trust store with a single throwaway root for the whole
+/// binary, via `SSL_CERT_FILE`, which native root loading honors on every
+/// platform. `OnceLock` keeps `set_var` from racing a concurrent root load.
 fn platform_root() -> &'static Ca {
     static ROOT: OnceLock<Ca> = OnceLock::new();
     ROOT.get_or_init(|| {
