@@ -27,6 +27,8 @@ public class BollardCodegen extends RustServerCodegen {
                 "Mapping Swagger to legacy Bollard Query Parameter types, delimited by comma and colon");
 
         cliOptions.add(option);
+        cliOptions.add(new CliOption("queryParameterMinimumVersions",
+                "Docker Engine API version each query parameter needs, as OperationId.parameter=1.49 lines"));
 
         supportsInheritance = false;
         supportsMixins = true;
@@ -56,20 +58,35 @@ public class BollardCodegen extends RustServerCodegen {
 
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
 
+        enumValues = new ArrayList<Map<String, String>>();
+
         // Podman emits "stopping" during container destruction (containers/podman#25591)
         // This is a legitimate transient state, not a Podman bug — see fussybeaver/bollard#701
-        enumValues = new ArrayList<Map<String, String>>();
         additionalEnumValues = new HashMap<String, String>();
         additionalEnumValues.put("name", "STOPPING");
         additionalEnumValues.put("value", "\"stopping\"");
         enumValues.add(additionalEnumValues);
+
+        // Podman emits "stopped" instead of exited for v5 or below (containers/podman#25591)
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPED");
+        additionalEnumValues.put("value", "\"stopped\"");
+        enumValues.add(additionalEnumValues);
+
         patchEnumValues.put("ContainerStateStatusEnum", enumValues);
 
         enumValues = new ArrayList<Map<String, String>>();
+
         additionalEnumValues = new HashMap<String, String>();
         additionalEnumValues.put("name", "STOPPING");
         additionalEnumValues.put("value", "\"stopping\"");
         enumValues.add(additionalEnumValues);
+        
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPED");
+        additionalEnumValues.put("value", "\"stopped\"");
+        enumValues.add(additionalEnumValues);
+
         patchEnumValues.put("ContainerSummaryStateEnum", enumValues);
     }
 
@@ -91,6 +108,10 @@ public class BollardCodegen extends RustServerCodegen {
 
     private HashMap<String, String> queryParameterMappings = new HashMap();
 
+    // Keyed by `OperationId.parameter`.
+    private final Map<String, String> queryParameterMinimumVersions = new HashMap<>();
+    private final Set<String> appliedQueryParameterMinimumVersions = new HashSet<>();
+
     @Override
     public void preprocessSwagger(Swagger swagger) {
         Info info = swagger.getInfo();
@@ -106,6 +127,23 @@ public class BollardCodegen extends RustServerCodegen {
                 if (cliOptionLineSplit.length == 2) {
                     queryParameterMappings.put(cliOptionLineSplit[0].trim(), cliOptionLineSplit[1].trim());
                 }
+            }
+        }
+
+        String cliOptionQueryParameterMinimumVersions = (String) additionalProperties.get("queryParameterMinimumVersions");
+        if (cliOptionQueryParameterMinimumVersions != null) {
+            for (String cliOptionLine : cliOptionQueryParameterMinimumVersions.split("\n")) {
+                if (cliOptionLine.trim().isEmpty()) {
+                    continue;
+                }
+                String[] cliOptionLineSplit = cliOptionLine.split("=");
+                if (cliOptionLineSplit.length != 2
+                        || !cliOptionLineSplit[0].trim().matches("\\w+\\.[\\w-]+")
+                        || !cliOptionLineSplit[1].trim().matches("\\d+\\.\\d+")) {
+                    throw new IllegalArgumentException(
+                            "queryParameterMinimumVersions line is not OperationId.parameter=1.49: " + cliOptionLine.trim());
+                }
+                queryParameterMinimumVersions.put(cliOptionLineSplit[0].trim(), cliOptionLineSplit[1].trim());
             }
         }
 
@@ -469,6 +507,13 @@ public class BollardCodegen extends RustServerCodegen {
                             param.vendorExtensions.put("x-codegen-query-param-rename", param.baseName);
                         }
 
+                        String minimumVersionKey = operation.operationId + "." + param.baseName;
+                        String minimumVersion = queryParameterMinimumVersions.get(minimumVersionKey);
+                        if (minimumVersion != null) {
+                            param.vendorExtensions.put("x-codegen-query-param-min-version", minimumVersion);
+                            appliedQueryParameterMinimumVersions.add(minimumVersionKey);
+                        }
+
                         // Special handling for building images
                         if (operation.operationId.equals("ImageBuild")) {
                             // `buildargs` and `labels` are passed to the Docker server as JSON map
@@ -532,6 +577,17 @@ public class BollardCodegen extends RustServerCodegen {
         }
 
         return objs;
+    }
+
+    @Override
+    public Map<String, Object> postProcessSupportingFileData(Map<String, Object> objs) {
+        Set<String> unapplied = new TreeSet<>(queryParameterMinimumVersions.keySet());
+        unapplied.removeAll(appliedQueryParameterMinimumVersions);
+        if (!unapplied.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "queryParameterMinimumVersions names no generated query parameter: " + unapplied);
+        }
+        return super.postProcessSupportingFileData(objs);
     }
 
 }

@@ -98,7 +98,9 @@ impl {{{.}}}Builder {
     }
     {{#queryParams}}
 
-{{#unescapedDescription}}{{{.}}}{{/unescapedDescription}}
+{{#unescapedDescription}}{{{.}}}{{/unescapedDescription}}{{#vendorExtensions.x-codegen-query-param-min-version}}
+    ///
+    /// Requires Docker Engine API {{.}} or later.{{/vendorExtensions.x-codegen-query-param-min-version}}
 {{#vendorExtensions.x-codegen-query-param-is-buildkit}}    #[cfg(feature = "buildkit")]
 {{/vendorExtensions.x-codegen-query-param-is-buildkit}}    pub fn {{paramName}}(mut self, {{paramName}}: {{#isString}}&str{{/isString}}{{^isString}}{{{dataType}}}{{/isString}}) -> Self {
         {{#isMapContainer}}

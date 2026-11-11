@@ -103,6 +103,10 @@
                       VolumeList=ListVolumesOptions
                       VolumePrune=PruneVolumesOptions
                   </queryParameterMappings>
+                  <queryParameterMinimumVersions>
+                      ImageInspect.manifests=1.48
+                      ImageInspect.platform=1.49
+                  </queryParameterMinimumVersions>
                 </configOptions>
               </configuration>
             </execution>
