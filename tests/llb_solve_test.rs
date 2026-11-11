@@ -866,7 +866,12 @@ async fn capture_builder_identity(docker: &Docker, driver_name: &str) -> Result<
     let image_id = container.image.clone().ok_or_else(|| Error::IOError {
         err: std::io::Error::other("BuildKit container has no image ID"),
     })?;
-    let image = docker.inspect_image(&image_ref).await?;
+    let image = docker
+        .inspect_image(
+            &image_ref,
+            None::<bollard::query_parameters::InspectImageOptions>,
+        )
+        .await?;
     let repo_digests = image.repo_digests.unwrap_or_default();
 
     let exec = docker

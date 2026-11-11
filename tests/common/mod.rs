@@ -649,7 +649,12 @@ pub mod buildkit_test {
             .config
             .and_then(|config| config.image)
             .unwrap_or_default();
-        let image_inspect: ImageInspect = docker.inspect_image(&requested_image).await?;
+        let image_inspect: ImageInspect = docker
+            .inspect_image(
+                &requested_image,
+                None::<bollard::query_parameters::InspectImageOptions>,
+            )
+            .await?;
         let resolved_image_id = image_inspect.id.unwrap_or_default();
         let resolved_repo_digests = image_inspect.repo_digests.unwrap_or_default();
         let buildkitd_version = exec_command(docker, name, vec!["buildkitd", "--version"]).await?;
