@@ -9,8 +9,9 @@ use bollard::errors::Error;
 use bollard::models::{ContainerConfig, ContainerCreateBody};
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptions,
-    CreateImageOptionsBuilder, ImportImageOptionsBuilder, ListImagesOptionsBuilder,
-    PruneImagesOptionsBuilder, RemoveContainerOptions, RemoveImageOptions,
+    CreateImageOptionsBuilder, ImportImageOptionsBuilder, InspectImageOptions,
+    InspectImageOptionsBuilder, ListImagesOptionsBuilder, PruneImagesOptionsBuilder,
+    RemoveContainerOptions, RemoveContainerOptionsBuilder, RemoveImageOptions,
     RemoveImageOptionsBuilder, SearchImagesOptionsBuilder, StartContainerOptions,
     TagImageOptionsBuilder, WaitContainerOptions,
 };
@@ -68,7 +69,9 @@ async fn create_image_wasm_test(docker: Docker) -> Result<(), Error> {
         .collect::<Result<Vec<_>, bollard::errors::Error>>()
         .unwrap();
 
-    let result = &docker.inspect_image(image).await?;
+    let result = &docker
+        .inspect_image(image, None::<InspectImageOptions>)
+        .await?;
 
     assert!(result.repo_tags.as_ref().unwrap() == [image.to_owned()].as_slice());
 
@@ -100,7 +103,9 @@ async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
 
     create_image_hello_world(&docker).await?;
 
-    let result = &docker.inspect_image(&image).await?;
+    let result = &docker
+        .inspect_image(&image, None::<InspectImageOptions>)
+        .await?;
 
     assert!(result
         .repo_tags
@@ -108,6 +113,90 @@ async fn inspect_image_test(docker: Docker) -> Result<(), Error> {
         .unwrap()
         .iter()
         .any(|repo_tag| repo_tag == &image));
+
+    Ok(())
+}
+
+async fn inspect_image_platform_test(docker: Docker) -> Result<(), Error> {
+    let image = create_image_hello_world(&docker).await?;
+
+    let stored = docker
+        .inspect_image(&image, None::<InspectImageOptions>)
+        .await?;
+    let os = stored.os.unwrap();
+    let architecture = stored.architecture.unwrap();
+    let platform_options = |architecture: &str| {
+        InspectImageOptionsBuilder::new()
+            .platform(&serde_json::json!({ "os": os, "architecture": architecture }).to_string())
+            .build()
+    };
+
+    let selected = docker
+        .inspect_image(&image, Some(platform_options(&architecture)))
+        .await?;
+
+    assert_eq!(selected.os.as_deref(), Some(os.as_str()));
+    assert_eq!(
+        selected.architecture.as_deref(),
+        Some(architecture.as_str())
+    );
+
+    let absent_architecture = if architecture == "s390x" {
+        "riscv64"
+    } else {
+        "s390x"
+    };
+    let absent = docker
+        .inspect_image(&image, Some(platform_options(absent_architecture)))
+        .await;
+
+    let platform_since = bollard::ClientVersion {
+        major_version: 1,
+        minor_version: 49,
+    };
+    if docker.client_version() < platform_since {
+        // The daemon ignores `platform` and answers with the stored image.
+        let absent = absent?;
+        assert_eq!(absent.os.as_deref(), Some(os.as_str()));
+        assert_eq!(absent.architecture.as_deref(), Some(architecture.as_str()));
+        return Ok(());
+    }
+
+    let containerd_store = docker
+        .info()
+        .await?
+        .driver_status
+        .unwrap_or_default()
+        .iter()
+        .any(|status| status == &["driver-type", "io.containerd.snapshotter.v1"]);
+    let requested = format!("{os}/{absent_architecture}");
+    let expected = if containerd_store {
+        format!(
+            "image with reference {image} was found but does not provide the specified platform ({requested})"
+        )
+    } else {
+        let stored_platform = [Some(&os), Some(&architecture), stored.variant.as_ref()]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.is_empty())
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("/");
+        format!(
+            "image with reference {image} was found but its platform ({stored_platform}) does not match the specified platform ({requested})"
+        )
+    };
+
+    match absent {
+        Err(Error::DockerResponseServerError {
+            status_code,
+            message,
+        }) => {
+            assert_eq!(status_code, 404);
+            assert_eq!(message, expected);
+        }
+        other => panic!("expected a 404 for {requested}, got {other:?}"),
+    }
 
     Ok(())
 }
@@ -1293,6 +1382,305 @@ ENTRYPOINT ls buildkit-bollard.txt
 
     Ok(())
 }
+
+// The fixture compiles a static amd64 Linux probe with the host C compiler,
+// then marshals it as `linux/amd64`. This test only runs on Linux x86_64 hosts;
+// those hosts must also provide `cc` with static-link support.
+#[cfg(all(
+    feature = "buildkit_providerless",
+    target_os = "linux",
+    target_arch = "x86_64"
+))]
+async fn moby_llb_image_lifecycle_test(docker: Docker) -> Result<(), Error> {
+    use bollard::grpc::build::ImageBuildPlatform;
+    use bollard::grpc::driver::MobyImageBuildRequest;
+    use bollard::query_parameters::{LogsOptionsBuilder, WaitContainerOptionsBuilder};
+    use std::time::Duration;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(360);
+    let tag = format!(
+        "bollard-llb-lifecycle:{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let temp = tempfile::tempdir().expect("create scratch test directory");
+    let source = temp.path().join("probe.c");
+    let binary = temp.path().join("probe");
+    std::fs::write(
+        &source,
+        r#"#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  char cwd[4096];
+  if (!getcwd(cwd, sizeof(cwd))) return 10;
+  printf("cwd=%s\\n", cwd);
+  printf("env=%s\\n", getenv("BOLLARD_PROBE") ? getenv("BOLLARD_PROBE") : "missing");
+  for (int i = 0; i < argc; ++i) printf("argv[%d]=%s\\n", i, argv[i]);
+  puts("LLB-LIFECYCLE-OK");
+  return 0;
+}
+"#,
+    )?;
+    let compile = std::process::Command::new("cc")
+        .args(["-static", "-Os", "-s"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()?;
+    assert!(
+        compile.status.success(),
+        "failed to compile static scratch probe: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let executable = std::fs::read(&binary)?;
+    let definition = bollard_llb::scratch()
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .file(
+            bollard_llb::mkdir("/workdir", 0o755),
+            bollard_llb::FileOpts::default(),
+        )
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .file(
+            bollard_llb::mkfile("/probe", 0o755, executable),
+            bollard_llb::FileOpts::default(),
+        )
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .map_err(|error| Error::IOError {
+            err: std::io::Error::other(error.to_string()),
+        })?
+        .to_pb();
+    let config = serde_json::json!({
+        "architecture": "amd64",
+        "os": "linux",
+        "config": {
+            "Entrypoint": ["/probe"],
+            "Cmd": ["from-config"],
+            "Env": ["BOLLARD_PROBE=stored-env"],
+            "WorkingDir": "/workdir",
+            "Labels": {"org.bollard.test": "llb-lifecycle"}
+        }
+    });
+    let driver = bollard::grpc::driver::moby::Moby::new(&docker);
+
+    // The timed block builds, inspects, creates and runs the container. Every
+    // check returns a `Result` so that a failed check does not panic and skip
+    // the cleanup below. The container id is recorded in a shared slot so that
+    // cleanup still runs when the whole block times out.
+    let container_id: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let outcome = tokio::time::timeout(TEST_TIMEOUT, {
+        let container_id = std::sync::Arc::clone(&container_id);
+        let docker = docker.clone();
+        let tag = tag.clone();
+        async move {
+            driver
+                .build_image(MobyImageBuildRequest::new(
+                    definition,
+                    config,
+                    ImageBuildPlatform {
+                        architecture: "amd64".into(),
+                        os: "linux".into(),
+                        variant: None,
+                    },
+                    &tag,
+                ))
+                .await
+                .map_err(|error| Error::IOError {
+                    err: std::io::Error::other(error.to_string()),
+                })?;
+
+            let inspected = docker
+                .inspect_image(&tag, None::<InspectImageOptions>)
+                .await?;
+            if inspected.os.as_deref() != Some("linux") {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "stored image os is {:?}, expected linux",
+                        inspected.os
+                    )),
+                });
+            }
+            if inspected.architecture.as_deref() != Some("amd64") {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "stored image architecture is {:?}, expected amd64",
+                        inspected.architecture
+                    )),
+                });
+            }
+            let image_config = inspected.config.ok_or_else(|| Error::IOError {
+                err: std::io::Error::other("stored image config is missing"),
+            })?;
+            if image_config.entrypoint.as_deref() != Some(["/probe".to_owned()].as_slice()) {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "stored entrypoint is {:?}, expected [\"/probe\"]",
+                        image_config.entrypoint
+                    )),
+                });
+            }
+            if image_config.cmd.as_deref() != Some(["from-config".to_owned()].as_slice()) {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "stored cmd is {:?}, expected [\"from-config\"]",
+                        image_config.cmd
+                    )),
+                });
+            }
+            if !image_config
+                .env
+                .unwrap_or_default()
+                .iter()
+                .any(|v| v == "BOLLARD_PROBE=stored-env")
+            {
+                return Err(Error::IOError {
+                    err: std::io::Error::other("stored env is missing BOLLARD_PROBE=stored-env"),
+                });
+            }
+            if image_config.working_dir.as_deref() != Some("/workdir") {
+                return Err(Error::IOError {
+                    err: std::io::Error::other(format!(
+                        "stored working dir is {:?}, expected /workdir",
+                        image_config.working_dir
+                    )),
+                });
+            }
+            if image_config
+                .labels
+                .unwrap_or_default()
+                .get("org.bollard.test")
+                .map(String::as_str)
+                != Some("llb-lifecycle")
+            {
+                return Err(Error::IOError {
+                    err: std::io::Error::other("stored label org.bollard.test is missing"),
+                });
+            }
+
+            // No command or entrypoint override: the image's stored defaults must run.
+            let created = docker
+                .create_container(
+                    None,
+                    ContainerCreateBody {
+                        image: Some(tag.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let created_id = created.id.clone();
+            *container_id.lock().unwrap() = Some(created_id.clone());
+            let run_result = async {
+                docker.start_container(&created_id, None).await?;
+                let wait = docker
+                    .wait_container(
+                        &created_id,
+                        Some(
+                            WaitContainerOptionsBuilder::default()
+                                .condition("not-running")
+                                .build(),
+                        ),
+                    )
+                    .next()
+                    .await
+                    .ok_or_else(|| Error::IOError {
+                        err: std::io::Error::other("container wait stream ended without a result"),
+                    })??;
+                if wait.status_code != 0 {
+                    return Err(Error::IOError {
+                        err: std::io::Error::other(format!(
+                            "container exited with status {}",
+                            wait.status_code
+                        )),
+                    });
+                }
+                let output = docker
+                    .logs(
+                        &created_id,
+                        Some(
+                            LogsOptionsBuilder::default()
+                                .stdout(true)
+                                .stderr(true)
+                                .build(),
+                        ),
+                    )
+                    .try_collect::<Vec<_>>()
+                    .await?
+                    .into_iter()
+                    .map(|item| item.to_string())
+                    .collect::<String>();
+                for expected in [
+                    "LLB-LIFECYCLE-OK",
+                    "cwd=/workdir",
+                    "env=stored-env",
+                    "argv[1]=from-config",
+                ] {
+                    if !output.contains(expected) {
+                        return Err(Error::IOError {
+                            err: std::io::Error::other(format!(
+                                "missing {expected:?} in container output: {output}"
+                            )),
+                        });
+                    }
+                }
+                Ok::<(), Error>(())
+            }
+            .await;
+
+            run_result
+        }
+    })
+    .await;
+
+    // Clean up the container outside the timed block so that a timeout still
+    // reaches the removal, and force-remove it even if it is still running.
+    let remove_options = RemoveContainerOptionsBuilder::default().force(true).build();
+    let created_container = container_id.lock().unwrap().clone();
+    if let Some(container_id) = created_container {
+        if let Err(error) = docker
+            .remove_container(&container_id, Some(remove_options))
+            .await
+        {
+            eprintln!("failed to remove test container {container_id}: {error}");
+        }
+    }
+
+    // Always remove the tag, including when build, inspect, create, run or a
+    // check fails. The bounded timeout protects the cleanup itself.
+    let cleanup = tokio::time::timeout(Duration::from_secs(30), async {
+        if let Err(error) = docker
+            .remove_image(&tag, None::<RemoveImageOptions>, None)
+            .await
+        {
+            eprintln!("failed to remove test image {tag}: {error}");
+        }
+    })
+    .await;
+    if cleanup.is_err() {
+        eprintln!("timed out cleaning up test image {tag}");
+    }
+
+    match outcome {
+        Ok(run_result) => run_result?,
+        Err(_) => {
+            return Err(Error::IOError {
+                err: std::io::Error::other("Moby LLB image lifecycle timed out"),
+            });
+        }
+    }
+    Ok(())
+}
 #[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_anonymous_auth_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
@@ -1882,6 +2270,12 @@ fn integration_test_inspect_image() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn integration_test_inspect_image_platform() {
+    connect_to_docker_and_run!(inspect_image_platform_test);
+}
+
+#[test]
 // ND - Test sometimes hangs on appveyor.
 #[cfg(not(windows))]
 fn integration_test_images_list() {
@@ -1921,6 +2315,16 @@ fn integration_test_build_image() {
 fn integration_test_build_buildkit_image() {
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, false));
     connect_to_docker_and_run!(|docker| build_buildkit_image_test(docker, true));
+}
+
+#[test]
+#[cfg(all(
+    feature = "buildkit_providerless",
+    target_os = "linux",
+    target_arch = "x86_64"
+))]
+fn integration_test_moby_llb_image_lifecycle() {
+    connect_to_docker_and_run!(moby_llb_image_lifecycle_test);
 }
 
 #[test]

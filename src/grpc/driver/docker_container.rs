@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use bollard_buildkit_proto::moby::buildkit::v1::control_client::ControlClient;
 use bollard_stubs::models::{
     ContainerCreateBody, ContainerInspectResponse, ContainerStateStatusEnum, ExecInspectResponse,
     HostConfig, Mount, MountType, RestartPolicy, RestartPolicyNameEnum, SystemInfoCgroupDriverEnum,
@@ -27,7 +26,6 @@ use http::{
 };
 use log::{debug, info, warn};
 use tonic::transport::Endpoint;
-use tonic::{codegen::InterceptedService, transport::Channel};
 use tower_service::Service;
 
 use crate::{
@@ -44,7 +42,7 @@ use crate::{
     Docker,
 };
 
-use super::{channel::BuildkitChannel, DriverInterceptor, Entitlement, ImageExporterEnum};
+use super::{channel::BuildkitChannel, Entitlement, ImageExporterEnum};
 
 /// The default `Buildkit` image to use for the [`DockerContainer] driver.
 pub const DEFAULT_IMAGE: &str = bollard_buildkit_proto::provenance::DEFAULT_IMAGE;
@@ -549,7 +547,7 @@ impl super::Driver for DockerContainer {
         &self,
         session_id: &str,
         services: Vec<GrpcServer>,
-    ) -> Result<ControlClient<InterceptedService<Channel, DriverInterceptor>>, GrpcError> {
+    ) -> Result<super::GrpcHandle, GrpcError> {
         let channel = Endpoint::try_from("http://[::]:50051")?
             .connect_with_connector(DockerContainerConnector {
                 client: Docker::clone(&self.docker),

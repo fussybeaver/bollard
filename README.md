@@ -68,7 +68,7 @@ Choose **one** crypto provider:
 | `ssl` | [Rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) provider (recommended) |
 | `aws-lc-rs` | [Rustls](https://github.com/rustls/rustls) with [aws-lc-rs](https://github.com/aws/aws-lc-rs) provider (FIPS-compliant) |
 | `ssl_providerless` | [Rustls](https://github.com/rustls/rustls) without crypto provider (bring your own [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)) |
-| `webpki` | Use Mozilla's root certificates instead of OS native certs |
+| `webpki` | Use Mozilla's roots for BuildKit registry authentication TLS; Docker daemon TLS trusts only the supplied CA bundle |
 
 #### DateTime Features
 
@@ -89,6 +89,12 @@ For timestamp support in events and logs, choose **one**:
 | `buildkit_providerless` | BuildKit without bundled crypto provider |
 
 **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
+
+The transport-free `bollard-llb` crate constructs synchronous LLB graphs.
+Direct definition solves support local filesystem export through
+Docker-container and BuildkitDaemon. The Moby driver provides
+`Moby::build_image` to store configured images directly in Docker Engine,
+initially validated for a single `linux/amd64` platform.
 
 #### WebSocket Features
 
@@ -170,9 +176,15 @@ Use the [`Docker::connect_with_http`] method API to parameterise the interface.
 The client will connect to the location pointed to by `DOCKER_HOST` environment variable, or
 `localhost:2375` if missing.
 
-The location pointed to by the `DOCKER_CERT_PATH` environment variable is searched for
-certificates - `key.pem` for the private key, `cert.pem` for the server certificate and
-`ca.pem` for the certificate authority chain.
+The client reads certificates from the directory set by `DOCKER_CERT_PATH`.
+The file `key.pem` contains the private key. The file `cert.pem` contains the client certificate.
+The file `ca.pem` contains the trusted daemon CA certificates.
+Only the certificates in `ca.pem` are trusted, even with the `webpki` feature.
+The client does not add OS or Mozilla roots. Add other trusted CA certificates to this PEM bundle.
+The client rejects empty or malformed CA bundles. Certificate-chain and hostname verification remain enabled.
+
+To use OS roots or a custom trust store, use [`Docker::connect_with_custom_transport`].
+Configure TLS in that transport and keep certificate-chain and hostname verification enabled.
 
 ```rust
 use bollard::Docker;
@@ -292,13 +304,11 @@ cargo xtask buildkit update
 cargo xtask buildkit check
 ```
 
-`update` resolves the Moby-derived BuildKit baseline, refreshes immutable
-protobuf resources through named transformations, and regenerates the checked-in
-bindings while updating the committed provenance lock. `check` regenerates into
-a temporary directory, enforces the lock, and compares the result with the
-checked-in output without modifying the working tree. Use
-`cargo xtask buildkit check --online` to additionally verify the immutable source
-resources against the checked-in tree.
+`update` resolves the Moby-derived BuildKit version and protobuf sources,
+updates the provenance lockfile, and regenerates the bindings. `check`
+regenerates into a temporary directory using the locked inputs and compares
+against the checked-in bindings. For more information see the [protobuf
+provenance README](./codegen/proto/README.md).
 
 ### Building the swagger models
 

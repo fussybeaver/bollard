@@ -201,6 +201,42 @@ jobs:
       - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features ssl"
       - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features aws-lc-rs"
       - run: docker run -ti --rm bollard bash -c "cargo check --no-default-features --features ssl_providerless"
+  test_ssl_trust_anchors:
+    docker:
+      - image: docker:29.3
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build -t bollard .
+      - run:
+          name: Verify native-root test discovery and run trust-anchor regressions
+          command: |
+            # Do not enable test_ssl/webpki: they compile this test file away.
+            docker run --rm bollard bash -euo pipefail -c '
+              # Run the handshake tests with each TLS provider.
+              # Check test discovery before each run to prevent an empty test run.
+              for features in ssl aws-lc-rs
+              do
+                tests=$(cargo test -p bollard --locked --features "$features" --test ssl_trust_anchor_test -- --list)
+                printf "%s\n" "$tests"
+                for test in \
+                  ssl_ca_signed_daemon_is_accepted \
+                  unrelated_issuer_is_rejected \
+                  platform_root_signed_daemon_is_rejected
+                do
+                  printf "%s\n" "$tests" | grep -Fxq "$test: test"
+                done
+                printf "%s\n" "$tests" | grep -Fxq "3 tests, 0 benchmarks"
+                cargo test -p bollard --locked --features "$features" --test ssl_trust_anchor_test -- --test-threads=1 --nocapture
+              done
+              for features in ssl webpki test_ssl,aws-lc-rs
+              do
+                tests=$(cargo test -p bollard --locked --features "$features" --lib docker::tests::ssl_root_store -- --list)
+                printf "%s\n" "$tests"
+                printf "%s\n" "$tests" | grep -Fxq "7 tests, 0 benchmarks"
+                cargo test -p bollard --locked --features "$features" --lib docker::tests::ssl_root_store -- --nocapture
+              done
+            '
   test_clippy:
     docker:
       - image: docker:29.3
@@ -287,6 +323,7 @@ workflows:
       - test_time
       - test_doc
       - test_crypto_provider
+      - test_ssl_trust_anchors
       - test_clippy
       - test_audit
       - test_semver

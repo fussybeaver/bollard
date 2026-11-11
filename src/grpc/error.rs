@@ -15,6 +15,14 @@ pub enum GrpcError {
         /// The validation failure.
         reason: String,
     },
+    /// A required BuildKit Gateway capability is absent or disabled.
+    #[error("BuildKit Gateway capability `{capability}` is unavailable: {reason}")]
+    GatewayCapabilityUnavailable {
+        /// The capability identifier returned by Gateway Ping.
+        capability: String,
+        /// The daemon-provided explanation, if available.
+        reason: String,
+    },
     /// A named local source mount could not be opened as a directory.
     #[error("invalid local mount `{name}` at `{path}`: {reason}")]
     InvalidLocalMount {

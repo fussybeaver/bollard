@@ -31,11 +31,18 @@ optional provider is allowed to remain unavailable.
 
 ## Direct Solves
 
-This crate only constructs graphs. Bollard's direct-definition solve API
-currently supports the `DockerContainer` and `BuildkitDaemon` drivers with the
-local exporter. A caller must explicitly grant `network.host` and
-`security.insecure` entitlements to a direct solve and, for a Docker-container
-daemon, configure the matching daemon allowance.
+This crate only constructs graphs; it does not solve them. Bollard's direct LLB
+solve API supports local filesystem export through `DockerContainer` and
+`BuildkitDaemon`. The Moby driver provides `Moby::build_image` to store
+configured images directly in Docker Engine. Its initially validated target is
+one explicitly selected `linux/amd64` platform; this is not support parity for
+other drivers or platforms. See the
+[`llb_app_build`](../examples/llb_app_build.rs) example.
+
+A direct solve caller must explicitly grant `network.host` and
+`security.insecure` entitlements and, for a Docker-container daemon, configure
+the matching daemon allowance. Archive export followed by loading an archive
+into Docker is distinct from Moby's direct image-store export.
 
 Direct solves own their session ID. Do not add a `local.session` attribute to a
 definition submitted through that API. Local sources without that attribute use

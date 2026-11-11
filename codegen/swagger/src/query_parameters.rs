@@ -2776,6 +2776,8 @@ impl InspectImageOptionsBuilder {
     /// 
     /// The `manifests` and `platform` options are mutually exclusive, and
     /// an error is produced if both are set.
+    ///
+    /// Requires Docker Engine API 1.48 or later.
     pub fn manifests(mut self, manifests: bool) -> Self {
         self.inner.manifests = manifests;
         self
@@ -2794,6 +2796,8 @@ impl InspectImageOptionsBuilder {
     /// an error is produced if both are set.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    ///
+    /// Requires Docker Engine API 1.49 or later.
     pub fn platform(mut self, platform: &str) -> Self {
         self.inner.platform = Some(platform.into());
         self
