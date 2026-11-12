@@ -1,6 +1,6 @@
 //! Credentials management, for access to the Docker Hub or a custom Registry.
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{engine::general_purpose::URL_SAFE, Engine};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -27,5 +27,5 @@ pub(crate) enum DockerCredentialsHeader {
 }
 
 pub(crate) fn base64_url_encode(payload: &str) -> String {
-    STANDARD.encode(payload)
+    URL_SAFE.encode(payload)
 }
