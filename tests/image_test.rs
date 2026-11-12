@@ -1286,17 +1286,15 @@ ENTRYPOINT ls buildkit-bollard.txt
     let mut creds_hsh = std::collections::HashMap::new();
     creds_hsh.insert("localhost:5000".to_string(), credentials);
 
-    let cache_attrs = std::collections::HashMap::new();
-    let cache_from = bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry {
-        r#type: String::from("inline"),
-        attrs: std::collections::HashMap::clone(&cache_attrs),
-    };
+    // `inline` is an exporter only: BuildKit has no `inline` cache importer. Inline cache is
+    // imported with a `registry` entry that refers to the image, which this build loads into the
+    // Docker image store rather than pushing. Import coverage is in
+    // `build_buildkit_registry_cache_import_test`.
     let cache_to = bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry {
         r#type: String::from("inline"),
-        attrs: cache_attrs,
+        attrs: std::collections::HashMap::new(),
     };
     let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
-        .cachefrom(&cache_from)
         .cacheto(&cache_to)
         .pull(true)
         .build();
@@ -1681,6 +1679,168 @@ int main(int argc, char **argv) {
     }
     Ok(())
 }
+/// Reads `/stamp` from the single-platform image in an OCI layout tarball.
+#[cfg(feature = "buildkit_providerless")]
+fn read_oci_stamp(path: &std::path::Path) -> Result<String, Error> {
+    use std::io::Read;
+
+    let mut blobs = HashMap::new();
+    let mut archive = tar::Archive::new(File::open(path)?);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.to_string_lossy().into_owned();
+        let mut content = Vec::new();
+        entry.read_to_end(&mut content)?;
+        blobs.insert(entry_path, content);
+    }
+    let blob = |digest: &str| -> Result<&Vec<u8>, Error> {
+        let path = format!("blobs/{}", digest.replacen(':', "/", 1));
+        blobs.get(&path).ok_or_else(|| Error::IOError {
+            err: std::io::Error::other(format!("{path} is missing from the OCI layout")),
+        })
+    };
+    let json = |content: &[u8]| -> Result<serde_json::Value, Error> {
+        serde_json::from_slice(content).map_err(|err| Error::IOError {
+            err: std::io::Error::other(err),
+        })
+    };
+
+    // index.json, and any nested index, lead to the image manifest.
+    let mut document = json(
+        blobs
+            .get("index.json")
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    )?;
+    while let Some(digest) = document["manifests"][0]["digest"].as_str() {
+        document = json(blob(digest)?)?;
+    }
+    for layer in document["layers"].as_array().into_iter().flatten() {
+        let content = blob(layer["digest"].as_str().unwrap_or_default())?;
+        let reader: Box<dyn Read> = if layer["mediaType"]
+            .as_str()
+            .is_some_and(|media_type| media_type.ends_with("gzip"))
+        {
+            Box::new(flate2::read::GzDecoder::new(content.as_slice()))
+        } else {
+            Box::new(content.as_slice())
+        };
+        for entry in tar::Archive::new(reader).entries()? {
+            let mut entry = entry?;
+            if entry.path()?.to_string_lossy().trim_start_matches("./") == "stamp" {
+                let mut stamp = String::new();
+                entry.read_to_string(&mut stamp)?;
+                return Ok(stamp);
+            }
+        }
+    }
+    Err(Error::IOError {
+        err: std::io::Error::other("no /stamp in the exported image"),
+    })
+}
+
+/// Builds the same Dockerfile on two fresh BuildKit daemons that share only a `registry` cache
+/// (`mode=max`). `RUN` writes a random value, so the second image carries the first image's value
+/// only if the second build imported that layer from the registry.
+#[cfg(feature = "buildkit_providerless")]
+async fn build_buildkit_registry_cache_import_test(docker: Docker) -> Result<(), Error> {
+    use bollard::grpc::driver::docker_container::{
+        DockerContainerBuilder, DockerContainerRemoveOptions,
+    };
+    use bollard::grpc::driver::{Export, ImageExporterEnum};
+    use bollard::grpc::export::ImageExporterOutput;
+    use bollard_buildkit_proto::moby::buildkit::v1::CacheOptionsEntry;
+
+    fn grpc_error(context: &str, error: impl std::fmt::Display) -> Error {
+        Error::IOError {
+            err: std::io::Error::other(format!("{context}: {error}")),
+        }
+    }
+
+    let dockerfile = "FROM localhost:5000/alpine AS build
+RUN cat /proc/sys/kernel/random/uuid > /stamp
+FROM scratch
+COPY --from=build /stamp /stamp
+";
+    let mut header = tar::Header::new_gnu();
+    header.set_path("Dockerfile").unwrap();
+    header.set_size(dockerfile.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    let mut tar = tar::Builder::new(Vec::new());
+    tar.append(&header, dockerfile.as_bytes()).unwrap();
+    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    c.write_all(&tar.into_inner().unwrap()).unwrap();
+    let compressed = bytes::Bytes::from(c.finish().unwrap());
+
+    // A cache ref of its own, so that a cache from an earlier run cannot produce the hit.
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let cache_ref = format!("localhost:5000/bollard_cache_import:{suffix}");
+
+    let mut stamps = Vec::new();
+    for build in ["first", "second"] {
+        let import = CacheOptionsEntry {
+            r#type: String::from("registry"),
+            attrs: HashMap::from([(String::from("ref"), cache_ref.clone())]),
+        };
+        let export = CacheOptionsEntry {
+            r#type: String::from("registry"),
+            attrs: HashMap::from([
+                (String::from("ref"), cache_ref.clone()),
+                (String::from("mode"), String::from("max")),
+            ]),
+        };
+        let frontend_opts = bollard::grpc::build::ImageBuildFrontendOptions::builder()
+            .cachefrom(&import)
+            .cacheto(&export)
+            .build();
+
+        let credentials = bollard::auth::DockerCredentials {
+            username: Some("bollard".to_string()),
+            password: std::env::var("REGISTRY_PASSWORD").ok(),
+            ..Default::default()
+        };
+        let creds_hsh = HashMap::from([("localhost:5000", credentials)]);
+
+        // A new daemon with a new state volume per build: no local cache carries over.
+        let name = format!("bollard_cache_import_{suffix}_{build}");
+        let mut builder = DockerContainerBuilder::new(&docker);
+        builder.name(&name);
+        let driver = builder
+            .bootstrap()
+            .await
+            .map_err(|error| grpc_error("BuildKit bootstrap failed", error))?;
+
+        let dest = std::env::temp_dir().join(format!("{name}.tar"));
+        let exported = driver
+            .export(
+                ImageExporterEnum::OCI(ImageExporterOutput::builder(&name).dest(&dest)),
+                frontend_opts,
+                bollard::grpc::build::ImageBuildLoadInput::Upload(compressed.clone()),
+                Some(creds_hsh),
+                None,
+            )
+            .await;
+        let removed = driver.remove(DockerContainerRemoveOptions::new()).await;
+        exported.map_err(|error| grpc_error("build failed", error))?;
+        removed.map_err(|error| grpc_error("BuildKit removal failed", error))?;
+
+        let stamp = read_oci_stamp(&dest);
+        let _ = remove_file(&dest);
+        stamps.push(stamp?);
+    }
+
+    assert_eq!(
+        stamps[0], stamps[1],
+        "the second build ran RUN again instead of importing it from the registry cache"
+    );
+
+    Ok(())
+}
+
 #[cfg(feature = "buildkit_providerless")]
 async fn build_buildkit_image_anonymous_auth_test(docker: Docker) -> Result<(), Error> {
     let dockerfile = String::from(
@@ -2367,6 +2527,12 @@ fn integration_test_build_buildkit_ssh_named() {
 #[cfg(feature = "buildkit_providerless")]
 fn integration_test_build_buildkit_inline_driver() {
     connect_to_docker_and_run!(build_buildkit_image_inline_driver_test);
+}
+
+#[test]
+#[cfg(feature = "buildkit_providerless")]
+fn integration_test_build_buildkit_registry_cache_import() {
+    connect_to_docker_and_run!(build_buildkit_registry_cache_import_test);
 }
 
 #[test]
