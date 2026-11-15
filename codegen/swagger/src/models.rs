@@ -1704,6 +1704,8 @@ pub enum ContainerStateStatusEnum {
     DEAD,
     #[serde(rename = "stopping")]
     STOPPING,
+    #[serde(rename = "stopped")]
+    STOPPED,
 }
 
 impl ::std::fmt::Display for ContainerStateStatusEnum {
@@ -1718,6 +1720,7 @@ impl ::std::fmt::Display for ContainerStateStatusEnum {
             ContainerStateStatusEnum::EXITED => write!(f, "{}", "exited"),
             ContainerStateStatusEnum::DEAD => write!(f, "{}", "dead"),
             ContainerStateStatusEnum::STOPPING => write!(f, "{}", "stopping"),
+            ContainerStateStatusEnum::STOPPED => write!(f, "{}", "stopped"),
 
         }
     }
@@ -1736,6 +1739,7 @@ impl ::std::str::FromStr for ContainerStateStatusEnum {
             "exited" => Ok(ContainerStateStatusEnum::EXITED),
             "dead" => Ok(ContainerStateStatusEnum::DEAD),
             "stopping" => Ok(ContainerStateStatusEnum::STOPPING),
+            "stopped" => Ok(ContainerStateStatusEnum::STOPPED),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -1753,6 +1757,7 @@ impl ::std::convert::AsRef<str> for ContainerStateStatusEnum {
             ContainerStateStatusEnum::EXITED => "exited",
             ContainerStateStatusEnum::DEAD => "dead",
             ContainerStateStatusEnum::STOPPING => "stopping",
+            ContainerStateStatusEnum::STOPPED => "stopped",
         }
     }
 }
@@ -1976,6 +1981,8 @@ pub enum ContainerSummaryStateEnum {
     DEAD,
     #[serde(rename = "stopping")]
     STOPPING,
+    #[serde(rename = "stopped")]
+    STOPPED,
 }
 
 impl ::std::fmt::Display for ContainerSummaryStateEnum {
@@ -1990,6 +1997,7 @@ impl ::std::fmt::Display for ContainerSummaryStateEnum {
             ContainerSummaryStateEnum::REMOVING => write!(f, "{}", "removing"),
             ContainerSummaryStateEnum::DEAD => write!(f, "{}", "dead"),
             ContainerSummaryStateEnum::STOPPING => write!(f, "{}", "stopping"),
+            ContainerSummaryStateEnum::STOPPED => write!(f, "{}", "stopped"),
 
         }
     }
@@ -2008,6 +2016,7 @@ impl ::std::str::FromStr for ContainerSummaryStateEnum {
             "removing" => Ok(ContainerSummaryStateEnum::REMOVING),
             "dead" => Ok(ContainerSummaryStateEnum::DEAD),
             "stopping" => Ok(ContainerSummaryStateEnum::STOPPING),
+            "stopped" => Ok(ContainerSummaryStateEnum::STOPPED),
             x => Err(format!("Invalid enum type: {}", x)),
         }
     }
@@ -2025,6 +2034,7 @@ impl ::std::convert::AsRef<str> for ContainerSummaryStateEnum {
             ContainerSummaryStateEnum::REMOVING => "removing",
             ContainerSummaryStateEnum::DEAD => "dead",
             ContainerSummaryStateEnum::STOPPING => "stopping",
+            ContainerSummaryStateEnum::STOPPED => "stopped",
         }
     }
 }

@@ -340,6 +340,21 @@ impl ImageBuildFrontendOptions {
             }
         }
 
+        // The dockerfile frontend reads cache imports only from its own options: BuildKit does not
+        // hand the cache imports of the solve request to a frontend. The JSON matches what the
+        // BuildKit client sends in `client/solve.go`.
+        if !self.cachefrom.is_empty() {
+            let imports: Vec<serde_json::Value> = self
+                .cachefrom
+                .iter()
+                .map(|entry| serde_json::json!({ "Type": entry.r#type, "Attrs": entry.attrs }))
+                .collect();
+            attrs.insert(
+                String::from("cache-imports"),
+                serde_json::Value::Array(imports).to_string(),
+            );
+        }
+
         ImageBuildFrontendOptionsIngest {
             cache_to: self.cacheto,
             cache_from: self.cachefrom,
@@ -525,7 +540,42 @@ pub enum ImageBuildLoadInput {
 
 #[cfg(test)]
 mod tests {
-    use super::ImageBuildPlatform;
+    use super::{CacheOptionsEntry, ImageBuildFrontendOptions, ImageBuildPlatform};
+    use std::collections::HashMap;
+
+    fn registry_cache(cache_ref: &str) -> CacheOptionsEntry {
+        CacheOptionsEntry {
+            r#type: String::from("registry"),
+            attrs: HashMap::from([(String::from("ref"), String::from(cache_ref))]),
+        }
+    }
+
+    #[test]
+    fn test_cache_imports_reach_the_frontend() {
+        let ingest = ImageBuildFrontendOptions::builder()
+            .cachefrom(&registry_cache("localhost:5000/cache:branch"))
+            .cachefrom(&registry_cache("localhost:5000/cache:master"))
+            .build()
+            .consume();
+
+        let imports: serde_json::Value =
+            serde_json::from_str(&ingest.frontend_attrs["cache-imports"]).unwrap();
+        assert_eq!(
+            imports,
+            serde_json::json!([
+                { "Type": "registry", "Attrs": { "ref": "localhost:5000/cache:branch" } },
+                { "Type": "registry", "Attrs": { "ref": "localhost:5000/cache:master" } },
+            ])
+        );
+        assert_eq!(ingest.cache_from.len(), 2);
+    }
+
+    #[test]
+    fn test_no_cache_imports_without_cache_from() {
+        let ingest = ImageBuildFrontendOptions::builder().build().consume();
+
+        assert!(!ingest.frontend_attrs.contains_key("cache-imports"));
+    }
 
     #[test]
     fn test_imagebuildplatform_display() {

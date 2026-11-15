@@ -58,20 +58,35 @@ public class BollardCodegen extends RustServerCodegen {
 
         patchEnumValues.put("ServiceUpdateStatusStateEnum", enumValues);
 
+        enumValues = new ArrayList<Map<String, String>>();
+
         // Podman emits "stopping" during container destruction (containers/podman#25591)
         // This is a legitimate transient state, not a Podman bug — see fussybeaver/bollard#701
-        enumValues = new ArrayList<Map<String, String>>();
         additionalEnumValues = new HashMap<String, String>();
         additionalEnumValues.put("name", "STOPPING");
         additionalEnumValues.put("value", "\"stopping\"");
         enumValues.add(additionalEnumValues);
+
+        // Podman emits "stopped" instead of exited for v5 or below (containers/podman#25591)
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPED");
+        additionalEnumValues.put("value", "\"stopped\"");
+        enumValues.add(additionalEnumValues);
+
         patchEnumValues.put("ContainerStateStatusEnum", enumValues);
 
         enumValues = new ArrayList<Map<String, String>>();
+
         additionalEnumValues = new HashMap<String, String>();
         additionalEnumValues.put("name", "STOPPING");
         additionalEnumValues.put("value", "\"stopping\"");
         enumValues.add(additionalEnumValues);
+        
+        additionalEnumValues = new HashMap<String, String>();
+        additionalEnumValues.put("name", "STOPPED");
+        additionalEnumValues.put("value", "\"stopped\"");
+        enumValues.add(additionalEnumValues);
+
         patchEnumValues.put("ContainerSummaryStateEnum", enumValues);
     }
 
