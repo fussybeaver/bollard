@@ -1135,13 +1135,17 @@ async fn docker_api_call_with_timeout<T, F>(
 where
     F: Future<Output = Result<T, crate::errors::Error>>,
 {
-    match tokio::time::timeout(timeout, future).await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(crate::errors::Error::RequestTimeoutError)) => {
-            Err(operation_timeout(operation, name))
-        }
-        Ok(Err(error)) => Err(error.into()),
-        Err(_) => Err(operation_timeout(operation, name)),
+    tokio::select! {
+        // Prefer the deadline when both branches become ready on the same poll.
+        biased;
+        _ = tokio::time::sleep(timeout) => Err(operation_timeout(operation, name)),
+        result = future => match result {
+            Ok(result) => Ok(result),
+            Err(crate::errors::Error::RequestTimeoutError) => {
+                Err(operation_timeout(operation, name))
+            }
+            Err(error) => Err(error.into()),
+        },
     }
 }
 
@@ -1720,7 +1724,50 @@ mod tests {
         assert_eq!(docker.timeout(), Duration::from_secs(7));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn docker_api_deadline_wins_when_both_timers_are_ready() {
+        let call = docker_api_call_with_timeout(
+            "inspect container",
+            "project-builder",
+            Duration::from_millis(1),
+            async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                Ok::<(), crate::errors::Error>(())
+            },
+        );
+        tokio::pin!(call);
+
+        // Register both timers, then simulate a delayed wakeup without polling
+        // the call until both the deadline and the inner sleep have elapsed.
+        std::future::poll_fn(|cx| {
+            assert!(call.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(Duration::from_millis(20)).await;
+
+        assert!(matches!(
+            call.await,
+            Err(GrpcError::DockerContainerOperationTimeout { operation, name })
+                if operation == "inspect container" && name == "project-builder"
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn docker_api_call_returns_before_deadline() {
+        let result = docker_api_call_with_timeout(
+            "inspect container",
+            "project-builder",
+            Duration::from_secs(1),
+            async { Ok::<_, crate::errors::Error>(42) },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, 42);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn docker_api_calls_are_bounded() {
         let error = docker_api_call_with_timeout(
             "inspect container",
