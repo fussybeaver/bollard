@@ -19,57 +19,42 @@ build_script:
       Set-Item -path env:HOST_IP -value $ipv4
   - ipconfig
   - echo %HOST_IP%
-  - ps: |
-      cd resources/dockerfiles/windows/registry
-      docker build -t stefanscherer/registry-windows -f Dockerfile .
-      cd ../../../
+  - docker build -t stefanscherer/registry-windows -f resources/dockerfiles/windows/registry/Dockerfile resources/dockerfiles/windows/registry
   - docker run -d -p 5000:5000 --restart=always --name registry stefanscherer/registry-windows
-  - sleep 4
   - ps: |
       $ErrorActionPreference = 'Stop'
-      $cnt = 0
-      while ($cnt -lt 5) {
-        $cnt++
-        try {
-          docker pull hello-world:nanoserver-sac2016
-          break
-        } catch {
-          Start-Sleep 3
-          Write-Verbose("Retrying docker pull command")
+      function Invoke-DockerWithRetry {
+        param([string[]] $DockerArguments)
+
+        # Windows PowerShell does not throw on native nonzero exit codes.
+        # Allow native stderr through and check LASTEXITCODE explicitly.
+        $ErrorActionPreference = 'Continue'
+        $delay = 2
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+          Write-Host "Docker attempt $attempt/5: docker $($DockerArguments -join ' ')"
+          & docker @DockerArguments
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -eq 0) { return }
+          if ($attempt -eq 5) {
+            throw "docker $($DockerArguments -join ' ') failed with exit code $exitCode after 5 attempts"
+          }
+          Write-Host "Exit code $exitCode; retrying in $delay seconds"
+          Start-Sleep -Seconds $delay
+          $delay = [Math]::Min($delay * 2, 30)
         }
       }
-  - ps: |
-      $ErrorActionPreference = 'Stop'
-      $cnt = 0
-      while ($cnt -lt 5) {
-        $cnt++
-        try {
-          docker pull nanoserver/iis
-          break
-        } catch {
-          Start-Sleep 3
-          Write-Verbose("Retrying docker pull command")
-        }
+
+      $images = @(
+        @('hello-world:nanoserver-sac2016', 'localhost:5000/hello-world:nanoserver'),
+        @('nanoserver/iis', 'localhost:5000/nanoserver/iis'),
+        @('mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2', 'localhost:5000/microsoft/nanoserver')
+      )
+      foreach ($image in $images) {
+        Invoke-DockerWithRetry -DockerArguments @('pull', $image[0])
+        docker tag $image[0] $image[1]
+        if ($LASTEXITCODE -ne 0) { throw "Failed to tag $($image[0]) as $($image[1])" }
+        Invoke-DockerWithRetry -DockerArguments @('push', $image[1])
       }
-  - ps: |
-      $ErrorActionPreference = 'Stop'
-      $cnt = 0
-      while ($cnt -lt 5) {
-        $cnt++
-        try {
-          docker pull mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2
-          break
-        } catch {
-          Start-Sleep 3
-          Write-Verbose("Retrying docker pull command")
-        }
-      }
-  - docker tag hello-world:nanoserver-sac2016 localhost:5000/hello-world:nanoserver
-  - docker tag nanoserver/iis localhost:5000/nanoserver/iis
-  - docker tag mcr.microsoft.com/windows/nanoserver@sha256:8f78a4a7da4464973a5cd239732626141aec97e69ba3e4023357628630bc1ee2 localhost:5000/microsoft/nanoserver
-  - docker push localhost:5000/hello-world:nanoserver
-  - docker push localhost:5000/nanoserver/iis
-  - docker push localhost:5000/microsoft/nanoserver
   - cargo build --features buildkit,chrono --verbose
 
 test_script:
