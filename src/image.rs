@@ -977,17 +977,43 @@ impl Docker {
     /// for more information.
     /// # Arguments
     /// - The `image_name` string referring to an individual image and tag (e.g. alpine:latest)
+    /// - An optional [Export Image Options](crate::query_parameters::ExportImageOptions) struct.
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
-    pub fn export_image(&self, image_name: &str) -> impl Stream<Item = Result<Bytes, Error>> {
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::ExportImageOptionsBuilder;
+    ///
+    /// let options = ExportImageOptionsBuilder::default()
+    ///     .platform(vec![r#"{"os":"linux","architecture":"amd64"}"#.to_string()])
+    ///     .build();
+    ///
+    /// docker.export_image("hello-world", Some(options));
+    /// ```
+    pub fn export_image(
+        &self,
+        image_name: &str,
+        options: Option<impl Into<crate::query_parameters::ExportImageOptions>>,
+    ) -> impl Stream<Item = Result<Bytes, Error>> {
         let url = format!("/images/{}/get", escape_reference(image_name));
+        // `platform` is a repeated query parameter, which the options struct can't serialize
+        let query: Vec<_> = options
+            .and_then(|options| options.into().platform)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|platform| ("platform", platform))
+            .collect();
         let req = self.build_request(
             &url,
             Builder::new()
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
-            None::<String>,
+            (!query.is_empty()).then_some(query),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         self.process_into_body(req)
@@ -1004,17 +1030,57 @@ impl Docker {
     /// for more information.
     /// # Arguments
     /// - The `image_names` Vec of image names.
+    /// - An optional [Export Images Options](crate::query_parameters::ExportImagesOptions) struct.
+    ///   Any `names` set on it are exported along with `image_names`.
     ///
     /// # Returns
     ///  - An uncompressed TAR archive
-    pub fn export_images(&self, image_names: &[&str]) -> impl Stream<Item = Result<Bytes, Error>> {
-        let options: Vec<_> = image_names.iter().map(|name| ("names", name)).collect();
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use bollard::Docker;
+    /// # let docker = Docker::connect_with_http_defaults().unwrap();
+    /// use bollard::query_parameters::ExportImagesOptionsBuilder;
+    ///
+    /// let options = ExportImagesOptionsBuilder::default()
+    ///     .platform(vec![r#"{"os":"linux","architecture":"amd64"}"#.to_string()])
+    ///     .build();
+    ///
+    /// docker.export_images(&["hello-world", "alpine"], Some(options));
+    /// ```
+    pub fn export_images(
+        &self,
+        image_names: &[&str],
+        options: Option<impl Into<crate::query_parameters::ExportImagesOptions>>,
+    ) -> impl Stream<Item = Result<Bytes, Error>> {
+        let options = options.map(Into::into).unwrap_or_default();
+        // `names` and `platform` are repeated query parameters, which the options struct can't
+        // serialize
+        let query: Vec<_> = image_names
+            .iter()
+            .map(|name| ("names", name.to_string()))
+            .chain(
+                options
+                    .names
+                    .into_iter()
+                    .flatten()
+                    .map(|name| ("names", name)),
+            )
+            .chain(
+                options
+                    .platform
+                    .into_iter()
+                    .flatten()
+                    .map(|platform| ("platform", platform)),
+            )
+            .collect();
         let req = self.build_request(
             "/images/get",
             Builder::new()
                 .method(Method::GET)
                 .header(CONTENT_TYPE, "application/json"),
-            Some(options),
+            Some(query),
             Ok(BodyType::Left(Full::new(Bytes::new()))),
         );
         self.process_into_body(req)
@@ -1208,16 +1274,76 @@ impl Docker {
 mod tests {
 
     use std::io::Write;
+    use std::sync::{Arc, Mutex};
 
     use futures_util::TryStreamExt;
     use yup_hyper_mock::HostToReplyConnector;
 
     use crate::{
         query_parameters::{
-            BuildImageOptionsBuilder, CreateImageOptionsBuilder, PushImageOptionsBuilder,
+            BuildImageOptionsBuilder, CreateImageOptionsBuilder, ExportImageOptionsBuilder,
+            ExportImagesOptionsBuilder, PushImageOptionsBuilder,
         },
         Docker, API_DEFAULT_VERSION,
     };
+
+    const PLATFORM: &str = r#"{"os":"linux","architecture":"amd64"}"#;
+    const PLATFORM_QUERY: &str =
+        "platform=%7B%22os%22%3A%22linux%22%2C%22architecture%22%3A%22amd64%22%7D";
+
+    fn export_mock() -> (Docker, Arc<Mutex<Option<String>>>) {
+        let mut connector = HostToReplyConnector::default();
+        connector.m.insert(
+            String::from("http://127.0.0.1"),
+            "HTTP/1.1 200 OK\r\nServer:mock1\r\nContent-Type:application/x-tar\r\nContent-Length:3\r\n\r\ntar".to_string(),
+        );
+        let query = Arc::new(Mutex::new(None));
+        let captured = Arc::clone(&query);
+        let docker =
+            Docker::connect_with_mock(connector, "127.0.0.1".to_string(), 5, API_DEFAULT_VERSION)
+                .unwrap()
+                .with_request_modifier(move |req| {
+                    *captured.lock().unwrap() = req.uri().query().map(String::from);
+                    req
+                });
+        (docker, query)
+    }
+
+    #[tokio::test]
+    async fn test_export_image_with_platform() {
+        let (docker, query) = export_mock();
+
+        let options = ExportImageOptionsBuilder::default()
+            .platform(vec![PLATFORM.to_string()])
+            .build();
+        docker
+            .export_image("hello-world", Some(options))
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+
+        assert_eq!(query.lock().unwrap().as_deref(), Some(PLATFORM_QUERY));
+    }
+
+    #[tokio::test]
+    async fn test_export_images_with_platform() {
+        let (docker, query) = export_mock();
+
+        let options = ExportImagesOptionsBuilder::default()
+            .names(vec![String::from("busybox")])
+            .platform(vec![PLATFORM.to_string()])
+            .build();
+        docker
+            .export_images(&["hello-world", "alpine"], Some(options))
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            query.lock().unwrap().as_deref(),
+            Some(format!("names=hello-world&names=alpine&names=busybox&{PLATFORM_QUERY}").as_str())
+        );
+    }
 
     #[tokio::test]
     async fn test_create_image_with_error() {

@@ -9,11 +9,11 @@ use bollard::errors::Error;
 use bollard::models::{ContainerConfig, ContainerCreateBody};
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptions,
-    CreateImageOptionsBuilder, ImportImageOptionsBuilder, InspectImageOptions,
-    InspectImageOptionsBuilder, ListImagesOptionsBuilder, PruneImagesOptionsBuilder,
-    RemoveContainerOptions, RemoveContainerOptionsBuilder, RemoveImageOptions,
-    RemoveImageOptionsBuilder, SearchImagesOptionsBuilder, StartContainerOptions,
-    TagImageOptionsBuilder, WaitContainerOptions,
+    CreateImageOptionsBuilder, ExportImageOptions, ExportImagesOptions, ImportImageOptionsBuilder,
+    InspectImageOptions, InspectImageOptionsBuilder, ListImagesOptionsBuilder,
+    PruneImagesOptionsBuilder, RemoveContainerOptions, RemoveContainerOptionsBuilder,
+    RemoveImageOptions, RemoveImageOptionsBuilder, SearchImagesOptionsBuilder,
+    StartContainerOptions, TagImageOptionsBuilder, WaitContainerOptions,
 };
 #[cfg(feature = "buildkit_providerless")]
 use bollard::query_parameters::{BuilderVersion, ImageBuildOutput, PruneBuildOptions};
@@ -2221,7 +2221,7 @@ async fn export_image_test(docker: Docker) -> Result<(), Error> {
         "/tmp/bollard_test_image_export.tar"
     };
 
-    let res = docker.export_image(&image);
+    let res = docker.export_image(&image, None::<ExportImageOptions>);
 
     let mut archive_file = File::create(temp_file).unwrap();
     // Shouldn't load the whole file into memory, stream it to disk instead
@@ -2263,7 +2263,7 @@ async fn export_images_test(docker: Docker) -> Result<(), Error> {
 
     let copy = format!("{repo}:mycopy");
     let images = vec![image.as_ref(), copy.as_ref()];
-    let res = docker.export_images(&images);
+    let res = docker.export_images(&images, None::<ExportImagesOptions>);
 
     let temp_file = "/tmp/bollard_test_images_export.tar";
     let mut archive_file = File::create(temp_file).unwrap();
@@ -2349,7 +2349,7 @@ async fn import_image_test(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let mut res = docker.export_image(&image);
+    let mut res = docker.export_image(&image, None::<ExportImageOptions>);
 
     let mut buf = bytes::BytesMut::new();
     while let Some(data) = res.next().await {
@@ -2384,7 +2384,7 @@ async fn import_image_test_stream(docker: Docker) -> Result<(), Error> {
         format!("{}hello-world:linux", registry_http_addr())
     };
 
-    let res = docker.export_image(&image);
+    let res = docker.export_image(&image, None::<ExportImageOptions>);
 
     let mut creds = HashMap::new();
     creds.insert(
