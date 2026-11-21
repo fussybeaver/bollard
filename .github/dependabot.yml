@@ -1,5 +1,17 @@
 version: 2
 updates:
+  # CI-only Go oracle: no routine version PRs, grouped security updates.
+  # Bump deliberately with the BuildKit provenance pin and goldens.
+  - package-ecosystem: "gomod"
+    directory: "/codegen/llb-parity"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    groups:
+      go-oracle-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:

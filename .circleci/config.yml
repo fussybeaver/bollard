@@ -96,7 +96,7 @@ jobs:
             go vet ./...
   test_llb_independent_solve:
     docker:
-      - image: golang:1.25
+      - image: debian:trixie-slim
     steps:
       - checkout
       - setup_remote_docker

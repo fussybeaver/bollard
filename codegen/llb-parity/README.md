@@ -31,7 +31,7 @@ the fixture format or output contract.
 
 ## Independent solve
 
-`independent_solve.sh` uses BuildKit's parser and Go client rather than
+`independent_solve.sh` uses the pinned BuildKit image's parser and `buildctl` rather than
 Bollard's solve path:
 
 ```bash
@@ -42,6 +42,9 @@ Bollard's solve path:
 CircleCI runs this check in the parallel `test_llb_independent_solve` job. The
 job reads the image, version and commit from the protobuf provenance lock,
 starts a temporary privileged BuildKit container, validates the runtime
-identity, parses and solves the `mkfile` golden with the independent Go client,
+identity, parses and solves the raw `mkfile` golden with `buildctl` (no frontend),
 and checks the exported file contents and mode. It does not depend on the
 Bollard BuildKit or golden jobs.
+
+The solve exports inside the container and copies the result back, so it works
+with CircleCI's remote Docker daemon. The host needs the `timeout` utility.
