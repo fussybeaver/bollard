@@ -152,11 +152,19 @@ pub enum ImageExporterEnum {
 }
 
 /// Exporter selection for a direct LLB definition solve.
+///
+/// Image exporters either write a Docker or OCI archive to the destination
+/// supplied when constructing their [`ImageExporterRequest`]. For configured
+/// images stored directly in Docker Engine, use [`moby::Moby::build_image`].
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum DefinitionExporter {
     /// Export the solved filesystem into a local directory.
     Local(PathBuf),
+    /// Export a Docker image archive.
+    Docker(ImageExporterRequest),
+    /// Export an OCI image archive.
+    OCI(ImageExporterRequest),
 }
 
 /// A direct Moby image-store build from an LLB definition.
@@ -370,6 +378,8 @@ impl std::fmt::Debug for DefinitionExporter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
+            Self::Docker(_) => formatter.write_str("DefinitionExporter::Docker(..)"),
+            Self::OCI(_) => formatter.write_str("DefinitionExporter::OCI(..)"),
         }
     }
 }
@@ -620,6 +630,8 @@ impl fmt::Debug for DefinitionSolveRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let exporter = match &self.exporter {
             DefinitionExporter::Local(_) => "local",
+            DefinitionExporter::Docker(_) => "docker",
+            DefinitionExporter::OCI(_) => "oci",
         };
 
         formatter
@@ -914,6 +926,12 @@ pub(crate) async fn solve_definition(
             .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
             services.push(GrpcServer::FileSendPacket(filesend));
         }
+        DefinitionExporter::Docker(request) | DefinitionExporter::OCI(request) => {
+            let filesend = FileSendServer::new(super::FileSendImpl::new(request.path.as_path()))
+                .max_decoding_message_size(DEFAULT_MAX_RECV_MSG_SIZE)
+                .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
+            services.push(GrpcServer::FileSend(filesend));
+        }
     }
 
     let tear_down_handler = driver.begin_solve()?;
@@ -1152,6 +1170,22 @@ fn build_definition_solve_request(
                 attrs: HashMap::new(),
             }];
             (String::from("local"), HashMap::new(), exporters)
+        }
+        DefinitionExporter::Docker(request) => {
+            let attrs = request.output.clone().into_map();
+            let exporters = vec![Exporter {
+                r#type: String::from("docker"),
+                attrs: attrs.clone(),
+            }];
+            (String::from("docker"), attrs, exporters)
+        }
+        DefinitionExporter::OCI(request) => {
+            let attrs = request.output.clone().into_map();
+            let exporters = vec![Exporter {
+                r#type: String::from("oci"),
+                attrs: attrs.clone(),
+            }];
+            (String::from("oci"), attrs, exporters)
         }
     };
 
@@ -1746,6 +1780,62 @@ mod tests {
         assert_eq!(request.exporters[0].r#type, "local");
         assert!(request.exporters[0].attrs.is_empty());
         assert_eq!(request.session, "session-id");
+    }
+
+    #[test]
+    fn direct_definition_archive_exports_include_image_config() {
+        let config = r#"{"os":"linux","architecture":"amd64","config":{"Cmd":["/bin/sh"]}}"#;
+        let image = super::super::export::ImageExporterOutput::builder("example/app:test")
+            .image_config_json(config)
+            .dest(std::path::Path::new("image.tar"));
+
+        for (exporter, expected) in [
+            (DefinitionExporter::Docker(image.clone()), "docker"),
+            (DefinitionExporter::OCI(image), "oci"),
+        ] {
+            let (request, _) = build_definition_solve_request(
+                bollard_buildkit_proto::pb::Definition::default(),
+                &exporter,
+                &DefinitionSolveOptions::default(),
+                "session-id",
+                None,
+            );
+            assert!(request.definition.is_some());
+            assert!(request.frontend.is_empty());
+            assert_eq!(request.session, "session-id");
+            assert_eq!(request.exporter_deprecated, expected);
+            assert_eq!(request.exporters.len(), 1);
+            assert_eq!(request.exporters[0].r#type, expected);
+            assert_eq!(
+                request.exporters[0].attrs,
+                request.exporter_attrs_deprecated
+            );
+            assert_eq!(request.exporters[0].attrs["name"], "example/app:test");
+            assert_eq!(request.exporters[0].attrs["containerimage.config"], config);
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_definition_archive_exports_register_file_send() {
+        for oci in [false, true] {
+            let driver = failing_test_driver();
+            let image = super::super::export::ImageExporterOutput::builder("example/app:test")
+                .dest(std::path::Path::new("image.tar"));
+            let exporter = if oci {
+                DefinitionExporter::OCI(image)
+            } else {
+                DefinitionExporter::Docker(image)
+            };
+            let request = DefinitionSolveRequest::new(
+                bollard_buildkit_proto::pb::Definition::default(),
+                exporter,
+            );
+            assert!(solve_definition(&driver, request).await.is_err());
+            let names = driver.service_names.lock().unwrap();
+            assert!(names
+                .iter()
+                .any(|name| name == "/moby.filesync.v1.FileSend/diffcopy"));
+        }
     }
 
     #[test]

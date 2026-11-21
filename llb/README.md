@@ -32,8 +32,13 @@ optional provider is allowed to remain unavailable.
 ## Direct Solves
 
 This crate only constructs graphs; it does not solve them. Bollard's direct LLB
-solve API supports local filesystem export through `DockerContainer` and
-`BuildkitDaemon`. The Moby driver provides `Moby::build_image` to store
+solve API supports local filesystem, Docker archive and OCI archive export through
+`DockerContainer` and `BuildkitDaemon`. Archive exporters write to their request's
+destination and do not load the image into Docker. For a graph without a frontend,
+use `ImageExporterOutputBuilder::image_config_json` to supply the complete OCI
+image config document when archive runtime settings must be preserved. See
+[`llb_image_patch`](../examples/llb_image_patch.rs) for archive export/load.
+The Moby driver provides `Moby::build_image` to store
 configured images directly in Docker Engine. Its initially validated target is
 one explicitly selected `linux/amd64` platform; this is not support parity for
 other drivers or platforms. See the
@@ -57,5 +62,5 @@ feature and does not pull `tokio`, `tonic`, TLS or an HTTP client stack.
 The following features remain outside the initial release and are tracked for
 later compatible expansion: Git and HTTP sources, OCI-layout and image-blob
 sources, Diff and CDI operations, tmpfs and richer mount controls, richer exec
-metadata, multi-action file operations, richer exporters, gateway/frontend APIs
-and progress streaming.
+metadata, multi-action file operations, registry and other advanced exporters,
+gateway/frontend APIs and progress streaming.

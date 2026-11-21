@@ -1,6 +1,8 @@
 //! Builds a container with a bunch of extra options for testing
 #![allow(unused_variables, unused_mut)]
 
+mod common;
+
 #[cfg(feature = "buildkit_providerless")]
 use bollard::models::BuildInfoAux;
 use bollard::Docker;
@@ -8,8 +10,6 @@ use bollard::Docker;
 #[cfg(feature = "buildkit_providerless")]
 use futures_util::stream::StreamExt;
 use http_body_util::Full;
-
-use std::io::Write;
 
 #[tokio::main]
 async fn main() {
@@ -24,18 +24,12 @@ ENTRYPOINT ls buildkit-bollard.txt
 ",
     );
 
-    let mut header = tar::Header::new_gnu();
-    header.set_path("Dockerfile").unwrap();
-    header.set_size(dockerfile.len() as u64);
-    header.set_mode(0o755);
-    header.set_cksum();
-    let mut tar = tar::Builder::new(Vec::new());
-    tar.append(&header, dockerfile.as_bytes()).unwrap();
-
-    let uncompressed = tar.into_inner().unwrap();
-    let mut c = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    c.write_all(&uncompressed).unwrap();
-    let compressed = c.finish().unwrap();
+    let compressed = common::gzip_tar([common::TarFile::new(
+        "Dockerfile",
+        dockerfile.into_bytes(),
+        0o755,
+    )])
+    .unwrap();
 
     let id = "bollard-build-buildkit-example";
     let build_image_options = bollard::query_parameters::BuildImageOptionsBuilder::default()

@@ -15,7 +15,7 @@ use bollard::query_parameters::{
     RemoveImageOptionsBuilder, SearchImagesOptionsBuilder, StartContainerOptions,
     TagImageOptionsBuilder, WaitContainerOptions,
 };
-#[cfg(feature = "buildkit")]
+#[cfg(feature = "buildkit_providerless")]
 use bollard::query_parameters::{BuilderVersion, ImageBuildOutput, PruneBuildOptions};
 use bollard::Docker;
 
@@ -1436,25 +1436,25 @@ int main(int argc, char **argv) {
     );
 
     let executable = std::fs::read(&binary)?;
-    let definition = bollard_llb::scratch()
+    let definition = bollard::llb::scratch()
         .map_err(|error| Error::IOError {
             err: std::io::Error::other(error.to_string()),
         })?
         .file(
-            bollard_llb::mkdir("/workdir", 0o755),
-            bollard_llb::FileOpts::default(),
+            bollard::llb::mkdir("/workdir", 0o755),
+            bollard::llb::FileOpts::default(),
         )
         .map_err(|error| Error::IOError {
             err: std::io::Error::other(error.to_string()),
         })?
         .file(
-            bollard_llb::mkfile("/probe", 0o755, executable),
-            bollard_llb::FileOpts::default(),
+            bollard::llb::mkfile("/probe", 0o755, executable),
+            bollard::llb::FileOpts::default(),
         )
         .map_err(|error| Error::IOError {
             err: std::io::Error::other(error.to_string()),
         })?
-        .marshal(bollard_llb::MarshalOpts::linux_amd64())
+        .marshal(bollard::llb::MarshalOpts::linux_amd64())
         .map_err(|error| Error::IOError {
             err: std::io::Error::other(error.to_string()),
         })?

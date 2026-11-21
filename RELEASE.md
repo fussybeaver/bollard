@@ -66,7 +66,11 @@ generator versions recorded in the provenance lock; do not set `PROTOC` or
 
 ## 4. Publish in Dependency Order
 
-1. Package and publish `bollard-buildkit-proto`:
+Publish only crates whose source or published dependency requirements changed.
+The dependency order is `bollard-buildkit-proto`, `bollard-stubs`,
+`bollard-llb`, and then Bollard. Do not republish unchanged dependencies.
+
+1. Package and publish `bollard-buildkit-proto`, when changed:
    ```sh
    (cd codegen/proto && cargo package && cargo publish)
    ```
@@ -75,7 +79,12 @@ generator versions recorded in the provenance lock; do not set `PROTOC` or
    ```sh
    (cd codegen/swagger && cargo package && cargo publish)
    ```
-3. Update Bollard's dependencies and any generated API or documentation as
+3. Package and publish `bollard-llb`, when changed, after its proto dependency
+   is available:
+   ```sh
+   (cd llb && cargo package && cargo publish)
+   ```
+4. Update Bollard's dependencies and any generated API or documentation as
    needed. Regenerate the README:
    ```sh
    cargo readme --no-title > README.md
