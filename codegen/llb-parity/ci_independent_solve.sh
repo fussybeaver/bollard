@@ -1,6 +1,6 @@
 #!/bin/sh
 # Independently parse and solve a committed fixture using the pinned BuildKit
-# image and BuildKit's Go client, without Bollard's solve or transport code.
+# image's buildctl, without Bollard's solve or transport code.
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
