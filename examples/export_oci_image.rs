@@ -1,6 +1,7 @@
 //! Exports an image using an ephemeral BuildKit builder.
 #![allow(unused_variables, unused_mut)]
 
+#[cfg(feature = "buildkit_providerless")]
 mod common;
 
 #[tokio::main]

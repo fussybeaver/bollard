@@ -1,5 +1,7 @@
 #![cfg(feature = "buildkit")]
 
+use bollard::llb as bollard_llb;
+
 use bollard::container::LogOutput;
 use bollard::errors::Error;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
@@ -1019,18 +1021,54 @@ async fn direct_definition_image_export_test(docker: Docker) -> Result<(), Error
         if let Some(host) = registry.as_deref() {
             solve_options = solve_options.credential(host, integration_test_registry_credentials());
         }
+        let solve_options = solve_options.build();
         driver
             .solve_definition(
                 DefinitionSolveRequest::new(
                     definition.to_pb(),
                     DefinitionExporter::Docker(exporter),
                 )
-                .with_options(solve_options.build()),
+                .with_options(solve_options.clone()),
             )
             .await
             .map_err(|error| Error::IOError {
                 err: std::io::Error::other(format!("direct image solve failed: {error}")),
             })?;
+
+        // A second ephemeral builder exercises the OCI archive path independently.
+        let oci_path = archive.path().join("image.oci.tar");
+        let oci_exporter = bollard::grpc::export::ImageExporterOutput::builder(&image_tag)
+            .image_config_json(image_config)
+            .dest(&oci_path);
+        let mut oci_builder = DockerContainerBuilder::new(&docker);
+        oci_builder.name(&name);
+        oci_builder.lifecycle(
+            bollard::grpc::driver::docker_container::DockerContainerLifecycle::RemoveAfterSolve {
+                keep_state: false,
+            },
+        );
+        let oci_driver = oci_builder.bootstrap().await.map_err(|error| Error::IOError {
+            err: std::io::Error::other(format!("OCI BuildKit bootstrap failed: {error}")),
+        })?;
+        oci_driver
+            .solve_definition(
+                DefinitionSolveRequest::new(
+                    definition.to_pb(),
+                    DefinitionExporter::OCI(oci_exporter),
+                )
+                .with_options(solve_options),
+            )
+            .await
+            .map_err(|error| Error::IOError {
+                err: std::io::Error::other(format!("direct OCI solve failed: {error}")),
+            })?;
+        let mut oci = tar::Archive::new(std::fs::File::open(&oci_path)?);
+        let paths = oci
+            .entries()?
+            .map(|entry| entry?.path().map(|path| path.into_owned()))
+            .collect::<Result<BTreeSet<_>, std::io::Error>>()?;
+        assert!(paths.contains(Path::new("oci-layout")));
+        assert!(paths.contains(Path::new("index.json")));
 
         let archive_bytes = tokio::fs::read(&archive_path).await?;
         docker
@@ -1041,7 +1079,9 @@ async fn direct_definition_image_export_test(docker: Docker) -> Result<(), Error
             )
             .try_collect::<Vec<_>>()
             .await?;
-        let image = docker.inspect_image(&image_tag).await?;
+        let image = docker
+            .inspect_image(&image_tag, None::<bollard::query_parameters::InspectImageOptions>)
+            .await?;
         let config = image.config.ok_or_else(|| Error::IOError {
             err: std::io::Error::other("exported image has no config"),
         })?;
@@ -1119,10 +1159,22 @@ async fn direct_definition_image_export_test(docker: Docker) -> Result<(), Error
             moby_options =
                 moby_options.credential(host, integration_test_registry_credentials());
         }
-        moby.solve_definition(
-            DefinitionSolveRequest::new(
+        moby.build_image(
+            bollard::grpc::driver::MobyImageBuildRequest::new(
                 definition.to_pb(),
-                DefinitionExporter::DockerDaemon(moby_image_tag.clone()),
+                serde_json::json!({
+                    "os": "linux",
+                    "architecture": "amd64",
+                    "config": {
+                        "Cmd": ["/bin/sh", "-c", "test \"$(cat /llb-export-proof)\" = DIRECT_LLB_IMAGE_OK"]
+                    }
+                }),
+                bollard::grpc::build::ImageBuildPlatform {
+                    os: "linux".into(),
+                    architecture: "amd64".into(),
+                    variant: None,
+                },
+                moby_image_tag.clone(),
             )
             .with_options(moby_options.build()),
         )
@@ -1135,11 +1187,6 @@ async fn direct_definition_image_export_test(docker: Docker) -> Result<(), Error
                 None::<bollard::query_parameters::CreateContainerOptions>,
                 bollard::models::ContainerCreateBody {
                     image: Some(moby_image_tag.clone()),
-                    cmd: Some(vec![
-                        "sh".into(),
-                        "-c".into(),
-                        "test \"$(cat /llb-export-proof)\" = DIRECT_LLB_IMAGE_OK".into(),
-                    ]),
                     ..Default::default()
                 },
             )

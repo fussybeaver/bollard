@@ -90,11 +90,30 @@
 //!
 //! **Note:** BuildKit requires either `chrono` or `time` feature to be enabled for timestamp handling.
 //!
-//! The transport-free `bollard-llb` crate constructs synchronous LLB graphs.
-//! Direct definition solves support local filesystem export through
-//! Docker-container and BuildkitDaemon. The Moby driver provides
-//! `Moby::build_image` to store configured images directly in Docker Engine,
-//! initially validated for a single `linux/amd64` platform.
+//! Both BuildKit features expose `bollard::llb`, a synchronous LLB graph builder.
+//! The standalone `bollard-llb` crate provides the same graph API without Tokio,
+//! Tonic, TLS or HTTP transport dependencies. Direct definition solves support
+//! local filesystem, Docker archive and OCI archive export through DockerContainer
+//! and BuildkitDaemon. The Moby driver provides `Moby::build_image` to store
+//! configured images directly in Docker Engine, initially validated for a single
+//! `linux/amd64` platform.
+//!
+//! See `examples/llb_app_build.rs` for a configured Moby image build and
+//! `examples/llb_image_patch.rs` for patching an image via archive export/load.
+//!
+//! ```rust
+//! # #[cfg(feature = "buildkit_providerless")]
+//! # {
+//! use bollard::llb::{self, FileOpts, MarshalOpts};
+//!
+//! let graph = llb::scratch()?
+//!     .file(llb::mkfile("/hello", 0o644, b"world"), FileOpts::new())?
+//!     .marshal(MarshalOpts::linux_amd64())?;
+//! let definition: bollard::pb::Definition = graph.to_pb();
+//! assert!(!definition.def.is_empty());
+//! # }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 //!
 //! ### WebSocket Features
 //!

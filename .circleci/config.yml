@@ -245,6 +245,8 @@ jobs:
       - setup_remote_docker
       - run: docker build -t bollard .
       - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --features buildkit,chrono --all-targets -- -Dwarnings"
+      - run: docker run -ti --rm bollard bash -c "rustup component add clippy && cargo clippy --no-default-features --features buildkit_providerless,chrono,pipe --all-targets -- -Dwarnings"
+      - run: docker run -ti --rm bollard cargo check --features buildkit,time --all-targets
   test_audit:
     docker:
       - image: docker:29.3

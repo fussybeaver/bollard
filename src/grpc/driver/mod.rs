@@ -78,9 +78,6 @@ pub(crate) trait Driver {
         services: Vec<GrpcServer>,
     ) -> Result<GrpcHandle, GrpcError>;
     fn begin_solve(&self) -> Result<Box<dyn DriverTearDownHandler>, GrpcError>;
-    fn supports_moby_image_export(&self) -> bool {
-        false
-    }
 }
 
 pub(crate) struct GrpcHandle {
@@ -157,8 +154,8 @@ pub enum ImageExporterEnum {
 /// Exporter selection for a direct LLB definition solve.
 ///
 /// Image exporters either write a Docker or OCI archive to the destination
-/// supplied when constructing their [`ImageExporterRequest`], or load a Docker
-/// image directly into the daemon through the [`moby::Moby`] driver.
+/// supplied when constructing their [`ImageExporterRequest`]. For configured
+/// images stored directly in Docker Engine, use [`moby::Moby::build_image`].
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum DefinitionExporter {
@@ -168,13 +165,6 @@ pub enum DefinitionExporter {
     Docker(ImageExporterRequest),
     /// Export an OCI image archive.
     OCI(ImageExporterRequest),
-    /// Export a Docker image directly into the daemon's image store.
-    ///
-    /// The string is the image name/tag to store in Docker. This exporter is
-    /// supported only by [`moby::Moby`].
-    /// The Moby exporter takes image configuration from BuildKit result
-    /// metadata; it does not accept a `containerimage.config` exporter override.
-    DockerDaemon(String),
 }
 
 /// A direct Moby image-store build from an LLB definition.
@@ -390,7 +380,6 @@ impl std::fmt::Debug for DefinitionExporter {
             Self::Local(_) => formatter.write_str("DefinitionExporter::Local(..)"),
             Self::Docker(_) => formatter.write_str("DefinitionExporter::Docker(..)"),
             Self::OCI(_) => formatter.write_str("DefinitionExporter::OCI(..)"),
-            Self::DockerDaemon(_) => formatter.write_str("DefinitionExporter::DockerDaemon(..)"),
         }
     }
 }
@@ -643,7 +632,6 @@ impl fmt::Debug for DefinitionSolveRequest {
             DefinitionExporter::Local(_) => "local",
             DefinitionExporter::Docker(_) => "docker",
             DefinitionExporter::OCI(_) => "oci",
-            DefinitionExporter::DockerDaemon(_) => "moby",
         };
 
         formatter
@@ -924,14 +912,6 @@ pub(crate) async fn solve_definition(
         build_ref,
     } = request;
 
-    if matches!(&exporter, DefinitionExporter::DockerDaemon(_))
-        && !driver.supports_moby_image_export()
-    {
-        return Err(tonic::Status::failed_precondition(
-            "direct Docker-daemon image export is supported only by the Moby driver",
-        )
-        .into());
-    }
     validate_definition(&definition, &options.ssh)?;
 
     let mut services = solve_services(&options);
@@ -952,7 +932,6 @@ pub(crate) async fn solve_definition(
                 .max_encoding_message_size(DEFAULT_MAX_SEND_MSG_SIZE);
             services.push(GrpcServer::FileSend(filesend));
         }
-        DefinitionExporter::DockerDaemon(_) => {}
     }
 
     let tear_down_handler = driver.begin_solve()?;
@@ -1207,15 +1186,6 @@ fn build_definition_solve_request(
                 attrs: attrs.clone(),
             }];
             (String::from("oci"), attrs, exporters)
-        }
-        DefinitionExporter::DockerDaemon(output) => {
-            let mut attrs = HashMap::new();
-            attrs.insert(String::from("type"), String::from("docker"));
-            attrs.insert(String::from("name"), output.clone());
-            // The Moby exporter wraps the requested exporter and imports its
-            // result into the Docker daemon. This is the protocol used by
-            // Moby::docker_build; it intentionally has no FileSend service.
-            (String::from("moby"), attrs, Vec::new())
         }
     };
 
@@ -1810,6 +1780,62 @@ mod tests {
         assert_eq!(request.exporters[0].r#type, "local");
         assert!(request.exporters[0].attrs.is_empty());
         assert_eq!(request.session, "session-id");
+    }
+
+    #[test]
+    fn direct_definition_archive_exports_include_image_config() {
+        let config = r#"{"os":"linux","architecture":"amd64","config":{"Cmd":["/bin/sh"]}}"#;
+        let image = super::super::export::ImageExporterOutput::builder("example/app:test")
+            .image_config_json(config)
+            .dest(std::path::Path::new("image.tar"));
+
+        for (exporter, expected) in [
+            (DefinitionExporter::Docker(image.clone()), "docker"),
+            (DefinitionExporter::OCI(image), "oci"),
+        ] {
+            let (request, _) = build_definition_solve_request(
+                bollard_buildkit_proto::pb::Definition::default(),
+                &exporter,
+                &DefinitionSolveOptions::default(),
+                "session-id",
+                None,
+            );
+            assert!(request.definition.is_some());
+            assert!(request.frontend.is_empty());
+            assert_eq!(request.session, "session-id");
+            assert_eq!(request.exporter_deprecated, expected);
+            assert_eq!(request.exporters.len(), 1);
+            assert_eq!(request.exporters[0].r#type, expected);
+            assert_eq!(
+                request.exporters[0].attrs,
+                request.exporter_attrs_deprecated
+            );
+            assert_eq!(request.exporters[0].attrs["name"], "example/app:test");
+            assert_eq!(request.exporters[0].attrs["containerimage.config"], config);
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_definition_archive_exports_register_file_send() {
+        for oci in [false, true] {
+            let driver = failing_test_driver();
+            let image = super::super::export::ImageExporterOutput::builder("example/app:test")
+                .dest(std::path::Path::new("image.tar"));
+            let exporter = if oci {
+                DefinitionExporter::OCI(image)
+            } else {
+                DefinitionExporter::Docker(image)
+            };
+            let request = DefinitionSolveRequest::new(
+                bollard_buildkit_proto::pb::Definition::default(),
+                exporter,
+            );
+            assert!(solve_definition(&driver, request).await.is_err());
+            let names = driver.service_names.lock().unwrap();
+            assert!(names
+                .iter()
+                .any(|name| name == "/moby.filesync.v1.FileSend/diffcopy"));
+        }
     }
 
     #[test]

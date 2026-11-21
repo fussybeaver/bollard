@@ -1,6 +1,7 @@
 //! Builds and pushes an image using a named persistent BuildKit builder.
 #![allow(unused_variables, unused_mut, unused_imports)]
 
+#[cfg(feature = "buildkit_providerless")]
 mod common;
 
 #[cfg(feature = "buildkit_providerless")]

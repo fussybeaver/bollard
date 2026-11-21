@@ -30,7 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .try_collect::<Vec<_>>()
         .await?;
-    let base_image = docker.inspect_image(BASE_IMAGE).await?;
+    let base_image = docker
+        .inspect_image(
+            BASE_IMAGE,
+            None::<bollard::query_parameters::InspectImageOptions>,
+        )
+        .await?;
     let base_config = base_image
         .config
         .clone()

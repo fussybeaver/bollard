@@ -4,10 +4,10 @@ use std::path::PathBuf;
 
 use bollard::grpc::build::ImageBuildPlatform;
 use bollard::grpc::driver::{moby::Moby, DefinitionSolveOptionsBuilder, MobyImageBuildRequest};
+use bollard::llb;
 use bollard::models::ContainerCreateBody;
 use bollard::query_parameters::RemoveContainerOptionsBuilder;
 use bollard::Docker;
-use bollard_llb as llb;
 use futures_util::TryStreamExt;
 
 const IMAGE_NAME: &str = "bollard-llb-app-example";

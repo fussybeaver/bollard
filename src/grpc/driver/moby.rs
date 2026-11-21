@@ -130,22 +130,7 @@ impl Driver for Moby {
     fn begin_solve(&self) -> Result<Box<dyn super::DriverTearDownHandler>, GrpcError> {
         Ok(Box::new(MobyTearDownHandler {}))
     }
-
-    fn supports_moby_image_export(&self) -> bool {
-        true
-    }
 }
-
-impl super::SolveDefinition for Moby {
-    async fn solve_definition(
-        &self,
-        request: super::DefinitionSolveRequest,
-    ) -> Result<super::DefinitionSolveResult, GrpcError> {
-        super::solve_definition(self, request).await
-    }
-}
-
-impl super::private::SolveDefinitionSealed for Moby {}
 
 struct MobyTearDownHandler {}
 

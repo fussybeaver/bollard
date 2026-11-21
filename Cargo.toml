@@ -66,6 +66,7 @@ test_websocket = ["websocket"]
 base64 = "0.23"
 bollard-stubs = { version = "=1.53.1-rc.29.3.1", default-features = false }
 bollard-buildkit-proto = { version = "0.9.2", optional = true }
+bollard-llb = { version = "0.1.0", optional = true }
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
 futures-core = "0.3"
@@ -109,7 +110,6 @@ glob = { version = "0.3", optional = true }
 regex = { version = "1.13", optional = true }
 
 [dev-dependencies]
-bollard-llb = { version = "0.1.0", path = "llb" }
 flate2 = "1.0"
 prost = "0.14"
 sha2 = "0.10"
@@ -143,7 +143,11 @@ required-features = ["buildkit"]
 
 [[example]]
 name = "llb_app_build"
-required-features = ["buildkit", "chrono"]
+required-features = ["buildkit", "pipe", "chrono"]
+
+[[example]]
+name = "llb_image_patch"
+required-features = ["buildkit", "pipe", "chrono"]
 
 [package.metadata.docs.rs]
 features = ["ssl", "ssh", "buildkit", "chrono"]
