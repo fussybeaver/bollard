@@ -112,7 +112,7 @@ impl Docker {
     ///
     /// let config = SwarmJoinRequest {
     ///     advertise_addr: Some("127.0.0.1".to_string()),
-    ///     join_token: Some("token".to_string()),
+    ///     join_token: "token".to_string(),
     ///     ..Default::default()
     /// };
     /// docker.join_swarm(config);

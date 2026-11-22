@@ -104,8 +104,7 @@ impl ListConfigsOptionsBuilder {
     /// 
     /// - `id=<config id>`
     /// - `label=<key> or label=<key>=value`
-    /// - `name=<config name>`
-    /// - `names=<config name>`
+    /// - `name=<config name>` matches all or part of a config name (prefix match)
     pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {
@@ -851,6 +850,7 @@ impl ListContainersOptionsBuilder {
     /// Available filters:
     /// 
     /// - `ancestor`=(`<image-name>[:<tag>]`, `<image id>`, or `<image@digest>`)
+    /// - `annotation=key` or `annotation="key=value"` of a container annotation
     /// - `before`=(`<container id>` or `<container name>`)
     /// - `expose`=(`<port>[/<proto>]`|`<startport-endport>/[<proto>]`)
     /// - `exited=<int>` containers with exit code of `<int>`
@@ -1973,19 +1973,19 @@ impl BuildImageOptionsBuilder {
     }
 
     /// Set memory limit for build.
-    pub fn memory(mut self, memory: i32) -> Self {
+    pub fn memory(mut self, memory: i64) -> Self {
         self.inner.memory = Some(memory);
         self
     }
 
     /// Total memory (memory + swap). Set as `-1` to disable swap.
-    pub fn memswap(mut self, memswap: i32) -> Self {
+    pub fn memswap(mut self, memswap: i64) -> Self {
         self.inner.memswap = Some(memswap);
         self
     }
 
     /// CPU shares (relative weight).
-    pub fn cpushares(mut self, cpushares: i32) -> Self {
+    pub fn cpushares(mut self, cpushares: i64) -> Self {
         self.inner.cpushares = Some(cpushares);
         self
     }
@@ -1997,13 +1997,13 @@ impl BuildImageOptionsBuilder {
     }
 
     /// The length of a CPU period in microseconds.
-    pub fn cpuperiod(mut self, cpuperiod: i32) -> Self {
+    pub fn cpuperiod(mut self, cpuperiod: i64) -> Self {
         self.inner.cpuperiod = Some(cpuperiod);
         self
     }
 
     /// Microseconds of CPU time that the container can get in a CPU period.
-    pub fn cpuquota(mut self, cpuquota: i32) -> Self {
+    pub fn cpuquota(mut self, cpuquota: i64) -> Self {
         self.inner.cpuquota = Some(cpuquota);
         self
     }
@@ -2026,7 +2026,7 @@ impl BuildImageOptionsBuilder {
     }
 
     /// Size of `/dev/shm` in bytes. The size must be greater than 0. If omitted the system uses 64MB.
-    pub fn shmsize(mut self, shmsize: i32) -> Self {
+    pub fn shmsize(mut self, shmsize: i64) -> Self {
         self.inner.shmsize = Some(shmsize);
         self
     }
@@ -2141,22 +2141,22 @@ pub struct BuildImageOptions
     pub rm: bool, 
     pub forcerm: bool, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory: Option<i32>, 
+    pub memory: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub memswap: Option<i32>, 
+    pub memswap: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpushares: Option<i32>, 
+    pub cpushares: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpusetcpus: Option<String>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpuperiod: Option<i32>, 
+    pub cpuperiod: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpuquota: Option<i32>, 
+    pub cpuquota: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(serialize_with = "serialize_as_json")]
     pub buildargs: Option<HashMap<String, String>>, 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shmsize: Option<i32>, 
+    pub shmsize: Option<i64>, 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub squash: Option<bool>, 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2399,6 +2399,7 @@ impl CreateImageOptionsBuilder {
     /// Apply `Dockerfile` instructions to the image that is created,
     /// for example: `changes=ENV DEBUG=true`.
     /// Note that `ENV DEBUG=true` should be URI component encoded.
+    /// Repeat the parameter to apply multiple instructions.
     /// 
     /// Supported `Dockerfile` instructions:
     /// `CMD`|`ENTRYPOINT`|`ENV`|`EXPOSE`|`ONBUILD`|`USER`|`VOLUME`|`WORKDIR`
@@ -2514,7 +2515,7 @@ impl RemoveImageOptionsBuilder {
     }
 
     /// Select platform-specific content to delete.
-    /// Multiple values are accepted.
+    /// Repeat the parameter to select multiple platforms.
     /// Each platform is a OCI platform encoded as a JSON string.
     pub fn platforms(mut self, platforms: Vec<String>) -> Self {
         self.inner.platforms = Some(platforms
@@ -2645,7 +2646,7 @@ impl ExportImagesOptionsBuilder {
         Self::default()
     }
 
-    /// Image names to filter by
+    /// Image names to filter by. Repeat the parameter for multiple images.
     pub fn names(mut self, names: Vec<String>) -> Self {
         self.inner.names = Some(names
             .into_iter()
@@ -2863,6 +2864,7 @@ impl Default for InspectImageOptions
 /// //  .shared_size(/* ... */)
 /// //  .digests(/* ... */)
 /// //  .manifests(/* ... */)
+/// //  .identity(/* ... */)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -2926,6 +2928,12 @@ impl ListImagesOptionsBuilder {
         self
     }
 
+    /// Include `Identity` in each manifest summary. Requires `manifests=1`.
+    pub fn identity(mut self, identity: bool) -> Self {
+        self.inner.identity = identity;
+        self
+    }
+
     /// Consume this builder and use the `ListImagesOptions` as parameter to the
     /// `ImageList` API
     pub fn build(self) -> ListImagesOptions {
@@ -2947,6 +2955,7 @@ pub struct ListImagesOptions
     pub shared_size: bool, 
     pub digests: bool, 
     pub manifests: bool, 
+    pub identity: bool, 
 }
 
 impl Default for ListImagesOptions
@@ -2958,6 +2967,7 @@ impl Default for ListImagesOptions
             shared_size: false,
             digests: false,
             manifests: false,
+            identity: false,
         }
     }
 }
@@ -3341,6 +3351,12 @@ impl Default for TagImageOptions
 
 
 
+
+// Filtered out: ImageAttestations
+// Get attestation statements for an image
+//   - platform
+//   - _type
+//   - statement
 
 /// Builder for the `NetworkInspect` API query parameter.
 ///
@@ -4263,8 +4279,8 @@ impl ListSecretsOptionsBuilder {
     /// 
     /// - `id=<secret id>`
     /// - `label=<key> or label=<key>=value`
-    /// - `name=<secret name>`
-    /// - `names=<secret name>`
+    /// - `name=<secret name>` matches all or part of a secret name (prefix match)
+    /// - `names=<secret name>` matches a secret name (exact match)
     pub fn filters(mut self, filters: &HashMap<impl Into<String> + Clone, Vec<impl Into<String> + Clone>>) -> Self {
         let mut inner_filters = HashMap::new();
         for (key, value) in filters {

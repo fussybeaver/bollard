@@ -148,6 +148,23 @@ pub struct Address {
 
 }
 
+/// AttestationStatement is a single in-toto statement attached to an image. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AttestationStatement {
+    #[serde(rename = "Descriptor")]
+    pub descriptor: OciDescriptor,
+
+    /// The in-toto predicate type URI of this statement.
+    #[serde(rename = "PredicateType")]
+    pub predicate_type: String,
+
+    /// The verbatim in-toto statement JSON. Only included when the caller opts in via the `statement=true` query parameter; otherwise absent. 
+    #[serde(rename = "Statement")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statement: Option<HashMap<(), ()>>,
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AuthConfig {
     #[serde(rename = "username")]
@@ -1147,7 +1164,7 @@ pub struct ContainerConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_signal: Option<String>,
 
-    /// Timeout to stop a container in seconds.
+    /// Timeout to stop a container in seconds. If omitted, the daemon-wide default (`default-stop-timeout`) is used. 
     #[serde(rename = "StopTimeout")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_timeout: Option<i64>,
@@ -1320,7 +1337,7 @@ pub struct ContainerCreateBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_signal: Option<String>,
 
-    /// Timeout to stop a container in seconds.
+    /// Timeout to stop a container in seconds. If omitted, the daemon-wide default (`default-stop-timeout`) is used. 
     #[serde(rename = "StopTimeout")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_timeout: Option<i64>,
@@ -3737,6 +3754,11 @@ pub struct HostConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
 
+    /// Set the initial umask for a Unix container.  If omitted, the daemon does not set a umask in the OCI process specification, and the runtime's default behavior applies.  JSON integers are decimal. For example, use `18` for the octal umask `0022`, and `511` for the octal umask `0777`.
+    #[serde(rename = "Umask")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub umask: Option<u32>,
+
     /// Isolation technology of the container. (Windows only) 
     #[serde(rename = "Isolation")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4088,7 +4110,7 @@ pub struct ImageInspect {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os_version: Option<String>,
 
-    /// Total size of the image including all layers it is composed of. 
+    /// Total size of the image variant, including all layers it is composed of.  For multi-platform images, this is the size of the platform variant selected by the `platform` query parameter. If no platform is specified, the daemon selects a platform as described in the `platform` parameter.  When using the containerd image store, this includes both the image content that's present locally and the unpacked snapshot data for the selected variant.  Image data may be shared between images, so this size does not indicate how much space would be reclaimed by deleting the image. 
     #[serde(rename = "Size")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
@@ -4231,6 +4253,11 @@ pub struct ImageManifestSummaryImageData {
     /// OCI platform of the image. This will be the platform specified in the manifest descriptor from the index/manifest list. If it's not available, it will be obtained from the image config. 
     #[serde(rename = "Platform")]
     pub platform: OciPlatform,
+
+    /// Identity holds information about the identity and origin of this image. For image list responses, this can duplicate Build/Pull fields across image manifests, because those parts are image-level metadata. 
+    #[serde(rename = "Identity")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
 
     /// The IDs of the containers that are using this image. 
     #[serde(rename = "Containers")]
@@ -4994,6 +5021,20 @@ pub struct Network {
     #[serde(rename = "Peers")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peers: Option<Vec<PeerInfo>>,
+
+}
+
+/// Specifies how a task is attached to a network, and the addresses the task was assigned on that network. 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct NetworkAttachment {
+    #[serde(rename = "Network")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<Network>,
+
+    /// The IP addresses (in CIDR notation) assigned to the task on this network. To maintain backward compatibility this field accepts CIDR notation, but only the IP address is used. 
+    #[serde(rename = "Addresses")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addresses: Option<Vec<String>>,
 
 }
 
@@ -7722,10 +7763,9 @@ pub struct SwarmInitRequest {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SwarmJoinRequest {
-    /// Listen address used for inter-manager communication if the node gets promoted to manager, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP). 
+    /// Listen address used for inter-manager communication if the node gets promoted to manager, as well as determining the networking interface used for the VXLAN Tunnel Endpoint (VTEP). This is required for joining a swarm. If the port number is omitted, the default swarm listening port is used. 
     #[serde(rename = "ListenAddr")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub listen_addr: Option<String>,
+    pub listen_addr: String,
 
     /// Externally reachable address advertised to other nodes. This can either be an address/port combination in the form `192.168.1.1:4567`, or an interface followed by a port number, like `eth0:4567`. If the port number is omitted, the port number from the listen address is used. If `AdvertiseAddr` is not specified, it will be automatically detected when possible. 
     #[serde(rename = "AdvertiseAddr")]
@@ -7739,13 +7779,12 @@ pub struct SwarmJoinRequest {
 
     /// Addresses of manager nodes already participating in the swarm. 
     #[serde(rename = "RemoteAddrs")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote_addrs: Option<Vec<String>>,
+    #[serde(deserialize_with = "deserialize_nonoptional_vec")]
+    pub remote_addrs: Vec<String>,
 
     /// Secret token for joining this swarm.
     #[serde(rename = "JoinToken")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub join_token: Option<String>,
+    pub join_token: String,
 
 }
 
@@ -8616,6 +8655,11 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_iteration: Option<ObjectVersion>,
 
+    /// The networks that this task is attached to, and the addresses the task was assigned on each of them. 
+    #[serde(rename = "NetworksAttachments")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub networks_attachments: Option<Vec<NetworkAttachment>>,
+
 }
 
 /// User modifiable task configuration.
@@ -8748,9 +8792,9 @@ pub struct TaskSpecContainerSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_grace_period: Option<i64>,
 
-    #[serde(rename = "HealthCheck")]
+    #[serde(rename = "Healthcheck")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub health_check: Option<HealthConfig>,
+    pub healthcheck: Option<HealthConfig>,
 
     /// A list of hostname/IP mappings to add to the container's `hosts` file. The format of extra hosts is specified in the [hosts(5)](http://man7.org/linux/man-pages/man5/hosts.5.html) man page:      IP_address canonical_hostname [aliases...] 
     #[serde(rename = "Hosts")]
