@@ -111,6 +111,8 @@ impl Docker {
     /// use bollard::models::SwarmJoinRequest;
     ///
     /// let config = SwarmJoinRequest {
+    ///     listen_addr: "0.0.0.0:2377".to_string(),
+    ///     remote_addrs: vec!["192.168.1.1:2377".to_string()],
     ///     advertise_addr: Some("127.0.0.1".to_string()),
     ///     join_token: "token".to_string(),
     ///     ..Default::default()

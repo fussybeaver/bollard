@@ -61,6 +61,7 @@ generator versions recorded in the provenance lock; do not set `PROTOC` or
 5. Validate the build:
    - Run a build in the root directory.
    - Temporarily add a path dependency in `Cargo.toml` to verify correctness.
+   - Do not commit temporary path dependencies or the lockfile they produce.
 6. Review the generated Swagger diff alongside the protobuf diff. Do not run
    `cargo fmt` over generated Swagger stubs; regenerate them through Maven.
 
@@ -89,6 +90,8 @@ The dependency order is `bollard-buildkit-proto`, `bollard-stubs`,
    ```sh
    cargo readme --no-title > README.md
    ```
+5. After the dependency releases are available, run `cargo check --all-features`
+   and commit the regenerated `Cargo.lock`.
 
 ## 5. Publish Bollard
 
