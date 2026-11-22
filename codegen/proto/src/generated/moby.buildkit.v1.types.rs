@@ -41,6 +41,8 @@ pub struct BuildkitVersion {
     pub version: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub revision: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub dockerfile_version: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CdiDevice {

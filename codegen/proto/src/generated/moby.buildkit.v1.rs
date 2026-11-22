@@ -103,6 +103,10 @@ pub struct SolveRequest {
     pub enable_session_exporter: bool,
     #[prost(string, tag = "15")]
     pub source_policy_session: ::prost::alloc::string::String,
+    #[prost(int64, tag = "16")]
+    pub compatibility_version: i64,
+    #[prost(bool, tag = "17")]
+    pub proxy_network: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CacheOptions {

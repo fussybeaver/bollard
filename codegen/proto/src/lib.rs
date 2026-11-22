@@ -35,6 +35,7 @@ pub mod moby {
             pub mod apicaps {
                 include!("generated/moby.buildkit.v1.apicaps.rs");
             }
+            #[allow(clippy::large_enum_variant)]
             pub mod frontend {
                 include!("generated/moby.buildkit.v1.frontend.rs");
             }

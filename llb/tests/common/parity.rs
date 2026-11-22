@@ -645,6 +645,7 @@ fn op_kind(op: &pb::Op) -> &'static str {
         Some(pb::op::Op::Build(_)) => "build",
         Some(pb::op::Op::Merge(_)) => "merge",
         Some(pb::op::Op::Diff(_)) => "diff",
+        Some(pb::op::Op::Passthrough(_)) => "passthrough",
         None => "wrapper",
     }
 }

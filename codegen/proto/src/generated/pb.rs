@@ -10,7 +10,7 @@ pub struct Op {
     pub platform: ::core::option::Option<Platform>,
     #[prost(message, optional, tag = "11")]
     pub constraints: ::core::option::Option<WorkerConstraints>,
-    #[prost(oneof = "op::Op", tags = "2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "op::Op", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub op: ::core::option::Option<op::Op>,
 }
 /// Nested message and enum types in `Op`.
@@ -29,6 +29,8 @@ pub mod op {
         Merge(super::MergeOp),
         #[prost(message, tag = "7")]
         Diff(super::DiffOp),
+        #[prost(message, tag = "8")]
+        Passthrough(super::PassthroughOp),
     }
 }
 /// Platform is github.com/opencontainers/image-spec/specs-go/v1.Platform
@@ -285,6 +287,8 @@ pub struct OpMetadata {
     >,
     #[prost(message, optional, tag = "6")]
     pub progress_group: ::core::option::Option<ProgressGroup>,
+    #[prost(message, optional, tag = "7")]
+    pub linux_resources: ::core::option::Option<LinuxResources>,
 }
 /// Source is a source mapping description for a file
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -352,6 +356,33 @@ pub struct ProgressGroup {
     pub name: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub weak: bool,
+}
+/// LinuxResources specifies cgroup resource limits for containers.
+/// Used in OpMetadata to set per-step resource constraints without
+/// affecting the cache key.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LinuxResources {
+    /// memory limit in bytes
+    #[prost(int64, tag = "1")]
+    pub memory: i64,
+    /// memory+swap limit in bytes
+    #[prost(int64, tag = "2")]
+    pub memory_swap: i64,
+    /// relative CPU weight
+    #[prost(uint64, tag = "3")]
+    pub cpu_shares: u64,
+    /// CFS period in microseconds
+    #[prost(uint64, tag = "4")]
+    pub cpu_period: u64,
+    /// CFS quota in microseconds
+    #[prost(int64, tag = "5")]
+    pub cpu_quota: i64,
+    /// CPU affinity (e.g., "0-3")
+    #[prost(string, tag = "6")]
+    pub cpuset_cpus: ::prost::alloc::string::String,
+    /// memory node affinity (e.g., "0,1")
+    #[prost(string, tag = "7")]
+    pub cpuset_mems: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProxyEnv {
@@ -603,6 +634,13 @@ pub struct DiffOp {
     pub lower: ::core::option::Option<LowerDiffInput>,
     #[prost(message, optional, tag = "2")]
     pub upper: ::core::option::Option<UpperDiffInput>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PassthroughOp {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(int64, repeated, tag = "2")]
+    pub outputs: ::prost::alloc::vec::Vec<i64>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

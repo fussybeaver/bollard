@@ -65,8 +65,8 @@ test_websocket = ["websocket"]
 [dependencies]
 base64 = "0.23"
 bollard-stubs = { version = "=1.57.0-rc.29.10.0", default-features = false }
-bollard-buildkit-proto = { version = "0.9.2", optional = true }
-bollard-llb = { version = "0.1.0", optional = true }
+bollard-buildkit-proto = { version = "0.10.0", optional = true }
+bollard-llb = { version = "0.2.0", optional = true }
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
 futures-core = "0.3"

@@ -1,7 +1,7 @@
 [package]
 name = "bollard-llb"
 description = "Low-Level Builder (LLB) graph construction for Bollard/BuildKit"
-version = "0.1.0"
+version = "0.2.0"
 authors = [ "Bollard contributors" ]
 license = "Apache-2.0"
 homepage = "https://github.com/fussybeaver/bollard"
@@ -14,7 +14,7 @@ edition = "2021"
 dump_json = []
 
 [dependencies]
-bollard-buildkit-proto = { version = "0.9.1", default-features = false }
+bollard-buildkit-proto = { version = "0.10.0", default-features = false }
 hex = "0.4"
 indexmap = "2"
 prost = "0.14"

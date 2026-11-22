@@ -38,6 +38,7 @@ impl From<OpMetadata> for pb::OpMetadata {
                 .map(|cap| (cap, true))
                 .collect::<BTreeMap<_, _>>(),
             progress_group: value.progress_group,
+            linux_resources: None,
         }
     }
 }

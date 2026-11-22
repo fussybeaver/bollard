@@ -61,6 +61,12 @@ fn op_to_value(op: &pb::Op) -> Value {
         Some(pb::op::Op::Diff(diff)) => {
             obj.insert("diff".to_string(), diff_to_value(diff));
         }
+        Some(pb::op::Op::Passthrough(passthrough)) => {
+            obj.insert(
+                "passthrough".to_string(),
+                json!({ "id": passthrough.id, "outputs": passthrough.outputs }),
+            );
+        }
         None => {}
     }
     obj.insert(
@@ -323,6 +329,21 @@ mod tests {
             .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap()
+    }
+
+    #[test]
+    fn dump_json_renders_passthrough() {
+        let op = pb::Op {
+            op: Some(pb::op::Op::Passthrough(pb::PassthroughOp {
+                id: "example".into(),
+                outputs: vec![0, 2],
+            })),
+            ..Default::default()
+        };
+        assert_eq!(
+            op_to_value(&op)["passthrough"],
+            json!({ "id": "example", "outputs": [0, 2] })
+        );
     }
 
     #[test]
