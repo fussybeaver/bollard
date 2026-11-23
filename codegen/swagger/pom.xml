@@ -106,6 +106,8 @@
                   <queryParameterMinimumVersions>
                       ImageInspect.manifests=1.48
                       ImageInspect.platform=1.49
+                      ImageGet.platform=1.48
+                      ImageGetAll.platform=1.48
                   </queryParameterMinimumVersions>
                 </configOptions>
               </configuration>

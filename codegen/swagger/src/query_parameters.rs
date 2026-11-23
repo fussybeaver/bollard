@@ -2584,6 +2584,8 @@ impl ExportImageOptionsBuilder {
     /// If not provided, the full multi-platform image will be saved.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    ///
+    /// Requires Docker Engine API 1.48 or later.
     pub fn platform(mut self, platform: Vec<String>) -> Self {
         self.inner.platform = Some(platform
             .into_iter()
@@ -2658,6 +2660,8 @@ impl ExportImagesOptionsBuilder {
     /// will be saved.
     /// 
     /// Example: `{"os": "linux", "architecture": "arm", "variant": "v5"}`
+    ///
+    /// Requires Docker Engine API 1.48 or later.
     pub fn platform(mut self, platform: Vec<String>) -> Self {
         self.inner.platform = Some(platform
             .into_iter()
