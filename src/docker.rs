@@ -1340,6 +1340,18 @@ pub struct SshOptions {
     /// **Warning:** Using [`openssh::KnownHosts::Accept`] disables host key verification.
     /// This leaves the connection susceptible to man-in-the-middle (MITM) attacks.
     pub known_hosts_check: Option<openssh::KnownHosts>,
+
+    /// Maximum number of Docker transport channels sharing one SSH master.
+    /// Defaults to 8. Set this below the server's `MaxSessions` limit.
+    pub max_channels_per_master: Option<std::num::NonZeroUsize>,
+
+    /// Maximum number of SSH masters created by this Docker client.
+    /// Defaults to 4.
+    pub max_masters_per_destination: Option<std::num::NonZeroUsize>,
+
+    /// Maximum time to wait for an available SSH transport channel.
+    /// Defaults to 15 seconds.
+    pub channel_acquire_timeout: Option<std::time::Duration>,
 }
 
 #[cfg(feature = "ssh")]
@@ -1376,6 +1388,24 @@ impl SshOptions {
     /// Set the host key verification policy.
     pub fn with_known_hosts_check(mut self, check: openssh::KnownHosts) -> Self {
         self.known_hosts_check = Some(check);
+        self
+    }
+
+    /// Set the maximum number of Docker transport channels per SSH master.
+    pub fn with_max_channels_per_master(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.max_channels_per_master = Some(limit);
+        self
+    }
+
+    /// Set the maximum number of SSH masters for this Docker client.
+    pub fn with_max_masters_per_destination(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.max_masters_per_destination = Some(limit);
+        self
+    }
+
+    /// Set the maximum time to acquire an SSH transport channel.
+    pub fn with_channel_acquire_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.channel_acquire_timeout = Some(timeout);
         self
     }
 }
@@ -1487,7 +1517,7 @@ impl Docker {
     ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("ssh://", "", 1);
 
-        let ssh_connector = crate::ssh::SshConnector::new(options);
+        let ssh_connector = crate::ssh::SshConnector::new(options, client_addr.clone());
 
         let client_builder = Client::builder(TokioExecutor::new());
 
