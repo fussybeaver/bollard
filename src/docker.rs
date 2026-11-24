@@ -1347,13 +1347,14 @@ pub struct SshOptions {
     /// Set this below the server's `MaxSessions` limit.
     pub max_channels_per_master: Option<std::num::NonZeroUsize>,
 
-    /// Maximum number of SSH masters created by this Docker client.
+    /// Maximum number of SSH masters available for new channels.
+    /// Retired masters may remain open while existing channels drain.
     /// Defaults to 4.
     pub max_masters_per_client: Option<std::num::NonZeroUsize>,
 
-    /// Maximum time to wait for an available SSH transport channel, including
-    /// health probes. Time spent waiting for an SSH master to start does not
-    /// count toward this limit. Defaults to 15 seconds.
+    /// Maximum time to wait for a free SSH transport channel.
+    /// This also bounds the wait for initial SSH master startup and health checks.
+    /// Defaults to 15 seconds.
     pub channel_acquire_timeout: Option<std::time::Duration>,
 }
 
@@ -1400,7 +1401,7 @@ impl SshOptions {
         self
     }
 
-    /// Set the maximum number of SSH masters for this Docker client.
+    /// Set the maximum number of SSH masters available for new channels.
     pub fn with_max_masters_per_client(mut self, limit: std::num::NonZeroUsize) -> Self {
         self.max_masters_per_client = Some(limit);
         self
@@ -1518,8 +1519,19 @@ impl Docker {
         client_version: &ClientVersion,
         options: SshOptions,
     ) -> Result<Docker, Error> {
-        let client_addr = addr.replacen("ssh://", "", 1);
-        let client_addr = client_addr.trim_end_matches('/').to_owned();
+        let url = if addr.contains("://") {
+            url::Url::parse(addr)?
+        } else {
+            url::Url::parse(&format!("ssh://{addr}"))?
+        };
+        if url.scheme() != "ssh" || !url.has_host() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid Docker SSH address",
+            )
+            .into());
+        }
+        let client_addr = url[url::Position::BeforeUsername..url::Position::AfterPort].to_owned();
 
         let ssh_connector = crate::ssh::SshConnector::new(options, client_addr.clone());
 

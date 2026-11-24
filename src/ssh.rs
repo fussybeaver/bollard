@@ -11,10 +11,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{ready, Context, Poll};
 use std::time::Duration;
-use tokio::io::AsyncRead;
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError};
-use tokio::time::Instant;
 
 const DEFAULT_CHANNELS_PER_MASTER: usize = 8;
 const DEFAULT_MASTERS_PER_CLIENT: usize = 4;
@@ -57,8 +55,6 @@ struct SshPool {
 struct PoolState {
     masters: Vec<MasterEntry>,
     launching: Option<MasterStartup>,
-    closing: usize,
-    failed: bool,
 }
 
 type MasterStartup = Shared<oneshot::Receiver<Result<(), Arc<openssh::Error>>>>;
@@ -70,10 +66,7 @@ struct Master {
 
 struct MasterEntry {
     master: Arc<Master>,
-    active: usize,
     retired: bool,
-    needs_probe: bool,
-    probing: bool,
 }
 
 struct ChannelLease {
@@ -81,7 +74,6 @@ struct ChannelLease {
     runtime: Handle,
     permit: Option<OwnedSemaphorePermit>,
     pool: Arc<SshPool>,
-    probing: bool,
 }
 
 impl Drop for ChannelLease {
@@ -89,44 +81,21 @@ impl Drop for ChannelLease {
         let Some(master) = self.master.take() else {
             return;
         };
-        let mut closing = None;
-        if let Ok(mut state) = self.pool.lock_state() {
-            drop(self.permit.take());
-            if let Some(index) = state
-                .masters
-                .iter()
-                .position(|entry| Arc::ptr_eq(&entry.master, &master))
-            {
-                let entry = &mut state.masters[index];
-                if let Some(active) = entry.active.checked_sub(1) {
-                    entry.active = active;
-                    if self.probing {
-                        entry.probing = false;
-                        entry.needs_probe = true;
-                    }
-                    if active == 0 {
-                        entry.needs_probe = true;
-                        if entry.retired {
-                            state.closing += 1;
-                            closing = Some(state.masters.swap_remove(index).master);
-                        }
-                    }
-                } else {
-                    log::error!("SSH pool channel count underflow");
-                    state.failed = true;
-                }
-            } else {
-                log::error!("SSH pool channel lease has no master entry");
-                state.failed = true;
-            }
+        let retired = {
+            let mut state = self.pool.lock_state();
+            let last_retired_lease = state.masters.iter().position(|entry| {
+                entry.retired
+                    && Arc::ptr_eq(&entry.master, &master)
+                    && Arc::strong_count(&entry.master) == 2
+            });
+            // Keep lease references and permits in sync under the pool lock.
             drop(master);
-        } else {
             drop(self.permit.take());
-        }
-        if let Some(master) = closing {
-            let pool = Arc::clone(&self.pool);
+            last_retired_lease.map(|index| state.masters.swap_remove(index).master)
+        };
+        if let Some(master) = retired {
             let runtime = Handle::try_current().unwrap_or_else(|_| self.runtime.clone());
-            runtime.spawn(async move { pool.close_retired(master).await });
+            runtime.spawn_blocking(move || drop(master));
         }
         self.pool.available.notify_waiters();
     }
@@ -136,29 +105,6 @@ impl ChannelLease {
     fn master(&self) -> Result<&Arc<Master>, openssh::Error> {
         self.master.as_ref().ok_or_else(SshPool::unavailable)
     }
-
-    fn require_probe(&self) {
-        if let (Some(master), Ok(mut state)) = (&self.master, self.pool.lock_state()) {
-            if let Some(entry) = state
-                .masters
-                .iter_mut()
-                .find(|entry| Arc::ptr_eq(&entry.master, master))
-            {
-                entry.needs_probe = true;
-            } else {
-                log::error!("SSH pool stream has no master entry");
-                state.failed = true;
-                self.pool.available.notify_waiters();
-            }
-        }
-    }
-
-    fn observe<T>(&self, result: &Poll<io::Result<T>>) {
-        if let Poll::Ready(Err(error)) = result {
-            log::warn!("SSH transport I/O failed ({:?})", error.kind());
-            self.require_probe();
-        }
-    }
 }
 
 impl SshPool {
@@ -166,85 +112,26 @@ impl SshPool {
         openssh::Error::Connect(io::Error::other("SSH pool state is unavailable"))
     }
 
-    fn lock_state(&self) -> Result<MutexGuard<'_, PoolState>, openssh::Error> {
-        self.state.lock().map_err(|_| {
-            log::error!("SSH pool state lock is poisoned");
-            Self::unavailable()
-        })
+    fn lock_state(&self) -> MutexGuard<'_, PoolState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    #[cfg(not(windows))]
     fn retire(&self, master: &Arc<Master>) {
-        if let Ok(mut state) = self.lock_state() {
-            if let Some(entry) = state
-                .masters
-                .iter_mut()
-                .find(|entry| Arc::ptr_eq(&entry.master, master))
-            {
-                entry.retired = true;
-                entry.probing = false;
-            } else {
-                log::error!("SSH pool cannot retire a missing master");
-                state.failed = true;
-            }
-        }
-        self.available.notify_waiters();
-    }
-
-    async fn close_retired(&self, master: Arc<Master>) {
-        let Some(session) =
-            Arc::into_inner(master).and_then(|master| Arc::into_inner(master.session))
-        else {
-            log::error!("SSH pool retired master still has session owners");
-            return;
-        };
-        let already_exited = matches!(session.control_socket().try_exists(), Ok(false));
-        match tokio::time::timeout(MASTER_CHECK_TIMEOUT, session.close()).await {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) if already_exited => {}
-            Ok(Err(_)) => {
-                log::warn!("SSH master close failed; retaining its pool slot");
-                return;
-            }
-            Err(_) => {
-                log::warn!("SSH master close timed out; retaining its pool slot");
-                return;
-            }
-        }
-
-        if let Ok(mut state) = self.lock_state() {
-            if let Some(closing) = state.closing.checked_sub(1) {
-                state.closing = closing;
-            } else {
-                log::error!("SSH pool master close count underflow");
-                state.failed = true;
-            }
-        }
-        self.available.notify_waiters();
-    }
-
-    fn finish_probe(&self, master: &Arc<Master>) -> Result<(), openssh::Error> {
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         if let Some(entry) = state
             .masters
             .iter_mut()
             .find(|entry| Arc::ptr_eq(&entry.master, master))
         {
-            entry.probing = false;
+            entry.retired = true;
         } else {
-            log::error!("SSH pool health probe has no master entry");
-            state.failed = true;
-            return Err(Self::unavailable());
+            log::error!("SSH pool cannot retire a missing master");
         }
         drop(state);
         self.available.notify_waiters();
-        Ok(())
-    }
-
-    fn acquire_timeout() -> openssh::Error {
-        openssh::Error::Connect(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "timed out waiting for an SSH transport channel",
-        ))
     }
 
     fn start_master(
@@ -263,57 +150,22 @@ impl SshPool {
             if result.is_err() {
                 log::warn!("SSH master startup failed");
             }
-            match pool.lock_state() {
-                Ok(mut state) => {
-                    let outcome = if state.failed {
-                        Err(Self::unavailable())
-                    } else {
-                        result.map(|tempdir| {
-                            state.masters.push(MasterEntry {
-                                master: Arc::new(Master {
-                                    session: Arc::new(openssh::Session::new_process_mux(tempdir)),
-                                    channels: Arc::new(Semaphore::new(channels_per_master)),
-                                }),
-                                active: 0,
-                                retired: false,
-                                needs_probe: false,
-                                probing: false,
-                            });
-                        })
-                    };
-                    let _ = sender.send(outcome.map_err(Arc::new));
-                    state.launching = None;
-                }
-                Err(error) => {
-                    let _ = sender.send(Err(Arc::new(error)));
-                }
-            }
+            let mut state = pool.lock_state();
+            let outcome = result.map(|tempdir| {
+                state.masters.push(MasterEntry {
+                    master: Arc::new(Master {
+                        session: Arc::new(openssh::Session::new_process_mux(tempdir)),
+                        channels: Arc::new(Semaphore::new(channels_per_master)),
+                    }),
+                    retired: false,
+                });
+            });
+            let _ = sender.send(outcome.map_err(Arc::new));
+            state.launching = None;
+            drop(state);
             pool.available.notify_waiters();
         });
         startup
-    }
-
-    async fn check_master(
-        deadline: Instant,
-        status: impl Future<Output = Result<std::process::ExitStatus, openssh::Error>>,
-    ) -> Result<bool, openssh::Error> {
-        let probe_deadline = Instant::now() + MASTER_CHECK_TIMEOUT;
-        match tokio::time::timeout_at(deadline.min(probe_deadline), status).await {
-            Ok(Ok(status)) if status.success() => Ok(true),
-            Ok(Ok(_)) => {
-                log::warn!("SSH master health check exited unsuccessfully");
-                Ok(false)
-            }
-            Ok(Err(_)) => {
-                log::warn!("SSH master health check failed");
-                Ok(false)
-            }
-            Err(_) if deadline < probe_deadline => Err(Self::acquire_timeout()),
-            Err(_) => {
-                log::warn!("SSH master health check timed out");
-                Ok(false)
-            }
-        }
     }
 
     async fn acquire(
@@ -322,67 +174,38 @@ impl SshPool {
         destination: &str,
         channels_per_master: usize,
         max_masters: usize,
-        timeout: Duration,
     ) -> Result<ChannelLease, openssh::Error> {
-        let deadline_overflow = || {
-            openssh::Error::Connect(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "SSH channel acquisition timeout is too large",
-            ))
-        };
-        let mut deadline = Instant::now()
-            .checked_add(timeout)
-            .ok_or_else(deadline_overflow)?;
         loop {
-            if Instant::now() >= deadline {
-                return Err(Self::acquire_timeout());
-            }
             let available = self.available.notified();
             tokio::pin!(available);
             available.as_mut().enable();
 
             let (selected, startup) = {
-                let mut state = self.lock_state()?;
-                if state.failed {
-                    return Err(Self::unavailable());
-                }
-                let mut semaphore_closed = false;
-                let selected = state.masters.iter_mut().find_map(|entry| {
-                    if entry.retired || entry.probing {
-                        return None;
-                    }
-                    match entry.master.channels.clone().try_acquire_owned() {
-                        Ok(permit) => {
-                            let Some(active) = entry.active.checked_add(1) else {
-                                log::error!("SSH pool channel count overflow");
-                                semaphore_closed = true;
-                                return None;
-                            };
-                            entry.active = active;
-                            let probing = entry.needs_probe;
-                            if probing {
-                                entry.needs_probe = false;
-                                entry.probing = true;
+                let mut state = self.lock_state();
+                let selected = state
+                    .masters
+                    .iter()
+                    .filter(|entry| !entry.retired)
+                    .find_map(
+                        |entry| match entry.master.channels.clone().try_acquire_owned() {
+                            Ok(permit) => {
+                                let was_idle = Arc::strong_count(&entry.master) == 1;
+                                Some(Ok((Arc::clone(&entry.master), permit, was_idle)))
                             }
-                            Some((Arc::clone(&entry.master), permit, probing))
-                        }
-                        Err(TryAcquireError::NoPermits) => None,
-                        Err(TryAcquireError::Closed) => {
-                            log::error!("SSH pool channel semaphore closed unexpectedly");
-                            semaphore_closed = true;
-                            None
-                        }
-                    }
-                });
-                if semaphore_closed {
-                    state.failed = true;
-                    return Err(Self::unavailable());
-                }
+                            Err(TryAcquireError::NoPermits) => None,
+                            Err(TryAcquireError::Closed) => {
+                                log::error!("SSH pool channel semaphore closed unexpectedly");
+                                Some(Err(Self::unavailable()))
+                            }
+                        },
+                    )
+                    .transpose()?;
+                let live = state.masters.iter().filter(|entry| !entry.retired).count();
                 let startup = if selected.is_some() {
                     None
                 } else if let Some(startup) = &state.launching {
                     Some(startup.clone())
-                } else if state.masters.len() + state.closing < max_masters {
+                } else if live < max_masters {
                     Some(self.start_master(
                         &mut state,
                         builder.clone(),
@@ -395,31 +218,41 @@ impl SshPool {
                 (selected, startup)
             };
 
-            if let Some((master, permit, probing)) = selected {
-                let mut lease = ChannelLease {
+            if let Some((master, permit, _was_idle)) = selected {
+                let lease = ChannelLease {
                     master: Some(master),
                     runtime: Handle::current(),
                     permit: Some(permit),
                     pool: Arc::clone(self),
-                    probing,
                 };
-                if probing {
+
+                #[cfg(not(windows))]
+                if _was_idle {
                     let master = lease.master()?;
-                    if !Self::check_master(deadline, master.session.command("true").status())
-                        .await?
-                    {
-                        self.retire(master);
-                        drop(lease);
-                        continue;
+                    let checked =
+                        tokio::time::timeout(MASTER_CHECK_TIMEOUT, master.session.check()).await;
+                    match checked {
+                        Ok(Ok(())) => {}
+                        Ok(Err(openssh::Error::Master(_) | openssh::Error::Disconnected)) => {
+                            log::warn!("SSH master is unavailable; retiring it");
+                            self.retire(master);
+                            continue;
+                        }
+                        Ok(Err(_)) => {
+                            log::warn!("SSH master check failed");
+                            continue;
+                        }
+                        Err(_) => {
+                            log::warn!("SSH master check timed out");
+                            continue;
+                        }
                     }
-                    self.finish_probe(master)?;
-                    lease.probing = false;
                 }
+
                 return Ok(lease);
             }
 
             if let Some(startup) = startup {
-                let waiting_since = Instant::now();
                 if let Either::Left((outcome, _)) = select(startup, available).await {
                     match outcome {
                         Ok(Ok(())) => {}
@@ -435,15 +268,10 @@ impl SshPool {
                         }
                     }
                 }
-                deadline = deadline
-                    .checked_add(waiting_since.elapsed())
-                    .ok_or_else(deadline_overflow)?;
                 continue;
             }
 
-            if tokio::time::timeout_at(deadline, available).await.is_err() {
-                return Err(Self::acquire_timeout());
-            }
+            available.await;
         }
     }
 }
@@ -452,7 +280,7 @@ pub(crate) struct SshStream {
     _child: openssh::Child<Arc<openssh::Session>>,
     _channel: ChannelLease,
     stdin: Option<TokioIo<openssh::ChildStdin>>,
-    stdout: openssh::ChildStdout,
+    stdout: TokioIo<openssh::ChildStdout>,
 }
 
 impl tower_service::Service<hyper::Uri> for SshConnector {
@@ -522,27 +350,28 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                 builder.known_hosts_check(hosts_check);
             }
 
-            let idle_seconds = NonZeroUsize::new(MASTER_IDLE_SECONDS).ok_or_else(|| {
-                log::error!("SSH master idle timeout must be nonzero");
-                openssh::Error::Connect(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "SSH master idle timeout must be nonzero",
-                ))
-            })?;
+            let idle_seconds = NonZeroUsize::new(MASTER_IDLE_SECONDS)
+                .expect("SSH master idle timeout is nonzero");
             builder.control_persist(openssh::ControlPersist::IdleFor(idle_seconds));
 
             let resolved_uri = format!("ssh://{}", authority.as_str());
             let (builder, destination) = builder.resolve(&resolved_uri);
+            let destination = destination
+                .strip_prefix('[')
+                .and_then(|host| host.strip_suffix(']'))
+                .unwrap_or(destination);
             let pool = &shared.pool;
-            let channel = pool
-                .acquire(
-                    &builder,
-                    destination,
-                    channels_per_master,
-                    max_masters,
-                    acquire_timeout,
-                )
-                .await?;
+            let channel = tokio::time::timeout(
+                acquire_timeout,
+                pool.acquire(&builder, destination, channels_per_master, max_masters),
+            )
+            .await
+            .map_err(|_| {
+                openssh::Error::Connect(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "timed out waiting for a free SSH transport channel or SSH master startup",
+                ))
+            })??;
 
             let mut child = Arc::clone(&channel.master()?.session)
                 .arc_command("docker")
@@ -569,7 +398,7 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
 
             Ok(SshStream {
                 stdin: Some(TokioIo::new(stdin)),
-                stdout,
+                stdout: TokioIo::new(stdout),
                 _child: child,
                 _channel: channel,
             })
@@ -587,40 +416,13 @@ impl SshStream {
     }
 }
 
-struct SshStdout<'a> {
-    pipe: &'a mut openssh::ChildStdout,
-    channel: &'a ChannelLease,
-}
-
-impl AsyncRead for SshStdout<'_> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let remaining = buf.remaining();
-        let result = Pin::new(&mut *self.pipe).poll_read(cx, buf);
-        if matches!(&result, Poll::Ready(Ok(()))) && remaining > 0 && buf.remaining() == remaining {
-            self.channel.require_probe();
-        } else {
-            self.channel.observe(&result);
-        }
-        result
-    }
-}
-
 impl hyper::rt::Read for SshStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut TokioIo::new(SshStdout {
-            pipe: &mut this.stdout,
-            channel: &this._channel,
-        }))
-        .poll_read(cx, buf)
+        Pin::new(&mut self.get_mut().stdout).poll_read(cx, buf)
     }
 }
 
@@ -630,10 +432,7 @@ impl hyper::rt::Write for SshStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        let result = this.stdin()?.poll_write(cx, buf);
-        this._channel.observe(&result);
-        result
+        self.get_mut().stdin()?.poll_write(cx, buf)
     }
 
     fn poll_write_vectored(
@@ -641,26 +440,17 @@ impl hyper::rt::Write for SshStream {
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        let result = this.stdin()?.poll_write_vectored(cx, bufs);
-        this._channel.observe(&result);
-        result
+        self.get_mut().stdin()?.poll_write_vectored(cx, bufs)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        let result = this.stdin()?.poll_flush(cx);
-        this._channel.observe(&result);
-        result
+        self.get_mut().stdin()?.poll_flush(cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // currently, poll_shutdown does nothing.
         // https://github.com/tokio-rs/tokio/blob/b3a14483bf5efa1b5cf75af27f6ef0770f4c5689/tokio/src/process/unix/mod.rs#L314-L316
-        let this = self.as_mut().get_mut();
-        let result = this.stdin()?.poll_shutdown(cx);
-        this._channel.observe(&result);
-        ready!(result)?;
+        ready!(self.as_mut().get_mut().stdin()?.poll_shutdown(cx))?;
         // drop stdin to shutdown the input half.
         drop(self.get_mut().stdin.take());
         Poll::Ready(Ok(()))
@@ -680,15 +470,22 @@ mod tests {
     use tower_service::Service;
 
     #[test]
-    fn trailing_slash_in_ssh_url_is_normalized() {
-        let docker = Docker::connect_with_ssh_options(
-            "ssh://user@example.com/",
-            120,
-            API_DEFAULT_VERSION,
-            SshOptions::new(),
-        )
-        .unwrap();
-        assert_eq!(docker.client_addr, "user@example.com");
+    fn ssh_url_authority_is_normalized() {
+        for (address, expected) in [
+            ("ssh://user@example.com/", "user@example.com"),
+            ("ssh://user@example.com:/", "user@example.com"),
+            ("ssh://user@[0:0:0:0:0:0:0:1]:2222/", "user@[::1]:2222"),
+            ("user@example.com:2222", "user@example.com:2222"),
+        ] {
+            let docker = Docker::connect_with_ssh_options(
+                address,
+                120,
+                API_DEFAULT_VERSION,
+                SshOptions::new(),
+            )
+            .expect("valid Docker SSH address");
+            assert_eq!(docker.client_addr, expected);
+        }
     }
 
     fn connector(mut options: SshOptions) -> (SshConnector, hyper::Uri) {
@@ -706,40 +503,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poisoned_pool_returns_error_without_starting_master() {
+    async fn poisoned_pool_recovers_and_opens_a_channel() {
         let (mut connector, uri) = connector(SshOptions::new());
         let pool = Arc::clone(&connector.shared.pool);
-        let _ = std::thread::spawn(move || {
-            let _state = pool.state.lock().unwrap();
+        let result = std::thread::spawn(move || {
+            let _state = pool.lock_state();
             panic!("poison SSH pool state");
         })
         .join();
+        assert!(result.is_err());
 
-        let error = connector
-            .call(uri)
-            .await
-            .err()
-            .expect("pool is unavailable");
-        assert!(matches!(error, openssh::Error::Connect(_)));
+        connector.call(uri).await.expect("SSH pool recovers");
     }
 
     #[tokio::test(start_paused = true)]
-    async fn acquisition_deadline_is_distinct_from_probe_failure() {
-        let result = SshPool::check_master(
-            Instant::now() + Duration::from_secs(1),
-            std::future::pending(),
-        )
-        .await;
-        assert!(
-            matches!(result, Err(openssh::Error::Connect(error)) if error.kind() == io::ErrorKind::TimedOut)
-        );
+    async fn acquisition_times_out_while_master_startup_is_pending() {
+        let wait = Duration::from_secs(1);
+        let (mut connector, uri) = connector(SshOptions::new().with_channel_acquire_timeout(wait));
+        let (sender, receiver) = oneshot::channel();
+        connector.shared.pool.state.lock().unwrap().launching = Some(receiver.shared());
 
-        let result = SshPool::check_master(
-            Instant::now() + MASTER_CHECK_TIMEOUT * 2,
-            std::future::pending(),
-        )
-        .await;
-        assert!(!result.expect("probe timeout marks master unhealthy"));
+        let started = tokio::time::Instant::now();
+        let error = connector.call(uri).await.err().expect("startup is pending");
+        assert!(matches!(error, openssh::Error::Connect(error)
+                if error.kind() == io::ErrorKind::TimedOut
+                    && error.to_string().contains("or SSH master startup")));
+        assert_eq!(started.elapsed(), wait);
+        assert!(!sender.is_closed());
     }
 
     #[tokio::test(start_paused = true)]
@@ -748,13 +538,8 @@ mod tests {
         let (sender, receiver) = oneshot::channel();
         pool.state.lock().unwrap().launching = Some(receiver.shared());
         let builder = openssh::SessionBuilder::default();
-        let wait = Duration::from_secs(1);
-        let mut first = Box::pin(pool.acquire(&builder, "unused", 1, 1, wait));
-        let mut second = Box::pin(pool.acquire(&builder, "unused", 1, 1, wait));
-        assert!(futures_util::poll!(&mut first).is_pending());
-        assert!(futures_util::poll!(&mut second).is_pending());
-
-        tokio::time::advance(wait * 2).await;
+        let mut first = Box::pin(pool.acquire(&builder, "unused", 1, 1));
+        let mut second = Box::pin(pool.acquire(&builder, "unused", 1, 1));
         assert!(futures_util::poll!(&mut first).is_pending());
         assert!(futures_util::poll!(&mut second).is_pending());
 
@@ -775,41 +560,6 @@ mod tests {
                 .expect("startup failure is preserved as the cause");
             assert!(Arc::ptr_eq(cause, &failure));
         }
-    }
-
-    #[tokio::test]
-    async fn channel_eof_reprobes_without_retiring_a_healthy_master() {
-        use tokio::io::AsyncReadExt;
-
-        let (mut connector, uri) = connector(SshOptions::new());
-        let stream = connector
-            .call(uri.clone())
-            .await
-            .expect("first SSH channel");
-        let master = stream._channel.master().expect("stream has a master");
-        let socket = master.session.control_socket().to_owned();
-        let mut child = master
-            .session
-            .command("true")
-            .stdout(openssh::Stdio::piped())
-            .spawn()
-            .await
-            .expect("open a short-lived channel");
-        let mut pipe = child.stdout().take().expect("child stdout");
-        let mut stdout = SshStdout {
-            pipe: &mut pipe,
-            channel: &stream._channel,
-        };
-        assert_eq!(stdout.read(&mut [0; 1]).await.expect("read EOF"), 0);
-        assert!(child.wait().await.expect("child exits").success());
-        assert!(connector.shared.pool.state.lock().unwrap().masters[0].needs_probe);
-
-        let next = connector.call(uri).await.expect("reuse healthy master");
-        assert_eq!(
-            socket,
-            next._channel.master().unwrap().session.control_socket()
-        );
-        assert!(!connector.shared.pool.state.lock().unwrap().masters[0].needs_probe);
     }
 
     #[tokio::test]
@@ -851,37 +601,41 @@ mod tests {
         connector.call(uri).await.expect("channel released on drop");
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
-    async fn retired_master_with_active_stream_still_counts_toward_limit() {
-        let options = SshOptions::new()
-            .with_max_masters_per_client(NonZeroUsize::new(1).unwrap())
-            .with_channel_acquire_timeout(Duration::from_millis(200));
+    async fn retired_master_does_not_count_toward_limit() {
+        let options = SshOptions::new().with_max_masters_per_client(NonZeroUsize::new(1).unwrap());
         let (mut connector, uri) = connector(options);
         let stream = connector
             .call(uri.clone())
             .await
             .expect("first SSH channel");
+        let sibling = connector
+            .call(uri.clone())
+            .await
+            .expect("shared SSH channel");
         let master = stream._channel.master().expect("stream has a master");
         let socket = master.session.control_socket().to_owned();
         connector.shared.pool.retire(master);
 
-        let error = connector
-            .call(uri.clone())
+        let replacement = connector
+            .call(uri)
             .await
-            .err()
-            .expect("pool is full");
-        assert!(
-            matches!(error, openssh::Error::Connect(ref error) if error.kind() == io::ErrorKind::TimedOut)
-        );
-        assert_eq!(connector.shared.pool.state.lock().unwrap().masters.len(), 1);
+            .expect("replacement SSH master opens");
+        assert_eq!(connector.shared.pool.lock_state().masters.len(), 2);
 
         drop(stream);
-        assert_eq!(connector.shared.pool.state.lock().unwrap().closing, 1);
-
-        let mut replacement = connector.call(uri);
-        assert!(futures_util::poll!(&mut replacement).is_pending());
-        replacement.await.expect("replacement SSH master opens");
-        assert!(!socket.exists());
+        assert_eq!(connector.shared.pool.lock_state().masters.len(), 2);
+        drop(sibling);
+        assert_eq!(connector.shared.pool.lock_state().masters.len(), 1);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while socket.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("retired master removed its control socket");
+        drop(replacement);
     }
 
     #[tokio::test]
