@@ -15,7 +15,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{oneshot, Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError};
 
 const DEFAULT_CHANNELS_PER_MASTER: usize = 8;
-const DEFAULT_MASTERS_PER_CLIENT: usize = 4;
+const DEFAULT_MASTERS_PER_CLIENT: usize = usize::MAX;
 const DEFAULT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MASTER_IDLE_SECONDS: usize = 60;

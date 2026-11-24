@@ -1349,7 +1349,7 @@ pub struct SshOptions {
 
     /// Maximum number of SSH masters available for new channels.
     /// Retired masters may remain open while existing channels drain.
-    /// Defaults to 4.
+    /// Defaults to [`usize::MAX`] (no practical limit).
     pub max_masters_per_client: Option<std::num::NonZeroUsize>,
 
     /// Maximum time to wait for a free SSH transport channel.
