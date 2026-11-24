@@ -1329,6 +1329,7 @@ pub struct SshOptions {
 
     /// Timeout applied to establishing the TCP connection and performing the
     /// initial SSH handshake and key exchange.
+    /// Defaults to 30 seconds when omitted.
     pub connect_timeout: Option<std::time::Duration>,
 
     /// Controls how the SSH server's host key is verified.
@@ -1340,6 +1341,21 @@ pub struct SshOptions {
     /// **Warning:** Using [`openssh::KnownHosts::Accept`] disables host key verification.
     /// This leaves the connection susceptible to man-in-the-middle (MITM) attacks.
     pub known_hosts_check: Option<openssh::KnownHosts>,
+
+    /// Maximum number of Docker transport channels sharing one SSH master.
+    /// Defaults to 8 and is capped at [`tokio::sync::Semaphore::MAX_PERMITS`].
+    /// Set this below the server's `MaxSessions` limit.
+    pub max_channels_per_master: Option<std::num::NonZeroUsize>,
+
+    /// Maximum number of SSH masters available for new channels.
+    /// Retired masters may remain open while existing channels drain.
+    /// Defaults to [`usize::MAX`] (no practical limit).
+    pub max_masters_per_client: Option<std::num::NonZeroUsize>,
+
+    /// Maximum time to wait for a free SSH transport channel.
+    /// This also bounds the wait for initial SSH master startup and health checks.
+    /// Defaults to 15 seconds.
+    pub channel_acquire_timeout: Option<std::time::Duration>,
 }
 
 #[cfg(feature = "ssh")]
@@ -1376,6 +1392,24 @@ impl SshOptions {
     /// Set the host key verification policy.
     pub fn with_known_hosts_check(mut self, check: openssh::KnownHosts) -> Self {
         self.known_hosts_check = Some(check);
+        self
+    }
+
+    /// Set the maximum number of Docker transport channels per SSH master.
+    pub fn with_max_channels_per_master(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.max_channels_per_master = Some(limit);
+        self
+    }
+
+    /// Set the maximum number of SSH masters available for new channels.
+    pub fn with_max_masters_per_client(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.max_masters_per_client = Some(limit);
+        self
+    }
+
+    /// Set the maximum time to acquire an SSH transport channel.
+    pub fn with_channel_acquire_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.channel_acquire_timeout = Some(timeout);
         self
     }
 }
@@ -1485,9 +1519,21 @@ impl Docker {
         client_version: &ClientVersion,
         options: SshOptions,
     ) -> Result<Docker, Error> {
-        let client_addr = addr.replacen("ssh://", "", 1);
+        let url = if addr.contains("://") {
+            url::Url::parse(addr)?
+        } else {
+            url::Url::parse(&format!("ssh://{addr}"))?
+        };
+        if url.scheme() != "ssh" || !url.has_host() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid Docker SSH address",
+            )
+            .into());
+        }
+        let client_addr = url[url::Position::BeforeUsername..url::Position::AfterPort].to_owned();
 
-        let ssh_connector = crate::ssh::SshConnector::new(options);
+        let ssh_connector = crate::ssh::SshConnector::new(options, client_addr.clone());
 
         let client_builder = Client::builder(TokioExecutor::new());
 

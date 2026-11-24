@@ -56,7 +56,7 @@ chrono = ["dep:chrono", "bollard-stubs/chrono"]
 time = ["dep:time", "bollard-stubs/time"]
 http = ["hyper-util"]
 pipe = ["hyper-util", "hyperlocal", "hyper-named-pipe"]
-ssh = ["hyper-util", "openssh", "tower-service"]
+ssh = ["hyper-util", "openssh", "tower-service", "tokio/sync"]
 # Enable WebSocket support for container attach
 websocket = ["tokio-tungstenite"]
 # Enable tests specifically for websocket

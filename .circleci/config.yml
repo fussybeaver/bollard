@@ -51,6 +51,7 @@ jobs:
           EOD
       - run: docker run -ti -e DOCKER_HOST='ssh://test.example.com' --rm -v ssh:/root/.ssh --link test-docker-daemon:docker bollard cargo test --features test_ssh -- --test test_version_ssh
       - run: docker run -ti -e DOCKER_HOST='ssh://test.example.com' --rm -v ssh:/root/.ssh --link test-docker-daemon:docker bollard cargo test --features test_ssh -- --test test_connect_with_defaults
+      - run: docker run -ti -e DOCKER_HOST='ssh://test.example.com' --rm -v ssh:/root/.ssh --link test-docker-daemon:docker bollard cargo test --features test_ssh --lib ssh::tests
   test_unix:
     docker:
       - image: docker:29.3
