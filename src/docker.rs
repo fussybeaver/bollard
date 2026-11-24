@@ -1329,6 +1329,7 @@ pub struct SshOptions {
 
     /// Timeout applied to establishing the TCP connection and performing the
     /// initial SSH handshake and key exchange.
+    /// Defaults to 30 seconds when omitted.
     pub connect_timeout: Option<std::time::Duration>,
 
     /// Controls how the SSH server's host key is verified.
@@ -1342,15 +1343,17 @@ pub struct SshOptions {
     pub known_hosts_check: Option<openssh::KnownHosts>,
 
     /// Maximum number of Docker transport channels sharing one SSH master.
-    /// Defaults to 8. Set this below the server's `MaxSessions` limit.
+    /// Defaults to 8 and is capped at [`tokio::sync::Semaphore::MAX_PERMITS`].
+    /// Set this below the server's `MaxSessions` limit.
     pub max_channels_per_master: Option<std::num::NonZeroUsize>,
 
     /// Maximum number of SSH masters created by this Docker client.
     /// Defaults to 4.
-    pub max_masters_per_destination: Option<std::num::NonZeroUsize>,
+    pub max_masters_per_client: Option<std::num::NonZeroUsize>,
 
-    /// Maximum time to wait for an available SSH transport channel.
-    /// Defaults to 15 seconds.
+    /// Maximum time to wait for an available SSH transport channel, including
+    /// health probes. Time spent waiting for an SSH master to start does not
+    /// count toward this limit. Defaults to 15 seconds.
     pub channel_acquire_timeout: Option<std::time::Duration>,
 }
 
@@ -1398,8 +1401,8 @@ impl SshOptions {
     }
 
     /// Set the maximum number of SSH masters for this Docker client.
-    pub fn with_max_masters_per_destination(mut self, limit: std::num::NonZeroUsize) -> Self {
-        self.max_masters_per_destination = Some(limit);
+    pub fn with_max_masters_per_client(mut self, limit: std::num::NonZeroUsize) -> Self {
+        self.max_masters_per_client = Some(limit);
         self
     }
 
@@ -1516,6 +1519,7 @@ impl Docker {
         options: SshOptions,
     ) -> Result<Docker, Error> {
         let client_addr = addr.replacen("ssh://", "", 1);
+        let client_addr = client_addr.trim_end_matches('/').to_owned();
 
         let ssh_connector = crate::ssh::SshConnector::new(options, client_addr.clone());
 
