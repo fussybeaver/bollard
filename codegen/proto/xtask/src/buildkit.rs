@@ -569,6 +569,7 @@ fn generate(
         .collect();
     compile(&directory, &proto_files, resources_directory)?;
     write_provenance_module(&directory, lock)?;
+    write_rustfmt_config(&directory)?;
 
     Ok(GeneratedOutput {
         _temporary_directory: temporary_directory,
@@ -605,6 +606,14 @@ fn write_provenance_module(
          pub const OPS_PROTO_SHA256: &str = {ops_proto_sha256};\n"
     );
     fs::write(output_directory.join("provenance.rs"), contents)?;
+    Ok(())
+}
+
+fn write_rustfmt_config(output_directory: &Path) -> Result<()> {
+    fs::write(
+        output_directory.join("rustfmt.toml"),
+        "disable_all_formatting = true\n",
+    )?;
     Ok(())
 }
 
@@ -805,10 +814,7 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
 
 fn compare_directories(actual: &Path, expected: &Path) -> Result<()> {
     let actual_files = files(actual)?;
-    let mut expected_files = files(expected)?;
-    // This local rustfmt config keeps generated bindings untouched, but is not
-    // part of the generator output.
-    expected_files.remove(Path::new("rustfmt.toml"));
+    let expected_files = files(expected)?;
     compare_file_maps(actual_files, expected_files, "generated BuildKit bindings")
 }
 
@@ -905,7 +911,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_local_rustfmt_config_in_generated_directory() {
+    fn generates_and_checks_rustfmt_config() {
         let temporary_directory = tempdir().unwrap();
         let actual = temporary_directory.path().join("actual");
         let expected = temporary_directory.path().join("expected");
@@ -913,12 +919,13 @@ mod tests {
         fs::create_dir_all(&expected).unwrap();
         fs::write(actual.join("binding.rs"), b"generated").unwrap();
         fs::write(expected.join("binding.rs"), b"generated").unwrap();
-        fs::write(
-            expected.join("rustfmt.toml"),
-            b"disable_all_formatting = true\n",
-        )
-        .unwrap();
-
+        super::write_rustfmt_config(&actual).unwrap();
+        assert_eq!(
+            fs::read_to_string(actual.join("rustfmt.toml")).unwrap(),
+            "disable_all_formatting = true\n"
+        );
+        assert!(compare_directories(&actual, &expected).is_err());
+        super::write_rustfmt_config(&expected).unwrap();
         compare_directories(&actual, &expected).unwrap();
     }
 
@@ -1008,15 +1015,25 @@ mod tests {
 
         let generated =
             fs::read_to_string(temporary_directory.path().join("provenance.rs")).unwrap();
-        assert!(generated.contains("pub const MOBY_TAG: &str = \"docker-v29.4.1\";"));
-        assert!(generated.contains("pub const BUILDKIT_VERSION: &str = \"v0.29.0\";"));
-        assert!(generated.contains(
-            "pub const BUILDKIT_COMMIT: &str = \"8543ce4428265d547cb009e5ad62348284497a88\";"
-        ));
-        assert!(generated.contains("pub const DEFAULT_IMAGE: &str = \"moby/buildkit:v0.29.0\";"));
-        assert!(generated.contains(
-            "pub const OPS_PROTO_SHA256: &str = \"b45049a4ae961e1eda9acf3834263cf7894ba194d721d5aed04f43b638056c37\";"
-        ));
+        let ops_sha = &lock
+            .resources()
+            .iter()
+            .find(|resource| resource.destination == "pb/ops.proto")
+            .unwrap()
+            .output_sha256;
+        for (name, value) in [
+            ("MOBY_TAG", &lock.moby.tag),
+            ("BUILDKIT_VERSION", &lock.buildkit.version),
+            ("BUILDKIT_COMMIT", &lock.buildkit.commit),
+            ("DEFAULT_IMAGE", &lock.buildkit.image),
+            ("OPS_PROTO_SHA256", ops_sha),
+        ] {
+            let expected = format!(
+                "pub const {name}: &str = {};",
+                serde_json::to_string(value).unwrap()
+            );
+            assert!(generated.lines().any(|line| line == expected), "{name}");
+        }
     }
 
     #[test]

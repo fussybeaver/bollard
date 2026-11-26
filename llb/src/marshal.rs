@@ -76,6 +76,7 @@ pub fn encode_op(op: &pb::Op) -> Result<Vec<u8>, LlbError> {
             pb::op::Op::Build(build) => encode_message_field(&mut buf, 5, build)?,
             pb::op::Op::Merge(merge) => encode_message_field(&mut buf, 6, merge)?,
             pb::op::Op::Diff(diff) => encode_message_field(&mut buf, 7, diff)?,
+            pb::op::Op::Passthrough(passthrough) => encode_message_field(&mut buf, 8, passthrough)?,
         }
     }
     Ok(buf)
@@ -113,6 +114,23 @@ mod tests {
     use prost::Message;
 
     use super::*;
+
+    #[test]
+    fn passthrough_encodes_with_tag_eight() {
+        let passthrough = pb::PassthroughOp {
+            id: "example".into(),
+            outputs: vec![0, 2],
+        };
+        let op = pb::Op {
+            op: Some(pb::op::Op::Passthrough(passthrough.clone())),
+            ..Default::default()
+        };
+        let encoded = encode_op(&op).unwrap();
+        let mut expected = vec![0x42];
+        passthrough.encode_length_delimited(&mut expected).unwrap();
+        assert_eq!(encoded, expected);
+        assert_eq!(pb::Op::decode(encoded.as_slice()).unwrap(), op);
+    }
 
     #[test]
     fn op_fields_use_buildkit_order() {

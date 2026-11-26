@@ -874,6 +874,8 @@ pub(crate) async fn solve(
         source_policy: None,
         enable_session_exporter: false,
         source_policy_session: String::new(),
+        compatibility_version: 0,
+        proxy_network: false,
     };
 
     execute_solve(
@@ -1216,6 +1218,8 @@ fn build_definition_solve_request(
             source_policy: None,
             enable_session_exporter: false,
             source_policy_session: String::new(),
+            compatibility_version: 0,
+            proxy_network: false,
         },
         build_ref,
     )

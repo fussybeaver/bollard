@@ -52,6 +52,11 @@ fn dump_text_op<W: Write>(
         Some(pb::op::Op::Merge(merge)) => dump_text_merge(w, merge)?,
         Some(pb::op::Op::Build(build)) => dump_text_build(w, build)?,
         Some(pb::op::Op::Diff(diff)) => dump_text_diff(w, diff)?,
+        Some(pb::op::Op::Passthrough(passthrough)) => {
+            writeln!(w, "  passthrough:")?;
+            writeln!(w, "    id: {:?}", passthrough.id)?;
+            writeln!(w, "    outputs: {:?}", passthrough.outputs)?;
+        }
         None => writeln!(w, "  (wrapper)")?,
     }
 
@@ -77,6 +82,7 @@ fn op_kind(op: &pb::Op) -> &'static str {
         Some(pb::op::Op::Build(_)) => "build",
         Some(pb::op::Op::Merge(_)) => "merge",
         Some(pb::op::Op::Diff(_)) => "diff",
+        Some(pb::op::Op::Passthrough(_)) => "passthrough",
         None => "wrapper",
     }
 }
@@ -261,6 +267,24 @@ mod tests {
             .unwrap()
             .marshal(MarshalOpts::default())
             .unwrap()
+    }
+
+    #[test]
+    fn dump_text_renders_passthrough() {
+        let op = pb::Op {
+            op: Some(pb::op::Op::Passthrough(pb::PassthroughOp {
+                id: "example".into(),
+                outputs: vec![0, 2],
+            })),
+            ..Default::default()
+        };
+        assert_eq!(op_kind(&op), "passthrough");
+        let mut output = Vec::new();
+        let digest = crate::marshal::sha256(&op.encode_to_vec());
+        dump_text_op(&mut output, &digest, &op, None).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("    id: \"example\""));
+        assert!(text.contains("    outputs: [0, 2]"));
     }
 
     #[test]

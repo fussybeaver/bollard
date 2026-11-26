@@ -1,6 +1,6 @@
 {
   "generator_version": "3",
-  "buildkit_version": "v0.29.0",
+  "buildkit_version": "v0.35.0",
   "fixtures": [
     {
       "file": "image_run.llb.pb",

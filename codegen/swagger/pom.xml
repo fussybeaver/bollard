@@ -25,7 +25,7 @@
                 <goal>generate</goal>
               </goals>
               <configuration>
-                <inputSpec>https://raw.githubusercontent.com/moby/moby/docker-v29.4.1/api/docs/v1.53.yaml</inputSpec>
+                <inputSpec>https://raw.githubusercontent.com/moby/moby/docker-v29.10.0/api/docs/v1.57-swagger.yaml</inputSpec>
                 <language>bollard.BollardCodegen</language>
                 <output>${project.basedir}</output>
                 <generateApis>true</generateApis>
@@ -33,7 +33,7 @@
                 <supportingFilesToGenerate>query_parameters.rs,models.rs,lib.rs,Cargo.toml,config,README.md</supportingFilesToGenerate>
                 <configOptions>
                   <packageName>bollard-stubs</packageName>
-                  <packageVersion>1.53.2-rc.29.3.1</packageVersion>
+                  <packageVersion>1.57.0-rc.29.10.0</packageVersion>
                   <queryParameterMappings>
                       ConfigList=ListConfigsOptions
                       ConfigUpdate=UpdateConfigOptions

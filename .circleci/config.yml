@@ -82,7 +82,7 @@ jobs:
           when: always
   test_llb_goldens:
     docker:
-      - image: golang:1.25
+      - image: golang:1.26
     steps:
       - checkout
       - run:
