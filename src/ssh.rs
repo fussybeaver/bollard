@@ -532,10 +532,12 @@ impl hyper_util::client::legacy::connect::Connection for SshStream {
     }
 }
 
-#[cfg(test)]
-mod stderr_tests {
+#[cfg(all(test, feature = "test_ssh"))]
+mod tests {
     use super::*;
+    use crate::{Docker, API_DEFAULT_VERSION};
     use tokio::io::AsyncWriteExt;
+    use tower_service::Service;
 
     #[tokio::test]
     async fn stderr_is_bounded_redacted_and_drained() {
@@ -576,13 +578,6 @@ mod stderr_tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[1], "after");
     }
-}
-
-#[cfg(all(test, feature = "test_ssh"))]
-mod tests {
-    use super::*;
-    use crate::{Docker, API_DEFAULT_VERSION};
-    use tower_service::Service;
 
     #[test]
     fn ssh_url_authority_is_normalized() {
