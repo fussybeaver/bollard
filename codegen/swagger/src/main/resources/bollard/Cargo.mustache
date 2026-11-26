@@ -4,13 +4,16 @@ version = "{{appVersion}}"
 authors = [ "Bollard contributors" ]
 description = "Stubs used for the Bollard rust async Docker client API"
 license = "Apache-2.0"
+homepage = "https://github.com/fussybeaver/bollard"
+repository = "https://github.com/fussybeaver/bollard"
+documentation = "https://docs.rs/bollard-stubs"
 edition = "2021"
 
 [features]
 buildkit = ["base64", "bytes", "bollard-buildkit-proto", "prost"]
 
 [dependencies]
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
 bollard-buildkit-proto = { version = "0.9.1", optional = true }
 bytes = { version = "1", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"], optional = true }
