@@ -1,7 +1,8 @@
 use crate::docker::SshOptions;
+use bytes::{Bytes, BytesMut};
 use futures_util::{
     future::{select, Either, Shared},
-    FutureExt,
+    FutureExt, StreamExt,
 };
 use hyper_util::rt::TokioIo;
 use std::future::Future;
@@ -13,7 +14,10 @@ use std::task::{ready, Context, Poll};
 use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError};
+use tokio_util::codec::{AnyDelimiterCodec, AnyDelimiterCodecError, Decoder, FramedRead};
 
+const SSH_DOCKER_LOG_TARGET: &str = "bollard::ssh::docker";
+const MAX_SSH_STDERR_LINE: usize = 4096;
 const DEFAULT_CHANNELS_PER_MASTER: usize = 8;
 const DEFAULT_MASTERS_PER_CLIENT: usize = usize::MAX;
 const DEFAULT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -283,6 +287,112 @@ pub(crate) struct SshStream {
     stdout: TokioIo<openssh::ChildStdout>,
 }
 
+enum StderrFrame {
+    Line(Bytes),
+    Oversized,
+}
+
+struct StderrCodec(AnyDelimiterCodec);
+
+impl StderrCodec {
+    fn new() -> Self {
+        // The extra byte allows a trailing CR before the newline.
+        Self(AnyDelimiterCodec::new_with_max_length(
+            b"\n".to_vec(),
+            Vec::new(),
+            MAX_SSH_STDERR_LINE + 1,
+        ))
+    }
+
+    fn map(
+        result: Result<Option<Bytes>, AnyDelimiterCodecError>,
+    ) -> io::Result<Option<StderrFrame>> {
+        match result {
+            Ok(Some(line)) => {
+                let line = match line.strip_suffix(b"\r") {
+                    Some(stripped) => line.slice(..stripped.len()),
+                    None => line,
+                };
+                if line.len() > MAX_SSH_STDERR_LINE {
+                    Ok(Some(StderrFrame::Oversized))
+                } else {
+                    Ok(Some(StderrFrame::Line(line)))
+                }
+            }
+            Ok(None) => Ok(None),
+            Err(AnyDelimiterCodecError::MaxChunkLengthExceeded) => Ok(Some(StderrFrame::Oversized)),
+            Err(AnyDelimiterCodecError::Io(error)) => Err(error),
+        }
+    }
+}
+
+impl Decoder for StderrCodec {
+    type Item = StderrFrame;
+    type Error = io::Error;
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> io::Result<Option<Self::Item>> {
+        Self::map(self.0.decode(buffer))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> io::Result<Option<Self::Item>> {
+        Self::map(self.0.decode_eof(buffer))
+    }
+}
+
+async fn relay_ssh_stderr<R, F>(stderr: R, mut emit: F)
+where
+    R: tokio::io::AsyncRead + Unpin,
+    F: FnMut(&str),
+{
+    let mut lines = FramedRead::new(stderr, StderrCodec::new());
+    while let Some(result) = lines.next().await {
+        match result {
+            Ok(frame) => emit_ssh_stderr_frame(frame, &mut emit),
+            Err(error) => {
+                let mut parts = lines.into_parts();
+                loop {
+                    match parts.codec.decode_eof(&mut parts.read_buf) {
+                        Ok(Some(frame)) => emit_ssh_stderr_frame(frame, &mut emit),
+                        Ok(None) => break,
+                        Err(flush_error) => {
+                            log::warn!(target: SSH_DOCKER_LOG_TARGET, "Cannot decode remaining Docker SSH stderr: {flush_error}");
+                            break;
+                        }
+                    }
+                }
+                log::warn!(target: SSH_DOCKER_LOG_TARGET, "Cannot read Docker SSH stderr: {error}");
+                break;
+            }
+        }
+    }
+}
+
+fn emit_ssh_stderr_frame<F: FnMut(&str)>(frame: StderrFrame, emit: &mut F) {
+    match frame {
+        StderrFrame::Line(line) => emit_ssh_stderr_line(&line, emit),
+        StderrFrame::Oversized => {
+            emit("Docker SSH stderr line exceeded 4096 bytes; discarded");
+        }
+    }
+}
+
+fn emit_ssh_stderr_line<F: FnMut(&str)>(line: &[u8], emit: &mut F) {
+    let message = String::from_utf8_lossy(line);
+    if message.contains("error while CloseRead (stream to stdout):") {
+        emit("Docker SSH stream cleanup: error while CloseRead");
+        return;
+    }
+    let mut end = message.len().min(MAX_SSH_STDERR_LINE);
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let message = &message[..end];
+    if message.trim().is_empty() {
+        return;
+    }
+    emit(message);
+}
+
 impl tower_service::Service<hyper::Uri> for SshConnector {
     type Response = SshStream;
     type Error = openssh::Error;
@@ -379,6 +489,7 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                 .arg("dial-stdio")
                 .stdin(openssh::Stdio::piped())
                 .stdout(openssh::Stdio::piped())
+                .stderr(openssh::Stdio::piped())
                 .spawn()
                 .await?;
             let stdin = child.stdin().take().ok_or_else(|| {
@@ -395,6 +506,15 @@ impl tower_service::Service<hyper::Uri> for SshConnector {
                     "SSH Docker channel has no stdout pipe",
                 ))
             })?;
+            let stderr = child.stderr().take().ok_or_else(|| {
+                openssh::Error::ChildIo(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "SSH Docker channel has no stderr pipe",
+                ))
+            })?;
+            tokio::spawn(relay_ssh_stderr(stderr, |message| {
+                log::warn!(target: SSH_DOCKER_LOG_TARGET, "{message}");
+            }));
 
             Ok(SshStream {
                 stdin: Some(TokioIo::new(stdin)),
@@ -467,7 +587,103 @@ impl hyper_util::client::legacy::connect::Connection for SshStream {
 mod tests {
     use super::*;
     use crate::{Docker, API_DEFAULT_VERSION};
+    use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
     use tower_service::Service;
+
+    #[tokio::test]
+    async fn stderr_is_bounded_redacted_and_drained() {
+        let (mut writer, reader) = tokio::io::duplex(16384);
+        let mut input = format!(
+            "error while CloseRead (stream to stdout): /Users/alice/.docker/run/docker.sock\n{}\n{}\r\n\n \r\n",
+            "x".repeat(MAX_SSH_STDERR_LINE + 1),
+            "y".repeat(MAX_SSH_STDERR_LINE)
+        )
+        .into_bytes();
+        input.extend(vec![0xff; MAX_SSH_STDERR_LINE]);
+        input.extend_from_slice(b"\nlast line");
+        writer.write_all(&input).await.unwrap();
+        drop(writer);
+
+        let mut events = Vec::new();
+        relay_ssh_stderr(reader, |message| events.push(message.to_owned())).await;
+
+        assert_eq!(events.len(), 5);
+        assert_eq!(
+            events[0],
+            "Docker SSH stream cleanup: error while CloseRead"
+        );
+        assert!(events[1].contains("discarded"));
+        assert_eq!(events[2], "y".repeat(MAX_SSH_STDERR_LINE));
+        assert!(events[3].contains('\u{fffd}'));
+        assert!(events[3].len() <= MAX_SSH_STDERR_LINE);
+        assert_eq!(events[4], "last line");
+    }
+
+    #[tokio::test]
+    async fn stderr_drain_does_not_block_on_a_full_pipe() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let writer = tokio::spawn(async move {
+            writer
+                .write_all(format!("{}\nafter\n", "x".repeat(16384)).as_bytes())
+                .await
+                .unwrap();
+        });
+        let mut events = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            relay_ssh_stderr(reader, |message| events.push(message.to_owned())).await;
+            writer.await.unwrap();
+        })
+        .await
+        .expect("stderr drain should keep the writer moving");
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1], "after");
+    }
+
+    #[tokio::test]
+    async fn stderr_discards_oversized_final_line() {
+        let (mut writer, reader) = tokio::io::duplex(8192);
+        writer
+            .write_all(&vec![b'x'; MAX_SSH_STDERR_LINE + 2])
+            .await
+            .unwrap();
+        drop(writer);
+
+        let mut events = Vec::new();
+        relay_ssh_stderr(reader, |message| events.push(message.to_owned())).await;
+
+        assert_eq!(events.len(), 1);
+        assert!(events[0].contains("discarded"));
+    }
+
+    struct ReadErrorAfter(&'static [u8]);
+
+    impl AsyncRead for ReadErrorAfter {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            buffer: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            if self.0.is_empty() {
+                return Poll::Ready(Err(io::Error::other("read failed")));
+            }
+            let len = self.0.len().min(buffer.remaining());
+            buffer.put_slice(&self.0[..len]);
+            self.0 = &self.0[len..];
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn stderr_flushes_partial_line_on_read_error() {
+        let mut events = Vec::new();
+        relay_ssh_stderr(ReadErrorAfter(b"partial line"), |message| {
+            events.push(message.to_owned());
+        })
+        .await;
+
+        assert_eq!(events, ["partial line"]);
+    }
 
     #[test]
     fn ssh_url_authority_is_normalized() {

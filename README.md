@@ -222,6 +222,9 @@ Docker::connect_with_ssh_defaults();
 
 Use the [`Docker::connect_with_ssh`] or [`Docker::connect_with_ssh_options`] method API to parameterise the interface.
 
+SSH helper stderr is logged at `warn` under the `bollard::ssh::docker` target.
+If your logger supports `RUST_LOG`, use `RUST_LOG=bollard::ssh::docker=off` to hide these diagnostics.
+
 ### Examples
 
 Note: all these examples need a [Tokio
