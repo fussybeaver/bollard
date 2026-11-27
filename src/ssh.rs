@@ -308,7 +308,18 @@ impl StderrCodec {
         result: Result<Option<Bytes>, AnyDelimiterCodecError>,
     ) -> io::Result<Option<StderrFrame>> {
         match result {
-            Ok(frame) => Ok(frame.map(StderrFrame::Line)),
+            Ok(Some(line)) => {
+                let line = match line.strip_suffix(b"\r") {
+                    Some(stripped) => line.slice(..stripped.len()),
+                    None => line,
+                };
+                if line.len() > MAX_SSH_STDERR_LINE {
+                    Ok(Some(StderrFrame::Oversized))
+                } else {
+                    Ok(Some(StderrFrame::Line(line)))
+                }
+            }
+            Ok(None) => Ok(None),
             Err(AnyDelimiterCodecError::MaxChunkLengthExceeded) => Ok(Some(StderrFrame::Oversized)),
             Err(AnyDelimiterCodecError::Io(error)) => Err(error),
         }
@@ -366,11 +377,6 @@ fn emit_ssh_stderr_frame<F: FnMut(&str)>(frame: StderrFrame, emit: &mut F) {
 }
 
 fn emit_ssh_stderr_line<F: FnMut(&str)>(line: &[u8], emit: &mut F) {
-    let line = line.strip_suffix(b"\r").unwrap_or(line);
-    if line.len() > MAX_SSH_STDERR_LINE {
-        emit("Docker SSH stderr line exceeded 4096 bytes; discarded");
-        return;
-    }
     let message = String::from_utf8_lossy(line);
     if message.contains("error while CloseRead (stream to stdout):") {
         emit("Docker SSH stream cleanup: error while CloseRead");
